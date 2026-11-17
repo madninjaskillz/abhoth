@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -181,11 +182,8 @@ function Header({ projects, canAdd, narrow }: { projects: Project[]; canAdd: boo
   return (
     <header className="flex h-10 shrink-0 items-stretch gap-2 border-b bg-panel pl-3 pr-2">
       <div className="flex shrink-0 items-center gap-2 font-semibold">
-        <svg viewBox="0 0 32 32" className="size-5">
-          <path d="M7 19c3-7 9-10 18-9-3 2-4 4-4 6 0 4-4 7-9 7-2 0-4-1-5-4z" fill="#58a6ff" />
-          <circle cx="21" cy="14" r="1.4" fill="#0b0d10" />
-        </svg>
-        {!narrow && <span>OpenOrca</span>}
+        <MascotBadge />
+        {!narrow && <span className="tracking-tight">Open<span className="text-primary">Orca</span></span>}
       </div>
       <nav className="flex min-w-0 flex-1 items-end gap-px overflow-x-auto pt-1.5" role="tablist" data-testid="project-tabs">
         {projects.map((p) => (
@@ -283,6 +281,7 @@ function Unauthorized() {
   return (
     <div className="flex h-full items-center justify-center p-8">
       <div className="max-w-md text-center">
+        <Mascot size={128} className="mb-5" />
         <h1 className="mb-2 text-lg font-semibold">Token required</h1>
         <p className="text-sm text-muted-foreground">
           Open the URL OpenOrca printed (it ends in <code>?token=…</code>). In the TUI, <code>/hostui status</code> shows it again.

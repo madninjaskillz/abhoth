@@ -1,4 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Mascot, MascotThinking } from "@/components/Mascot";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -47,7 +48,7 @@ function Transcript() {
         ))}
         {busy && !items.some((i) => (i.kind === "assistant" || i.kind === "thinking") && i.streaming) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" /> working…
+            <MascotThinking /> working…
           </div>
         )}
       </div>
@@ -58,7 +59,8 @@ function Transcript() {
 function EmptyState() {
   const mode = useSession((s) => s.mode);
   return (
-    <div className="mx-auto mt-16 max-w-md text-center text-muted-foreground">
+    <div className="mx-auto mt-12 max-w-md text-center text-muted-foreground" data-testid="chat-empty">
+      <Mascot size={128} className="mb-5" />
       <div className="mb-2 text-lg font-semibold text-foreground">OpenOrca</div>
       <p className="text-sm">
         {mode === "tui"

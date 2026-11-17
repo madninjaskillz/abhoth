@@ -2,6 +2,7 @@ import { Cpu, Server } from "lucide-react";
 import { useSession, type LiveAgent } from "@/store/session";
 import { agentColor, cn } from "@/lib/utils";
 import { Tip } from "@/components/ui/misc";
+import { MascotThinking } from "@/components/Mascot";
 
 /** The footer bars of the TUI, as a strip above the chat: the Lead and each helper with slot and model. */
 export function AgentBars() {
@@ -52,6 +53,7 @@ function Bar({ agent }: { agent: LiveAgent }) {
           style={{ width: running && pct === 0 ? undefined : `${pct * 100}%`, background: color, opacity: running ? 1 : 0.5 }}
         />
       </div>
+      {agent.isLead && running && <MascotThinking />}
       <span className={cn("w-14 text-right tabular-nums", running ? "text-foreground" : "text-muted-foreground")}>
         {running && agent.progress != null ? `${Math.round(pct * 100)}%` : agent.status}
       </span>

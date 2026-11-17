@@ -6,20 +6,21 @@
 
 @layer base {
   :root {
-    --background: 220 16% 6%;
-    --foreground: 213 22% 86%;
-    --panel: 220 15% 9%;
-    --muted: 218 13% 14%;
-    --muted-foreground: 215 10% 58%;
-    --border: 216 12% 18%;
-    --input: 216 12% 20%;
-    --ring: 212 92% 62%;
-    --primary: 212 92% 62%;
-    --primary-foreground: 220 30% 8%;
-    --secondary: 218 13% 16%;
-    --secondary-foreground: 213 22% 86%;
-    --accent: 218 14% 18%;
-    --accent-foreground: 213 30% 92%;
+    /* From the mascot: its cyan (#22d3ee) is the accent, its navy (#1e2235) tints the surfaces. */
+    --background: 230 24% 7%;
+    --foreground: 220 25% 88%;
+    --panel: 230 25% 10%;
+    --muted: 229 22% 15%;
+    --muted-foreground: 225 12% 62%;
+    --border: 229 20% 19%;
+    --input: 229 20% 22%;
+    --ring: 188 86% 53%;
+    --primary: 188 86% 53%;
+    --primary-foreground: 230 40% 9%;
+    --secondary: 229 28% 17%;
+    --secondary-foreground: 220 25% 88%;
+    --accent: 229 28% 18%;
+    --accent-foreground: 220 30% 94%;
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 98%;
     --success: 140 55% 50%;
@@ -73,4 +74,11 @@
 .xterm-host .xterm-viewport { background: transparent !important; }
 
 @keyframes caret-blink { 50% { opacity: 0; } }
+/* A soft light halo so the navy mascot reads on dark surfaces. */
+.mascot-glow { background: radial-gradient(closest-side, hsl(190 70% 92% / 0.22), hsl(188 86% 53% / 0.08) 60%, transparent 100%); }
+/* Thinking: a slow fade only (no movement); off for reduced motion. */
+@keyframes mascot-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.mascot-thinking { animation: mascot-breathe 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .mascot-thinking { animation: none; } }
+
 .streaming-caret::after { content: "\258D"; color: hsl(var(--primary)); animation: caret-blink 1s steps(1) infinite; margin-left: 1px; }

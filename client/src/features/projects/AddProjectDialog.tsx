@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
+import { Mascot } from "@/components/Mascot";
 
 /**
  * The [+] tab's wizard: (a) a folder on the machine openorca runs on (picked by browsing that
@@ -20,8 +21,13 @@ export function AddProjectDialog({ open, onOpenChange, onAdded }: {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl" data-testid="add-project">
-        <DialogTitle>Add a project</DialogTitle>
-        <DialogDescription>Folders are on the machine OpenOrca runs on, not the one this browser is on.</DialogDescription>
+        <div className="flex items-center gap-3">
+          <Mascot size={64} glow={false} className="mx-0 shrink-0" />
+          <div className="min-w-0">
+            <DialogTitle>Add a project</DialogTitle>
+            <DialogDescription>Folders are on the machine OpenOrca runs on, not the one this browser is on.</DialogDescription>
+          </div>
+        </div>
         <Tabs value={mode} onValueChange={setMode} className="flex min-h-0 flex-col gap-3">
           <TabsList className="w-full">
             <TabsTrigger value="folder" className="flex-1"><Folder /> Open a folder</TabsTrigger>
