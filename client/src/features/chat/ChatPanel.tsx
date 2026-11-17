@@ -46,6 +46,9 @@ const mdComponents: Components = {
   },
 };
 
+/** An uploaded attachment's file name without the upload prefix (web-<date>-<time>-<id>-). */
+const attachmentName = (p: string) => (p.split("/").pop() ?? p).replace(/^web-\d{8}-\d{6}-[0-9a-f]{6}-/, "");
+
 /** A user message: the attached-files list (as sent from the web UI) becomes links and thumbnails. */
 function UserText({ text }: { text: string }) {
   const { id: pid } = useProject();
@@ -60,9 +63,9 @@ function UserText({ text }: { text: string }) {
         {lines.map((p) => (
           <FileLink key={p} path={p}>
             {mediaKind(p) === "image" ? (
-              <img src={rawUrl(pid, p)} alt={p.split("/").pop()} className="h-16 max-w-32 rounded border object-cover" />
+              <img src={rawUrl(pid, p)} alt={attachmentName(p)} className="h-16 max-w-32 rounded border object-cover" />
             ) : (
-              <span className="font-mono text-xs">{p.split("/").pop()}</span>
+              <span className="font-mono text-xs">{attachmentName(p)}</span>
             )}
           </FileLink>
         ))}
