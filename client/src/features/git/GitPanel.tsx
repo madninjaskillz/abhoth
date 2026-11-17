@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranch, GitCommitHorizontal, Minus, Plus, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, CloudDownload, GitBranch, GitCommitHorizontal, Minus, Plus, RefreshCw } from "lucide-react";
+import { ProjectGitHubToken } from "./GitHubToken";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { projectApi, type GitFile } from "@/lib/api";
 import { useProject, useSession } from "@/store/session";
@@ -62,6 +63,8 @@ export function GitPanel({ compact = false }: { compact?: boolean }) {
     onError: onFail,
   });
 
+  const remote = useMutation({ mutationFn: (op: "fetch" | "pull" | "push") => api.remote(op), onSuccess: onDone, onError: onFail });
+
   const files = status.data?.files ?? [];
   const staged = useMemo(() => files.filter((f) => f.staged), [files]);
   const changes = useMemo(() => files.filter((f) => f.unstaged), [files]);
@@ -85,6 +88,25 @@ export function GitPanel({ compact = false }: { compact?: boolean }) {
       {!!s?.ahead && <Badge variant="secondary">↑{s.ahead}</Badge>}
       {!!s?.behind && <Badge variant="secondary">↓{s.behind}</Badge>}
       <span className="ml-auto" />
+      {s?.isRepo && (
+        <>
+          <Tip label="Fetch">
+            <Button size="icon-sm" variant="ghost" disabled={remote.isPending} onClick={() => remote.mutate("fetch")} data-testid="git-fetch">
+              <CloudDownload />
+            </Button>
+          </Tip>
+          <Tip label="Pull (fast-forward)">
+            <Button size="icon-sm" variant="ghost" disabled={remote.isPending} onClick={() => remote.mutate("pull")} data-testid="git-pull">
+              <ArrowDownToLine />
+            </Button>
+          </Tip>
+          <Tip label="Push">
+            <Button size="icon-sm" variant="ghost" disabled={remote.isPending} onClick={() => remote.mutate("push")} data-testid="git-push">
+              <ArrowUpFromLine />
+            </Button>
+          </Tip>
+        </>
+      )}
       <Tip label="Refresh">
         <Button size="icon-sm" variant="ghost" onClick={refresh}>
           <RefreshCw className={cn(status.isFetching && "animate-spin")} />
@@ -169,6 +191,7 @@ export function GitPanel({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {header}
+      <ProjectGitHubToken pid={pid} />
       <div className="min-h-0 flex-1">
         {compact ? (
           <div className="flex h-full flex-col">

@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
 import { Mascot } from "@/components/Mascot";
+import { CheckLine, rememberToken, rememberedToken } from "@/features/git/GitHubToken";
+import type { GitHubCheck } from "@/lib/api";
 
 /**
  * The [+] tab's wizard: (a) a folder on the machine openorca runs on (picked by browsing that
@@ -141,6 +143,20 @@ function CloneStep({ onAdded }: { onAdded: (p: { id: string }) => void }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<CloneStatus | null>(null);
+  const [token, setToken] = useState(rememberedToken);
+  const [check, setCheck] = useState<GitHubCheck | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const validate = async () => {
+    setChecking(true);
+    try {
+      setCheck(await api.validateGithub({ token, url }));
+    } catch (e) {
+      setCheck({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const suggested = url.trim() ? (url.trim().replace(/\/+$/, "").replace(/\.git$/i, "").split(/[/:\\]/).pop() ?? "") : "";
 
@@ -164,7 +180,8 @@ function CloneStep({ onAdded }: { onAdded: (p: { id: string }) => void }) {
   const start = async () => {
     setError(null);
     try {
-      setJob(await api.clone(url, parent, name || undefined));
+      if (token.trim()) rememberToken(token.trim());
+      setJob(await api.clone(url, parent, name || undefined, token.trim() || undefined));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -216,9 +233,46 @@ function CloneStep({ onAdded }: { onAdded: (p: { id: string }) => void }) {
           data-testid="clone-name"
         />
       </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-muted-foreground">GitHub token (optional: a fine-grained token with access to this repository)</span>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="password"
+            autoComplete="off"
+            className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
+            value={token}
+            onChange={(e) => {
+              setToken(e.target.value);
+              setCheck(null);
+            }}
+            placeholder="github_pat_…"
+            data-testid="clone-token"
+          />
+          <Button size="sm" variant="outline" disabled={!token.trim() || checking} onClick={() => void validate()} data-testid="clone-token-validate">
+            {checking && <Loader2 className="animate-spin" />} Validate
+          </Button>
+          {rememberedToken() && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                rememberToken("");
+                setToken("");
+                setCheck(null);
+              }}
+              data-testid="clone-token-forget"
+            >
+              Forget token
+            </Button>
+          )}
+        </div>
+      </label>
+      {check && <CheckLine check={check} />}
       <p className="text-[11px] text-muted-foreground">
         <GitBranch className="mr-1 inline size-3" />
-        Uses git and the credentials already set up on that machine (credential manager, gh, SSH keys). Nothing is asked for or stored here.
+        {token.trim()
+          ? "The token is remembered in this browser and saved (private) with the project on the server, for its fetch, pull and push. It never goes in the URL or git's config."
+          : "Without a token, git uses the credentials already set up on that machine (credential manager, gh, SSH keys)."}
       </p>
       {error && <div className="text-destructive" data-testid="clone-error">{error}</div>}
       <div className="flex justify-end">

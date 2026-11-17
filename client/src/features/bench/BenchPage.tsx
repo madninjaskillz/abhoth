@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, FileText, Loader2, Pause, Play, Square, X } from "lucide-react";
+import { Eye, FileText, GitFork, Loader2, Pause, Play, RefreshCw, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, type BenchResult, type BenchRunInfo, type BenchSuite } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,42 @@ const W = { C: 0.6, T: 0.25, K: 0.15 };
  * Benchmarks: pick a suite (arms × tasks × reps), queue it, watch the current run as a read-only
  * tab, and compare results. Composite = 100 × (0.6·C + 0.25·T·P + 0.15·K·P) per task and arm.
  */
+/** The openorca mirror the real tasks clone from: newest commit, last refresh, and "Refresh mirror". */
+function Mirror({ busy }: { busy: boolean }) {
+  const qc = useQueryClient();
+  const mirror = useQuery({ queryKey: ["bench-mirror"], queryFn: api.benchMirrorState, refetchInterval: 60000 });
+  const refresh = useMutation({
+    mutationFn: api.benchMirror,
+    onSettled: () => qc.invalidateQueries({ queryKey: ["bench-mirror"] }),
+  });
+  const m = mirror.data;
+  if (!m) return null;
+  return (
+    <div className="mt-3 space-y-1 border-t pt-2 text-xs" data-testid="bench-mirror">
+      <div className="flex items-center gap-2">
+        <GitFork className="size-3.5 text-muted-foreground" />
+        <span className="text-muted-foreground">openorca mirror</span>
+        {m.exists ? (
+          <span className="min-w-0 truncate font-mono" title={m.origin ?? m.path}>{m.head}</span>
+        ) : (
+          <span className="text-muted-foreground">none (real tasks unavailable)</span>
+        )}
+        <span className="ml-auto" />
+        {m.exists && (
+          <Button size="sm" variant="outline" className="h-6" disabled={busy || refresh.isPending} onClick={() => refresh.mutate()} data-testid="bench-mirror-refresh">
+            <RefreshCw className={cn(refresh.isPending && "animate-spin")} /> Refresh mirror
+          </Button>
+        )}
+      </div>
+      {m.exists && m.updated && (
+        <div className="text-[11px] text-muted-foreground">updated {new Date(m.updated).toLocaleString()}{busy && " · refresh between runs"}</div>
+      )}
+      {refresh.error && <div className="text-[11px] text-destructive">{(refresh.error as Error).message}</div>}
+      {refresh.data && !refresh.data.ok && <div className="text-[11px] text-destructive">{refresh.data.error}</div>}
+    </div>
+  );
+}
+
 export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void }) {
   const qc = useQueryClient();
   const state = useQuery({ queryKey: ["bench"], queryFn: api.bench, refetchInterval: 2000 });
@@ -74,6 +110,7 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
               </Button>
               {start.error && <span className="text-xs text-destructive">{String((start.error as Error).message)}</span>}
             </div>
+            <Mirror busy={!!s?.current} />
           </div>
 
           <div className="rounded-lg border bg-panel p-3">

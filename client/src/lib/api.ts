@@ -94,6 +94,14 @@ export interface ServerInfo {
   bench?: boolean;
 }
 
+export interface GitHubCheck {
+  ok: boolean;
+  login?: string | null;
+  repo?: string | null;
+  canPush?: boolean | null;
+  error?: string | null;
+}
+
 export interface BenchArm {
   name: string;
   leadMode: string;
@@ -269,7 +277,12 @@ export const api = {
     return res.ok ? res.text() : "(no checker output for this run)";
   },
   browse: (path?: string) => request<FolderListing>("GET", `/api/fs/browse${q({ path })}`),
-  clone: (url: string, parent: string, name?: string) => request<CloneStatus>("POST", "/api/projects/clone", { url, parent, name }),
+  clone: (url: string, parent: string, name?: string, token?: string) =>
+    request<CloneStatus>("POST", "/api/projects/clone", { url, parent, name, token: token || undefined }),
+  validateGithub: (body: { token?: string; pid?: string; url?: string }) => request<GitHubCheck>("POST", "/api/github/validate", body),
+  benchMirrorState: () =>
+    request<{ exists: boolean; path: string; head?: string; origin?: string | null; updated?: string }>("GET", "/api/bench/mirror"),
+  benchMirror: () => request<{ ok: boolean; output: string; error: string }>("POST", "/api/bench/mirror"),
   cloneStatus: (id: string) => request<CloneStatus>("GET", `/api/clone/${id}`),
   cancelClone: (id: string) => request<{ ok: boolean }>("DELETE", `/api/clone/${id}`),
 };
@@ -293,6 +306,10 @@ export function projectApi(pid: string, wt?: string | null) {
     stage: (paths: string[]) => request<GitOpResult>("POST", `${base}/git/stage${q({ wt })}`, { paths }),
     unstage: (paths: string[]) => request<GitOpResult>("POST", `${base}/git/unstage${q({ wt })}`, { paths }),
     commit: (message: string) => request<GitOpResult>("POST", `${base}/git/commit${q({ wt })}`, { message }),
+    remote: (op: "fetch" | "pull" | "push") => request<GitOpResult>("POST", `${base}/git/${op}${q({ wt })}`),
+    githubToken: () => request<{ token: string | null }>("GET", `${base}/github`),
+    setGithubToken: (token: string) => request<{ token: string }>("PUT", `${base}/github`, { token }),
+    removeGithubToken: () => request<{ ok: boolean }>("DELETE", `${base}/github`),
     ptyUrl: (cols: number, rows: number) => {
       const proto = location.protocol === "https:" ? "wss" : "ws";
       return `${proto}://${location.host}${base}/pty${q({ cols: String(cols), rows: String(rows), wt })}`;
