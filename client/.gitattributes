@@ -1,2 +1,4 @@
+# LF everywhere, so the Vite build gives byte-identical dist files on any checkout.
+* text=auto eol=lf
 dist/** -text
 package-lock.json -text
