@@ -8,6 +8,33 @@ export class ApiError extends Error {
   }
 }
 
+/** Uploads prompt attachments (multipart) into the project's .orca/attachments folder. */
+export async function uploadAttachments(pid: string, files: File[]): Promise<{ name: string; path: string; kind: "image" | "file"; size: number }[]> {
+  const form = new FormData();
+  files.forEach((f) => form.append("files", f, f.name));
+  const res = await fetch(`/api/projects/${encodeURIComponent(pid)}/attachments`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: csrfHeaders(),
+    body: form,
+  });
+  const text = await res.text();
+  let data: unknown;
+  try { data = text ? JSON.parse(text) : undefined; } catch { data = undefined; }
+  if (!res.ok) {
+    if (res.status === 401) sessionEnded();
+    throw new ApiError((data as { error?: string } | undefined)?.error || res.statusText, res.status);
+  }
+  return data as { name: string; path: string; kind: "image" | "file"; size: number }[];
+}
+
+/** The URL that serves a project file (images, PDFs, media inline; anything else downloads). */
+export function rawUrl(pid: string, path: string, wt?: string | null): string {
+  const qs = new URLSearchParams({ path });
+  if (wt) qs.set("wt", wt);
+  return `/api/projects/${encodeURIComponent(pid)}/raw?${qs}`;
+}
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,

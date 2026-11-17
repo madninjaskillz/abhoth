@@ -6,7 +6,11 @@ import {
   AlertTriangle, Brain, Check, ChevronRight, CircleStop, Info, Loader2, SendHorizontal, ShieldQuestion, TerminalSquare, Wrench, X,
 } from "lucide-react";
 import { useConnection, useProject, useSession, type ChatItem } from "@/store/session";
-import { cancelTurn, resolvePermission, sendPrompt } from "@/lib/hub";
+import { cancelTurn, resolvePermission, sendPrompt, sendPromptWithAttachments } from "@/lib/hub";
+import { AttachmentChips, useAttachments } from "./Attachments";
+import { FileLink, MediaViewer, asPath, mediaKind } from "./FileLink";
+import { rawUrl } from "@/lib/api";
+import type { Components } from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Badge, Textarea } from "@/components/ui/misc";
 import { cn, formatMs } from "@/lib/utils";
@@ -19,7 +23,51 @@ export function ChatPanel() {
       <Transcript />
       <PermissionPrompts />
       <ComposerOrWatching />
+      <MediaViewer />
     </div>
+  );
+}
+
+/** Markdown with file paths (inline code, relative links) as file links. */
+const mdComponents: Components = {
+  code({ className, children, ...props }) {
+    const text = typeof children === "string" ? children : Array.isArray(children) && children.every((c) => typeof c === "string") ? children.join("") : null;
+    const path = !className && text && !text.includes("\n") ? asPath(text) : null;
+    return (
+      <code className={className} {...props}>
+        {path ? <FileLink path={path}>{text}</FileLink> : children}
+      </code>
+    );
+  },
+  a({ href, children, ...props }) {
+    const path = href && !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("#") ? asPath(decodeURIComponent(href)) : null;
+    if (path) return <FileLink path={path}>{children}</FileLink>;
+    return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>;
+  },
+};
+
+/** A user message: the attached-files list (as sent from the web UI) becomes links and thumbnails. */
+function UserText({ text }: { text: string }) {
+  const { id: pid } = useProject();
+  const at = text.search(/(^|\n)Attached files[^\n]*:\n/);
+  if (at < 0) return <>{text}</>;
+  const head = text.slice(0, at).trimEnd();
+  const lines = text.slice(at).trim().split("\n").slice(1).map((l) => l.replace(/^- /, ""));
+  return (
+    <>
+      {head}
+      <div className={cn("flex flex-wrap gap-1.5", head && "mt-2")}>
+        {lines.map((p) => (
+          <FileLink key={p} path={p}>
+            {mediaKind(p) === "image" ? (
+              <img src={rawUrl(pid, p)} alt={p.split("/").pop()} className="h-16 max-w-32 rounded border object-cover" />
+            ) : (
+              <span className="font-mono text-xs">{p.split("/").pop()}</span>
+            )}
+          </FileLink>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -79,7 +127,7 @@ const Item = memo(function Item({ item }: { item: ChatItem }) {
       return (
         <div className="flex justify-end">
           <div className="max-w-[85%] rounded-lg rounded-br-sm bg-primary/12 border border-primary/25 px-3 py-2 whitespace-pre-wrap break-words">
-            {item.text}
+            <UserText text={item.text} />
             {item.source && item.source !== "web" && (
               <div className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground">from the {item.source}</div>
             )}
@@ -89,7 +137,7 @@ const Item = memo(function Item({ item }: { item: ChatItem }) {
     case "assistant":
       return (
         <div className={cn("md", item.streaming && "streaming-caret")} data-testid="assistant-message">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{item.text}</ReactMarkdown>
         </div>
       );
     case "thinking":
@@ -149,6 +197,17 @@ function Thinking({ text, streaming }: { text: string; streaming: boolean }) {
   );
 }
 
+/** The file a tool call is about (its path argument), for a link in the card's header. */
+function argPath(args: string): string | null {
+  try {
+    const o = JSON.parse(args);
+    const v = o.path ?? o.file_path ?? o.filePath ?? o.file;
+    return typeof v === "string" ? asPath(v) : null;
+  } catch {
+    return null;
+  }
+}
+
 function summarizeArgs(name: string, args: string): string {
   try {
     const o = JSON.parse(args);
@@ -164,13 +223,16 @@ function summarizeArgs(name: string, args: string): string {
 function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
   const [open, setOpen] = useState(false);
   const Icon = item.name === "bash" || item.name === "shell" ? TerminalSquare : Wrench;
+  const path = argPath(item.args);
   return (
     <div className={cn("rounded-md border bg-panel text-xs", item.isError && "border-destructive/40")} data-testid="tool-card">
-      <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left" onClick={() => setOpen(!open)}>
+      <div className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left" onClick={() => setOpen(!open)}>
         <ChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
         <Icon className="size-3.5 shrink-0 text-primary" />
-        <span className="font-mono font-semibold">{item.name}</span>
-        <span className="truncate font-mono text-muted-foreground">{summarizeArgs(item.name, item.args)}</span>
+        <button className="font-mono font-semibold" aria-expanded={open}>{item.name}</button>
+        <span className="truncate font-mono text-muted-foreground" onClick={(e) => path && e.stopPropagation()}>
+          {path ? <FileLink path={path} /> : summarizeArgs(item.name, item.args)}
+        </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {item.elapsedMs != null && <span className="text-muted-foreground tabular-nums">{formatMs(item.elapsedMs)}</span>}
           {!item.done ? (
@@ -181,7 +243,7 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
             <Check className="size-3.5 text-success" />
           )}
         </span>
-      </button>
+      </div>
       {open && (
         <div className="space-y-2 border-t px-3 py-2">
           {item.args && (
@@ -247,7 +309,9 @@ function Composer() {
   const { id: pid } = useProject();
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const attachments = useAttachments(pid);
 
   useEffect(() => {
     const el = ref.current;
@@ -258,12 +322,15 @@ function Composer() {
 
   const submit = async () => {
     const t = text.trim();
-    if (!t || connection !== "connected") return;
+    if ((!t && !attachments.ready.length) || connection !== "connected" || attachments.pending) return;
     setError(null);
     try {
-      const err = await sendPrompt(pid, t);
+      const err = attachments.ready.length ? await sendPromptWithAttachments(pid, t, attachments.ready) : await sendPrompt(pid, t);
       if (err) setError(err);
-      else setText("");
+      else {
+        setText("");
+        attachments.clear();
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -272,7 +339,30 @@ function Composer() {
   return (
     <div className="border-t bg-panel/60 px-4 py-3">
       <div className="mx-auto max-w-3xl">
-        <div className="flex items-end gap-2 rounded-lg border bg-background px-2 py-1.5 focus-within:ring-1 focus-within:ring-ring">
+        <div
+          className={cn(
+            "rounded-lg border bg-background px-2 py-1.5 focus-within:ring-1 focus-within:ring-ring",
+            dragging && "border-primary ring-1 ring-primary",
+          )}
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes("Files")) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            setDragging(true);
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+          }}
+          onDrop={(e) => {
+            if (!e.dataTransfer.files.length) return;
+            e.preventDefault();
+            setDragging(false);
+            attachments.add(Array.from(e.dataTransfer.files));
+          }}
+          data-testid="composer-box"
+        >
+        <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
+        <div className="flex items-end gap-2">
           <Textarea
             ref={ref}
             rows={1}
@@ -281,6 +371,12 @@ function Composer() {
             placeholder={busy ? "Queue a prompt — it runs after the current turn…" : "Ask OpenOrca…  (Enter to send, Shift+Enter for a new line)"}
             className="min-h-[36px] resize-none border-0 bg-transparent px-1 py-1.5 shadow-none focus-visible:ring-0"
             onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              const files = Array.from(e.clipboardData.files);
+              if (!files.length) return; // plain text pastes as usual
+              e.preventDefault();
+              attachments.add(files);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
@@ -293,9 +389,16 @@ function Composer() {
               <CircleStop className="text-destructive" />
             </Button>
           )}
-          <Button size="icon" disabled={!text.trim() || connection !== "connected"} onClick={() => void submit()} title="Send" data-testid="send">
+          <Button
+            size="icon"
+            disabled={(!text.trim() && !attachments.ready.length) || attachments.pending || connection !== "connected"}
+            onClick={() => void submit()}
+            title={attachments.pending ? "Waiting for uploads…" : "Send"}
+            data-testid="send"
+          >
             <SendHorizontal />
           </Button>
+        </div>
         </div>
         <div className="mt-1 flex min-h-4 items-center gap-2 text-[11px] text-muted-foreground">
           {error && <span className="text-destructive">{error}</span>}

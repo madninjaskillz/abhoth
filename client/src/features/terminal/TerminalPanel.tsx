@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { RotateCcw, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,8 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
       cursorBlink: true,
       allowProposedApi: true,
       scrollback: 5000,
+      // OSC 8 links (and plain URLs, below) open in a new tab: a CLI login's long URL is one click.
+      linkHandler: { activate: (_e, uri) => openLink(uri), allowNonHttpProtocols: false },
       theme: {
         background: "#0b0d10",
         foreground: "#c9d1d9",
@@ -44,6 +47,7 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    term.loadAddon(new WebLinksAddon((_e, uri) => openLink(uri)));
     term.open(el);
     try {
       const webgl = new WebglAddon();
@@ -122,4 +126,9 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
       <div ref={host} className="xterm-host min-h-0 flex-1" data-testid="terminal" />
     </div>
   );
+}
+
+/** Opens an http(s) link from the terminal in a new tab (nothing else). */
+function openLink(uri: string) {
+  if (/^https?:\/\//i.test(uri)) window.open(uri, "_blank", "noopener,noreferrer");
 }

@@ -106,6 +106,11 @@ export async function sendPrompt(pid: string, text: string): Promise<string | nu
   return (await connection.invoke<string | null>("SendPrompt", pid, text)) ?? null;
 }
 
+export async function sendPromptWithAttachments(pid: string, text: string, attachments: string[]): Promise<string | null> {
+  if (!connection) return "Not connected.";
+  return (await connection.invoke<string | null>("SendPromptWithAttachments", pid, text, attachments)) ?? null;
+}
+
 export async function cancelTurn(pid: string): Promise<boolean> {
   if (!connection) return false;
   return connection.invoke<boolean>("Cancel", pid);
