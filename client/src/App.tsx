@@ -1,13 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { FolderGit2, MessagesSquare, SquareTerminal } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { ChatPanel } from "@/features/chat/ChatPanel";
+import { FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { EditorArea } from "@/features/editor/EditorArea";
+import { FileTree } from "@/features/files/FileTree";
 import { GitPanel } from "@/features/git/GitPanel";
 import { TerminalPanel } from "@/features/terminal/TerminalPanel";
+import { AddProjectDialog } from "@/features/projects/AddProjectDialog";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger, Tip } from "@/components/ui/misc";
-import { useSession } from "@/store/session";
-import { api } from "@/lib/api";
+import { ProjectContext, dropSessionStore, sessionStore, useConnection, type ProjectContextValue } from "@/store/session";
+import { useWorkspace } from "@/store/workspace";
+import { useStore } from "zustand";
+import { api, type Project } from "@/lib/api";
+import { unwatchProject, watchProject } from "@/lib/hub";
 import { cn } from "@/lib/utils";
 
 function useNarrow(query = "(max-width: 900px)") {
@@ -22,38 +28,78 @@ function useNarrow(query = "(max-width: 900px)") {
 }
 
 /**
- * One session: chat on the left; git and a terminal on the right (tabs on a narrow screen).
- * Slice 2 adds a project rail (projects, worktrees, task board) to the left of this workspace.
+ * Project tabs along the top; each project has its own workspace (session, files, editor,
+ * git, terminal), kept mounted once shown so its terminal and editor buffers live on.
  */
 export default function App() {
   const narrow = useNarrow();
-  const connection = useSession((s) => s.connection);
+  const connection = useConnection((s) => s.connection);
+  const projects = useQuery({ queryKey: ["projects"], queryFn: api.projects, refetchInterval: 30000 });
+  const active = useWorkspace((s) => s.active);
+  const mounted = useWorkspace((s) => s.mounted);
+  const setActive = useWorkspace((s) => s.setActive);
+  const ensure = useWorkspace((s) => s.ensure);
 
-  if (connection === "unauthorized") return <Unauthorized />;
+  const list = useMemo(() => projects.data?.projects ?? [], [projects.data]);
+
+  // Pick a tab: the last one used (if still open), else the primary project.
+  useEffect(() => {
+    if (list.length === 0) return;
+    for (const p of list) ensure(p.id, p.path);
+    if (!active || !list.some((p) => p.id === active)) {
+      let remembered: string | null = null;
+      try { remembered = localStorage.getItem("openorca.activeProject"); } catch { /* private */ }
+      const pick = list.find((p) => p.id === remembered) ?? list.find((p) => p.primary) ?? list[0];
+      setActive(pick.id);
+    }
+  }, [list, active, ensure, setActive]);
+
+  useEffect(() => {
+    if (!active) return;
+    watchProject(active);
+    try { localStorage.setItem("openorca.activeProject", active); } catch { /* private */ }
+  }, [active]);
+
+  if (connection === "unauthorized" || (projects.error as { status?: number } | null)?.status === 401) return <Unauthorized />;
 
   return (
     <div className="flex h-full flex-col">
-      <Header />
-      <div className="min-h-0 flex-1">{narrow ? <NarrowWorkspace /> : <WideWorkspace />}</div>
+      <Header projects={list} canAdd={projects.data?.canAdd ?? false} narrow={narrow} />
+      <div className="relative min-h-0 flex-1">
+        {list
+          .filter((p) => mounted.includes(p.id))
+          .map((p) => (
+            <div key={p.id} className={cn("absolute inset-0", p.id !== active && "hidden")} data-testid="workspace" data-project={p.id}>
+              <ProjectContext.Provider value={{ id: p.id, root: p.path } satisfies ProjectContextValue}>
+                {narrow ? <NarrowWorkspace visible={p.id === active} /> : <WideWorkspace visible={p.id === active} />}
+              </ProjectContext.Provider>
+            </div>
+          ))}
+        {projects.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
+      </div>
     </div>
   );
 }
 
-function WideWorkspace() {
+function WideWorkspace({ visible }: { visible: boolean }) {
   return (
-    <PanelGroup direction="horizontal" autoSaveId="openorca.workspace">
-      <Panel defaultSize={42} minSize={25}>
-        <ChatPanel />
+    <PanelGroup direction="horizontal" autoSaveId="openorca.workspace2">
+      <Panel defaultSize={18} minSize={10}>
+        <FileTree />
       </Panel>
       <PanelResizeHandle className="resize-handle" />
-      <Panel minSize={25}>
+      <Panel defaultSize={47} minSize={25}>
+        <EditorArea />
+      </Panel>
+      <PanelResizeHandle className="resize-handle" />
+      <Panel minSize={20}>
         <PanelGroup direction="vertical" autoSaveId="openorca.right">
           <Panel defaultSize={58} minSize={15}>
-            <GitPanel />
+            <GitPanel compact />
           </Panel>
           <PanelResizeHandle className="resize-handle" />
           <Panel minSize={12}>
-            <TerminalPanel />
+            <TerminalPanel visible={visible} />
           </Panel>
         </PanelGroup>
       </Panel>
@@ -61,65 +107,175 @@ function WideWorkspace() {
   );
 }
 
-function NarrowWorkspace() {
+function NarrowWorkspace({ visible }: { visible: boolean }) {
   const [tab, setTab] = useState("chat");
   return (
     <Tabs value={tab} onValueChange={setTab} className="flex h-full flex-col">
       <div className="flex shrink-0 justify-center border-b px-2 py-1.5">
-        <TabsList className="w-full max-w-sm">
+        <TabsList className="w-full max-w-md">
           <TabsTrigger value="chat" className="flex-1"><MessagesSquare /> Chat</TabsTrigger>
+          <TabsTrigger value="files" className="flex-1"><FolderTree /> Files</TabsTrigger>
           <TabsTrigger value="git" className="flex-1"><FolderGit2 /> Git</TabsTrigger>
-          <TabsTrigger value="terminal" className="flex-1"><SquareTerminal /> Terminal</TabsTrigger>
+          <TabsTrigger value="terminal" className="flex-1"><SquareTerminal /> Term</TabsTrigger>
         </TabsList>
       </div>
       <TabsContent value="chat" className="min-h-0 flex-1 data-[state=inactive]:hidden" forceMount>
-        <ChatPanel />
+        <EditorArea />
+      </TabsContent>
+      <TabsContent value="files" className="min-h-0 flex-1 data-[state=inactive]:hidden" forceMount>
+        <FilesThenEditor onOpen={() => setTab("chat")} />
       </TabsContent>
       <TabsContent value="git" className="min-h-0 flex-1 data-[state=inactive]:hidden" forceMount>
         <GitPanel compact />
       </TabsContent>
       <TabsContent value="terminal" className="min-h-0 flex-1 data-[state=inactive]:hidden" forceMount>
-        <TerminalPanel visible={tab === "terminal"} />
+        <TerminalPanel visible={visible && tab === "terminal"} />
       </TabsContent>
     </Tabs>
   );
 }
 
-function Header() {
-  const connection = useSession((s) => s.connection);
-  const cwd = useSession((s) => s.workingDirectory);
-  const mode = useSession((s) => s.mode);
-  const sessionId = useSession((s) => s.sessionId);
-  const model = useSession((s) => s.model);
-  const busy = useSession((s) => s.busy);
-  const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: Infinity });
+/** On a phone, opening a file jumps to the editor tab. */
+function FilesThenEditor({ onOpen }: { onOpen: () => void }) {
+  const center = useWorkspace((s) => (s.active ? s.projects[s.active]?.center : undefined));
+  const [last, setLast] = useState(center);
+  useEffect(() => {
+    if (center !== last) {
+      setLast(center);
+      if (center && center !== "chat") onOpen();
+    }
+  }, [center, last, onOpen]);
+  return <FileTree />;
+}
+
+function Header({ projects, canAdd, narrow }: { projects: Project[]; canAdd: boolean; narrow: boolean }) {
+  const qc = useQueryClient();
+  const connection = useConnection((s) => s.connection);
+  const active = useWorkspace((s) => s.active);
+  const setActive = useWorkspace((s) => s.setActive);
+  const forget = useWorkspace((s) => s.forget);
+  const [adding, setAdding] = useState(false);
+  const [closing, setClosing] = useState<Project | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   const dot =
     connection === "connected" ? "bg-success" : connection === "reconnecting" || connection === "connecting" ? "bg-warning animate-pulse" : "bg-destructive";
+
+  const close = async (p: Project) => {
+    try {
+      await api.removeProject(p.id);
+      unwatchProject(p.id);
+      forget(p.id);
+      dropSessionStore(p.id);
+      if (active === p.id) {
+        const other = projects.find((x) => x.id !== p.id);
+        if (other) setActive(other.id);
+      }
+      await qc.invalidateQueries({ queryKey: ["projects"] });
+      setClosing(null);
+    } catch (e) {
+      setCloseError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 border-b bg-panel px-3">
-      <div className="flex items-center gap-2 font-semibold">
+    <header className="flex h-10 shrink-0 items-stretch gap-2 border-b bg-panel pl-3 pr-2">
+      <div className="flex shrink-0 items-center gap-2 font-semibold">
         <svg viewBox="0 0 32 32" className="size-5">
           <path d="M7 19c3-7 9-10 18-9-3 2-4 4-4 6 0 4-4 7-9 7-2 0-4-1-5-4z" fill="#58a6ff" />
           <circle cx="21" cy="14" r="1.4" fill="#0b0d10" />
         </svg>
-        <span>OpenOrca</span>
+        {!narrow && <span>OpenOrca</span>}
       </div>
-      <Tip label={cwd || info.data?.workingDirectory || ""}>
-        <span className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground md:inline">{cwd || info.data?.workingDirectory}</span>
-      </Tip>
-      <span className="ml-auto flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-        {model && <span className="hidden truncate lg:inline">{model}</span>}
-        {sessionId && <span className="hidden font-mono sm:inline">session {sessionId}</span>}
-        {mode && (
-          <span className="rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide">{mode === "tui" ? "shared with TUI" : "headless"}</span>
+      <nav className="flex min-w-0 flex-1 items-end gap-px overflow-x-auto pt-1.5" role="tablist" data-testid="project-tabs">
+        {projects.map((p) => (
+          <ProjectTab key={p.id} project={p} active={p.id === active} onSelect={() => setActive(p.id)} onClose={() => setClosing(p)} />
+        ))}
+        {canAdd && (
+          <Tip label="Add a project">
+            <button
+              onClick={() => setAdding(true)}
+              className="mb-1 ml-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              data-testid="add-project-tab"
+              aria-label="Add a project"
+            >
+              <Plus className="size-4" />
+            </button>
+          </Tip>
         )}
-        <span className="flex items-center gap-1.5" data-testid="connection">
-          <span className={cn("size-2 rounded-full", dot)} />
-          <span className="hidden sm:inline">{busy ? "working" : connection}</span>
-        </span>
+      </nav>
+      <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" data-testid="connection">
+        <span className={cn("size-2 rounded-full", dot)} />
+        {!narrow && <span>{connection}</span>}
       </span>
+      <AddProjectDialog
+        open={adding}
+        onOpenChange={setAdding}
+        onAdded={(p) => {
+          setAdding(false);
+          setActive(p.id);
+        }}
+      />
+      <ConfirmDialog
+        open={closing !== null}
+        title={`Close ${closing?.name ?? "project"}?`}
+        body={
+          <div className="space-y-2">
+            <p>
+              This removes the tab from OpenOrca's project list. The folder <span className="break-all font-mono text-foreground">{closing?.path}</span> is
+              not touched; nothing is deleted. Its session is saved and comes back if you add the folder again.
+            </p>
+            {closeError && <p className="text-destructive">{closeError}</p>}
+          </div>
+        }
+        confirm="Close tab"
+        onConfirm={() => closing && void close(closing)}
+        onCancel={() => {
+          setClosing(null);
+          setCloseError(null);
+        }}
+      />
     </header>
+  );
+}
+
+function ProjectTab({ project, active, onSelect, onClose }: { project: Project; active: boolean; onSelect: () => void; onClose: () => void }) {
+  const store = sessionStore(project.id);
+  const busy = useStore(store, (s) => s.busy);
+  const permissions = useStore(store, (s) => s.permissions.length);
+  return (
+    <Tip label={`${project.path}${project.primary ? `\n${project.mode === "tui" ? "Shared with the terminal session" : "This openorca's own session"}` : ""}`}>
+      <div
+        role="tab"
+        aria-selected={active}
+        onClick={onSelect}
+        className={cn(
+          "group flex h-8 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 text-xs",
+          active ? "border-border bg-background text-foreground" : "border-transparent text-muted-foreground hover:bg-accent/50",
+        )}
+        data-testid="project-tab"
+        data-project={project.id}
+      >
+        <span className={cn("size-1.5 shrink-0 rounded-full", busy ? "animate-pulse bg-primary" : "bg-muted-foreground/40")} />
+        <span className={cn("truncate", !project.exists && "line-through")}>{project.name}</span>
+        {project.primary && project.mode === "tui" && <span className="rounded border px-1 text-[9px] uppercase text-muted-foreground">tui</span>}
+        {permissions > 0 && <span className="rounded bg-warning/20 px-1 text-[10px] text-warning">!</span>}
+        {!project.primary && (
+          <span
+            role="button"
+            aria-label={`Close ${project.name}`}
+            className="rounded p-0.5 opacity-60 hover:bg-accent hover:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            data-testid="close-project"
+          >
+            <X className="size-3" />
+          </span>
+        )}
+      </div>
+    </Tip>
   );
 }
 

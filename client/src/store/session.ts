@@ -1,4 +1,5 @@
-import { create } from "zustand";
+import { createContext, useContext } from "react";
+import { create, createStore, useStore, type StoreApi } from "zustand";
 
 // Wire types: the server's Core/Live records, camelCased by SignalR's JSON protocol.
 
@@ -56,7 +57,7 @@ export interface LiveSnapshot {
   sessionId?: string | null;
   title?: string | null;
   workingDirectory: string;
-  mode: "tui" | "headless";
+  mode: "tui" | "headless" | "worker";
   model?: string | null;
   busy: boolean;
   queued: number;
@@ -91,11 +92,12 @@ export type ChatItem =
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected" | "unauthorized";
 
-interface SessionState {
-  connection: ConnectionState;
+export interface SessionState {
+  /** True once a snapshot has been loaded for this project. */
+  loaded: boolean;
   sessionId?: string | null;
   workingDirectory: string;
-  mode: "tui" | "headless" | "";
+  mode: "tui" | "headless" | "worker" | "";
   model?: string | null;
   busy: boolean;
   queued: number;
@@ -107,7 +109,6 @@ interface SessionState {
   /** Bumped when the agent may have changed files (git panel refreshes). */
   fileEpoch: number;
 
-  setConnection: (c: ConnectionState) => void;
   loadSnapshot: (s: LiveSnapshot) => void;
   applyEvents: (events: LiveEvent[]) => void;
 }
@@ -218,8 +219,9 @@ function fromHistory(h: LiveTranscriptItem): ChatItem | null {
   }
 }
 
-export const useSession = create<SessionState>((set, get) => ({
-  connection: "connecting",
+const makeSessionStore = () =>
+  createStore<SessionState>((set, get) => ({
+  loaded: false,
   workingDirectory: "",
   mode: "",
   busy: false,
@@ -230,11 +232,10 @@ export const useSession = create<SessionState>((set, get) => ({
   permissions: [],
   fileEpoch: 0,
 
-  setConnection: (connection) => set({ connection }),
-
   loadSnapshot: (s) => {
     let state: SessionState = {
       ...get(),
+      loaded: true,
       sessionId: s.sessionId,
       workingDirectory: s.workingDirectory,
       mode: s.mode,
@@ -265,4 +266,49 @@ export const useSession = create<SessionState>((set, get) => ({
     }
     if (Object.keys(changed).length > 0) set(changed);
   },
+}));
+
+// One store per project (tab), created when the tab is first shown.
+const stores = new Map<string, StoreApi<SessionState>>();
+
+export function sessionStore(projectId: string): StoreApi<SessionState> {
+  let s = stores.get(projectId);
+  if (!s) {
+    s = makeSessionStore();
+    stores.set(projectId, s);
+  }
+  return s;
+}
+
+export function existingSessionStore(projectId: string): StoreApi<SessionState> | undefined {
+  return stores.get(projectId);
+}
+
+export function dropSessionStore(projectId: string) {
+  stores.delete(projectId);
+}
+
+export interface ProjectContextValue {
+  id: string;
+  root: string;
+}
+
+export const ProjectContext = createContext<ProjectContextValue | null>(null);
+
+export function useProject(): ProjectContextValue {
+  const p = useContext(ProjectContext);
+  if (!p) throw new Error("useProject outside a project");
+  return p;
+}
+
+/** The current project's session state (inside a ProjectContext). */
+export function useSession<T>(selector: (s: SessionState) => T): T {
+  const { id } = useProject();
+  return useStore(sessionStore(id), selector);
+}
+
+// The one hub connection, shared by every project.
+export const useConnection = create<{ connection: ConnectionState; setConnection: (c: ConnectionState) => void }>((set) => ({
+  connection: "connecting",
+  setConnection: (connection) => set({ connection }),
 }));

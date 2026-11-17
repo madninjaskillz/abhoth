@@ -1,33 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { DiffEditor, loader } from "@monaco-editor/react";
-import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
-import "monaco-editor/esm/vs/basic-languages/monaco.contribution";
-import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+import { DiffEditor } from "@monaco-editor/react";
 import { Loader2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { projectApi } from "@/lib/api";
+import { DIFF_OPTIONS } from "@/lib/monaco";
 import { languageOf } from "@/lib/utils";
 
-// Monaco from the bundle (never a CDN): the UI must work offline and on a LAN.
-(self as unknown as { MonacoEnvironment: unknown }).MonacoEnvironment = { getWorker: () => new EditorWorker() };
-loader.config({ monaco });
-
-monaco.editor.defineTheme("openorca", {
-  base: "vs-dark",
-  inherit: true,
-  rules: [],
-  colors: {
-    "editor.background": "#0d1015",
-    "diffEditor.insertedTextBackground": "#2ea04333",
-    "diffEditor.removedTextBackground": "#f8514933",
-    "diffEditor.insertedLineBackground": "#2ea0431a",
-    "diffEditor.removedLineBackground": "#f851491a",
-  },
-});
-
-export function DiffView({ path, staged, origPath }: { path: string; staged: boolean; origPath?: string | null }) {
+export function DiffView({ pid, wt, path, staged, origPath }: { pid: string; wt: string; path: string; staged: boolean; origPath?: string | null }) {
   const diff = useQuery({
-    queryKey: ["git", "diff", path, staged, origPath ?? ""],
-    queryFn: () => api.gitDiff(path, staged, origPath),
+    queryKey: ["git", pid, wt, "diff", path, staged, origPath ?? ""],
+    queryFn: () => projectApi(pid, wt).gitDiff(path, staged, origPath),
   });
 
   return (
@@ -52,18 +33,7 @@ export function DiffView({ path, staged, origPath }: { path: string; staged: boo
             modified={diff.data.modified}
             language={languageOf(path)}
             theme="openorca"
-            options={{
-              readOnly: true,
-              renderSideBySide: true,
-              useInlineViewWhenSpaceIsLimited: true,
-              minimap: { enabled: false },
-              fontSize: 12,
-              fontFamily: '"JetBrains Mono", "Cascadia Code", Consolas, monospace',
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              renderOverviewRuler: false,
-              hideUnchangedRegions: { enabled: true },
-            }}
+            options={{ ...DIFF_OPTIONS, readOnly: true }}
           />
         )}
       </div>

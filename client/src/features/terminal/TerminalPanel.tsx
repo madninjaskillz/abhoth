@@ -5,14 +5,17 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { RotateCcw, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { projectApi } from "@/lib/api";
+import { useProject } from "@/store/session";
 
 type State = "connecting" | "open" | "closed";
 
 /**
- * A real shell on the server (ConPTY) in the session's working folder, over a WebSocket.
+ * A real shell on the server (ConPTY) in the project's folder, over a WebSocket.
  * Output arrives as binary frames; input and resizes go as small JSON text frames.
  */
 export function TerminalPanel({ visible = true }: { visible?: boolean }) {
+  const { id: pid } = useProject();
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -53,8 +56,7 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
     termRef.current = term;
     fitRef.current = fit;
 
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/api/pty?cols=${term.cols}&rows=${term.rows}`);
+    const ws = new WebSocket(projectApi(pid).ptyUrl(term.cols, term.rows));
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
     setState("connecting");
@@ -95,7 +97,7 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
       term.dispose();
       termRef.current = null;
     };
-  }, [generation]);
+  }, [generation, pid]);
 
   useEffect(() => {
     if (visible) {

@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GitBranch, GitCommitHorizontal, Minus, Plus, RefreshCw } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { api, type GitFile } from "@/lib/api";
-import { useSession } from "@/store/session";
+import { projectApi, type GitFile } from "@/lib/api";
+import { useProject, useSession } from "@/store/session";
+import { useWorkspace } from "@/store/workspace";
 import { Button } from "@/components/ui/button";
 import { Badge, Textarea, Tip } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
@@ -15,21 +16,33 @@ interface Selection {
   origPath?: string | null;
 }
 
-/** git status, a side-by-side diff per file, stage/unstage per file, commit. All through the git CLI on the server. */
+/**
+ * git status, a side-by-side diff per file, stage/unstage per file, commit — in the worktree the
+ * file tree shows. All through the git CLI on the server.
+ */
 export function GitPanel({ compact = false }: { compact?: boolean }) {
   const qc = useQueryClient();
+  const { id: pid, root } = useProject();
+  const wt = useWorkspace((s) => s.projects[pid]?.wt) ?? root;
+  const api = useMemo(() => projectApi(pid, wt), [pid, wt]);
   const fileEpoch = useSession((s) => s.fileEpoch);
-  const status = useQuery({ queryKey: ["git", "status"], queryFn: api.gitStatus, refetchInterval: 5000 });
+  const status = useQuery({ queryKey: ["git", pid, wt, "status"], queryFn: api.gitStatus, refetchInterval: 10000 });
   const [selected, setSelected] = useState<Selection | null>(null);
   const [message, setMessage] = useState("");
   const [opError, setOpError] = useState<string | null>(null);
 
   // The agent may have changed files: refresh after tool results and turn ends.
   useEffect(() => {
-    void qc.invalidateQueries({ queryKey: ["git"] });
-  }, [fileEpoch, qc]);
+    void qc.invalidateQueries({ queryKey: ["git", pid] });
+  }, [fileEpoch, qc, pid]);
 
-  const refresh = () => void qc.invalidateQueries({ queryKey: ["git"] });
+  // A different worktree: a different selection.
+  useEffect(() => setSelected(null), [wt]);
+
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["git", pid] });
+    void qc.invalidateQueries({ queryKey: ["changes", pid] });
+  };
   const onDone = (r: { ok: boolean; error: string; output: string }) => {
     setOpError(r.ok ? null : r.error || r.output);
     refresh();
@@ -160,7 +173,7 @@ export function GitPanel({ compact = false }: { compact?: boolean }) {
         {compact ? (
           <div className="flex h-full flex-col">
             <div className="h-1/2 min-h-0">{list}</div>
-            <div className="h-1/2 min-h-0 border-t">{selected ? <DiffView {...selected} /> : <NoSelection />}</div>
+            <div className="h-1/2 min-h-0 border-t">{selected ? <DiffView {...selected} pid={pid} wt={wt} /> : <NoSelection />}</div>
           </div>
         ) : (
           <PanelGroup direction="horizontal" autoSaveId="openorca.git">
@@ -168,7 +181,7 @@ export function GitPanel({ compact = false }: { compact?: boolean }) {
               {list}
             </Panel>
             <PanelResizeHandle className="resize-handle" />
-            <Panel minSize={30}>{selected ? <DiffView {...selected} /> : <NoSelection />}</Panel>
+            <Panel minSize={30}>{selected ? <DiffView {...selected} pid={pid} wt={wt} /> : <NoSelection />}</Panel>
           </PanelGroup>
         )}
       </div>

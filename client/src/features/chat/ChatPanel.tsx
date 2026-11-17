@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import {
   AlertTriangle, Brain, Check, ChevronRight, CircleStop, Info, Loader2, SendHorizontal, ShieldQuestion, TerminalSquare, Wrench, X,
 } from "lucide-react";
-import { useSession, type ChatItem } from "@/store/session";
+import { useConnection, useProject, useSession, type ChatItem } from "@/store/session";
 import { cancelTurn, resolvePermission, sendPrompt } from "@/lib/hub";
 import { Button } from "@/components/ui/button";
 import { Badge, Textarea } from "@/components/ui/misc";
@@ -63,7 +63,9 @@ function EmptyState() {
       <p className="text-sm">
         {mode === "tui"
           ? "This is the same session as the terminal. Prompts typed here or there run in order."
-          : "Type a prompt below to start."}
+          : mode === "worker"
+            ? "This project has its own session (its own openorca process). Type a prompt below to start."
+            : "Type a prompt below to start."}
       </p>
     </div>
   );
@@ -203,6 +205,7 @@ function prettyJson(s: string): string {
 }
 
 function PermissionPrompts() {
+  const { id: pid } = useProject();
   const permissions = useSession((s) => s.permissions);
   if (permissions.length === 0) return null;
   return (
@@ -215,9 +218,9 @@ function PermissionPrompts() {
           </span>
           <Badge variant="warning">{p.risk}</Badge>
           <span className="ml-auto flex gap-1.5">
-            <Button size="sm" onClick={() => resolvePermission(p.id, "yes")}>Yes</Button>
-            <Button size="sm" variant="secondary" onClick={() => resolvePermission(p.id, "all")}>Yes to all</Button>
-            <Button size="sm" variant="outline" onClick={() => resolvePermission(p.id, "no")}>No</Button>
+            <Button size="sm" onClick={() => resolvePermission(pid, p.id, "yes")}>Yes</Button>
+            <Button size="sm" variant="secondary" onClick={() => resolvePermission(pid, p.id, "all")}>Yes to all</Button>
+            <Button size="sm" variant="outline" onClick={() => resolvePermission(pid, p.id, "no")}>No</Button>
           </span>
         </div>
       ))}
@@ -228,7 +231,8 @@ function PermissionPrompts() {
 function Composer() {
   const busy = useSession((s) => s.busy);
   const queued = useSession((s) => s.queued);
-  const connection = useSession((s) => s.connection);
+  const connection = useConnection((s) => s.connection);
+  const { id: pid } = useProject();
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -245,7 +249,7 @@ function Composer() {
     if (!t || connection !== "connected") return;
     setError(null);
     try {
-      const err = await sendPrompt(t);
+      const err = await sendPrompt(pid, t);
       if (err) setError(err);
       else setText("");
     } catch (e) {
@@ -273,7 +277,7 @@ function Composer() {
             }}
           />
           {busy && (
-            <Button size="icon" variant="ghost" title="Stop the current turn" onClick={() => void cancelTurn()}>
+            <Button size="icon" variant="ghost" title="Stop the current turn" onClick={() => void cancelTurn(pid)}>
               <CircleStop className="text-destructive" />
             </Button>
           )}

@@ -1,29 +1,50 @@
 import * as signalR from "@microsoft/signalr";
-import { useSession, type LiveEvent, type LiveSnapshot } from "@/store/session";
+import type { QueryClient } from "@tanstack/react-query";
+import { existingSessionStore, sessionStore, useConnection, type LiveEvent, type LiveSnapshot } from "@/store/session";
+import { normPath, useWorkspace } from "@/store/workspace";
+import type { EditMarkers } from "@/lib/api";
 
-// One SignalR connection to /hub/session. Events that arrive while a snapshot is loading are
-// held and applied after it (those already in the snapshot are dropped by Seq).
+// One SignalR connection to /hub/session for every project. A project's events that arrive while
+// its snapshot loads are held and applied after it (those already in the snapshot drop by Seq).
 
 let connection: signalR.HubConnection | null = null;
-let loading = false;
-let held: LiveEvent[] = [];
+const loading = new Set<string>();
+const held = new Map<string, LiveEvent[]>();
+const watched = new Set<string>();
 
-async function loadSnapshot(conn: signalR.HubConnection) {
-  loading = true;
-  held = [];
+async function loadSnapshot(conn: signalR.HubConnection, pid: string) {
+  loading.add(pid);
+  held.set(pid, []);
   try {
-    const snap = await conn.invoke<LiveSnapshot>("GetSnapshot");
-    useSession.getState().loadSnapshot(snap);
-    const pending = held;
-    held = [];
-    useSession.getState().applyEvents(pending);
+    const snap = await conn.invoke<LiveSnapshot>("GetSnapshot", pid);
+    const store = sessionStore(pid);
+    store.getState().loadSnapshot(snap);
+    const pending = held.get(pid) ?? [];
+    store.getState().applyEvents(pending);
+  } catch (e) {
+    sessionStore(pid).getState().applyEvents([
+      { seq: Number.MAX_SAFE_INTEGER - 1, type: "notice", at: "", data: { level: "error", text: `Could not load this project's session: ${String(e)}` } },
+    ]);
   } finally {
-    loading = false;
+    loading.delete(pid);
+    held.delete(pid);
   }
 }
 
-export function startHub(): signalR.HubConnection {
+/** Start following a project's session (its tab was shown). */
+export function watchProject(pid: string) {
+  if (watched.has(pid)) return;
+  watched.add(pid);
+  if (connection?.state === signalR.HubConnectionState.Connected) void loadSnapshot(connection, pid);
+}
+
+export function unwatchProject(pid: string) {
+  watched.delete(pid);
+}
+
+export function startHub(queryClient: QueryClient): signalR.HubConnection {
   if (connection) return connection;
+  const setConnection = useConnection.getState().setConnection;
   const conn = new signalR.HubConnectionBuilder()
     .withUrl("/hub/session", { withCredentials: true })
     .withAutomaticReconnect({ nextRetryDelayInMilliseconds: (ctx) => Math.min(10000, 500 * 2 ** ctx.previousRetryCount) })
@@ -31,26 +52,46 @@ export function startHub(): signalR.HubConnection {
     .build();
   conn.serverTimeoutInMilliseconds = 60000;
 
-  conn.on("events", (events: LiveEvent[]) => {
-    if (loading) held.push(...events);
-    else useSession.getState().applyEvents(events);
+  conn.on("events", (pid: string, events: LiveEvent[]) => {
+    if (loading.has(pid)) held.get(pid)?.push(...events);
+    else existingSessionStore(pid)?.getState().applyEvents(events);
   });
-  conn.onreconnecting(() => useSession.getState().setConnection("reconnecting"));
+  conn.on("markers", (pid: string, markers: EditMarkers) => useWorkspace.getState().setMarkers(pid, markers));
+  conn.on("files", (pid: string, folder: string, dirs: string[] | null) => {
+    const ci = true; // compare loosely: the server sends its own spelling
+    const wt = normPath(folder, ci);
+    void queryClient.invalidateQueries({
+      predicate: (q) => {
+        const [kind, p, w] = q.queryKey as [string, string, string];
+        if (p !== pid || typeof w !== "string" || normPath(w, ci) !== wt) return false;
+        if (kind === "changes" || kind === "worktrees") return true;
+        if (kind === "tree") return dirs === null || dirs.includes((q.queryKey as string[])[3] ?? "");
+        if (kind === "git") return true;
+        return false;
+      },
+    });
+    void queryClient.invalidateQueries({ queryKey: ["git", pid] });
+    window.dispatchEvent(new CustomEvent("openorca:files", { detail: { pid, folder, dirs } }));
+  });
+  conn.on("projects", () => void queryClient.invalidateQueries({ queryKey: ["projects"] }));
+
+  conn.onreconnecting(() => setConnection("reconnecting"));
   conn.onreconnected(async () => {
-    useSession.getState().setConnection("connected");
-    await loadSnapshot(conn);
+    setConnection("connected");
+    await Promise.all([...watched].map((pid) => loadSnapshot(conn, pid)));
+    void queryClient.invalidateQueries();
   });
-  conn.onclose(() => useSession.getState().setConnection("disconnected"));
+  conn.onclose(() => setConnection("disconnected"));
 
   const start = async () => {
-    useSession.getState().setConnection("connecting");
+    setConnection("connecting");
     try {
       await conn.start();
-      useSession.getState().setConnection("connected");
-      await loadSnapshot(conn);
+      setConnection("connected");
+      await Promise.all([...watched].map((pid) => loadSnapshot(conn, pid)));
     } catch (e) {
       const msg = String(e);
-      useSession.getState().setConnection(msg.includes("401") ? "unauthorized" : "disconnected");
+      setConnection(msg.includes("401") ? "unauthorized" : "disconnected");
       if (!msg.includes("401")) setTimeout(start, 3000);
     }
   };
@@ -59,17 +100,17 @@ export function startHub(): signalR.HubConnection {
   return conn;
 }
 
-export async function sendPrompt(text: string): Promise<string | null> {
+export async function sendPrompt(pid: string, text: string): Promise<string | null> {
   if (!connection) return "Not connected.";
-  return (await connection.invoke<string | null>("SendPrompt", text)) ?? null;
+  return (await connection.invoke<string | null>("SendPrompt", pid, text)) ?? null;
 }
 
-export async function cancelTurn(): Promise<boolean> {
+export async function cancelTurn(pid: string): Promise<boolean> {
   if (!connection) return false;
-  return connection.invoke<boolean>("Cancel");
+  return connection.invoke<boolean>("Cancel", pid);
 }
 
-export async function resolvePermission(id: string, decision: "yes" | "all" | "no"): Promise<boolean> {
+export async function resolvePermission(pid: string, id: string, decision: "yes" | "all" | "no"): Promise<boolean> {
   if (!connection) return false;
-  return connection.invoke<boolean>("ResolvePermission", id, decision);
+  return connection.invoke<boolean>("ResolvePermission", pid, id, decision);
 }

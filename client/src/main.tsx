@@ -10,7 +10,7 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true, staleTime: 1000 } },
 });
 
-startHub();
+startHub(queryClient);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
