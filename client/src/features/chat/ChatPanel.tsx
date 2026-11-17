@@ -91,9 +91,9 @@ function Transcript() {
   }, [items]);
 
   return (
-    <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-4 py-4" data-testid="transcript">
+    <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-6" data-testid="transcript">
       {items.length === 0 && <EmptyState />}
-      <div className="mx-auto max-w-3xl space-y-3">
+      <div className="w-full space-y-3">
         {items.map((item) => (
           <Item key={item.key} item={item} />
         ))}
@@ -276,9 +276,9 @@ function PermissionPrompts() {
   const permissions = useSession((s) => s.permissions);
   if (permissions.length === 0) return null;
   return (
-    <div className="border-t bg-warning/5 px-4 py-2 space-y-2">
+    <div className="border-t bg-warning/5 px-4 py-2 space-y-2 sm:px-6">
       {permissions.map((p) => (
-        <div key={p.id} className="mx-auto flex max-w-3xl flex-wrap items-center gap-2 text-sm">
+        <div key={p.id} className="flex flex-wrap items-center gap-2 text-sm">
           <ShieldQuestion className="size-4 text-warning" />
           <span>
             Allow <span className="font-mono font-semibold">{p.tool}</span>?
@@ -340,8 +340,8 @@ function Composer() {
   };
 
   return (
-    <div className="border-t bg-panel/60 px-4 py-3">
-      <div className="mx-auto max-w-3xl">
+    <div className="border-t bg-panel/60 px-4 py-3 sm:px-6">
+      <div className="w-full">
         <div
           className={cn(
             "rounded-lg border bg-background px-2 py-1.5 focus-within:ring-1 focus-within:ring-ring",

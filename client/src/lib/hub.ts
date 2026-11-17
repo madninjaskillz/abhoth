@@ -24,7 +24,7 @@ async function loadSnapshot(conn: signalR.HubConnection, pid: string) {
     store.getState().applyEvents(pending);
   } catch (e) {
     sessionStore(pid).getState().applyEvents([
-      { seq: Number.MAX_SAFE_INTEGER - 1, type: "notice", at: "", data: { level: "error", text: `Could not load this project's session: ${String(e)}` } },
+      { seq: Number.MAX_SAFE_INTEGER - 1, type: "notice", at: "", data: { level: "error", text: `Could not load this project's session: ${hubMessage(e)}` } },
     ]);
   } finally {
     loading.delete(pid);
@@ -119,4 +119,11 @@ export async function cancelTurn(pid: string): Promise<boolean> {
 export async function resolvePermission(pid: string, id: string, decision: "yes" | "all" | "no"): Promise<boolean> {
   if (!connection) return false;
   return connection.invoke<boolean>("ResolvePermission", pid, id, decision);
+}
+
+/** The server's message from a hub error, without SignalR's "An unexpected error occurred invoking…" wrapper. */
+function hubMessage(e: unknown): string {
+  const m = e instanceof Error ? e.message : String(e);
+  const i = m.indexOf("HubException: ");
+  return i >= 0 ? m.slice(i + "HubException: ".length) : m;
 }

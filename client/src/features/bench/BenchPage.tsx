@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, FileText, GitFork, Loader2, Pause, Play, RefreshCw, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { api, type BenchResult, type BenchRunInfo, type BenchSuite } from "@/lib/api";
+import { api, type BenchResult, type BenchRunInfo, type BenchState, type BenchSuite } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /** Pence per kWh for the cost term (standard rate; the scorecard's default). */
@@ -49,6 +49,36 @@ function Mirror({ busy }: { busy: boolean }) {
   );
 }
 
+/** "Bench running: task · arm", "Bench waiting: …", "Bench paused" or "Bench idle", for the page header and the app bar. */
+export function benchStatus(s: BenchState | undefined): { kind: "running" | "waiting" | "paused" | "idle"; text: string } {
+  if (s?.current) return { kind: "running", text: `Bench running: ${s.current.task} · ${s.current.arm}` };
+  if (s?.paused) return { kind: "paused", text: "Bench paused" };
+  if (s?.gate && s.queue.length) return { kind: "waiting", text: `Bench waiting: ${s.gate}` };
+  if (s?.queue.length) return { kind: "waiting", text: `Bench queued: ${s.queue.length}` };
+  return { kind: "idle", text: "Bench idle" };
+}
+
+export function BenchStatusPill({ state, compact }: { state: BenchState | undefined; compact?: boolean }) {
+  const st = benchStatus(state);
+  if (compact && st.kind === "idle") return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-[28rem] items-center gap-1.5 truncate rounded-full px-2 py-0.5 text-[11px] font-medium",
+        st.kind === "running" && "bg-primary/15 text-primary",
+        st.kind === "waiting" && "bg-warning/15 text-warning",
+        st.kind === "paused" && "bg-warning/15 text-warning",
+        st.kind === "idle" && "bg-muted text-muted-foreground",
+      )}
+      title={st.text}
+      data-testid={compact ? "bench-pill" : "bench-status"}
+    >
+      <span className={cn("size-1.5 shrink-0 rounded-full bg-current", st.kind === "running" && "animate-pulse")} />
+      <span className="truncate">{compact ? (st.kind === "running" ? "bench running" : st.kind === "paused" ? "bench paused" : "bench waiting") : st.text}</span>
+    </span>
+  );
+}
+
 export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void }) {
   const qc = useQueryClient();
   const state = useQuery({ queryKey: ["bench"], queryFn: api.bench, refetchInterval: 2000 });
@@ -71,6 +101,10 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
   return (
     <div className="h-full overflow-auto" data-testid="bench-page">
       <div className="mx-auto max-w-6xl space-y-6 p-4">
+        <header className="flex flex-wrap items-center gap-3">
+          <h1 className="text-base font-semibold">Benchmarks</h1>
+          <BenchStatusPill state={s} />
+        </header>
         <section className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
           <div className="rounded-lg border bg-panel p-3">
             <h2 className="mb-2 text-sm font-semibold">Suite</h2>

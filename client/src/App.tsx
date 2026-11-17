@@ -4,7 +4,7 @@ import { LogOut, ShieldCheck } from "lucide-react";
 import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { FlaskConical, FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
-import { BenchPage } from "@/features/bench/BenchPage";
+import { BenchPage, BenchStatusPill } from "@/features/bench/BenchPage";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EditorArea } from "@/features/editor/EditorArea";
 import { FileTree } from "@/features/files/FileTree";
@@ -249,6 +249,7 @@ function Header({
           >
             <FlaskConical className="size-4" />
             {!narrow && <span>Benchmarks</span>}
+            <BenchRunningPill />
           </button>
         </Tip>
       )}
@@ -362,4 +363,10 @@ function Unauthorized() {
       </div>
     </div>
   );
+}
+
+/** "bench running" next to the Benchmarks button, so a run is visible from any project. */
+function BenchRunningPill() {
+  const state = useQuery({ queryKey: ["bench"], queryFn: api.bench, refetchInterval: 5000 });
+  return <BenchStatusPill state={state.data} compact />;
 }
