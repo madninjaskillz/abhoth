@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { authState, signOut, startEnroll } from "@/lib/auth";
+import { LogOut, ShieldCheck } from "lucide-react";
 import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
@@ -206,6 +208,7 @@ function Header({ projects, canAdd, narrow }: { projects: Project[]; canAdd: boo
         <span className={cn("size-2 rounded-full", dot)} />
         {!narrow && <span>{connection}</span>}
       </span>
+      {authState().mode === "login" && <AccountMenu narrow={narrow} />}
       <AddProjectDialog
         open={adding}
         onOpenChange={setAdding}
@@ -274,6 +277,32 @@ function ProjectTab({ project, active, onSelect, onClose }: { project: Project; 
         )}
       </div>
     </Tip>
+  );
+}
+
+/** Sign-in mode: who is signed in, 2FA setup (when not on yet) and sign out. */
+function AccountMenu({ narrow }: { narrow: boolean }) {
+  const auth = authState();
+  return (
+    <span className="flex shrink-0 items-center gap-1 text-xs" data-testid="account">
+      {!narrow && <span className="max-w-[12rem] truncate text-muted-foreground">{auth.user}</span>}
+      {!auth.totp && (
+        <Tip label="Turn on two-factor sign-in (an authenticator app code at each sign-in)">
+          <button
+            className="rounded px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={() => void startEnroll().then(() => location.reload())}
+            data-testid="enable-2fa"
+          >
+            <ShieldCheck className="size-4" />
+          </button>
+        </Tip>
+      )}
+      <Tip label="Sign out">
+        <button className="rounded px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground" onClick={() => void signOut()} data-testid="sign-out" aria-label="Sign out">
+          <LogOut className="size-4" />
+        </button>
+      </Tip>
+    </span>
   );
 }
 

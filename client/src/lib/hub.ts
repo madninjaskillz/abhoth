@@ -1,4 +1,5 @@
 import * as signalR from "@microsoft/signalr";
+import { csrfHeaders } from "@/lib/auth";
 import type { QueryClient } from "@tanstack/react-query";
 import { existingSessionStore, sessionStore, useConnection, type LiveEvent, type LiveSnapshot } from "@/store/session";
 import { normPath, useWorkspace } from "@/store/workspace";
@@ -46,7 +47,7 @@ export function startHub(queryClient: QueryClient): signalR.HubConnection {
   if (connection) return connection;
   const setConnection = useConnection.getState().setConnection;
   const conn = new signalR.HubConnectionBuilder()
-    .withUrl("/hub/session", { withCredentials: true })
+    .withUrl("/hub/session", { withCredentials: true, headers: csrfHeaders() })
     .withAutomaticReconnect({ nextRetryDelayInMilliseconds: (ctx) => Math.min(10000, 500 * 2 ** ctx.previousRetryCount) })
     .configureLogging(signalR.LogLevel.Warning)
     .build();

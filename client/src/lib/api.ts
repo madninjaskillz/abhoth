@@ -1,4 +1,6 @@
-// REST calls to the server. Auth is the HttpOnly cookie set when the page was opened with ?token=.
+// REST calls to the server. Auth is an HttpOnly cookie: the token's (opened with ?token=) or, in
+// sign-in mode, the session's, plus its CSRF header on state-changing requests.
+import { authState, csrfHeaders, sessionEnded } from "@/lib/auth";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -10,7 +12,10 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   const res = await fetch(url, {
     method,
     credentials: "same-origin",
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    headers: {
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...(method === "GET" ? {} : csrfHeaders()),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
@@ -22,7 +27,13 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   }
   if (!res.ok) {
     const err = (data as { error?: string } | undefined)?.error || text || res.statusText;
-    const e = new ApiError(res.status === 401 ? "Not signed in: open the URL OpenOrca printed (with ?token=)." : err, res.status);
+    if (res.status === 401) sessionEnded();
+    const e = new ApiError(
+      res.status === 401
+        ? authState().mode === "login" ? "Signed out." : "Not signed in: open the URL OpenOrca printed (with ?token=)."
+        : err,
+      res.status,
+    );
     (e as ApiError & { data?: unknown }).data = data;
     throw e;
   }
