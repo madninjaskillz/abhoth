@@ -18,7 +18,7 @@ export function ChatPanel() {
       <AgentBars />
       <Transcript />
       <PermissionPrompts />
-      <Composer />
+      <ComposerOrWatching />
     </div>
   );
 }
@@ -226,6 +226,16 @@ function PermissionPrompts() {
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ComposerOrWatching() {
+  const { readOnly } = useProject();
+  if (!readOnly) return <Composer />;
+  return (
+    <div className="border-t px-3 py-2 text-xs text-muted-foreground" data-testid="bench-watching">
+      A bench run: you are watching it. Stop it from the Benchmarks page.
     </div>
   );
 }

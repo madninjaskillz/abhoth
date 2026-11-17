@@ -91,6 +91,69 @@ export interface ServerInfo {
   primary: string;
   canAddProjects: boolean;
   caseInsensitivePaths: boolean;
+  bench?: boolean;
+}
+
+export interface BenchArm {
+  name: string;
+  leadMode: string;
+  set?: string[] | null;
+}
+
+export interface BenchSuite {
+  name: string;
+  arms: BenchArm[];
+  tasks: string[];
+  reps: number;
+  timeoutSeconds?: number | null;
+  description?: string | null;
+}
+
+export interface BenchRunInfo {
+  id: string;
+  suite: string;
+  arm: string;
+  task: string;
+  rep: number;
+  status: string;
+  note?: string | null;
+  projectId?: string | null;
+  startedAt?: string | null;
+  endedAt?: string | null;
+}
+
+export interface BenchState {
+  paused: boolean;
+  gate?: string | null;
+  current?: BenchRunInfo | null;
+  queue: BenchRunInfo[];
+  recent: BenchRunInfo[];
+  suites: BenchSuite[];
+}
+
+export interface BenchResult {
+  id: string;
+  suite: string;
+  arm: string;
+  lead_mode: string;
+  task: string;
+  rep: number;
+  status: string;
+  pass?: boolean;
+  reason?: string;
+  note?: string | null;
+  tests_passed?: number;
+  tests_total?: number;
+  started?: string;
+  wall_s?: number;
+  requests?: number;
+  prompt_tokens?: number;
+  cached_tokens?: number;
+  output_tokens?: number;
+  decode_tps?: number | null;
+  lead_tps?: number | null;
+  helpers?: number;
+  mean_w?: number | null;
 }
 
 export interface Project {
@@ -100,6 +163,8 @@ export interface Project {
   primary: boolean;
   mode: "tui" | "headless" | "worker";
   exists: boolean;
+  /** A bench run's tab: watched, not driven. */
+  readOnly?: boolean;
 }
 
 export interface ProjectList {
@@ -195,6 +260,14 @@ export const api = {
   projects: () => request<ProjectList>("GET", "/api/projects"),
   addFolder: (path: string, name?: string) => request<Project>("POST", "/api/projects", { path, name }),
   removeProject: (id: string) => request<{ ok: boolean }>("DELETE", `/api/projects/${id}`),
+  bench: () => request<BenchState>("GET", "/api/bench"),
+  benchResults: () => request<BenchResult[]>("GET", "/api/bench/results"),
+  benchStart: (suite: string) => request<{ queued: number }>("POST", "/api/bench/start", { suite }),
+  benchControl: (what: "pause" | "resume" | "stop") => request<{ ok: boolean }>("POST", `/api/bench/${what}`),
+  benchOutput: async (id: string) => {
+    const res = await fetch(`/api/bench/runs/${encodeURIComponent(id)}/output`, { credentials: "same-origin" });
+    return res.ok ? res.text() : "(no checker output for this run)";
+  },
   browse: (path?: string) => request<FolderListing>("GET", `/api/fs/browse${q({ path })}`),
   clone: (url: string, parent: string, name?: string) => request<CloneStatus>("POST", "/api/projects/clone", { url, parent, name }),
   cloneStatus: (id: string) => request<CloneStatus>("GET", `/api/clone/${id}`),

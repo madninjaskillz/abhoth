@@ -291,6 +291,8 @@ export function dropSessionStore(projectId: string) {
 export interface ProjectContextValue {
   id: string;
   root: string;
+  /** A bench run: no composer, no cancel. */
+  readOnly?: boolean;
 }
 
 export const ProjectContext = createContext<ProjectContextValue | null>(null);

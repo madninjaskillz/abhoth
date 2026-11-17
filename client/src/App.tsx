@@ -3,7 +3,8 @@ import { authState, signOut, startEnroll } from "@/lib/auth";
 import { LogOut, ShieldCheck } from "lucide-react";
 import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
+import { FlaskConical, FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
+import { BenchPage } from "@/features/bench/BenchPage";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EditorArea } from "@/features/editor/EditorArea";
 import { FileTree } from "@/features/files/FileTree";
@@ -38,6 +39,8 @@ export default function App() {
   const narrow = useNarrow();
   const connection = useConnection((s) => s.connection);
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.projects, refetchInterval: 30000 });
+  const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: 60000 });
+  const [benchOpen, setBenchOpen] = useState(false);
   const active = useWorkspace((s) => s.active);
   const mounted = useWorkspace((s) => s.mounted);
   const setActive = useWorkspace((s) => s.setActive);
@@ -67,13 +70,28 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <Header projects={list} canAdd={projects.data?.canAdd ?? false} narrow={narrow} />
+      <Header
+        projects={list}
+        canAdd={projects.data?.canAdd ?? false}
+        narrow={narrow}
+        bench={info.data?.bench ? { open: benchOpen, toggle: () => setBenchOpen((b) => !b) } : null}
+      />
       <div className="relative min-h-0 flex-1">
+        {benchOpen && (
+          <div className="absolute inset-0 z-10 bg-background">
+            <BenchPage
+              onWatch={(pid) => {
+                setBenchOpen(false);
+                setActive(pid);
+              }}
+            />
+          </div>
+        )}
         {list
           .filter((p) => mounted.includes(p.id))
           .map((p) => (
             <div key={p.id} className={cn("absolute inset-0", p.id !== active && "hidden")} data-testid="workspace" data-project={p.id}>
-              <ProjectContext.Provider value={{ id: p.id, root: p.path } satisfies ProjectContextValue}>
+              <ProjectContext.Provider value={{ id: p.id, root: p.path, readOnly: p.readOnly } satisfies ProjectContextValue}>
                 {narrow ? <NarrowWorkspace visible={p.id === active} /> : <WideWorkspace visible={p.id === active} />}
               </ProjectContext.Provider>
             </div>
@@ -151,7 +169,17 @@ function FilesThenEditor({ onOpen }: { onOpen: () => void }) {
   return <FileTree />;
 }
 
-function Header({ projects, canAdd, narrow }: { projects: Project[]; canAdd: boolean; narrow: boolean }) {
+function Header({
+  projects,
+  canAdd,
+  narrow,
+  bench,
+}: {
+  projects: Project[];
+  canAdd: boolean;
+  narrow: boolean;
+  bench: { open: boolean; toggle: () => void } | null;
+}) {
   const qc = useQueryClient();
   const connection = useConnection((s) => s.connection);
   const active = useWorkspace((s) => s.active);
@@ -208,6 +236,22 @@ function Header({ projects, canAdd, narrow }: { projects: Project[]; canAdd: boo
         <span className={cn("size-2 rounded-full", dot)} />
         {!narrow && <span>{connection}</span>}
       </span>
+      {bench && (
+        <Tip label="Benchmarks">
+          <button
+            onClick={bench.toggle}
+            className={cn(
+              "flex shrink-0 items-center gap-1 self-center rounded-md px-2 py-1 text-xs hover:bg-accent",
+              bench.open ? "bg-accent text-foreground" : "text-muted-foreground",
+            )}
+            data-testid="bench-toggle"
+            aria-pressed={bench.open}
+          >
+            <FlaskConical className="size-4" />
+            {!narrow && <span>Benchmarks</span>}
+          </button>
+        </Tip>
+      )}
       {authState().mode === "login" && <AccountMenu narrow={narrow} />}
       <AddProjectDialog
         open={adding}
