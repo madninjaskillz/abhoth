@@ -96,6 +96,9 @@ function FolderPicker({ path, setPath, pickLabel }: { path: string; setPath: (p:
             {f.isRepo ? <FolderGit2 className="size-3.5 text-primary" /> : <Folder className="size-3.5 text-muted-foreground" />}
             <span className={cn("truncate", f.name.startsWith(".") && "text-muted-foreground")}>{f.name}</span>
             {f.isRepo && <span className="ml-auto text-[10px] text-muted-foreground">git</span>}
+            {!f.isRepo && f.repoError && (
+              <span className="ml-auto truncate text-[10px] text-warning" title={f.repoError}>git refuses this repository</span>
+            )}
           </button>
         ))}
         {data?.truncated && <div className="p-2 text-muted-foreground">… more folders not shown</div>}

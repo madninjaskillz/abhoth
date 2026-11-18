@@ -283,7 +283,7 @@ export interface FileWriteResult {
 export interface FolderListing {
   path: string;
   parent?: string | null;
-  folders: { name: string; path: string; isRepo: boolean }[];
+  folders: { name: string; path: string; isRepo: boolean; repoError?: string | null }[];
   places: { label: string; path: string }[];
   truncated: boolean;
 }
