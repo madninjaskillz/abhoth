@@ -132,6 +132,60 @@ export interface GitDiff {
   tooLarge: boolean;
 }
 
+/** One /config setting, as the server describes it (a secret's value never comes). */
+export interface Setting {
+  key: string;
+  label: string;
+  type: "bool" | "int" | "float" | "text" | "url" | "secret" | "list";
+  description: string;
+  value: boolean | number | string | string[] | null;
+  display: string;
+  default: boolean | number | string | string[] | null;
+  defaultDisplay: string;
+  /** Secrets: whether one is set. */
+  set?: boolean | null;
+  modified: boolean;
+  /** Applies to the running session at once; otherwise to sessions started afterwards. */
+  live: boolean;
+  dangerous: boolean;
+  min?: number | null;
+  max?: number | null;
+  minExclusive?: boolean;
+  blankMeans?: string | null;
+}
+
+export interface SettingsDoc {
+  sections: { name: string; settings: Setting[] }[];
+  configFile?: string;
+}
+
+export interface SettingResult {
+  ok: boolean;
+  key: string;
+  old?: string;
+  new?: string;
+  live?: boolean;
+  error?: string;
+}
+
+/** A settings change: its result whether it worked or not. */
+async function settingOp(url: string, body: unknown): Promise<SettingResult> {
+  try {
+    return await request<SettingResult>("PUT", url, body);
+  } catch (err) {
+    const data = (err as { data?: unknown }).data as Partial<SettingResult> | undefined;
+    if (data && typeof data.ok === "boolean") return { ok: false, key: data.key ?? "", error: data.error ?? "Refused." };
+    throw err;
+  }
+}
+
+/** The settings page's two scopes: the server's config.json, or one project's running session. */
+export const settingsApi = {
+  get: (pid: string | null) => request<SettingsDoc>("GET", pid ? `/api/projects/${pid}/settings` : "/api/settings"),
+  set: (pid: string | null, key: string, value: unknown, reset = false) =>
+    settingOp(pid ? `/api/projects/${pid}/settings` : "/api/settings", { key, value, reset }),
+};
+
 export interface GitOpResult {
   ok: boolean;
   output: string;
