@@ -9,6 +9,7 @@ import { useConnection, useProject, useSession, type ChatItem } from "@/store/se
 import { cancelTurn, resolvePermission, sendPrompt, sendPromptWithAttachments } from "@/lib/hub";
 import { AttachmentChips, useAttachments } from "./Attachments";
 import { EngineBanner, EnginePicker, useEngineFlow } from "./EnginePicker";
+import { ProfilePicker } from "@/features/profiles/Profiles";
 import { QuestionPrompts } from "./QuestionPrompts";
 import { MediaPreviews, mediaPathsIn, useInlineMedia } from "./InlineMedia";
 import { FileLink, MediaViewer, asPath, mediaKind } from "./FileLink";
@@ -427,6 +428,7 @@ function Composer() {
         </div>
         <div className="mt-1.5 flex min-h-4 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
           <EnginePicker flow={engineFlow} />
+          <ProfilePicker pid={pid} busy={busy} />
           <InlineMediaToggle />
           {error && <span className="text-destructive">{error}</span>}
           {queued > 0 && <span>{queued} queued</span>}

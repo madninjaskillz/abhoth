@@ -5,6 +5,7 @@ import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { FlaskConical, FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
 import { BenchPage, BenchStatusPill } from "@/features/bench/BenchPage";
+import { ServerLayoutControl } from "@/features/profiles/Profiles";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EditorArea } from "@/features/editor/EditorArea";
 import { FileTree } from "@/features/files/FileTree";
@@ -43,7 +44,8 @@ export default function App() {
   const connection = useConnection((s) => s.connection);
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.projects, refetchInterval: 30000 });
   const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: 60000 });
-  const [benchOpen, setBenchOpen] = useState(false);
+  // "#bench" in the URL opens the Benchmarks page (a link to the results).
+  const [benchOpen, setBenchOpen] = useState(() => location.hash === "#bench");
   const active = useWorkspace((s) => s.active);
   const mounted = useWorkspace((s) => s.mounted);
   const setActive = useWorkspace((s) => s.setActive);
@@ -78,6 +80,7 @@ export default function App() {
         canAdd={projects.data?.canAdd ?? false}
         narrow={narrow}
         bench={info.data?.bench ? { open: benchOpen, toggle: () => setBenchOpen((b) => !b) } : null}
+        profilesOn={!!info.data?.profiles}
       />
       <div className="relative min-h-0 flex-1">
         {benchOpen && (
@@ -198,11 +201,14 @@ function Header({
   canAdd,
   narrow,
   bench,
+  profilesOn,
 }: {
   projects: Project[];
   canAdd: boolean;
   narrow: boolean;
   bench: { open: boolean; toggle: () => void } | null;
+  /** The inference server's profiles API is there: show the live server layout. */
+  profilesOn: boolean;
 }) {
   const qc = useQueryClient();
   const connection = useConnection((s) => s.connection);
@@ -260,6 +266,7 @@ function Header({
         <span className={cn("size-2 rounded-full", dot)} />
         {!narrow && <span>{connection}</span>}
       </span>
+      {profilesOn && <ServerLayoutControl narrow={narrow} />}
       {bench && (
         <Tip label="Benchmarks">
           <button
