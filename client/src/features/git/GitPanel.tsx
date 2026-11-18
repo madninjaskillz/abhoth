@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowUpFromLine, CloudDownload, GitBranch, GitCommitHorizontal, Minus, Plus, RefreshCw, PanelRightClose } from "lucide-react";
+import { Archive, ArrowDownToLine, ArrowUpFromLine, CloudDownload, CloudUpload, GitBranch, GitCommitHorizontal, Minus, Plus, RefreshCw, PanelRightClose } from "lucide-react";
+import { BranchMenu } from "./BranchMenu";
+import { MergeBanner, StashList } from "./GitExtras";
 import { ProjectGitHubToken } from "./GitHubToken";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { projectApi, type GitFile } from "@/lib/api";
@@ -64,9 +66,11 @@ export function GitPanel({ compact = false, onCollapse }: { compact?: boolean; o
   });
 
   const remote = useMutation({ mutationFn: (op: "fetch" | "pull" | "push") => api.remote(op), onSuccess: onDone, onError: onFail });
+  const publish = useMutation({ mutationFn: () => api.publish(), onSuccess: onDone, onError: onFail });
+  const stash = useMutation({ mutationFn: () => api.stash(), onSuccess: onDone, onError: onFail });
 
   const files = status.data?.files ?? [];
-  const staged = useMemo(() => files.filter((f) => f.staged), [files]);
+  const staged = useMemo(() => files.filter((f) => f.staged && !f.conflicted), [files]);
   const changes = useMemo(() => files.filter((f) => f.unstaged), [files]);
 
   // Keep the selection valid as files move between the lists.
@@ -82,8 +86,14 @@ export function GitPanel({ compact = false, onCollapse }: { compact?: boolean; o
   const s = status.data;
   const header = (
     <div className="flex h-8 shrink-0 items-center gap-2 border-b bg-panel px-3 text-xs">
-      <GitBranch className="size-3.5 text-muted-foreground" />
-      <span className="font-medium" data-testid="git-branch">{s?.branch ?? (s?.isRepo === false ? "no repository" : "…")}</span>
+      {s?.isRepo === false ? (
+        <>
+          <GitBranch className="size-3.5 text-muted-foreground" />
+          <span className="font-medium" data-testid="git-branch">no repository</span>
+        </>
+      ) : (
+        <BranchMenu branch={s?.branch} onMergeConflicts={() => setOpError(null)} />
+      )}
       {s?.upstream && <span className="truncate text-muted-foreground">→ {s.upstream}</span>}
       {!!s?.ahead && <Badge variant="secondary">↑{s.ahead}</Badge>}
       {!!s?.behind && <Badge variant="secondary">↓{s.behind}</Badge>}
@@ -100,11 +110,19 @@ export function GitPanel({ compact = false, onCollapse }: { compact?: boolean; o
               <ArrowDownToLine />
             </Button>
           </Tip>
-          <Tip label="Push">
-            <Button size="icon-sm" variant="ghost" disabled={remote.isPending} onClick={() => remote.mutate("push")} data-testid="git-push">
-              <ArrowUpFromLine />
-            </Button>
-          </Tip>
+          {s.branch && !s.upstream ? (
+            <Tip label={`Publish ${s.branch} (push and track it on origin)`}>
+              <Button size="icon-sm" variant="ghost" disabled={publish.isPending} onClick={() => publish.mutate()} data-testid="git-publish">
+                <CloudUpload />
+              </Button>
+            </Tip>
+          ) : (
+            <Tip label="Push">
+              <Button size="icon-sm" variant="ghost" disabled={remote.isPending} onClick={() => remote.mutate("push")} data-testid="git-push">
+                <ArrowUpFromLine />
+              </Button>
+            </Tip>
+          )}
         </>
       )}
       <Tip label="Refresh">
@@ -150,11 +168,18 @@ export function GitPanel({ compact = false, onCollapse }: { compact?: boolean; o
           title="Changes"
           count={changes.length}
           action={changes.length > 0 ? (
-            <Tip label="Stage all">
-              <Button size="icon-sm" variant="ghost" onClick={() => stage.mutate(changes.map((f) => f.path))}>
-                <Plus />
-              </Button>
-            </Tip>
+            <>
+              <Tip label="Stash all changes">
+                <Button size="icon-sm" variant="ghost" disabled={stash.isPending} onClick={() => stash.mutate()} data-testid="git-stash">
+                  <Archive />
+                </Button>
+              </Tip>
+              <Tip label="Stage all">
+                <Button size="icon-sm" variant="ghost" onClick={() => stage.mutate(changes.map((f) => f.path))}>
+                  <Plus />
+                </Button>
+              </Tip>
+            </>
           ) : null}
         >
           {changes.map((f) => (
@@ -169,6 +194,7 @@ export function GitPanel({ compact = false, onCollapse }: { compact?: boolean; o
           ))}
         </Section>
         {files.length === 0 && status.isSuccess && <div className="px-3 py-2 text-muted-foreground">Working tree clean.</div>}
+        <StashList onResult={onDone} />
       </div>
       <div className="shrink-0 space-y-1.5 border-t p-2">
         <Textarea
@@ -199,6 +225,7 @@ export function GitPanel({ compact = false, onCollapse }: { compact?: boolean; o
     <div className="flex h-full min-h-0 flex-col">
       {header}
       <ProjectGitHubToken pid={pid} />
+      {s?.merging && <MergeBanner status={s} onResult={onDone} />}
       <div className="min-h-0 flex-1">
         {compact ? (
           <div className="flex h-full flex-col">

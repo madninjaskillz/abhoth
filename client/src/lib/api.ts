@@ -94,6 +94,34 @@ export interface GitStatus {
   behind: number;
   error?: string | null;
   files: GitFile[];
+  /** A merge is in progress (conflicted files are in files, conflicted: true). */
+  merging?: boolean;
+  mergeBranch?: string | null;
+}
+
+export interface GitBranch {
+  name: string;
+  remote: boolean;
+  current: boolean;
+  upstream?: string | null;
+  head: string;
+  subject: string;
+  when: string;
+  /** Checked out in this worktree folder (local branches). */
+  worktree?: string | null;
+}
+
+export interface GitBranches {
+  current?: string | null;
+  detached: boolean;
+  local: GitBranch[];
+  remote: GitBranch[];
+}
+
+export interface GitStash {
+  index: number;
+  message: string;
+  when: string;
 }
 
 export interface GitDiff {
@@ -108,6 +136,19 @@ export interface GitOpResult {
   ok: boolean;
   output: string;
   error: string;
+  /** Why it failed, when there's a next step to offer: "dirty", "unmerged", "conflicts". */
+  code?: string | null;
+}
+
+/** A git change: its result whether it worked or not (git's refusals are results, not exceptions). */
+async function gitOp(method: string, url: string, body?: unknown): Promise<GitOpResult> {
+  try {
+    return await request<GitOpResult>(method, url, body);
+  } catch (e) {
+    const data = (e as { data?: unknown }).data as Partial<GitOpResult> | undefined;
+    if (data && typeof data.ok === "boolean") return { ok: data.ok, output: data.output ?? "", error: data.error ?? "", code: data.code };
+    throw e;
+  }
 }
 
 export interface ServerInfo {
@@ -343,6 +384,23 @@ export function projectApi(pid: string, wt?: string | null) {
     unstage: (paths: string[]) => request<GitOpResult>("POST", `${base}/git/unstage${q({ wt })}`, { paths }),
     commit: (message: string) => request<GitOpResult>("POST", `${base}/git/commit${q({ wt })}`, { message }),
     remote: (op: "fetch" | "pull" | "push") => request<GitOpResult>("POST", `${base}/git/${op}${q({ wt })}`),
+    branches: () => request<GitBranches>("GET", `${base}/git/branches${q({ wt })}`),
+    checkout: (branch: string, stash = false) => gitOp("POST", `${base}/git/checkout${q({ wt })}`, { branch, stash }),
+    createBranch: (name: string, from: string | null, checkout: boolean) =>
+      gitOp("POST", `${base}/git/branch${q({ wt })}`, { name, from: from || null, checkout }),
+    renameBranch: (name: string, newName: string) => gitOp("POST", `${base}/git/branch/rename${q({ wt })}`, { name, newName }),
+    deleteBranch: (name: string, force = false) => gitOp("POST", `${base}/git/branch/delete${q({ wt })}`, { name, force }),
+    publish: () => gitOp("POST", `${base}/git/publish${q({ wt })}`),
+    merge: (branch: string) => gitOp("POST", `${base}/git/merge${q({ wt })}`, { branch }),
+    mergeAbort: () => gitOp("POST", `${base}/git/merge/abort${q({ wt })}`),
+    mergeContinue: () => gitOp("POST", `${base}/git/merge/continue${q({ wt })}`),
+    resolve: (paths: string[]) => gitOp("POST", `${base}/git/merge/resolve${q({ wt })}`, { paths }),
+    stashes: () => request<GitStash[]>("GET", `${base}/git/stashes${q({ wt })}`),
+    stash: (message?: string) => gitOp("POST", `${base}/git/stash${q({ wt })}`, { message: message || null }),
+    stashOp: (op: "apply" | "pop" | "drop", index: number) => gitOp("POST", `${base}/git/stash/${op}${q({ wt })}`, { index }),
+    addWorktree: (branch: string, newBranch: boolean, from?: string | null) =>
+      gitOp("POST", `${base}/worktrees`, { branch, newBranch, from: from || null }),
+    removeWorktree: (path: string, force = false) => gitOp("DELETE", `${base}/worktrees${q({ path, force: force || undefined })}`),
     githubToken: () => request<{ token: string | null }>("GET", `${base}/github`),
     setGithubToken: (token: string) => request<{ token: string }>("PUT", `${base}/github`, { token }),
     removeGithubToken: () => request<{ ok: boolean }>("DELETE", `${base}/github`),

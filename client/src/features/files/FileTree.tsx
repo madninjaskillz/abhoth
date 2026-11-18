@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronDown, ChevronRight, EyeOff, Eye, File, FileDiff, Folder, FolderOpen, GitBranch, ListFilter, Loader2, PanelLeftClose, PanelLeftOpen, PenLine, RefreshCw, Sparkles,
+  ChevronDown, ChevronRight, EyeOff, Eye, File, FileDiff, Folder, FolderOpen, GitBranch, ListFilter, Loader2, PanelLeftClose, PanelLeftOpen, PenLine, Plus, RefreshCw, Sparkles,
 } from "lucide-react";
+import { WorktreeDialog } from "@/features/git/WorktreeDialog";
 import { api, projectApi, type ChangeKind, type FileEntry, type Worktree } from "@/lib/api";
 import { useProject } from "@/store/session";
 import { normPath, useWorkspace } from "@/store/workspace";
@@ -66,6 +67,7 @@ export function FileTree({ collapsed = false, onToggle }: { collapsed?: boolean;
   const worktrees = useQuery({ queryKey: ["worktrees", pid], queryFn: () => projectApi(pid).worktrees(), refetchInterval: 30000 });
   const changes = useQuery({ queryKey: ["changes", pid, wt], queryFn: papi.changes, refetchInterval: 15000 });
   const [expanded, setExpanded] = useState<Record<string, Set<string>>>({});
+  const [managing, setManaging] = useState(false);
   const open = expanded[wt] ?? new Set<string>();
 
   const marks = useMemo<Marks>(() => {
@@ -119,7 +121,10 @@ export function FileTree({ collapsed = false, onToggle }: { collapsed?: boolean;
     const count = changes.data?.files?.length ?? 0;
     return (
       <div className="flex h-full min-h-0 shrink-0 border-r bg-panel" data-testid="file-tree-folded">
-        {list.length > 1 && <WorktreeRail worktrees={list} selected={wt} ci={ci} onSelect={(p) => patch(pid, { wt: p })} />}
+        {(list.length > 1 || !!list[0]?.head) && (
+          <WorktreeRail worktrees={list} selected={wt} ci={ci} onSelect={(p) => patch(pid, { wt: p })} onManage={() => setManaging(true)} />
+        )}
+        {managing && <WorktreeDialog pid={pid} worktrees={list} ci={ci} onClose={() => setManaging(false)} />}
         <button
           onClick={onToggle}
           className="flex w-9 flex-col items-center gap-2 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
@@ -141,7 +146,10 @@ export function FileTree({ collapsed = false, onToggle }: { collapsed?: boolean;
 
   return (
     <div className="flex h-full min-h-0 bg-panel" data-testid="file-tree">
-      {list.length > 1 && <WorktreeRail worktrees={list} selected={wt} ci={ci} onSelect={(p) => patch(pid, { wt: p })} />}
+      {(list.length > 1 || !!list[0]?.head) && (
+          <WorktreeRail worktrees={list} selected={wt} ci={ci} onSelect={(p) => patch(pid, { wt: p })} onManage={() => setManaging(true)} />
+        )}
+        {managing && <WorktreeDialog pid={pid} worktrees={list} ci={ci} onClose={() => setManaging(false)} />}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-8 shrink-0 items-center gap-1 border-b px-2 text-xs">
           <span className="truncate font-medium" title={wt}>
@@ -204,7 +212,9 @@ export function FileTree({ collapsed = false, onToggle }: { collapsed?: boolean;
   );
 }
 
-function WorktreeRail({ worktrees, selected, ci, onSelect }: { worktrees: Worktree[]; selected: string; ci: boolean; onSelect: (p: string) => void }) {
+function WorktreeRail({ worktrees, selected, ci, onSelect, onManage }: {
+  worktrees: Worktree[]; selected: string; ci: boolean; onSelect: (p: string) => void; onManage: () => void;
+}) {
   return (
     <div className="flex w-7 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r bg-background py-1" data-testid="worktree-rail">
       {worktrees.map((w) => {
@@ -226,6 +236,16 @@ function WorktreeRail({ worktrees, selected, ci, onSelect }: { worktrees: Worktr
           </Tip>
         );
       })}
+      <Tip label="New worktree… (and remove others)">
+        <button
+          onClick={onManage}
+          className="mt-0.5 flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+          aria-label="Worktrees"
+          data-testid="worktree-add"
+        >
+          <Plus className="size-3.5" />
+        </button>
+      </Tip>
     </div>
   );
 }
