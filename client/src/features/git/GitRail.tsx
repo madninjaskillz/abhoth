@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { usePanelCollapsed } from "@/lib/panels";
 import { useQuery } from "@tanstack/react-query";
-import { GitBranch, PanelRightOpen } from "lucide-react";
+import { PanelRightOpen } from "lucide-react";
+import { BranchMenu } from "./BranchMenu";
 import { projectApi } from "@/lib/api";
 import { useProject } from "@/store/session";
 import { useWorkspace } from "@/store/workspace";
@@ -19,15 +20,16 @@ export function GitRail({ onExpand }: { onExpand: () => void }) {
   const changes = s?.files.length ?? 0;
   const branch = s?.branch ?? (s?.isRepo === false ? "no repository" : "");
   return (
+    <div className="flex w-9 shrink-0 flex-col items-center gap-1 border-l bg-panel py-1.5 text-xs text-muted-foreground">
+      {s?.isRepo && <BranchMenu branch={s.branch} variant="rail" onMergeConflicts={onExpand} />}
     <button
       onClick={onExpand}
-      className="flex w-9 shrink-0 flex-col items-center gap-2 border-l bg-panel py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+      className="flex w-full flex-1 flex-col items-center gap-2 py-1 hover:bg-accent/50 hover:text-foreground"
       title={`Show the git panel${branch ? ` (${branch}, ${changes} changed)` : ""}`}
       aria-label="Show the git panel"
       data-testid="git-rail"
     >
       <PanelRightOpen className="size-4" />
-      <GitBranch className="size-4" />
       {changes > 0 && (
         <span className="rounded-full bg-primary/20 px-1.5 text-[10px] font-medium text-primary" data-testid="git-rail-count">
           {changes}
@@ -38,6 +40,8 @@ export function GitRail({ onExpand }: { onExpand: () => void }) {
           {branch}
         </span>
       )}
+      {s?.merging && <span className="rounded bg-warning/20 px-1 text-[10px] font-medium text-warning" title="A merge is in progress">merge</span>}
     </button>
+    </div>
   );
 }

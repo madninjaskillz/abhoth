@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { authState, signOut, startEnroll } from "@/lib/auth";
 import { LogOut, ShieldCheck } from "lucide-react";
+import { SettingsButton } from "@/features/settings/SettingsDialog";
 import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { FlaskConical, FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
@@ -284,6 +285,7 @@ function Header({
           </button>
         </Tip>
       )}
+      <SettingsButton project={projects.find((p) => p.id === active)} narrow={narrow} />
       {authState().mode === "login" && <AccountMenu narrow={narrow} />}
       <AddProjectDialog
         open={adding}
