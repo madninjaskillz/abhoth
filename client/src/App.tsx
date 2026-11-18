@@ -13,9 +13,10 @@ import { TerminalPanel } from "@/features/terminal/TerminalPanel";
 import { AddProjectDialog } from "@/features/projects/AddProjectDialog";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger, Tip } from "@/components/ui/misc";
-import { ProjectContext, dropSessionStore, sessionStore, useConnection, type ProjectContextValue } from "@/store/session";
+import { ProjectContext, dropSessionStore, sessionStore, useConnection, useProject, type ProjectContextValue } from "@/store/session";
 import { useWorkspace } from "@/store/workspace";
 import { useStore } from "zustand";
+import { useTerminalRuns } from "@/store/terminalRuns";
 import { api, type Project } from "@/lib/api";
 import { unwatchProject, watchProject } from "@/lib/hub";
 import { cn } from "@/lib/utils";
@@ -130,6 +131,12 @@ function WideWorkspace({ visible }: { visible: boolean }) {
 
 function NarrowWorkspace({ visible }: { visible: boolean }) {
   const [tab, setTab] = useState("chat");
+  // An engine login runs in the terminal: show it.
+  const { id: pid } = useProject();
+  const runNonce = useTerminalRuns((s) => (s.runs[pid]?.code === undefined ? s.runs[pid]?.nonce : undefined));
+  useEffect(() => {
+    if (runNonce) setTab("terminal");
+  }, [runNonce]);
   return (
     <Tabs value={tab} onValueChange={setTab} className="flex h-full flex-col">
       <div className="flex shrink-0 justify-center border-b px-2 py-1.5">

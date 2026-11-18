@@ -53,7 +53,21 @@ export interface LiveTranscriptItem {
   isError: boolean;
 }
 
+export interface EngineAuth {
+  engine: string;
+  message: string;
+  loginCommand: string;
+}
+
+export interface EngineResult {
+  ok: boolean;
+  engine: string;
+  message?: string | null;
+  auth?: EngineAuth | null;
+}
+
 export interface LiveSnapshot {
+  engine?: string | null;
   sessionId?: string | null;
   title?: string | null;
   workingDirectory: string;
@@ -99,6 +113,10 @@ export interface SessionState {
   workingDirectory: string;
   mode: "tui" | "headless" | "worker" | "";
   model?: string | null;
+  /** "native", "claude" or "codex". */
+  engine: string;
+  /** A bridge that needs a login (from the session, or from asking for the engine). */
+  engineAuth?: EngineAuth | null;
   busy: boolean;
   queued: number;
   lastSeq: number;
@@ -190,6 +208,10 @@ function reduce(state: SessionState, ev: LiveEvent): Partial<SessionState> {
       return state.permissions.some((p) => p.id === d.id) ? {} : { permissions: [...state.permissions, d] };
     case "permissionResolved":
       return { permissions: state.permissions.filter((p) => p.id !== d.id) };
+    case "engine":
+      return { engine: d.engine ?? "native", engineAuth: null };
+    case "engineAuth":
+      return { engineAuth: { engine: d.engine, message: d.message ?? "", loginCommand: d.loginCommand ?? "" } };
     default:
       return {};
   }
@@ -229,6 +251,7 @@ const makeSessionStore = () =>
   lastSeq: 0,
   items: [],
   agents: [],
+  engine: "native",
   permissions: [],
   fileEpoch: 0,
 
@@ -240,6 +263,7 @@ const makeSessionStore = () =>
       workingDirectory: s.workingDirectory,
       mode: s.mode,
       model: s.model,
+      engine: s.engine ?? "native",
       busy: s.busy,
       queued: s.queued,
       lastSeq: s.lastSeq,

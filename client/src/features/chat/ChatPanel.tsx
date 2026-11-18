@@ -8,6 +8,7 @@ import {
 import { useConnection, useProject, useSession, type ChatItem } from "@/store/session";
 import { cancelTurn, resolvePermission, sendPrompt, sendPromptWithAttachments } from "@/lib/hub";
 import { AttachmentChips, useAttachments } from "./Attachments";
+import { EngineBanner, EnginePicker, useEngineFlow } from "./EnginePicker";
 import { FileLink, MediaViewer, asPath, mediaKind } from "./FileLink";
 import { rawUrl } from "@/lib/api";
 import type { Components } from "react-markdown";
@@ -306,6 +307,7 @@ function ComposerOrWatching() {
 }
 
 function Composer() {
+  const engineFlow = useEngineFlow();
   const busy = useSession((s) => s.busy);
   const queued = useSession((s) => s.queued);
   const connection = useConnection((s) => s.connection);
@@ -340,6 +342,8 @@ function Composer() {
   };
 
   return (
+    <>
+    <EngineBanner flow={engineFlow} />
     <div className="border-t bg-panel/60 px-4 py-3 sm:px-6">
       <div className="w-full">
         <div
@@ -403,11 +407,13 @@ function Composer() {
           </Button>
         </div>
         </div>
-        <div className="mt-1 flex min-h-4 items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="mt-1.5 flex min-h-4 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <EnginePicker flow={engineFlow} />
           {error && <span className="text-destructive">{error}</span>}
           {queued > 0 && <span>{queued} queued</span>}
         </div>
       </div>
     </div>
+    </>
   );
 }

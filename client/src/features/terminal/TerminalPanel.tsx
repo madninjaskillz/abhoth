@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { projectApi } from "@/lib/api";
 import { useProject } from "@/store/session";
+import { markedCommand, parseMarker, RUN_MARKER_OSC, useTerminalRuns } from "@/store/terminalRuns";
 
 type State = "connecting" | "open" | "closed";
 
@@ -23,6 +24,18 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
   const wsRef = useRef<WebSocket | null>(null);
   const [state, setState] = useState<State>("connecting");
   const [generation, setGeneration] = useState(0);
+  // A command the UI asked this terminal to run (an engine login): typed in once the shell is open.
+  const run = useTerminalRuns((s) => s.runs[pid]);
+  const sentRun = useRef(0);
+  const sendRun = () => {
+    const r = useTerminalRuns.getState().runs[pid];
+    const ws = wsRef.current;
+    if (!r || r.code !== undefined || sentRun.current === r.nonce || !ws || ws.readyState !== WebSocket.OPEN) return;
+    sentRun.current = r.nonce;
+    // Ctrl+U clears anything half-typed at the prompt first.
+    ws.send(JSON.stringify({ t: "i", d: "\x15" + markedCommand(r.command, r.nonce) }));
+    termRef.current?.focus();
+  };
 
   useEffect(() => {
     const el = host.current;
@@ -59,6 +72,13 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
     try { fit.fit(); } catch { /* hidden */ }
     termRef.current = term;
     fitRef.current = fit;
+    // The end-of-command marker of a run the UI asked for: report its exit code, print nothing.
+    const marker = term.parser.registerOscHandler(RUN_MARKER_OSC, (data) => {
+      const m = parseMarker(data);
+      if (!m) return false;
+      useTerminalRuns.getState().finish(pid, m.n, m.code);
+      return true;
+    });
 
     const ws = new WebSocket(projectApi(pid).ptyUrl(term.cols, term.rows));
     ws.binaryType = "arraybuffer";
@@ -69,6 +89,8 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
       // The panel may have been laid out (or resized) while connecting: tell the PTY the real size.
       try { fit.fit(); } catch { /* hidden */ }
       ws.send(JSON.stringify({ t: "r", c: term.cols, r: term.rows }));
+      // Give the shell a moment to print its prompt before typing a queued command.
+      setTimeout(sendRun, 400);
     };
     ws.onmessage = (e) => {
       if (e.data instanceof ArrayBuffer) term.write(new Uint8Array(e.data));
@@ -76,6 +98,7 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
     };
     ws.onclose = () => {
       setState("closed");
+      useTerminalRuns.getState().abandon(pid);
       term.write("\r\n\x1b[90m[terminal closed]\x1b[0m\r\n");
     };
     const input = term.onData((d) => {
@@ -94,6 +117,7 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
 
     return () => {
       ro.disconnect();
+      marker.dispose();
       input.dispose();
       resize.dispose();
       ws.onclose = null;
@@ -102,6 +126,14 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
       termRef.current = null;
     };
   }, [generation, pid]);
+
+  // A new run: type it now, or (re)open the shell and type it when connected.
+  useEffect(() => {
+    if (!run || run.code !== undefined || sentRun.current === run.nonce) return;
+    if (state === "closed") setGeneration((g) => g + 1);
+    else sendRun();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run?.nonce, state]);
 
   useEffect(() => {
     if (visible) {

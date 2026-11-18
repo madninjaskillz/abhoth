@@ -1,7 +1,7 @@
 import * as signalR from "@microsoft/signalr";
 import { csrfHeaders } from "@/lib/auth";
 import type { QueryClient } from "@tanstack/react-query";
-import { existingSessionStore, sessionStore, useConnection, type LiveEvent, type LiveSnapshot } from "@/store/session";
+import { existingSessionStore, sessionStore, useConnection, type EngineResult, type LiveEvent, type LiveSnapshot } from "@/store/session";
 import { normPath, useWorkspace } from "@/store/workspace";
 import type { EditMarkers } from "@/lib/api";
 
@@ -126,4 +126,14 @@ function hubMessage(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e);
   const i = m.indexOf("HubException: ");
   return i >= 0 ? m.slice(i + "HubException: ".length) : m;
+}
+
+/** Ask for another engine for the project's next turns ("native", "claude", "codex"). */
+export async function setEngine(pid: string, engine: string): Promise<EngineResult> {
+  if (!connection) return { ok: false, engine: "native", message: "Not connected." };
+  try {
+    return await connection.invoke<EngineResult>("SetEngine", pid, engine);
+  } catch (e) {
+    return { ok: false, engine: "native", message: hubMessage(e) };
+  }
 }
