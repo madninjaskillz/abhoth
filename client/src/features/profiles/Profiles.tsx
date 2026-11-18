@@ -293,7 +293,7 @@ function LayoutTable({ data, onSwitch }: { data: ProfileList; onSwitch: (profile
 }
 
 /** Chat footer: this project's profile. Its session restarts on the same conversation with the next prompt. */
-export function ProfilePicker({ pid, busy }: { pid: string; busy: boolean }) {
+export function ProfilePicker({ pid, busy, onChanged }: { pid: string; busy: boolean; onChanged?: () => void }) {
   const qc = useQueryClient();
   const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: 60000 });
   const primary = info.data?.primary === pid;
@@ -313,6 +313,7 @@ export function ProfilePicker({ pid, busy }: { pid: string; busy: boolean }) {
       const r = await api.setProjectProfile(pid, name);
       if (!r.ok) setError(r.message ?? "Not switched.");
       await qc.invalidateQueries({ queryKey: ["profiles"] });
+      onChanged?.();
     } catch (e) {
       setError((e as { data?: { message?: string } }).data?.message ?? (e instanceof Error ? e.message : String(e)));
     } finally {

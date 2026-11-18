@@ -152,11 +152,15 @@ export interface Setting {
   max?: number | null;
   minExclusive?: boolean;
   blankMeans?: string | null;
+  /** The profile that sets this key (project scope: the running session's; server scope: the default profile). */
+  profile?: string | null;
 }
 
 export interface SettingsDoc {
   sections: { name: string; settings: Setting[] }[];
   configFile?: string;
+  /** Project scope: the profile the running session has; server scope: the default profile, when its keys are known. */
+  profile?: string | null;
 }
 
 export interface SettingResult {

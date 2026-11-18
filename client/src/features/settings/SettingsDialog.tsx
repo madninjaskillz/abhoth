@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, KeyRound, RotateCcw, Search, Settings } from "lucide-react";
-import { settingsApi, type Project, type Setting } from "@/lib/api";
+import { Check, KeyRound, Layers, RotateCcw, Search, Settings } from "lucide-react";
+import { api, settingsApi, type Project, type Setting } from "@/lib/api";
+import { ProfilePicker, useProfiles } from "@/features/profiles/Profiles";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Tip } from "@/components/ui/misc";
@@ -44,6 +45,13 @@ export function SettingsDialog({ project, onClose }: { project: Project | undefi
   const pid = scope === "project" && project ? project.id : null;
   const [query, setQuery] = useState("");
   const doc = useQuery({ queryKey: ["settings", pid ?? "server"], queryFn: () => settingsApi.get(pid) });
+  const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: 60000 });
+  const profiles = useProfiles(!!info.data?.profiles);
+  const haveProfiles = !!profiles.data?.available && !!profiles.data.profiles;
+  const chosen = pid ? (profiles.data?.projects[pid] ?? null) : null;
+  // The TUI's own session (the primary project) takes its profile from --profile or /profile, not the picker.
+  const primary = !!pid && info.data?.primary === pid;
+  const pending = scope === "project" && haveProfiles && !primary && doc.isSuccess && (doc.data.profile ?? null) !== chosen;
 
   const q = query.trim().toLowerCase();
   const sections = useMemo(
@@ -52,11 +60,14 @@ export function SettingsDialog({ project, onClose }: { project: Project | undefi
         .map((s) => ({
           ...s,
           settings: s.settings.filter(
-            (x) => !q || [x.label, x.key, x.description, s.name].some((t) => t.toLowerCase().includes(q)),
+            // The default profile is picked in the slot above (server scope); a project picks its own there.
+            (x) =>
+              !(x.key === PROFILES_ACTIVE && (scope === "project" || haveProfiles)) &&
+              (!q || [x.label, x.key, x.description, s.name, x.profile ?? ""].some((t) => t.toLowerCase().includes(q))),
           ),
         }))
         .filter((s) => s.settings.length > 0),
-    [doc.data, q],
+    [doc.data, q, scope, haveProfiles],
   );
   const modified = (doc.data?.sections ?? []).reduce((n, s) => n + s.settings.filter((x) => x.modified).length, 0);
 
@@ -87,17 +98,41 @@ export function SettingsDialog({ project, onClose }: { project: Project | undefi
                 Server defaults
               </button>
             </div>
-            <ProfileSlot />
+            <ProfileSlot
+              scope={scope}
+              project={project}
+              primary={primary}
+              running={doc.data?.profile ?? null}
+              defaultSetting={findSetting(doc.data?.sections, PROFILES_ACTIVE)}
+              enabled={haveProfiles}
+            />
           </div>
           <DialogDescription data-testid="settings-scope-note">
             {scope === "project" ? (
               <>
                 Editing <b className="text-foreground">{project?.name}</b>'s running session, as <code>/config</code> in its terminal would: most changes apply at once,
                 the rest when a session starts. Saved to <code>{doc.data?.configFile ?? "config.json"}</code> too.
+                {doc.data?.profile && (
+                  <>
+                    {" "}It runs with profile <b className="text-foreground">{doc.data.profile}</b>: the settings that profile sets are shown as its own, and change
+                    with the profile.
+                  </>
+                )}
+                {pending && (
+                  <span className="text-warning" data-testid="settings-profile-pending">
+                    {" "}Profile change pending: the session restarts with {chosen ?? "the config's own settings"} on your next prompt, and these settings follow.
+                  </span>
+                )}
               </>
             ) : (
               <>
                 Editing the server's <code>{doc.data?.configFile ?? "config.json"}</code>: new sessions use it. Open projects keep their current settings until they restart.
+                {doc.data?.profile && (
+                  <>
+                    {" "}Sessions on the default profile <b className="text-foreground">{doc.data.profile}</b> take its values for the settings marked with it;
+                    the values here are for sessions without it.
+                  </>
+                )}
               </>
             )}
           </DialogDescription>
@@ -136,14 +171,86 @@ export function SettingsDialog({ project, onClose }: { project: Project | undefi
   );
 }
 
-/** Where the profile picker goes once profiles exist (🟫G's work); until then, a quiet placeholder. */
-function ProfileSlot() {
+const PROFILES_ACTIVE = "profiles.active";
+
+function findSetting(sections: { settings: Setting[] }[] | undefined, key: string) {
+  for (const s of sections ?? []) for (const x of s.settings) if (x.key === key) return x;
+  return undefined;
+}
+
+/**
+ * The inference profile: in project scope, the project's own (its session restarts with it, as
+ * from the chat footer); in server scope, the default profile new sessions start with.
+ */
+function ProfileSlot({
+  scope,
+  project,
+  primary,
+  running,
+  defaultSetting,
+  enabled,
+}: {
+  scope: Scope;
+  project: Project | undefined;
+  primary: boolean;
+  running: string | null;
+  defaultSetting: Setting | undefined;
+  enabled: boolean;
+}) {
+  const qc = useQueryClient();
+  const profiles = useProfiles(enabled);
+  const [error, setError] = useState<string | null>(null);
+  const setDefault = useMutation({
+    mutationFn: (name: string) => settingsApi.set(null, PROFILES_ACTIVE, name),
+    onSuccess: (r) => {
+      setError(r.ok ? null : (r.error ?? "Refused."));
+      void qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  });
+  if (!enabled || !profiles.data?.profiles)
+    return (
+      <span className="ml-auto text-xs text-muted-foreground" data-testid="settings-profile-slot" title="No profiles server is configured (profiles.serverUrl or slots.registryUrl).">
+        No inference profiles
+      </span>
+    );
+  if (scope === "project" && primary)
+    return (
+      <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="settings-profile-slot" title="This project's session is the terminal's own: /profile there switches it">
+        <Layers className="size-3.5" />
+        Profile <b className="text-foreground">{running ?? "config's own"}</b> (set in the terminal)
+      </span>
+    );
+  if (scope === "project")
+    return (
+      <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="settings-profile-slot">
+        <Layers className="size-3.5" />
+        {project && <ProfilePicker pid={project.id} busy={false} onChanged={() => void qc.invalidateQueries({ queryKey: ["settings"] })} />}
+      </span>
+    );
+  const current = (defaultSetting?.value as string | null) ?? "";
   return (
-    <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="settings-profile-slot" title="Profiles aren't set up yet.">
-      Profile
-      <select className="h-7 rounded-md border bg-background px-1.5 text-xs" disabled aria-label="Profile">
-        <option>default</option>
-      </select>
+    <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="settings-profile-slot">
+      <Layers className="size-3.5" />
+      <label className="inline-flex items-center gap-1" title="The profile new sessions start with when none is chosen (profiles.active)">
+        Default profile
+        <select
+          className="h-7 rounded-md border bg-background px-1.5 text-xs disabled:opacity-50"
+          value={current}
+          disabled={setDefault.isPending}
+          onChange={(e) => setDefault.mutate(e.target.value)}
+          data-testid="settings-default-profile"
+        >
+          <option value="">none (config as it is)</option>
+          {current && !profiles.data.profiles[current] && <option value={current}>{current} (unknown)</option>}
+          {Object.keys(profiles.data.profiles).map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {error && <span className="text-destructive">{error}</span>}
     </span>
   );
 }
@@ -164,6 +271,8 @@ function SettingRow({ setting: s, pid, scope }: { setting: Setting; pid: string 
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
+  // In a project, a key its profile sets can't be changed here: the profile would put its value back.
+  const locked = scope === "project" && !!s.profile;
   const commit = (value: unknown) => {
     if (s.dangerous && value === true) setConfirm({ value });
     else save.mutate({ value });
@@ -179,7 +288,21 @@ function SettingRow({ setting: s, pid, scope }: { setting: Setting; pid: string 
               modified
             </span>
           )}
-          {!s.live && scope === "project" && (
+          {s.profile && (
+            <span
+              className="inline-flex items-center gap-0.5 rounded bg-warning/15 px-1 text-[10px] font-medium text-warning"
+              title={
+                scope === "project"
+                  ? `Profile ${s.profile} sets this: choose another profile (or none) to change it.`
+                  : `Sessions on the default profile ${s.profile} use its value; this one is for sessions without it.`
+              }
+              data-testid="setting-profile"
+            >
+              <Layers className="size-2.5" />
+              {scope === "project" ? `set by profile ${s.profile}` : `profile ${s.profile} overrides`}
+            </span>
+          )}
+          {!s.live && scope === "project" && !s.profile && (
             <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground" title="The running session keeps its current value; new sessions use the new one.">
               applies to new sessions
             </span>
@@ -191,10 +314,16 @@ function SettingRow({ setting: s, pid, scope }: { setting: Setting; pid: string 
       </div>
       <div className="flex min-w-0 items-start gap-1">
         <div className="min-w-0 flex-1">
-          <Editor setting={s} busy={save.isPending} onCommit={commit} onRemove={() => save.mutate({ value: null })} />
+          {locked ? (
+            <div className="flex h-8 items-center truncate rounded-md border border-dashed px-2 font-mono text-xs text-muted-foreground" data-testid="setting-locked">
+              {s.display}
+            </div>
+          ) : (
+            <Editor setting={s} busy={save.isPending} onCommit={commit} onRemove={() => save.mutate({ value: null })} />
+          )}
           {error && <div className="pt-1 text-xs text-destructive" data-testid="setting-error">{error}</div>}
         </div>
-        {s.modified && s.type !== "secret" && (
+        {s.modified && s.type !== "secret" && !locked && (
           <Tip label={`Reset to default (${s.defaultDisplay})`}>
             <Button size="icon-sm" variant="ghost" disabled={save.isPending} onClick={() => save.mutate({ value: null, reset: true })} data-testid="setting-reset">
               <RotateCcw />
