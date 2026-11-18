@@ -137,3 +137,9 @@ export async function setEngine(pid: string, engine: string): Promise<EngineResu
     return { ok: false, engine: "native", message: hubMessage(e) };
   }
 }
+
+/** Answer an ask_user question (one of its options, or free text). */
+export async function answerQuestion(pid: string, id: string, answer: string): Promise<boolean> {
+  if (!connection) return false;
+  return await connection.invoke<boolean>("AnswerQuestion", pid, id, answer);
+}

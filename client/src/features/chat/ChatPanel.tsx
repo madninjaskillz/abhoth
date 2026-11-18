@@ -9,6 +9,7 @@ import { useConnection, useProject, useSession, type ChatItem } from "@/store/se
 import { cancelTurn, resolvePermission, sendPrompt, sendPromptWithAttachments } from "@/lib/hub";
 import { AttachmentChips, useAttachments } from "./Attachments";
 import { EngineBanner, EnginePicker, useEngineFlow } from "./EnginePicker";
+import { QuestionPrompts } from "./QuestionPrompts";
 import { FileLink, MediaViewer, asPath, mediaKind } from "./FileLink";
 import { rawUrl } from "@/lib/api";
 import type { Components } from "react-markdown";
@@ -22,6 +23,7 @@ export function ChatPanel() {
     <div className="flex h-full min-h-0 flex-col">
       <AgentBars />
       <Transcript />
+      <QuestionPrompts />
       <PermissionPrompts />
       <ComposerOrWatching />
       <MediaViewer />
