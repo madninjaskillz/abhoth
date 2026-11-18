@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Editor, { DiffEditor, type OnMount } from "@monaco-editor/react";
-import { FileDiff, Loader2, MessagesSquare, Save, X } from "lucide-react";
+import { FileDiff, Loader2, MessagesSquare, Plus, Save, SquareTerminal, X } from "lucide-react";
 import { ApiError, projectApi } from "@/lib/api";
 import { DIFF_OPTIONS, EDITOR_OPTIONS, monaco } from "@/lib/monaco";
 import { useProject, useSession } from "@/store/session";
-import { useWorkspace, type EditorTab } from "@/store/workspace";
+import { termKey, useWorkspace, type EditorTab } from "@/store/workspace";
+import { TerminalPanel } from "@/features/terminal/TerminalPanel";
+import { useTerminalRuns } from "@/store/terminalRuns";
 import { ChatPanel } from "@/features/chat/ChatPanel";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
@@ -24,15 +26,30 @@ interface Saved {
 
 const savedState = new Map<string, Saved>();
 
-/** The chat and the open files, as tabs across the centre of the workspace. */
-export function EditorArea() {
+/**
+ * The chat, the terminals and the open files, as tabs across the centre of the workspace.
+ * On a phone the terminal has its own tab in the bottom bar instead (<paramref name="terminals"/> false).
+ */
+export function EditorArea({ terminals = true, visible = true }: { terminals?: boolean; visible?: boolean }) {
   const { id: pid } = useProject();
   const ui = useWorkspace((s) => s.projects[pid]);
   const patch = useWorkspace((s) => s.patch);
   const closeTab = useWorkspace((s) => s.closeTab);
+  const addTerminal = useWorkspace((s) => s.addTerminal);
+  const closeTerminal = useWorkspace((s) => s.closeTerminal);
   const busy = useSession((s) => s.busy);
   const [closing, setClosing] = useState<EditorTab | null>(null);
+  // An engine login runs in the first terminal: show that tab (opening one if all were closed).
+  const runNonce = useTerminalRuns((s) => (s.runs[pid]?.code === undefined ? s.runs[pid]?.nonce : undefined));
+  useEffect(() => {
+    if (!runNonce || !terminals) return;
+    const cur = useWorkspace.getState().projects[pid];
+    if (!cur) return;
+    if (cur.terminals.length === 0) addTerminal(pid);
+    else patch(pid, { center: termKey(cur.terminals[0]) });
+  }, [runNonce, terminals, pid, patch, addTerminal]);
   if (!ui) return null;
+  const termTabs = terminals ? ui.terminals : [];
 
   const close = (tab: EditorTab) => {
     if (tab.dirty) setClosing(tab);
@@ -51,6 +68,35 @@ export function EditorArea() {
           <MessagesSquare className="size-3.5" /> Chat
           {busy && <span className="size-1.5 animate-pulse rounded-full bg-primary" />}
         </TabButton>
+        {termTabs.map((n, i) => (
+          <TabButton key={n} active={ui.center === termKey(n)} onClick={() => patch(pid, { center: termKey(n) })} testId="tab-terminal">
+            <SquareTerminal className="size-3.5" /> {i === 0 ? "Terminal" : `Terminal ${i + 1}`}
+            <span
+              role="button"
+              aria-label="Close this terminal"
+              title="Close this terminal (ends its shell)"
+              className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                closeTerminal(pid, n);
+              }}
+            >
+              <X className="size-3" />
+            </span>
+          </TabButton>
+        ))}
+        {terminals && (
+          <Tip label="New shell">
+            <button
+              onClick={() => addTerminal(pid)}
+              className="mb-0.5 flex size-6 shrink-0 items-center justify-center self-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="New shell"
+              data-testid="new-terminal"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </Tip>
+        )}
         {ui.tabs.map((t) => (
           <TabButton key={t.key} active={ui.center === t.key} onClick={() => patch(pid, { center: t.key })} title={t.path} testId="tab-file">
             <span className={cn("max-w-40 truncate", t.diff && "italic")}>{t.name}</span>
@@ -75,6 +121,11 @@ export function EditorArea() {
         <div className={cn("absolute inset-0", ui.center !== "chat" && "invisible")}>
           <ChatPanel />
         </div>
+        {termTabs.map((n, i) => (
+          <div key={n} className={cn("absolute inset-0", ui.center !== termKey(n) && "invisible")}>
+            <TerminalPanel visible={visible && ui.center === termKey(n)} handlesRuns={i === 0} />
+          </div>
+        ))}
         {ui.tabs.map((t) => (
           <div key={t.key} className={cn("absolute inset-0", ui.center !== t.key && "invisible")}>
             <FileEditor tab={t} visible={ui.center === t.key} />

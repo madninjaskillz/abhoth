@@ -10,6 +10,7 @@ import { cancelTurn, resolvePermission, sendPrompt, sendPromptWithAttachments } 
 import { AttachmentChips, useAttachments } from "./Attachments";
 import { EngineBanner, EnginePicker, useEngineFlow } from "./EnginePicker";
 import { QuestionPrompts } from "./QuestionPrompts";
+import { MediaPreviews, mediaPathsIn, useInlineMedia } from "./InlineMedia";
 import { FileLink, MediaViewer, asPath, mediaKind } from "./FileLink";
 import { rawUrl } from "@/lib/api";
 import type { Components } from "react-markdown";
@@ -41,6 +42,14 @@ const mdComponents: Components = {
         {path ? <FileLink path={path}>{text}</FileLink> : children}
       </code>
     );
+  },
+  // ![alt](path): a link to the file; the inline preview under the message shows the picture
+  // (through the authenticated raw endpoint; a bare relative src would miss it).
+  img({ src, alt }) {
+    const raw = typeof src === "string" ? src : "";
+    const path = raw && !/^[a-z][a-z0-9+.-]*:/i.test(raw) ? asPath(decodeURIComponent(raw)) : null;
+    if (path) return <FileLink path={path}>{alt || path}</FileLink>;
+    return <a href={raw} target="_blank" rel="noopener noreferrer">{alt || raw}</a>;
   },
   a({ href, children, ...props }) {
     const path = href && !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("#") ? asPath(decodeURIComponent(href)) : null;
@@ -142,8 +151,11 @@ const Item = memo(function Item({ item }: { item: ChatItem }) {
       );
     case "assistant":
       return (
-        <div className={cn("md", item.streaming && "streaming-caret")} data-testid="assistant-message">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{item.text}</ReactMarkdown>
+        <div className="space-y-2">
+          <div className={cn("md", item.streaming && "streaming-caret")} data-testid="assistant-message">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{item.text}</ReactMarkdown>
+          </div>
+          {!item.streaming && <MediaPreviews paths={mediaPathsIn(item.text)} />}
         </div>
       );
     case "thinking":
@@ -250,6 +262,10 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
           )}
         </span>
       </div>
+      {item.done && !item.isError && (() => {
+        const media = [...(path ? [path] : []), ...mediaPathsIn(item.result)].filter((p, i, a) => a.indexOf(p) === i);
+        return media.length > 0 && <div className="border-t px-3 py-2"><MediaPreviews paths={media} /></div>;
+      })()}
       {open && (
         <div className="space-y-2 border-t px-3 py-2">
           {item.args && (
@@ -411,11 +427,24 @@ function Composer() {
         </div>
         <div className="mt-1.5 flex min-h-4 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
           <EnginePicker flow={engineFlow} />
+          <InlineMediaToggle />
           {error && <span className="text-destructive">{error}</span>}
           {queued > 0 && <span>{queued} queued</span>}
         </div>
       </div>
     </div>
     </>
+  );
+}
+
+/** Show images, audio, video and PDFs the chat mentions inline (on by default; remembered in this browser). */
+function InlineMediaToggle() {
+  const on = useInlineMedia((s) => s.on);
+  const set = useInlineMedia((s) => s.set);
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-1" title="Show images, audio, video and PDFs the chat mentions inline">
+      <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} className="size-3 accent-primary" data-testid="inline-media" />
+      Inline media
+    </label>
   );
 }

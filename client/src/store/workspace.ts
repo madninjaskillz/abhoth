@@ -20,10 +20,14 @@ export interface ProjectUi {
   changedOnly: boolean;
   showIgnored: boolean;
   markers: EditMarkers;
-  /** "chat" or an editor tab key. */
+  /** "chat", a terminal ("term:<n>") or an editor tab key. */
   center: string;
   tabs: EditorTab[];
+  /** The terminal tabs in the centre (each its own shell, alive while the tab is open). */
+  terminals: number[];
 }
+
+export const termKey = (n: number) => `term:${n}`;
 
 const empty = (root: string): ProjectUi => ({
   wt: root,
@@ -32,6 +36,7 @@ const empty = (root: string): ProjectUi => ({
   markers: { editing: [], edited: [] },
   center: "chat",
   tabs: [],
+  terminals: [1],
 });
 
 interface WorkspaceState {
@@ -50,6 +55,9 @@ interface WorkspaceState {
   closeTab: (pid: string, key: string) => void;
   setDirty: (pid: string, key: string, dirty: boolean) => void;
   setDiff: (pid: string, key: string, diff: boolean) => void;
+  /** Opens another shell tab and shows it. */
+  addTerminal: (pid: string) => void;
+  closeTerminal: (pid: string, n: number) => void;
 }
 
 export const tabKey = (wt: string, path: string) => `${wt}|${path}`;
@@ -127,6 +135,18 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const cur = get().projects[pid];
     if (!cur) return;
     get().patch(pid, { tabs: cur.tabs.map((t) => (t.key === key ? { ...t, diff } : t)) });
+  },
+  addTerminal: (pid) => {
+    const cur = get().projects[pid];
+    if (!cur) return;
+    const n = Math.max(0, ...cur.terminals) + 1;
+    get().patch(pid, { terminals: [...cur.terminals, n], center: termKey(n) });
+  },
+  closeTerminal: (pid, n) => {
+    const cur = get().projects[pid];
+    if (!cur) return;
+    const terminals = cur.terminals.filter((t) => t !== n);
+    get().patch(pid, { terminals, center: cur.center === termKey(n) ? "chat" : cur.center });
   },
 }));
 

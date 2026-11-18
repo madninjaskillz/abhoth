@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowUpFromLine, CloudDownload, GitBranch, GitCommitHorizontal, Minus, Plus, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, CloudDownload, GitBranch, GitCommitHorizontal, Minus, Plus, RefreshCw, PanelRightClose } from "lucide-react";
 import { ProjectGitHubToken } from "./GitHubToken";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { projectApi, type GitFile } from "@/lib/api";
@@ -21,7 +21,7 @@ interface Selection {
  * git status, a side-by-side diff per file, stage/unstage per file, commit — in the worktree the
  * file tree shows. All through the git CLI on the server.
  */
-export function GitPanel({ compact = false }: { compact?: boolean }) {
+export function GitPanel({ compact = false, onCollapse }: { compact?: boolean; onCollapse?: () => void }) {
   const qc = useQueryClient();
   const { id: pid, root } = useProject();
   const wt = useWorkspace((s) => s.projects[pid]?.wt) ?? root;
@@ -112,6 +112,13 @@ export function GitPanel({ compact = false }: { compact?: boolean }) {
           <RefreshCw className={cn(status.isFetching && "animate-spin")} />
         </Button>
       </Tip>
+      {onCollapse && (
+        <Tip label="Hide the git panel">
+          <Button size="icon-sm" variant="ghost" onClick={onCollapse} aria-label="Hide the git panel" data-testid="git-collapse">
+            <PanelRightClose />
+          </Button>
+        </Tip>
+      )}
     </div>
   );
 

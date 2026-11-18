@@ -155,7 +155,8 @@ function reduce(state: SessionState, ev: LiveEvent): Partial<SessionState> {
   const d = ev.data ?? {};
   switch (ev.type) {
     case "turnStart":
-      return { busy: true };
+      // A prompt from the queue (browser, bench) started: one fewer waiting.
+      return { busy: true, queued: d.source && d.source !== "tui" ? Math.max(0, state.queued - 1) : state.queued };
     case "user":
       return { items: [...closeStreaming(state.items), { kind: "user", key: nextKey++, text: d.text ?? "", source: d.source ?? "" }] };
     case "assistantDelta":

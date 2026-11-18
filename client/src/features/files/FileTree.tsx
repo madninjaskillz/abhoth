@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronDown, ChevronRight, EyeOff, Eye, File, FileDiff, Folder, FolderOpen, GitBranch, ListFilter, Loader2, PenLine, RefreshCw, Sparkles,
+  ChevronDown, ChevronRight, EyeOff, Eye, File, FileDiff, Folder, FolderOpen, GitBranch, ListFilter, Loader2, PanelLeftClose, PanelLeftOpen, PenLine, RefreshCw, Sparkles,
 } from "lucide-react";
 import { api, projectApi, type ChangeKind, type FileEntry, type Worktree } from "@/lib/api";
 import { useProject } from "@/store/session";
@@ -48,7 +48,11 @@ function parents(path: string): string[] {
  * markers, the agent's in-flight and just-made edits, and files with unsaved editor changes.
  * Worktrees are vertical tabs on the left edge, the project's own folder first.
  */
-export function FileTree() {
+/**
+ * The project's files (and worktrees). With <paramref name="onToggle"/> it can fold to the left:
+ * folded, only the worktree rail stays, with an open button and the changed-files count.
+ */
+export function FileTree({ collapsed = false, onToggle }: { collapsed?: boolean; onToggle?: () => void } = {}) {
   const { id: pid, root } = useProject();
   const qc = useQueryClient();
   const ui = useWorkspace((s) => s.projects[pid]);
@@ -111,6 +115,30 @@ export function FileTree() {
   const onOpen = (path: string, deleted: boolean) => openFile(pid, wt, path, deleted);
   const list = worktrees.data ?? [];
 
+  if (collapsed && onToggle) {
+    const count = changes.data?.files?.length ?? 0;
+    return (
+      <div className="flex h-full min-h-0 shrink-0 border-r bg-panel" data-testid="file-tree-folded">
+        {list.length > 1 && <WorktreeRail worktrees={list} selected={wt} ci={ci} onSelect={(p) => patch(pid, { wt: p })} />}
+        <button
+          onClick={onToggle}
+          className="flex w-9 flex-col items-center gap-2 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          title={`Show the files (Ctrl+B)${count ? `: ${count} changed` : ""}`}
+          aria-label="Show the files"
+          data-testid="files-expand"
+        >
+          <PanelLeftOpen className="size-4" />
+          <Folder className="size-4" />
+          {count > 0 && (
+            <span className="rounded-full bg-primary/20 px-1.5 text-[10px] font-medium text-primary" data-testid="files-rail-count">
+              {count}
+            </span>
+          )}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 bg-panel" data-testid="file-tree">
       {list.length > 1 && <WorktreeRail worktrees={list} selected={wt} ci={ci} onSelect={(p) => patch(pid, { wt: p })} />}
@@ -145,6 +173,13 @@ export function FileTree() {
               <RefreshCw className={cn(changes.isFetching && "animate-spin")} />
             </Button>
           </Tip>
+          {onToggle && (
+            <Tip label="Hide the files (Ctrl+B)">
+              <Button size="icon-sm" variant="ghost" onClick={onToggle} aria-label="Hide the files" data-testid="files-collapse">
+                <PanelLeftClose />
+              </Button>
+            </Tip>
+          )}
         </div>
         <div className="min-h-0 flex-1 overflow-auto py-1 text-xs" role="tree">
           {ui.changedOnly ? (

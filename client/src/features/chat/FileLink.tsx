@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Button } from "@/components/ui/button";
 
 const MEDIA: Record<string, "image" | "pdf" | "audio" | "video"> = {
-  png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image", bmp: "image", ico: "image", avif: "image",
+  png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image", bmp: "image", ico: "image", avif: "image", svg: "image",
   pdf: "pdf",
   mp3: "audio", wav: "audio", ogg: "audio", oga: "audio", flac: "audio", m4a: "audio", aac: "audio", opus: "audio",
   mp4: "video", m4v: "video", webm: "video", mov: "video", ogv: "video",
@@ -36,7 +36,7 @@ export function asPath(token: string): string | null {
 }
 
 /** The path relative to <paramref name="root"/> when inside it ("/" separators), else null for absolute paths outside. */
-function relativeTo(root: string, path: string): string | null {
+export function relativeTo(root: string, path: string): string | null {
   const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "");
   const p = norm(path);
   const r = norm(root);

@@ -16,7 +16,7 @@ type State = "connecting" | "open" | "closed";
  * A real shell on the server (ConPTY) in the project's folder, over a WebSocket.
  * Output arrives as binary frames; input and resizes go as small JSON text frames.
  */
-export function TerminalPanel({ visible = true }: { visible?: boolean }) {
+export function TerminalPanel({ visible = true, handlesRuns = true }: { visible?: boolean; handlesRuns?: boolean }) {
   const { id: pid } = useProject();
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -25,9 +25,10 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
   const [state, setState] = useState<State>("connecting");
   const [generation, setGeneration] = useState(0);
   // A command the UI asked this terminal to run (an engine login): typed in once the shell is open.
-  const run = useTerminalRuns((s) => s.runs[pid]);
+  const run = useTerminalRuns((s) => (handlesRuns ? s.runs[pid] : undefined));
   const sentRun = useRef(0);
   const sendRun = () => {
+    if (!handlesRuns) return;
     const r = useTerminalRuns.getState().runs[pid];
     const ws = wsRef.current;
     if (!r || r.code !== undefined || sentRun.current === r.nonce || !ws || ws.readyState !== WebSocket.OPEN) return;
@@ -98,7 +99,7 @@ export function TerminalPanel({ visible = true }: { visible?: boolean }) {
     };
     ws.onclose = () => {
       setState("closed");
-      useTerminalRuns.getState().abandon(pid);
+      if (handlesRuns) useTerminalRuns.getState().abandon(pid);
       term.write("\r\n\x1b[90m[terminal closed]\x1b[0m\r\n");
     };
     const input = term.onData((d) => {

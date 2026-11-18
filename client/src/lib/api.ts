@@ -166,29 +166,38 @@ export interface BenchState {
   suites: BenchSuite[];
 }
 
+/** A results.jsonl row. The schema, with what each field means, is BenchResultRow.cs (server). */
 export interface BenchResult {
   id: string;
   suite: string;
   arm: string;
   lead_mode: string;
+  sets?: string[];
   task: string;
   rep: number;
   status: string;
   pass?: boolean;
   reason?: string;
-  note?: string | null;
   tests_passed?: number;
   tests_total?: number;
+  timeout?: boolean;
+  quiet_window_stop?: boolean;
+  note?: string | null;
   started?: string;
+  ended?: string | null;
   wall_s?: number;
   requests?: number;
   prompt_tokens?: number;
   cached_tokens?: number;
   output_tokens?: number;
+  reasoning_tokens?: number;
   decode_tps?: number | null;
   lead_tps?: number | null;
   helpers?: number;
+  bridge_turns?: number | null;
+  cost_usd?: number | null;
   mean_w?: number | null;
+  orca_version?: string | null;
 }
 
 export interface Project {

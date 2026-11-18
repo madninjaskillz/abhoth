@@ -9,6 +9,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EditorArea } from "@/features/editor/EditorArea";
 import { FileTree } from "@/features/files/FileTree";
 import { GitPanel } from "@/features/git/GitPanel";
+import { GitRail, useGitCollapsed } from "@/features/git/GitRail";
+import { usePanelCollapsed, usePanelKeys } from "@/lib/panels";
 import { TerminalPanel } from "@/features/terminal/TerminalPanel";
 import { AddProjectDialog } from "@/features/projects/AddProjectDialog";
 import { ConfirmDialog } from "@/components/ui/dialog";
@@ -103,29 +105,44 @@ export default function App() {
   );
 }
 
+/**
+ * Files | Chat, terminals and editors | git. Both sides fold to a rail (files open by default,
+ * git folded); Ctrl+B and Ctrl+Shift+G toggle them.
+ */
 function WideWorkspace({ visible }: { visible: boolean }) {
+  const { id: pid } = useProject();
+  const [gitCollapsed, setGitCollapsed] = useGitCollapsed(pid);
+  const [filesCollapsed, setFilesCollapsed] = usePanelCollapsed(pid, "files", false);
+  usePanelKeys(visible, () => setFilesCollapsed(!filesCollapsed), () => setGitCollapsed(!gitCollapsed));
+  const layout = `openorca.workspace3.${filesCollapsed ? "f" : "F"}${gitCollapsed ? "g" : "G"}`;
   return (
-    <PanelGroup direction="horizontal" autoSaveId="openorca.workspace2">
-      <Panel defaultSize={18} minSize={10}>
-        <FileTree />
-      </Panel>
-      <PanelResizeHandle className="resize-handle" />
-      <Panel defaultSize={47} minSize={25}>
-        <EditorArea />
-      </Panel>
-      <PanelResizeHandle className="resize-handle" />
-      <Panel minSize={20}>
-        <PanelGroup direction="vertical" autoSaveId="openorca.right">
-          <Panel defaultSize={58} minSize={15}>
-            <GitPanel compact />
+    <div className="flex h-full min-h-0">
+      {filesCollapsed && <FileTree collapsed onToggle={() => setFilesCollapsed(false)} />}
+      <div className="min-w-0 flex-1">
+        <PanelGroup direction="horizontal" autoSaveId={layout}>
+          {!filesCollapsed && (
+            <>
+              <Panel id="files" order={1} defaultSize={gitCollapsed ? 20 : 18} minSize={10}>
+                <FileTree onToggle={() => setFilesCollapsed(true)} />
+              </Panel>
+              <PanelResizeHandle className="resize-handle" />
+            </>
+          )}
+          <Panel id="center" order={2} minSize={30}>
+            <EditorArea visible={visible} />
           </Panel>
-          <PanelResizeHandle className="resize-handle" />
-          <Panel minSize={12}>
-            <TerminalPanel visible={visible} />
-          </Panel>
+          {!gitCollapsed && (
+            <>
+              <PanelResizeHandle className="resize-handle" />
+              <Panel id="git" order={3} defaultSize={28} minSize={15}>
+                <GitPanel compact onCollapse={() => setGitCollapsed(true)} />
+              </Panel>
+            </>
+          )}
         </PanelGroup>
-      </Panel>
-    </PanelGroup>
+      </div>
+      {gitCollapsed && <GitRail onExpand={() => setGitCollapsed(false)} />}
+    </div>
   );
 }
 
@@ -148,7 +165,7 @@ function NarrowWorkspace({ visible }: { visible: boolean }) {
         </TabsList>
       </div>
       <TabsContent value="chat" className="min-h-0 flex-1 data-[state=inactive]:hidden" forceMount>
-        <EditorArea />
+        <EditorArea terminals={false} />
       </TabsContent>
       <TabsContent value="files" className="min-h-0 flex-1 data-[state=inactive]:hidden" forceMount>
         <FilesThenEditor onOpen={() => setTab("chat")} />
