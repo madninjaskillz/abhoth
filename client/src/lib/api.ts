@@ -214,6 +214,77 @@ export interface ServerInfo {
   canAddProjects: boolean;
   caseInsensitivePaths: boolean;
   bench?: boolean;
+  /** The inference server's profiles API is configured (profile pickers, server layout). */
+  profiles?: boolean;
+}
+
+/** One card of a server layout: which engine, how many slots, which model file. */
+export interface LayoutCard {
+  engine: string;
+  slots: number;
+  model?: string | null;
+}
+
+export interface LayoutDefinition {
+  title?: string | null;
+  cards: Record<string, LayoutCard>;
+}
+
+export interface ProfileInfo {
+  title?: string | null;
+  description?: string | null;
+  /** The server layout it needs; null = none (a bridge engine). */
+  layout?: string | null;
+  /** Dotted config overrides ("agent.peerMode": true, ...). */
+  client: Record<string, unknown>;
+  /** Its layout is live (or it needs none). */
+  fits: boolean;
+  /** "needs restore (≈24 GB, ~6 min)" when its model files are offline. */
+  restore?: string | null;
+}
+
+export interface LiveLayout {
+  layout?: string | null;
+  title?: string | null;
+  healthy?: boolean;
+  cards?: Record<string, { engine?: string | null; slots?: number | null; model?: string | null; healthy?: boolean | null; detail?: string | null }>;
+  leases?: { slot: string; who?: string | null }[];
+  quietWindow?: boolean;
+  job?: { id?: string | null; state?: string | null; layout?: string | null } | null;
+}
+
+export interface ProfileList {
+  available: boolean;
+  error?: string | null;
+  offline: boolean;
+  fetchedAt?: string | null;
+  layouts?: Record<string, LayoutDefinition> | null;
+  profiles?: Record<string, ProfileInfo> | null;
+  live?: LiveLayout | null;
+  /** Each project's chosen profile (null = the config's own settings). */
+  projects: Record<string, string | null>;
+}
+
+export interface SwitchPlan {
+  profile?: string | null;
+  layout?: string | null;
+  live?: string | null;
+  fits: boolean;
+  estimateSeconds: number;
+  effect?: string | null;
+  refusals: string[];
+  restore?: { text?: string | null } | null;
+}
+
+export interface SwitchJob {
+  id?: string | null;
+  state?: string | null;
+  layout?: string | null;
+  error?: string | null;
+  seconds?: number | null;
+  already?: boolean;
+  live?: string | null;
+  steps?: { t: number; msg: string }[];
 }
 
 export interface GitHubCheck {
@@ -228,6 +299,8 @@ export interface BenchArm {
   name: string;
   leadMode: string;
   set?: string[] | null;
+  /** An inference profile: its settings under the arm's, its server layout switched to first. */
+  profile?: string | null;
 }
 
 export interface BenchSuite {
@@ -237,6 +310,8 @@ export interface BenchSuite {
   reps: number;
   timeoutSeconds?: number | null;
   description?: string | null;
+  /** The arms' profile when they name none. */
+  profile?: string | null;
 }
 
 export interface BenchRunInfo {
@@ -250,6 +325,7 @@ export interface BenchRunInfo {
   projectId?: string | null;
   startedAt?: string | null;
   endedAt?: string | null;
+  profile?: string | null;
 }
 
 export interface BenchState {
@@ -270,6 +346,11 @@ export interface BenchResult {
   sets?: string[];
   task: string;
   rep: number;
+  /** The inference profile the arm ran; layout = the server layout live at the start. */
+  profile?: string | null;
+  layout?: string | null;
+  /** Resolved inference settings (agent, slots, thinking, models; no keys). */
+  settings?: Record<string, unknown> | null;
   status: string;
   pass?: boolean;
   reason?: string;
@@ -289,6 +370,10 @@ export interface BenchResult {
   decode_tps?: number | null;
   lead_tps?: number | null;
   helpers?: number;
+  helper_routes?: string[] | null;
+  slots?: string[] | null;
+  /** Decode tok/s per model copy ("A", "B"). */
+  copy_tps?: Record<string, number> | null;
   bridge_turns?: number | null;
   cost_usd?: number | null;
   mean_w?: number | null;
@@ -411,6 +496,16 @@ export const api = {
   clone: (url: string, parent: string, name?: string, token?: string) =>
     request<CloneStatus>("POST", "/api/projects/clone", { url, parent, name, token: token || undefined }),
   validateGithub: (body: { token?: string; pid?: string; url?: string }) => request<GitHubCheck>("POST", "/api/github/validate", body),
+  benchLogs: async (id: string) => {
+    const res = await fetch(`/api/bench/runs/${encodeURIComponent(id)}/logs`, { credentials: "same-origin" });
+    return res.ok ? res.text() : "(no logs for this run)";
+  },
+  profiles: () => request<ProfileList>("GET", "/api/profiles"),
+  profilePlan: (profile: string) => request<SwitchPlan>("GET", `/api/profiles/plan${q({ profile })}`),
+  profileSwitch: (profile: string) => request<SwitchJob>("POST", "/api/profiles/switch", { profile }),
+  profileJob: (id: string) => request<SwitchJob>("GET", `/api/profiles/jobs/${encodeURIComponent(id)}`),
+  setProjectProfile: (pid: string, profile: string | null) =>
+    request<{ ok: boolean; profile: string | null; message?: string | null }>("POST", `/api/projects/${encodeURIComponent(pid)}/profile`, { profile }),
   benchMirrorState: () =>
     request<{ exists: boolean; path: string; head?: string; origin?: string | null; updated?: string }>("GET", "/api/bench/mirror"),
   benchMirror: () => request<{ ok: boolean; output: string; error: string }>("POST", "/api/bench/mirror"),
