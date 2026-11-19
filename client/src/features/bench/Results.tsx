@@ -16,6 +16,7 @@ import {
   type Score,
   type Tariff,
 } from "./score";
+import { cellKey, cellLabel, cellTip, heatmap, wallPosition, type HeatCell, type Heatmap } from "./heatmap";
 
 /**
  * Results: the scorecard's views over results.jsonl. Settings (tariff, grouping, suite), the
@@ -40,6 +41,7 @@ export function BenchResults({ rows }: { rows: BenchResult[] }) {
   const tasks = useMemo(() => [...new Set(scores.map((s) => s.task))].sort(), [scores]);
   const setups = useMemo(() => [...new Set(inSuite.map((r) => setupOf(r, grouping)))], [inSuite, grouping]);
   const pence = useMemo(() => costs(inSuite, tariff, grouping), [inSuite, tariff, grouping]);
+  const heat = useMemo(() => heatmap(visible), [visible]);
 
   return (
     <>
@@ -123,6 +125,8 @@ export function BenchResults({ rows }: { rows: BenchResult[] }) {
           />
         </section>
       )}
+
+      {heat && <HeatmapView map={heat} />}
 
       {tasks.map((task) => (
         <TaskCharts key={task} task={task} scores={scores.filter((s) => s.task === task)} colours={colours} />
@@ -307,6 +311,120 @@ function TaskCharts({ task, scores, colours }: { task: string; scores: Score[]; 
             items={by((s) => (s.pence == null ? null : -s.pence)).map((s) => ({ key: s.setup, value: s.pence, label: s.pence == null ? "—" : `${s.pence.toFixed(1)}p` }))}
           />
         </Chart>
+      </div>
+    </section>
+  );
+}
+
+type HeatBy = "pass" | "time";
+
+/**
+ * Profiles (rows) × lead modes (columns), shown when the filtered runs cover at least two of each.
+ * A cell reads "passed/runs · mean pass seconds"; its fill is the pass rate (destructive → success)
+ * or the mean pass time (stronger = faster). The tooltip lists every rep.
+ */
+function HeatmapView({ map }: { map: Heatmap }) {
+  const [by, setBy] = useState<HeatBy>("pass");
+  const multiTask = map.tasks.length > 1;
+  const fill = (c: HeatCell | undefined): string | undefined => {
+    if (!c || !c.total) return undefined;
+    if (by === "pass") {
+      const pct = Math.round((100 * c.passed) / c.total);
+      return `color-mix(in oklab, hsl(var(--success) / 0.55) ${pct}%, hsl(var(--destructive) / 0.5))`;
+    }
+    const pos = wallPosition(c, map.wallRange);
+    return pos == null ? undefined : `hsl(var(--primary) / ${(0.5 - 0.4 * pos).toFixed(2)})`;
+  };
+  const cellTd = (key: string, c: HeatCell | undefined, total = false) => (
+    <td key={key} className={cn("border border-background px-2 py-1.5 text-center tabular-nums", total && "text-muted-foreground")}>
+      {c && c.runs.length ? (
+        <div
+          className="rounded px-1 py-1"
+          style={{ background: total ? undefined : fill(c) }}
+          title={cellTip(c, multiTask)}
+          data-testid={total ? undefined : "heat-cell"}
+        >
+          {cellLabel(c)}
+        </div>
+      ) : (
+        <span className="text-muted-foreground">·</span>
+      )}
+    </td>
+  );
+  return (
+    <section className="rounded-lg border bg-panel p-3" data-testid="bench-heatmap">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-semibold">
+          Profile × mode{" "}
+          <span className="font-normal text-muted-foreground">
+            · passed/runs · mean pass time{multiTask ? ` · over ${map.tasks.length} tasks` : ` · ${map.tasks[0]}`}
+          </span>
+        </h2>
+        <div className="ml-auto inline-flex rounded-md border p-0.5 text-[11px]" role="radiogroup" aria-label="Colour by">
+          {(["pass", "time"] as const).map((b) => (
+            <button
+              key={b}
+              role="radio"
+              aria-checked={by === b}
+              onClick={() => setBy(b)}
+              className={cn("rounded px-2 py-0.5", by === b ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-accent")}
+            >
+              {b === "pass" ? "pass rate" : "pass time"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead className="text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1 text-left font-medium">Profile</th>
+              {map.modes.map((m) => (
+                <th key={m} className="px-2 py-1 text-center font-mono font-medium">
+                  {m}
+                </th>
+              ))}
+              <th className="px-2 py-1 text-center font-medium">all modes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {map.profiles.map((p) => (
+              <tr key={p}>
+                <th className="whitespace-nowrap px-2 py-1 text-left font-mono font-normal">{p}</th>
+                {map.modes.map((m) => (
+                  cellTd(m, map.cells.get(cellKey(p, m)))
+                ))}
+                {cellTd("all", map.rowTotals.get(p), true)}
+              </tr>
+            ))}
+            <tr>
+              <th className="px-2 py-1 text-left font-normal text-muted-foreground">all profiles</th>
+              {map.modes.map((m) => (
+                cellTd(m, map.colTotals.get(m), true)
+              ))}
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+        {by === "pass" ? (
+          <>
+            <span>0% passed</span>
+            <span
+              className="h-2 w-28 rounded"
+              style={{ background: "linear-gradient(to right in oklab, hsl(var(--destructive) / 0.5), hsl(var(--success) / 0.55))" }}
+            />
+            <span>100%</span>
+          </>
+        ) : (
+          <>
+            <span>fastest{map.wallRange ? ` ${Math.round(map.wallRange[0])} s` : ""}</span>
+            <span className="h-2 w-28 rounded" style={{ background: "linear-gradient(to right, hsl(var(--primary) / 0.5), hsl(var(--primary) / 0.1))" }} />
+            <span>slowest{map.wallRange ? ` ${Math.round(map.wallRange[1])} s` : ""} · no fill: nothing passed</span>
+          </>
+        )}
+        <span className="ml-auto">Hover a cell for each rep.</span>
       </div>
     </section>
   );
