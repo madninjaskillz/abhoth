@@ -5,48 +5,9 @@ import { useProject } from "@/store/session";
 import { useWorkspace } from "@/store/workspace";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { asPath, mediaKind, relativeTo } from "./media";
 
-const MEDIA: Record<string, "image" | "pdf" | "audio" | "video"> = {
-  png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image", bmp: "image", ico: "image", avif: "image", svg: "image",
-  pdf: "pdf",
-  mp3: "audio", wav: "audio", ogg: "audio", oga: "audio", flac: "audio", m4a: "audio", aac: "audio", opus: "audio",
-  mp4: "video", m4v: "video", webm: "video", mov: "video", ogv: "video",
-};
-
-export function mediaKind(path: string) {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return MEDIA[ext];
-}
-
-/**
- * Whether a token in chat output reads as a file path: no spaces or URL scheme, and either a
- * folder separator or a file extension. ":12" / ":12:3" line suffixes are allowed (and dropped).
- */
-export function asPath(token: string): string | null {
-  const t = token.trim().replace(/^["'`]|["'`]$/g, "");
-  if (!t || t.length > 300 || /\s/.test(t) || /^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return null;
-  const m = /^((?:[A-Za-z]:[\\/]|~?[\\/]|\.{1,2}[\\/])?[\w@.+\-[\]()]+(?:[\\/][\w@.+\-[\]() ]*[\w@.+\-[\]()])*)(?::\d+(?::\d+)?)?$/.exec(t);
-  if (!m) return null;
-  const p = m[1];
-  const hasSep = /[\\/]/.test(p);
-  const hasExt = /\.[A-Za-z0-9]{1,8}$/.test(p) && !/^\d+(\.\d+)+$/.test(p) && !/^v?\d/.test(p.split(/[\\/]/).pop()!);
-  if (!hasSep && !hasExt) return null;
-  if (hasSep && !hasExt && !/[\\/]$/.test(p) && p.split(/[\\/]/).length < 2) return null;
-  return p;
-}
-
-/** The path relative to <paramref name="root"/> when inside it ("/" separators), else null for absolute paths outside. */
-export function relativeTo(root: string, path: string): string | null {
-  const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "");
-  const p = norm(path);
-  const r = norm(root);
-  const abs = /^([A-Za-z]:\/|\/)/.test(p);
-  if (!abs) return p.replace(/^\.\//, "");
-  const ci = /^[A-Za-z]:\//.test(r);
-  const pc = ci ? p.toLowerCase() : p;
-  const rc = ci ? r.toLowerCase() : r;
-  return pc === rc ? "" : pc.startsWith(rc + "/") ? p.slice(r.length + 1) : null;
-}
+export { asPath, mediaKind, relativeTo };
 
 interface Viewer {
   open: { pid: string; wt: string | null; path: string } | null;

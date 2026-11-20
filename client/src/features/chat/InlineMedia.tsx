@@ -4,7 +4,9 @@ import { FileText, Image as ImageIcon } from "lucide-react";
 import { rawUrl } from "@/lib/api";
 import { useProject } from "@/store/session";
 import { useWorkspace } from "@/store/workspace";
-import { asPath, mediaKind, relativeTo, useViewer } from "./FileLink";
+import { cn } from "@/lib/utils";
+import { useViewer } from "./FileLink";
+import { mediaKind, mediaPathsIn, relativeTo } from "./media";
 
 /** At most this many previews per message; the rest behind "show N more". */
 const MAX_PREVIEWS = 4;
@@ -32,41 +34,17 @@ export const useInlineMedia = create<{ on: boolean; set: (on: boolean) => void }
   },
 }));
 
-// A path with a media extension, as written in prose, code or tool output.
-const MEDIA_TOKEN = /(?:[A-Za-z]:[\\/]|~?[\\/]|\.{1,2}[\\/])?[\w@.+\-[\]()\\/]*\.(?:png|jpe?g|gif|webp|bmp|avif|svg|pdf|mp3|wav|ogg|oga|flac|m4a|aac|opus|mp4|m4v|webm|mov|ogv)\b/gi;
-
-/** The media files a chat text mentions (code spans, links, bare paths), in order, without repeats. */
-export function mediaPathsIn(text: string | null | undefined): string[] {
-  if (!text) return [];
-  const found: string[] = [];
-  const add = (raw: string) => {
-    const p = asPath(raw);
-    if (p && mediaKind(p) && !found.includes(p)) found.push(p);
-  };
-  for (const m of text.matchAll(/\]\(([^)\s]+)\)/g)) {
-    try {
-      add(decodeURIComponent(m[1]));
-    } catch {
-      add(m[1]);
-    }
-  }
-  for (const m of text.matchAll(MEDIA_TOKEN)) {
-    // Skip URLs (https://host/a.png): only files are previewed.
-    if (text[(m.index ?? 0) - 1] === ":") continue;
-    add(m[0]);
-  }
-  return found;
-}
+export { mediaPathsIn };
 
 /** Inline previews of media files under a message or tool card (images, audio, video, PDFs). */
-export function MediaPreviews({ paths }: { paths: string[] }) {
+export function MediaPreviews({ paths, className }: { paths: string[]; className?: string }) {
   const on = useInlineMedia((s) => s.on);
   const [all, setAll] = useState(false);
   const media = paths.filter((p) => mediaKind(p));
   if (!on || media.length === 0) return null;
   const shown = all ? media : media.slice(0, MAX_PREVIEWS);
   return (
-    <div className="flex flex-wrap items-start gap-2" data-testid="media-previews">
+    <div className={cn("flex flex-wrap items-start gap-2", className)} data-testid="media-previews">
       {shown.map((p) => (
         <Preview key={p} path={p} />
       ))}

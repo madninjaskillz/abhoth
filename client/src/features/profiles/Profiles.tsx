@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Loader2, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { api, type LayoutDefinition, type ProfileList, type SwitchJob, type SwitchPlan } from "@/lib/api";
+import { menuRow } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
 
 /**
@@ -211,8 +212,11 @@ function Steps({ job }: { job: SwitchJob }) {
   );
 }
 
-/** App bar: the live server layout; opens the layout list with a switch per profile. */
-export function ServerLayoutControl({ narrow }: { narrow?: boolean }) {
+/**
+ * App bar: the live server layout; opens the layout list with a switch per profile.
+ * `menu`: a labelled row of the header's menu.
+ */
+export function ServerLayoutControl({ narrow, menu }: { narrow?: boolean; menu?: boolean }) {
   const profiles = useProfiles();
   const [open, setOpen] = useState(false);
   const sw = useServerSwitch();
@@ -224,13 +228,15 @@ export function ServerLayoutControl({ narrow }: { narrow?: boolean }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex shrink-0 items-center gap-1.5 self-center rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
+        role={menu ? "menuitem" : undefined}
+        className={menu ? menuRow : "flex shrink-0 items-center gap-1.5 self-center rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent"}
         title={d.available ? `Server layout: ${live?.layout ?? "unknown"}${d.offline ? " (offline copy)" : ""}` : d.error ?? "Profiles unavailable"}
         data-testid="server-layout"
       >
-        <Server className="size-4" />
-        <span className={cn("size-1.5 rounded-full", busy ? "animate-pulse bg-warning" : live?.healthy ? "bg-success" : "bg-destructive")} />
-        {!narrow && <span className="font-mono">{busy ? `→ ${live?.job?.layout}` : live?.layout ?? "?"}</span>}
+        <Server className={cn("size-4 shrink-0", menu && "text-muted-foreground")} />
+        {menu && <span>Server layout</span>}
+        <span className={cn("size-1.5 shrink-0 rounded-full", menu && "ml-auto", busy ? "animate-pulse bg-warning" : live?.healthy ? "bg-success" : "bg-destructive")} />
+        {(menu || !narrow) && <span className={cn("font-mono", menu && "truncate text-xs text-muted-foreground")}>{busy ? `→ ${live?.job?.layout}` : live?.layout ?? "?"}</span>}
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">

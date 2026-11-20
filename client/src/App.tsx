@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { authState, signOut, startEnroll } from "@/lib/auth";
-import { LogOut, ShieldCheck } from "lucide-react";
+import { Check, LogOut, Menu, ShieldCheck, UserRound } from "lucide-react";
 import { SettingsButton } from "@/features/settings/SettingsDialog";
 import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { FlaskConical, FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
-import { BenchPage, BenchStatusPill } from "@/features/bench/BenchPage";
+import { BenchPage, BenchStatusPill, benchStatus } from "@/features/bench/BenchPage";
 import { ServerLayoutControl } from "@/features/profiles/Profiles";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EditorArea } from "@/features/editor/EditorArea";
@@ -16,7 +16,8 @@ import { usePanelCollapsed, usePanelKeys } from "@/lib/panels";
 import { TerminalPanel } from "@/features/terminal/TerminalPanel";
 import { AddProjectDialog } from "@/features/projects/AddProjectDialog";
 import { ConfirmDialog } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger, Tip } from "@/components/ui/misc";
+import { Tabs, TabsContent, TabsList, TabsTrigger, Tip, menuRow } from "@/components/ui/misc";
+import { nextMenuIndex, shouldCollapse } from "@/lib/headerCollapse";
 import { ProjectContext, dropSessionStore, sessionStore, useConnection, useProject, type ProjectContextValue } from "@/store/session";
 import { useWorkspace } from "@/store/workspace";
 import { useStore } from "zustand";
@@ -220,6 +221,85 @@ function Header({
   const [closing, setClosing] = useState<Project | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
 
+  // The buttons on the right fold into a menu (☰) when they and the tabs don't both fit.
+  const headerRef = useRef<HTMLElement>(null);
+  const brandRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const statusRef = useRef<HTMLSpanElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  const [collapsed, setCollapsed] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // The buttons' width in the bar, as last measured there (per label mode: icons only when narrow).
+  const barWidth = useRef<{ narrow: number; wide: number }>({ narrow: 0, wide: 0 });
+  const shownCollapsed = useRef(false);
+
+  const measure = useCallback(() => {
+    const header = headerRef.current;
+    const nav = navRef.current;
+    const actions = actionsRef.current;
+    if (!header || !nav || !actions) return;
+    const mode = narrow ? "narrow" : "wide";
+    if (!shownCollapsed.current) barWidth.current[mode] = actions.offsetWidth;
+    const first = nav.firstElementChild;
+    const last = nav.lastElementChild;
+    const tabs = first && last ? last.getBoundingClientRect().right - first.getBoundingClientRect().left : 0;
+    const style = getComputedStyle(header);
+    const gap = parseFloat(style.columnGap) || 0;
+    const room =
+      header.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) -
+      (brandRef.current?.offsetWidth ?? 0) - (statusRef.current?.offsetWidth ?? 0) - 3 * gap;
+    setCollapsed(shouldCollapse({ viewport: window.innerWidth, room, tabs, actions: barWidth.current[mode], collapsed: shownCollapsed.current }));
+  }, [narrow]);
+
+  // After every render (before paint): what is on screen now, then whether it should change.
+  useLayoutEffect(() => {
+    shownCollapsed.current = collapsed;
+    measure();
+  });
+  // And when the bar, a tab or the buttons change size on their own (window, a tab's badges, a pill).
+  useEffect(() => {
+    window.addEventListener("resize", measure);
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => measure());
+    for (const el of [headerRef.current, actionsRef.current, ...Array.from(navRef.current?.children ?? [])]) if (el) ro?.observe(el);
+    return () => {
+      window.removeEventListener("resize", measure);
+      ro?.disconnect();
+    };
+  }, [measure, projects, canAdd]);
+
+  const closeMenu = useCallback((refocus: boolean) => {
+    setMenuOpen(false);
+    if (refocus) menuButtonRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    if (!collapsed) setMenuOpen(false);
+  }, [collapsed]);
+  // Open: focus the first row; Escape or a press outside closes it and gives the focus back.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const panel = actionsRef.current;
+    panel?.querySelector<HTMLElement>("button:not([disabled])")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      closeMenu(true);
+    };
+    const onPress = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (t && (panel?.contains(t) || menuButtonRef.current?.contains(t))) return;
+      // The pressed element takes the focus itself if it can; otherwise it is back on the button.
+      closeMenu(!!panel?.contains(document.activeElement));
+    };
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("pointerdown", onPress, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("pointerdown", onPress, true);
+    };
+  }, [menuOpen, closeMenu]);
+
   const dot =
     connection === "connected" ? "bg-success" : connection === "reconnecting" || connection === "connecting" ? "bg-warning animate-pulse" : "bg-destructive";
 
@@ -241,12 +321,12 @@ function Header({
   };
 
   return (
-    <header className="flex h-10 shrink-0 items-stretch gap-2 border-b bg-panel pl-3 pr-2">
-      <div className="flex shrink-0 items-center gap-2 font-semibold">
+    <header ref={headerRef} className="relative flex h-10 shrink-0 items-stretch gap-2 border-b bg-panel pl-3 pr-2" data-collapsed={collapsed}>
+      <div ref={brandRef} className="flex shrink-0 items-center gap-2 font-semibold">
         <MascotBadge />
         {!narrow && <span className="tracking-tight">Open<span className="text-primary">Orca</span></span>}
       </div>
-      <nav className="flex min-w-0 flex-1 items-end gap-px overflow-x-auto pt-1.5" role="tablist" data-testid="project-tabs">
+      <nav ref={navRef} className="flex min-w-0 flex-1 items-end gap-px overflow-x-auto pt-1.5" role="tablist" data-testid="project-tabs">
         {projects.map((p) => (
           <ProjectTab key={p.id} project={p} active={p.id === active} onSelect={() => setActive(p.id)} onClose={() => setClosing(p)} />
         ))}
@@ -263,30 +343,103 @@ function Header({
           </Tip>
         )}
       </nav>
-      <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" data-testid="connection">
+      <span ref={statusRef} className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" data-testid="connection" title={connection}>
         <span className={cn("size-2 rounded-full", dot)} />
         {!narrow && <span>{connection}</span>}
       </span>
-      {profilesOn && <ServerLayoutControl narrow={narrow} />}
-      {bench && (
-        <Tip label="Benchmarks">
-          <button
-            onClick={bench.toggle}
-            className={cn(
-              "flex shrink-0 items-center gap-1 self-center rounded-md px-2 py-1 text-xs hover:bg-accent",
-              bench.open ? "bg-accent text-foreground" : "text-muted-foreground",
-            )}
-            data-testid="bench-toggle"
-            aria-pressed={bench.open}
-          >
-            <FlaskConical className="size-4" />
-            {!narrow && <span>Benchmarks</span>}
-            <BenchRunningPill />
-          </button>
-        </Tip>
+      {collapsed && (
+        <button
+          ref={menuButtonRef}
+          className={cn(
+            "relative -mb-px -mr-1 flex h-10 w-10 shrink-0 items-center justify-center self-start rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            menuOpen && "bg-accent text-foreground",
+          )}
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-label="Menu"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-controls={menuId}
+          data-testid="header-menu-button"
+        >
+          <Menu className="size-5" />
+          {bench && <BenchRunningDot />}
+        </button>
       )}
-      <SettingsButton project={projects.find((p) => p.id === active)} narrow={narrow} />
-      {authState().mode === "login" && <AccountMenu narrow={narrow} />}
+      {/* The same buttons in the same place in the tree, in the bar or as the menu's rows, so an open
+          dialog (settings, server layout) survives the bar folding and the menu closing. */}
+      <div
+        ref={actionsRef}
+        id={menuId}
+        role={collapsed ? "menu" : undefined}
+        aria-label={collapsed ? "Menu" : undefined}
+        className={
+          collapsed
+            ? cn(
+                "absolute right-1 top-full z-50 mt-1 flex max-h-[calc(100dvh-3.5rem)] w-64 max-w-[calc(100vw-0.5rem)] flex-col gap-0.5 overflow-y-auto rounded-md border bg-panel p-1 shadow-lg",
+                !menuOpen && "hidden",
+              )
+            : "flex shrink-0 items-stretch gap-2"
+        }
+        data-testid="header-actions"
+        onClick={(e) => {
+          // A row was chosen (not a click inside a dialog a row opened: those bubble here through React only).
+          const t = e.target as Element;
+          if (collapsed && e.currentTarget.contains(t) && t.closest("button")) setMenuOpen(false);
+        }}
+        onKeyDown={(e) => {
+          if (!collapsed || !e.currentTarget.contains(e.target as Node)) return;
+          const rows = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("button:not([disabled])"));
+          const at = rows.indexOf(document.activeElement as HTMLElement);
+          const to = nextMenuIndex(at, rows.length, e.key);
+          if (to !== at && to >= 0) {
+            e.preventDefault();
+            rows[to].focus();
+          }
+        }}
+        onBlur={(e) => {
+          // Tabbing out of the menu closes it.
+          const to = e.relatedTarget as Node | null;
+          if (collapsed && menuOpen && to && e.currentTarget.contains(e.target as Node) && !e.currentTarget.contains(to) && !menuButtonRef.current?.contains(to)) setMenuOpen(false);
+        }}
+      >
+        {collapsed && (
+          <div className="flex min-h-10 items-center gap-2.5 px-3 text-sm text-muted-foreground" data-testid="menu-connection">
+            <span className="flex size-4 shrink-0 items-center justify-center"><span className={cn("size-2 rounded-full", dot)} /></span>
+            <span>Connection</span>
+            <span className="ml-auto text-xs">{connection}</span>
+          </div>
+        )}
+        {profilesOn && <ServerLayoutControl narrow={narrow} menu={collapsed} />}
+        {bench &&
+          (collapsed ? (
+            <button role="menuitemcheckbox" aria-checked={bench.open} onClick={bench.toggle} className={menuRow} data-testid="bench-toggle">
+              <FlaskConical className="size-4 shrink-0 text-muted-foreground" />
+              <span>Benchmarks</span>
+              <span className="ml-auto flex items-center gap-1.5">
+                <BenchRunningPill />
+                {bench.open && <Check className="size-4 text-primary" aria-hidden />}
+              </span>
+            </button>
+          ) : (
+            <Tip label="Benchmarks">
+              <button
+                onClick={bench.toggle}
+                className={cn(
+                  "flex shrink-0 items-center gap-1 self-center rounded-md px-2 py-1 text-xs hover:bg-accent",
+                  bench.open ? "bg-accent text-foreground" : "text-muted-foreground",
+                )}
+                data-testid="bench-toggle"
+                aria-pressed={bench.open}
+              >
+                <FlaskConical className="size-4" />
+                {!narrow && <span>Benchmarks</span>}
+                <BenchRunningPill />
+              </button>
+            </Tip>
+          ))}
+        <SettingsButton project={projects.find((p) => p.id === active)} narrow={narrow} menu={collapsed} />
+        {authState().mode === "login" && <AccountMenu narrow={narrow} menu={collapsed} />}
+      </div>
       <AddProjectDialog
         open={adding}
         onOpenChange={setAdding}
@@ -358,9 +511,30 @@ function ProjectTab({ project, active, onSelect, onClose }: { project: Project; 
   );
 }
 
-/** Sign-in mode: who is signed in, 2FA setup (when not on yet) and sign out. */
-function AccountMenu({ narrow }: { narrow: boolean }) {
+/** Sign-in mode: who is signed in, 2FA setup (when not on yet) and sign out. `menu`: labelled rows of the header's menu. */
+function AccountMenu({ narrow, menu }: { narrow: boolean; menu?: boolean }) {
   const auth = authState();
+  const enroll = () => void startEnroll().then(() => location.reload());
+  if (menu) {
+    return (
+      <div className="mt-0.5 flex flex-col gap-0.5 border-t pt-1" data-testid="account">
+        <div className="flex min-h-10 items-center gap-2.5 px-3 text-sm text-muted-foreground">
+          <UserRound className="size-4 shrink-0" />
+          <span className="truncate">{auth.user}</span>
+        </div>
+        {!auth.totp && (
+          <button role="menuitem" className={menuRow} onClick={enroll} data-testid="enable-2fa" title="An authenticator app code at each sign-in">
+            <ShieldCheck className="size-4 shrink-0 text-muted-foreground" />
+            <span>Turn on two-factor sign-in</span>
+          </button>
+        )}
+        <button role="menuitem" className={menuRow} onClick={() => void signOut()} data-testid="sign-out">
+          <LogOut className="size-4 shrink-0 text-muted-foreground" />
+          <span>Sign out</span>
+        </button>
+      </div>
+    );
+  }
   return (
     <span className="flex shrink-0 items-center gap-1 text-xs" data-testid="account">
       {!narrow && <span className="max-w-[12rem] truncate text-muted-foreground">{auth.user}</span>}
@@ -368,8 +542,9 @@ function AccountMenu({ narrow }: { narrow: boolean }) {
         <Tip label="Turn on two-factor sign-in (an authenticator app code at each sign-in)">
           <button
             className="rounded px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            onClick={() => void startEnroll().then(() => location.reload())}
+            onClick={enroll}
             data-testid="enable-2fa"
+            aria-label="Turn on two-factor sign-in"
           >
             <ShieldCheck className="size-4" />
           </button>
@@ -402,4 +577,18 @@ function Unauthorized() {
 function BenchRunningPill() {
   const state = useQuery({ queryKey: ["bench"], queryFn: api.bench, refetchInterval: 5000 });
   return <BenchStatusPill state={state.data} compact />;
+}
+
+/** On the menu button while a bench run is going (the pill itself is inside the menu). */
+function BenchRunningDot() {
+  const state = useQuery({ queryKey: ["bench"], queryFn: api.bench, refetchInterval: 5000 });
+  const st = benchStatus(state.data);
+  if (st.kind === "idle") return null;
+  return (
+    <span
+      className={cn("absolute right-1.5 top-1.5 size-2 rounded-full", st.kind === "running" ? "animate-pulse bg-primary" : "bg-warning")}
+      title={st.text}
+      data-testid="menu-bench-dot"
+    />
+  );
 }

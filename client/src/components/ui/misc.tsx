@@ -68,6 +68,10 @@ export const TabsContent = React.forwardRef<
 ));
 TabsContent.displayName = TabsPrimitive.Content.displayName;
 
+/** A row of the app bar's menu (the bar's buttons, folded): a full-width, 40 px tall target. */
+export const menuRow =
+  "flex min-h-10 w-full shrink-0 items-center gap-2.5 rounded px-3 py-2 text-left text-sm text-foreground hover:bg-accent focus-visible:bg-accent focus-visible:outline-none";
+
 export const TooltipProvider = TooltipPrimitive.Provider;
 
 export function Tip({ label, children, side = "bottom" }: { label: React.ReactNode; children: React.ReactNode; side?: "top" | "bottom" | "left" | "right" }) {

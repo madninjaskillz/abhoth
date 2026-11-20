@@ -5,27 +5,34 @@ import { api, settingsApi, type Project, type Setting } from "@/lib/api";
 import { ProfilePicker, useProfiles } from "@/features/profiles/Profiles";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { Tip } from "@/components/ui/misc";
+import { Tip, menuRow } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
 
 const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
 
-/** The gear in the header: opens the settings (the web's /config). */
-export function SettingsButton({ project, narrow }: { project: Project | undefined; narrow: boolean }) {
+/** The gear in the header: opens the settings (the web's /config). `menu`: a labelled row of the header's menu. */
+export function SettingsButton({ project, narrow, menu }: { project: Project | undefined; narrow: boolean; menu?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Tip label="Settings (/config)">
-        <button
-          className="flex shrink-0 items-center gap-1 self-center rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={() => setOpen(true)}
-          aria-label="Settings"
-          data-testid="settings-open"
-        >
-          <Settings className="size-4" />
-          {!narrow && <span className="sr-only">Settings</span>}
+      {menu ? (
+        <button role="menuitem" className={menuRow} onClick={() => setOpen(true)} data-testid="settings-open">
+          <Settings className="size-4 shrink-0 text-muted-foreground" />
+          <span>Settings</span>
         </button>
-      </Tip>
+      ) : (
+        <Tip label="Settings (/config)">
+          <button
+            className="flex shrink-0 items-center gap-1 self-center rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={() => setOpen(true)}
+            aria-label="Settings"
+            data-testid="settings-open"
+          >
+            <Settings className="size-4" />
+            {!narrow && <span className="sr-only">Settings</span>}
+          </button>
+        </Tip>
+      )}
       {open && <SettingsDialog project={project} onClose={() => setOpen(false)} />}
     </>
   );

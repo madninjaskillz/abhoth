@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Mascot, MascotThinking } from "@/components/Mascot";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,8 +11,9 @@ import { AttachmentChips, useAttachments } from "./Attachments";
 import { EngineBanner, EnginePicker, useEngineFlow } from "./EnginePicker";
 import { ProfilePicker } from "@/features/profiles/Profiles";
 import { QuestionPrompts } from "./QuestionPrompts";
-import { MediaPreviews, mediaPathsIn, useInlineMedia } from "./InlineMedia";
-import { FileLink, MediaViewer, asPath, mediaKind } from "./FileLink";
+import { MediaPreviews, useInlineMedia } from "./InlineMedia";
+import { FileLink, MediaViewer } from "./FileLink";
+import { argPath, asPath, itemMedia, mediaKind, planMedia } from "./media";
 import { rawUrl } from "@/lib/api";
 import type { Components } from "react-markdown";
 import { Button } from "@/components/ui/button";
@@ -92,6 +93,8 @@ function Transcript() {
   const busy = useSession((s) => s.busy);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  // Each media file once per turn, outside the collapsible blocks (see planMedia).
+  const media = useMemo(() => planMedia(items), [items]);
 
   // Follow the stream unless the user scrolled up.
   const onScroll = () => {
@@ -108,7 +111,7 @@ function Transcript() {
       {items.length === 0 && <EmptyState />}
       <div className="w-full space-y-3">
         {items.map((item) => (
-          <Item key={item.key} item={item} />
+          <Item key={item.key} item={item} media={media.get(item.key)?.join("\n")} />
         ))}
         {busy && !items.some((i) => (i.kind === "assistant" || i.kind === "thinking") && i.streaming) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -137,7 +140,9 @@ function EmptyState() {
   );
 }
 
-const Item = memo(function Item({ item }: { item: ChatItem }) {
+/** One transcript item. `media`: the files previewed under it by default (newline separated, so the memo holds). */
+const Item = memo(function Item({ item, media }: { item: ChatItem; media?: string }) {
+  const shown = media ? media.split("\n") : [];
   switch (item.kind) {
     case "user":
       return (
@@ -156,19 +161,16 @@ const Item = memo(function Item({ item }: { item: ChatItem }) {
           <div className={cn("md", item.streaming && "streaming-caret")} data-testid="assistant-message">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{item.text}</ReactMarkdown>
           </div>
-          {!item.streaming && <MediaPreviews paths={mediaPathsIn(item.text)} />}
+          <MediaPreviews paths={shown} />
         </div>
       );
     case "thinking":
-      return <Thinking text={item.text} streaming={item.streaming} />;
+      return <Thinking item={item} />;
     case "tool":
-      return <ToolCard item={item} />;
+      return <ToolCard item={item} media={shown} />;
     case "system":
       return (
-        <details className="rounded-md border bg-panel text-xs">
-          <summary className="cursor-pointer px-3 py-1.5 text-muted-foreground">tool results</summary>
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap px-3 pb-2 font-mono">{item.text}</pre>
-        </details>
+        <ToolResults item={item} />
       );
     case "notice": {
       const Icon = item.level === "error" ? AlertTriangle : item.level === "warning" ? AlertTriangle : Info;
@@ -201,30 +203,41 @@ const Item = memo(function Item({ item }: { item: ChatItem }) {
   }
 });
 
-function Thinking({ text, streaming }: { text: string; streaming: boolean }) {
+/**
+ * Media a collapsible block mentions, drawn inside the block. Callers render this only while the
+ * block is expanded, so a collapsed block neither shows nor fetches anything.
+ */
+function BlockMedia({ item }: { item: ChatItem }) {
+  return <MediaPreviews paths={itemMedia(item)} className="px-3 pb-2" />;
+}
+
+function Thinking({ item }: { item: Extract<ChatItem, { kind: "thinking" }> }) {
   const [open, setOpen] = useState(false);
+  const { text, streaming } = item;
   return (
-    <div className="rounded-md border border-dashed text-xs text-muted-foreground">
-      <button className="flex w-full items-center gap-1.5 px-3 py-1.5" onClick={() => setOpen(!open)}>
+    <div className="rounded-md border border-dashed text-xs text-muted-foreground" data-testid="thinking">
+      <button className="flex w-full items-center gap-1.5 px-3 py-1.5" onClick={() => setOpen(!open)} aria-expanded={open}>
         <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
         <Brain className="size-3.5" />
         <span>{streaming ? "thinking…" : "thought"}</span>
         <span className="ml-auto tabular-nums">{text.length.toLocaleString()} chars</span>
       </button>
       {open && <pre className="max-h-72 overflow-auto whitespace-pre-wrap px-3 pb-2 font-mono">{text}</pre>}
+      {open && <BlockMedia item={item} />}
     </div>
   );
 }
 
-/** The file a tool call is about (its path argument), for a link in the card's header. */
-function argPath(args: string): string | null {
-  try {
-    const o = JSON.parse(args);
-    const v = o.path ?? o.file_path ?? o.filePath ?? o.file;
-    return typeof v === "string" ? asPath(v) : null;
-  } catch {
-    return null;
-  }
+/** A "tool results" block from the saved history: closed by default, its media only while open. */
+function ToolResults({ item }: { item: Extract<ChatItem, { kind: "system" }> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details className="rounded-md border bg-panel text-xs" open={open} onToggle={(e) => setOpen(e.currentTarget.open)} data-testid="tool-results">
+      <summary className="cursor-pointer px-3 py-1.5 text-muted-foreground">tool results</summary>
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap px-3 pb-2 font-mono">{item.text}</pre>
+      {open && <BlockMedia item={item} />}
+    </details>
+  );
 }
 
 function summarizeArgs(name: string, args: string): string {
@@ -239,11 +252,17 @@ function summarizeArgs(name: string, args: string): string {
   return s.length > 120 ? s.slice(0, 120) + "…" : s || name;
 }
 
-function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
+/**
+ * A tool call: closed by default. Open, it shows its arguments, result and the media they mention.
+ * Closed, the card shows no media; `media` (the files no answer in the turn shows, see planMedia)
+ * is previewed below it instead, outside the card.
+ */
+function ToolCard({ item, media }: { item: Extract<ChatItem, { kind: "tool" }>; media: string[] }) {
   const [open, setOpen] = useState(false);
   const Icon = item.name === "bash" || item.name === "shell" ? TerminalSquare : Wrench;
   const path = argPath(item.args);
   return (
+    <div className="space-y-2">
     <div className={cn("rounded-md border bg-panel text-xs", item.isError && "border-destructive/40")} data-testid="tool-card">
       <div className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left" onClick={() => setOpen(!open)}>
         <ChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
@@ -263,10 +282,6 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
           )}
         </span>
       </div>
-      {item.done && !item.isError && (() => {
-        const media = [...(path ? [path] : []), ...mediaPathsIn(item.result)].filter((p, i, a) => a.indexOf(p) === i);
-        return media.length > 0 && <div className="border-t px-3 py-2"><MediaPreviews paths={media} /></div>;
-      })()}
       {open && (
         <div className="space-y-2 border-t px-3 py-2">
           {item.args && (
@@ -277,8 +292,11 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
               {item.result || "(no output)"}
             </pre>
           )}
+          <MediaPreviews paths={itemMedia(item)} />
         </div>
       )}
+    </div>
+    {!open && <MediaPreviews paths={media} />}
     </div>
   );
 }
