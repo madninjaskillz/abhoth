@@ -307,6 +307,14 @@ export interface BenchArm {
   profile?: string | null;
 }
 
+/** One model endpoint a targeted suite's runs go to (one run at a time each). The key is named by env var, never given. */
+export interface BenchTarget {
+  name: string;
+  endpoint: string;
+  model?: string | null;
+  apiKeyEnv?: string | null;
+}
+
 export interface BenchSuite {
   name: string;
   arms: BenchArm[];
@@ -316,6 +324,46 @@ export interface BenchSuite {
   description?: string | null;
   /** The arms' profile when they name none. */
   profile?: string | null;
+  /** Targeted suite: runs go straight to these endpoints, one per target, targets in parallel. */
+  targets?: BenchTarget[] | null;
+  /** "pool" (default: whichever target is free) or "each" (every run on every target). */
+  targetMode?: string | null;
+}
+
+/** Requests and tokens a run has used so far (or in all, once it ended). */
+export interface BenchLive {
+  requests: number;
+  promptTokens: number;
+  cachedTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  contentTokens: number;
+  toolTokens: number;
+}
+
+/** A line of the summary table: every run of a task on an arm (and a target, when asked by target). */
+export interface BenchSummaryRow {
+  task: string;
+  arm: string;
+  target?: string | null;
+  runs: number;
+  scored: number;
+  passes: number;
+  medianWallSeconds?: number | null;
+  medianSteps?: number | null;
+  medianPromptTokens?: number | null;
+  medianOutputTokens?: number | null;
+  medianReasoningTokens?: number | null;
+  medianToolTokens?: number | null;
+  medianContentTokens?: number | null;
+}
+
+/** The live stream's status line. */
+export interface BenchStatus {
+  paused: boolean;
+  gate?: string | null;
+  running: number;
+  queued: number;
 }
 
 export interface BenchRunInfo {
@@ -330,12 +378,25 @@ export interface BenchRunInfo {
   startedAt?: string | null;
   endedAt?: string | null;
   profile?: string | null;
+  /** The "Queue suite" click the run came from: one grid. */
+  batch?: string | null;
+  target?: string | null;
+  /** Seconds since it started (to its end, once ended). */
+  elapsed?: number | null;
+  wallSeconds?: number | null;
+  pass?: boolean | null;
+  testsPassed?: number | null;
+  testsTotal?: number | null;
+  model?: string | null;
+  live?: BenchLive | null;
 }
 
 export interface BenchState {
   paused: boolean;
   gate?: string | null;
+  /** The first running run (kept for the status pill); running = all of them. */
   current?: BenchRunInfo | null;
+  running?: BenchRunInfo[];
   queue: BenchRunInfo[];
   recent: BenchRunInfo[];
   suites: BenchSuite[];
@@ -355,6 +416,10 @@ export interface BenchResult {
   layout?: string | null;
   /** Resolved inference settings (agent, slots, thinking, models; no keys). */
   settings?: Record<string, unknown> | null;
+  batch?: string | null;
+  target?: string | null;
+  target_endpoint?: string | null;
+  model?: string | null;
   status: string;
   pass?: boolean;
   reason?: string;
@@ -371,6 +436,9 @@ export interface BenchResult {
   cached_tokens?: number;
   output_tokens?: number;
   reasoning_tokens?: number;
+  /** The rest of the output: visible text, and tool calls with their arguments. */
+  content_tokens?: number;
+  tool_tokens?: number;
   decode_tps?: number | null;
   lead_tps?: number | null;
   helpers?: number;
@@ -490,7 +558,20 @@ export const api = {
   removeProject: (id: string) => request<{ ok: boolean }>("DELETE", `/api/projects/${id}`),
   bench: () => request<BenchState>("GET", "/api/bench"),
   benchResults: () => request<BenchResult[]>("GET", "/api/bench/results"),
-  benchStart: (suite: string) => request<{ queued: number }>("POST", "/api/bench/start", { suite }),
+  benchStart: (suite: string) => request<{ queued: number; batch: string }>("POST", "/api/bench/start", { suite }),
+  benchTasks: () => request<{ name: string; timeout?: number }[]>("GET", "/api/bench/tasks"),
+  benchSaveSuite: (suite: BenchSuite, opts: { overwrite?: boolean; start?: boolean } = {}) =>
+    request<{ suite: BenchSuite; queued?: number; batch?: string }>("POST", "/api/bench/suites", { suite, ...opts }),
+  benchCancelRun: (id: string) => request<{ ok: boolean }>("POST", `/api/bench/runs/${encodeURIComponent(id)}/cancel`),
+  benchCancelBatch: (id: string) => request<{ ok: boolean; cancelled: number }>("POST", `/api/bench/batches/${encodeURIComponent(id)}/cancel`),
+  benchSummary: (batch: string, byTarget: boolean) =>
+    request<BenchSummaryRow[]>("GET", `/api/bench/summary?batch=${encodeURIComponent(batch)}${byTarget ? "&byTarget=true" : ""}`),
+  benchLogTail: async (id: string, chars: number) => {
+    const res = await fetch(`/api/bench/runs/${encodeURIComponent(id)}/logs?tail=${chars}`, { credentials: "same-origin" });
+    if (res.status === 404) return "";
+    if (!res.ok) throw new ApiError(res.statusText, res.status);
+    return res.text();
+  },
   benchControl: (what: "pause" | "resume" | "stop") => request<{ ok: boolean }>("POST", `/api/bench/${what}`),
   benchOutput: async (id: string) => {
     const res = await fetch(`/api/bench/runs/${encodeURIComponent(id)}/output`, { credentials: "same-origin" });

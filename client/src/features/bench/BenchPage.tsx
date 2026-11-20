@@ -1,15 +1,19 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, GitFork, Loader2, Pause, Play, RefreshCw, Square } from "lucide-react";
+import { Eye, GitFork, Loader2, Pause, PencilLine, Play, RefreshCw, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, type BenchRunInfo, type BenchState, type BenchSuite } from "@/lib/api";
 import { BenchResults } from "./Results";
+import { Compose } from "./Compose";
+import { LiveBatches, useBenchLive } from "./Live";
 import { cn } from "@/lib/utils";
+import { clock } from "./grid";
 
 /**
- * Benchmarks: pick a suite (arms × tasks × reps, arms optionally on inference profiles), queue it,
- * watch the current run as a read-only tab, and compare results the way the scorecard did
- * (Results.tsx). Composite = 100 × (0.6·C + 0.25·T·P + 0.15·K·P) per task and setup.
+ * Benchmarks: pick a suite (arms × tasks × reps, arms optionally on inference profiles) or compose
+ * one (Compose.tsx), queue it, watch its runs live cell by cell (Live.tsx: grid, run pane, medians)
+ * or as read-only tabs, and compare results the way the scorecard did (Results.tsx).
+ * Composite = 100 × (0.6·C + 0.25·T·P + 0.15·K·P) per task and setup.
  */
 /** The openorca mirror the real tasks clone from: newest commit, last refresh, and "Refresh mirror". */
 function Mirror({ busy }: { busy: boolean }) {
@@ -49,6 +53,7 @@ function Mirror({ busy }: { busy: boolean }) {
 
 /** "Bench running: task · arm", "Bench waiting: …", "Bench paused" or "Bench idle", for the page header and the app bar. */
 export function benchStatus(s: BenchState | undefined): { kind: "running" | "waiting" | "paused" | "idle"; text: string } {
+  if (s?.running && s.running.length > 1) return { kind: "running", text: `Bench running: ${s.running.length} runs` };
   if (s?.current) return { kind: "running", text: `Bench running: ${s.current.task} · ${s.current.arm}` };
   if (s?.paused) return { kind: "paused", text: "Bench paused" };
   if (s?.gate && s.queue.length) return { kind: "waiting", text: `Bench waiting: ${s.gate}` };
@@ -82,12 +87,22 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
   const state = useQuery({ queryKey: ["bench"], queryFn: api.bench, refetchInterval: 2000 });
   const results = useQuery({ queryKey: ["bench-results"], queryFn: api.benchResults, refetchInterval: 10000 });
   const [suite, setSuite] = useState<string | null>(null);
+  const [composing, setComposing] = useState(false);
+  const [focus, setFocus] = useState<string | null>(null);
   const suites = state.data?.suites ?? [];
   const chosen = suites.find((s) => s.name === suite) ?? suites[0];
+  // Every run, live from the event stream; the polled state stands in until it connects.
+  const stream = useBenchLive();
+  const polled = state.data ? [...(state.data.running ?? (state.data.current ? [state.data.current] : [])), ...state.data.queue, ...state.data.recent] : [];
+  const live = stream.runs ?? polled;
+  const running = live.filter((r) => r.status !== "queued" && !r.endedAt && ["setup", "running", "scoring"].includes(r.status));
 
   const start = useMutation({
     mutationFn: (name: string) => api.benchStart(name),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["bench"] }),
+    onSuccess: (r) => {
+      setFocus(r.batch);
+      return qc.invalidateQueries({ queryKey: ["bench"] });
+    },
   });
   const control = useMutation({
     mutationFn: (what: "pause" | "resume" | "stop") => api.benchControl(what),
@@ -137,7 +152,10 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
                 </Button>
               )}
               <Button size="sm" variant="outline" onClick={() => control.mutate("stop")} disabled={!s?.current && !s?.queue.length} data-testid="bench-stop">
-                <Square /> Stop
+                <Square /> Stop all
+              </Button>
+              <Button size="sm" variant={composing ? "secondary" : "outline"} onClick={() => setComposing((c) => !c)} aria-pressed={composing} data-testid="bench-compose-toggle">
+                <PencilLine /> Compose
               </Button>
               {start.error && <span className="text-xs text-destructive">{String((start.error as Error).message)}</span>}
             </div>
@@ -149,8 +167,14 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
               Now
               {s?.paused && <span className="rounded bg-warning/20 px-1.5 text-[11px] font-normal text-warning">paused</span>}
             </h2>
-            {s?.current ? (
-              <RunLine run={s.current} onWatch={onWatch} live />
+            {running.length ? (
+              <ul className="space-y-0.5">
+                {running.map((r) => (
+                  <li key={r.id}>
+                    <RunLine run={r} onWatch={onWatch} live />
+                  </li>
+                ))}
+              </ul>
             ) : (
               <p className="text-xs text-muted-foreground">Nothing running.</p>
             )}
@@ -182,6 +206,15 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
           </div>
         </section>
 
+        {composing && (
+          <section className="rounded-lg border bg-panel p-3">
+            <h2 className="mb-2 text-sm font-semibold">Compose a suite</h2>
+            <Compose suites={suites} from={chosen} onSaved={setSuite} onQueued={setFocus} />
+          </section>
+        )}
+
+        <LiveBatches live={live} results={results.data ?? []} focus={focus} onWatch={onWatch} />
+
         <BenchResults rows={results.data ?? []} />
       </div>
     </div>
@@ -190,6 +223,7 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
 
 function SuiteSummary({ suite }: { suite: BenchSuite }) {
   const runs = suite.arms.length * suite.tasks.length * Math.max(1, suite.reps);
+  const total = runs * (suite.targetMode === "each" && suite.targets?.length ? suite.targets.length : 1);
   return (
     <div className="mt-2 space-y-1 text-xs">
       {suite.description && <p className="text-muted-foreground">{suite.description}</p>}
@@ -210,8 +244,19 @@ function SuiteSummary({ suite }: { suite: BenchSuite }) {
           </span>
         ))}
       </p>
+      {!!suite.targets?.length && (
+        <p>
+          <span className="text-muted-foreground">Targets ({suite.targetMode === "each" ? "every run on each" : "whichever is free"}):</span>{" "}
+          {suite.targets.map((t) => (
+            <span key={t.name} className="mr-2 font-mono" title={t.endpoint}>
+              {t.name}
+              {t.model ? <span className="text-muted-foreground"> ({t.model})</span> : null}
+            </span>
+          ))}
+        </p>
+      )}
       <p className="text-muted-foreground">
-        {suite.reps} rep{suite.reps === 1 ? "" : "s"} · {runs} run{runs === 1 ? "" : "s"}
+        {suite.reps} rep{suite.reps === 1 ? "" : "s"} · {total} run{total === 1 ? "" : "s"}
       </p>
     </div>
   );
@@ -237,7 +282,14 @@ function RunLine({ run, onWatch, live }: { run: BenchRunInfo; onWatch: (pid: str
       <span className="truncate font-mono">
         {run.task} · {run.arm}
         {run.profile && run.profile !== run.arm ? ` (${run.profile})` : ""} · r{run.rep}
+        {run.target ? ` @ ${run.target}` : ""}
       </span>
+      {live && run.elapsed != null && (
+        <span className="shrink-0 tabular-nums text-muted-foreground">
+          {clock(run.elapsed)}
+          {run.live?.requests ? ` · ${run.live.requests} steps` : ""}
+        </span>
+      )}
       {run.note && <span className="truncate text-muted-foreground">{run.note}</span>}
       {run.projectId && (
         <Button size="sm" variant="outline" className="ml-auto h-6" onClick={() => onWatch(run.projectId!)} data-testid="bench-watch">
