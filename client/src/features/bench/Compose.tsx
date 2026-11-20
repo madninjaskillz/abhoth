@@ -10,6 +10,8 @@ interface ArmDraft {
   name: string;
   leadMode: string;
   overrides: string;
+  /** Kept from a copied suite (the form doesn't edit profiles). */
+  profile?: string | null;
 }
 
 interface TargetDraft {
@@ -28,6 +30,8 @@ interface Draft {
   timeoutMinutes: string;
   targets: TargetDraft[];
   targetMode: "pool" | "each";
+  /** The copied suite's own profile, kept. */
+  profile?: string | null;
 }
 
 const blank: Draft = {
@@ -46,7 +50,8 @@ function draftOf(s: BenchSuite): Draft {
     name: s.name,
     description: s.description ?? "",
     tasks: [...s.tasks],
-    arms: s.arms.map((a) => ({ name: a.name, leadMode: a.leadMode, overrides: setsToOverrides(a.set) })),
+    arms: s.arms.map((a) => ({ name: a.name, leadMode: a.leadMode, overrides: setsToOverrides(a.set), profile: a.profile ?? null })),
+    profile: s.profile ?? null,
     reps: s.reps,
     timeoutMinutes: s.timeoutSeconds ? String(Math.round(s.timeoutSeconds / 60)) : "",
     targets: (s.targets ?? []).map((t) => ({ name: t.name, endpoint: t.endpoint, model: t.model ?? "", apiKeyEnv: t.apiKeyEnv ?? "" })),
@@ -62,7 +67,7 @@ function suiteOf(d: Draft): { suite?: BenchSuite; error?: string } {
   for (const a of d.arms) {
     const { sets, error } = overridesToSets(a.overrides);
     if (error) return { error: `Arm ${a.name || "?"}: ${error}` };
-    arms.push({ name: a.name.trim(), leadMode: a.leadMode.trim() || "auto", set: sets.length ? sets : null });
+    arms.push({ name: a.name.trim(), leadMode: a.leadMode.trim() || "auto", set: sets.length ? sets : null, profile: a.profile ?? null });
   }
   const minutes = d.timeoutMinutes.trim() ? Number(d.timeoutMinutes) : null;
   if (minutes !== null && !(minutes > 0)) return { error: "The time limit is a number of minutes." };
@@ -75,6 +80,7 @@ function suiteOf(d: Draft): { suite?: BenchSuite; error?: string } {
       arms,
       reps: d.reps,
       timeoutSeconds: minutes === null ? null : Math.round(minutes * 60),
+      profile: d.profile ?? null,
       targets: targets.length ? targets : null,
       targetMode: targets.length ? d.targetMode : null,
     },
@@ -178,6 +184,11 @@ export function Compose({ suites, from, onQueued, onSaved }: { suites: BenchSuit
             return (
               <div key={i} className="flex flex-wrap items-start gap-1" data-testid="compose-arm">
                 <input className={cn(input, "w-28 font-mono")} value={a.name} onChange={(e) => edit({ name: e.target.value })} placeholder="arm name" aria-label="Arm name" />
+                {a.profile && (
+                  <span className="rounded-md border px-1.5 py-1 font-mono text-muted-foreground" title="This arm runs on an inference profile (kept from the copied suite)">
+                    profile {a.profile}
+                  </span>
+                )}
                 <input className={cn(input, "w-24 font-mono")} value={a.leadMode} onChange={(e) => edit({ leadMode: e.target.value })} list="bench-lead-modes" placeholder="lead mode" aria-label="Lead mode" />
                 <textarea
                   className={cn(input, "min-h-[1.75rem] flex-1 basis-56 font-mono", bad && "border-destructive")}
