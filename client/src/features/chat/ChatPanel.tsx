@@ -182,7 +182,7 @@ const Item = memo(function Item({ item }: { item: ChatItem }) {
           )}
         >
           <Icon className="mt-0.5 size-3.5 shrink-0" />
-          <span>{item.text}</span>
+          <span className="whitespace-pre-line">{item.text}</span>
         </div>
       );
     }
@@ -430,12 +430,44 @@ function Composer() {
           <EnginePicker flow={engineFlow} />
           <ProfilePicker pid={pid} busy={busy} />
           <InlineMediaToggle />
+          <UncensoredToggle />
           {error && <span className="text-destructive">{error}</span>}
           {queued > 0 && <span>{queued} queued</span>}
         </div>
       </div>
     </div>
     </>
+  );
+}
+
+/**
+ * The session's /uncensored switch (chat requests to the local server and the image model), as
+ * the TUI's "· uncensored" status marker. Flipping it sends the command as a prompt, so it takes
+ * its turn behind anything running; the box follows the session's own state.
+ */
+function UncensoredToggle() {
+  const { id: pid } = useProject();
+  const on = useSession((s) => s.uncensored);
+  const busy = useSession((s) => s.busy);
+  const connection = useConnection((s) => s.connection);
+  return (
+    <label
+      className={cn("inline-flex cursor-pointer items-center gap-1", on && "font-medium text-destructive")}
+      title={
+        "Uncensored for this session: chat requests to the local server and the image model (/uncensored on | off | status)." +
+        (busy ? " Changes after the current turn." : "")
+      }
+    >
+      <input
+        type="checkbox"
+        checked={on}
+        disabled={connection !== "connected"}
+        onChange={(e) => void sendPrompt(pid, e.target.checked ? "/uncensored on" : "/uncensored off")}
+        className="size-3 accent-destructive"
+        data-testid="uncensored"
+      />
+      Uncensored
+    </label>
   );
 }
 

@@ -74,6 +74,7 @@ export interface EngineResult {
 
 export interface LiveSnapshot {
   engine?: string | null;
+  uncensored?: boolean | null;
   pendingQuestions?: LiveQuestion[] | null;
   sessionId?: string | null;
   title?: string | null;
@@ -126,6 +127,8 @@ export interface SessionState {
   engineAuth?: EngineAuth | null;
   /** ask_user questions waiting for an answer. */
   questions: LiveQuestion[];
+  /** The session's /uncensored switch (chat requests and the image model). */
+  uncensored: boolean;
   busy: boolean;
   queued: number;
   lastSeq: number;
@@ -224,6 +227,8 @@ function reduce(state: SessionState, ev: LiveEvent): Partial<SessionState> {
       return { questions: state.questions.filter((q) => q.id !== d.id) };
     case "engine":
       return { engine: d.engine ?? "native", engineAuth: null };
+    case "uncensored":
+      return { uncensored: !!d.on };
     case "engineAuth":
       return { engineAuth: { engine: d.engine, message: d.message ?? "", loginCommand: d.loginCommand ?? "" } };
     default:
@@ -267,6 +272,7 @@ const makeSessionStore = () =>
   agents: [],
   engine: "native",
   questions: [],
+  uncensored: false,
   permissions: [],
   fileEpoch: 0,
 
@@ -280,6 +286,7 @@ const makeSessionStore = () =>
       model: s.model,
       engine: s.engine ?? "native",
       questions: s.pendingQuestions ?? [],
+      uncensored: !!s.uncensored,
       busy: s.busy,
       queued: s.queued,
       lastSeq: s.lastSeq,
