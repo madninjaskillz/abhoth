@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, FileText, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, type BenchResult, type BenchRunInfo, type BenchStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { allRuns, batchesOf, cellText, clock, gridOf, isActive, kTokens, mergeRun, toneOf, type Tone } from "./grid";
+import { allRuns, batchCounts, batchesOf, cellText, clock, gridOf, isActive, kTokens, mergeRun, noteOf, toneOf, type Tone } from "./grid";
 
 /**
  * The runner's live stream (GET /api/bench/events, server-sent events): a snapshot of every run
@@ -87,7 +87,7 @@ export function LiveBatches({
   if (!batch || !grid) {
     return (
       <section className="rounded-lg border bg-panel p-3" data-testid="bench-live">
-        <h2 className="text-sm font-semibold">Runs</h2>
+        <h2 className="text-sm font-semibold">Live runs</h2>
         <p className="mt-1 text-xs text-muted-foreground">Queue a suite to see its runs here, cell by cell.</p>
       </section>
     );
@@ -95,7 +95,7 @@ export function LiveBatches({
   return (
     <section className="rounded-lg border bg-panel" data-testid="bench-live">
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
-        <h2 className="text-sm font-semibold">Runs</h2>
+        <h2 className="text-sm font-semibold">Live runs</h2>
         <select
           className="min-w-0 max-w-full rounded-md border bg-background px-2 py-1 font-mono text-xs"
           value={batch.id}
@@ -114,7 +114,7 @@ export function LiveBatches({
           ))}
         </select>
         <span className="text-xs text-muted-foreground" data-testid="bench-batch-count">
-          {batch.passed} passed · {batch.failed} failed · {batch.active} to go · {batch.total} runs
+          {batchCounts(batch)}
         </span>
         <span className="ml-auto" />
         {batch.active > 0 && (
@@ -166,7 +166,7 @@ function Cell({ run, selected, onClick }: { run: BenchRunInfo; selected: boolean
     <button
       type="button"
       onClick={onClick}
-      title={`${run.status}${run.target ? ` on ${run.target}` : ""}${run.note ? ` — ${run.note}` : ""}`}
+      title={`${run.status}${run.target ? ` on ${run.target}` : ""}${noteOf(run) ? ` — ${noteOf(run)}` : ""}`}
       aria-pressed={selected}
       className={cn(
         "flex h-9 w-[4.5rem] flex-col items-center justify-center rounded-md border leading-tight tabular-nums",
@@ -205,9 +205,14 @@ function RunPane({ run, onWatch, onClose }: { run: BenchRunInfo; onWatch: (pid: 
     queryFn: () => api.benchOutput(run.id),
     enabled: what === "checker" && !active,
   });
+  // A tail: keep the newest lines in view as they arrive.
+  const out = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    if (what === "logs" && out.current) out.current.scrollTop = out.current.scrollHeight;
+  }, [what, logs.data, run.id]);
   const l = run.live;
   const facts: [string, string][] = [
-    ["Status", `${run.status}${run.note ? ` — ${run.note}` : ""}`],
+    ["Status", `${run.status}${noteOf(run) ? ` — ${noteOf(run)}` : ""}`],
     ["Tests", run.testsTotal ? `${run.testsPassed} / ${run.testsTotal}` : "—"],
     [active ? "Elapsed" : "Wall", clock(active ? run.elapsed : (run.wallSeconds ?? run.elapsed))],
     ["Steps", l ? String(l.requests) : "—"],
@@ -258,7 +263,7 @@ function RunPane({ run, onWatch, onClose }: { run: BenchRunInfo; onWatch: (pid: 
             </Button>
             <span className="truncate font-mono text-[11px] text-muted-foreground">{run.id}</span>
           </div>
-          <pre className="h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-2 font-mono text-[11px]" data-testid="bench-run-output">
+          <pre ref={out} className="h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-background p-2 font-mono text-[11px]" data-testid="bench-run-output">
             {what === "logs"
               ? run.status === "queued"
                 ? "Not started yet."
@@ -271,7 +276,7 @@ function RunPane({ run, onWatch, onClose }: { run: BenchRunInfo; onWatch: (pid: 
   );
 }
 
-/** Per task × arm: passes, and the medians of wall time, steps, reasoning and output tokens. */
+/** Per task × arm: passes of the runs that were scored, and their median wall time, steps, reasoning and output tokens. */
 function Summary({ batch, byTarget, ended }: { batch: string; byTarget: boolean; ended: number }) {
   const summary = useQuery({
     queryKey: ["bench-summary", batch, byTarget, ended],
@@ -302,8 +307,18 @@ function Summary({ batch, byTarget, ended }: { batch: string; byTarget: boolean;
               <td className="py-1 pr-3 font-mono">{r.task}</td>
               <td className="pr-3 font-mono">{r.arm}</td>
               {byTarget && <td className="pr-3 font-mono text-muted-foreground">{r.target ?? "—"}</td>}
-              <td className={cn("px-2 text-right tabular-nums", r.scored > 0 && r.passes === r.scored && "text-success", r.scored > 0 && r.passes === 0 && "text-destructive")}>
-                {r.passes}/{r.runs}
+              <td className="whitespace-nowrap px-2 text-right tabular-nums" title={r.runs > r.scored ? `${r.runs - r.scored} of ${r.runs} runs were stopped or errored before the check; they are not in the medians` : undefined}>
+                {r.scored > 0 && (
+                  <span className={cn(r.passes === r.scored && "text-success", r.passes === 0 && "text-destructive")}>
+                    {r.passes}/{r.scored}
+                  </span>
+                )}
+                {r.runs > r.scored && (
+                  <span className="text-muted-foreground">
+                    {r.scored > 0 ? " +" : ""}
+                    {r.runs - r.scored} unscored
+                  </span>
+                )}
               </td>
               <td className="px-2 text-right tabular-nums">{clock(r.medianWallSeconds)}</td>
               <td className="px-2 text-right tabular-nums">{r.medianSteps ?? "—"}</td>

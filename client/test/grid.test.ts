@@ -2,7 +2,7 @@
 // OpenOrca.Cli.Tests): grid.ts only imports types, so no bundler is needed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allRuns, batchesOf, cellText, clock, gridOf, kTokens, mergeRun, overridesToSets, setsToOverrides, toneOf } from "../src/features/bench/grid.ts";
+import { allRuns, batchCounts, batchesOf, cellText, noteOf, clock, gridOf, kTokens, mergeRun, overridesToSets, setsToOverrides, toneOf } from "../src/features/bench/grid.ts";
 
 type Run = Parameters<typeof gridOf>[0][number];
 const run = (id: string, task: string, arm: string, rep: number, status: string, extra: Partial<Run> = {}): Run => ({
@@ -18,7 +18,10 @@ const run = (id: string, task: string, arm: string, rep: number, status: string,
 
 test("overrides JSON becomes the suite's sets, nested or dotted", () => {
   assert.deepEqual(overridesToSets("").sets, []);
-  assert.deepEqual(overridesToSets("{}").sets, []);
+  assert.deepEqual(overridesToSets("{}"), { sets: [] }); // the form's default: valid, nothing to set
+  assert.deepEqual(overridesToSets(" { } "), { sets: [] });
+  assert.deepEqual(overridesToSets('{"a": {}}'), { sets: ["a={}"] });
+  assert.match(overridesToSets('{"": 1}').error ?? "", /needs a key/);
   assert.deepEqual(overridesToSets('{"agent.reasoning.maxStepTokens": 4096, "pi": {"agentTools": false, "x": {"y": "z"}}, "list": [1, 2], "n": null}').sets, [
     "agent.reasoning.maxStepTokens=4096",
     "pi.agentTools=false",
@@ -90,7 +93,12 @@ test("batches are listed newest first with their counts", () => {
     run("7", "t", "a", 1, "passed", { batch: null }),
   ]);
   assert.deepEqual(b.map((x) => x.id), ["20261120-100000-s", "20261120-090000-old"]);
-  assert.deepEqual({ ...b[0] }, { id: "20261120-100000-s", suite: "s", total: 5, active: 2, passed: 1, failed: 1 });
+  assert.deepEqual({ ...b[0] }, { id: "20261120-100000-s", suite: "s", total: 5, active: 2, passed: 1, failed: 1, stopped: 1 });
+  assert.equal(batchCounts(b[0]), "1 passed · 1 failed · 2 to go · 1 stopped · 5 runs");
+  assert.equal(batchCounts(b[1]), "1 passed · 1 run");
+  assert.equal(noteOf({ status: "stopped", note: "stopped" }), null);
+  assert.equal(noteOf({ status: "stopped", note: "removed from the queue" }), "removed from the queue");
+  assert.equal(noteOf({ status: "passed", note: null }), null);
 });
 
 test("run events replace a run in place or add it; results fill in runs the server forgot", () => {

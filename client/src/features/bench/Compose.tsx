@@ -65,13 +65,19 @@ function suiteOf(d: Draft): { suite?: BenchSuite; error?: string } {
   if (!d.tasks.length) return { error: "Pick at least one task." };
   const arms = [];
   for (const a of d.arms) {
+    if (!a.name.trim()) return { error: "Give each arm a name." };
     const { sets, error } = overridesToSets(a.overrides);
     if (error) return { error: `Arm ${a.name || "?"}: ${error}` };
     arms.push({ name: a.name.trim(), leadMode: a.leadMode.trim() || "auto", set: sets.length ? sets : null, profile: a.profile ?? null });
   }
   const minutes = d.timeoutMinutes.trim() ? Number(d.timeoutMinutes) : null;
   if (minutes !== null && !(minutes > 0)) return { error: "The time limit is a number of minutes." };
+  if (new Set(arms.map((a) => a.name)).size !== arms.length) return { error: "Give each arm a name of its own." };
   const targets = d.targets.map((t) => ({ name: t.name.trim(), endpoint: t.endpoint.trim(), model: t.model.trim() || null, apiKeyEnv: t.apiKeyEnv.trim() || null }));
+  for (const t of targets) {
+    if (!t.name) return { error: "Give each target a name." };
+    if (!/^https?:\/\/\S+$/i.test(t.endpoint)) return { error: `Target ${t.name}: give its endpoint, e.g. http://host:8080/v1` };
+  }
   return {
     suite: {
       name: d.name.trim(),
@@ -99,7 +105,10 @@ export function Compose({ suites, from, onQueued, onSaved }: { suites: BenchSuit
   const tasks = useQuery({ queryKey: ["bench-tasks"], queryFn: api.benchTasks, staleTime: 60_000 });
   const [d, setD] = useState<Draft>(blank);
   const [extraTask, setExtraTask] = useState("");
-  const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
+  const set = (patch: Partial<Draft>) => {
+    setD((x) => ({ ...x, ...patch }));
+    save.reset(); // what the server said about the last attempt no longer describes the form
+  };
   const exists = suites.some((s) => s.name === d.name.trim());
   const built = suiteOf(d);
   const save = useMutation({
@@ -129,7 +138,15 @@ export function Compose({ suites, from, onQueued, onSaved }: { suites: BenchSuit
           <input className={input} inputMode="numeric" value={d.timeoutMinutes} onChange={(e) => set({ timeoutMinutes: e.target.value })} placeholder="task's own" />
         </label>
         {from && (
-          <Button size="sm" variant="outline" onClick={() => setD({ ...draftOf(from), name: from.name })} title="Fill the form from the suite picked above">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setD(draftOf(from));
+              save.reset();
+            }}
+            title="Fill the form from the suite picked above"
+          >
             Copy from {from.name}
           </Button>
         )}

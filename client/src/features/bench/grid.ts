@@ -23,6 +23,7 @@ export function overridesToSets(json: string): { sets: string[]; error?: string 
     return { sets: [], error: `Not JSON: ${(e as Error).message}` };
   }
   if (value === null || typeof value !== "object" || Array.isArray(value)) return { sets: [], error: 'Overrides are a JSON object, e.g. {"agent.reasoning.maxStepTokens": 4096}' };
+  if (!Object.keys(value).length) return { sets: [] }; // "{}": no overrides
   const sets: string[] = [];
   const walk = (prefix: string, v: unknown) => {
     if (v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v as object).length) {
@@ -110,6 +111,8 @@ export interface BatchInfo {
   passed: number;
   /** Ended runs that were scored and didn't pass, or errored. */
   failed: number;
+  /** Cancelled, or stopped for the quiet window. */
+  stopped: number;
 }
 
 /** The batches the runs belong to, newest first (their ids start with the time they were queued). */
@@ -118,11 +121,12 @@ export function batchesOf(runs: readonly BenchRunInfo[]): BatchInfo[] {
   for (const r of runs) {
     if (!r.batch) continue;
     let b = map.get(r.batch);
-    if (!b) map.set(r.batch, (b = { id: r.batch, suite: r.suite, total: 0, active: 0, passed: 0, failed: 0 }));
+    if (!b) map.set(r.batch, (b = { id: r.batch, suite: r.suite, total: 0, active: 0, passed: 0, failed: 0, stopped: 0 }));
     b.total++;
     if (isActive(r)) b.active++;
     else if (r.status === "passed") b.passed++;
     else if (r.status === "failed" || r.status === "timeout" || r.status === "error") b.failed++;
+    else b.stopped++;
   }
   return [...map.values()].sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
 }
@@ -167,6 +171,23 @@ export function gridOf(runs: readonly BenchRunInfo[], batch: string): Grid {
 }
 
 /** 75 -> "1:15", 3725 -> "1:02:05". */
+/** "2 passed · 1 failed · 3 to go · 1 stopped · 7 runs": only the counts that aren't zero, and the total. */
+export function batchCounts(b: BatchInfo): string {
+  const parts = [
+    [b.passed, "passed"],
+    [b.failed, "failed"],
+    [b.active, "to go"],
+    [b.stopped, "stopped"],
+  ] as const;
+  return [...parts.filter(([n]) => n > 0).map(([n, what]) => `${n} ${what}`), `${b.total} run${b.total === 1 ? "" : "s"}`].join(" · ");
+}
+
+/** A run's note, unless it only repeats the status ("stopped — stopped"). */
+export function noteOf(r: Pick<BenchRunInfo, "status" | "note">): string | null {
+  const note = r.note?.trim();
+  return note && note !== r.status ? note : null;
+}
+
 export function clock(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds)) return "—";
   const s = Math.max(0, Math.round(seconds));

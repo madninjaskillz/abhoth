@@ -7,7 +7,7 @@ import { BenchResults } from "./Results";
 import { Compose } from "./Compose";
 import { LiveBatches, useBenchLive } from "./Live";
 import { cn } from "@/lib/utils";
-import { clock } from "./grid";
+import { clock, noteOf } from "./grid";
 
 /**
  * Benchmarks: pick a suite (arms × tasks × reps, arms optionally on inference profiles) or compose
@@ -206,12 +206,11 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
           </div>
         </section>
 
-        {composing && (
-          <section className="rounded-lg border bg-panel p-3">
-            <h2 className="mb-2 text-sm font-semibold">Compose a suite</h2>
-            <Compose suites={suites} from={chosen} onSaved={setSuite} onQueued={setFocus} />
-          </section>
-        )}
+        {/* Hidden, not unmounted, when closed: a half-written suite is still there when it is opened again. */}
+        <section className="rounded-lg border bg-panel p-3" hidden={!composing}>
+          <h2 className="mb-2 text-sm font-semibold">Compose a suite</h2>
+          <Compose suites={suites} from={chosen} onSaved={setSuite} onQueued={setFocus} />
+        </section>
 
         <LiveBatches live={live} results={results.data ?? []} focus={focus} onWatch={onWatch} />
 
@@ -290,7 +289,7 @@ function RunLine({ run, onWatch, live }: { run: BenchRunInfo; onWatch: (pid: str
           {run.live?.requests ? ` · ${run.live.requests} steps` : ""}
         </span>
       )}
-      {run.note && <span className="truncate text-muted-foreground">{run.note}</span>}
+      {noteOf(run) && <span className="truncate text-muted-foreground">{noteOf(run)}</span>}
       {run.projectId && (
         <Button size="sm" variant="outline" className="ml-auto h-6" onClick={() => onWatch(run.projectId!)} data-testid="bench-watch">
           <Eye /> Watch
