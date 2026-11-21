@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { EditMarkers } from "@/lib/api";
+import { isHtmlPath } from "@/features/editor/previewNav";
 
 // Per-project UI state: which worktree the tree shows, the tree's filters, the editor tabs,
 // and the agent's edit markers (pushed by the server).
@@ -12,6 +13,8 @@ export interface EditorTab {
   name: string;
   dirty: boolean;
   diff: boolean;
+  /** An HTML file shown as a page (the HTML preview) rather than its source. */
+  preview?: boolean;
 }
 
 export interface ProjectUi {
@@ -55,6 +58,7 @@ interface WorkspaceState {
   closeTab: (pid: string, key: string) => void;
   setDirty: (pid: string, key: string, dirty: boolean) => void;
   setDiff: (pid: string, key: string, diff: boolean) => void;
+  setPreview: (pid: string, key: string, preview: boolean) => void;
   /** Opens another shell tab and shows it. */
   addTerminal: (pid: string) => void;
   closeTerminal: (pid: string, n: number) => void;
@@ -113,9 +117,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const key = tabKey(wt, path);
     const exists = cur.tabs.find((t) => t.key === key);
     const name = path.split("/").pop() || path;
+    // An HTML file opened by a click shows as a page; its source is a click away.
+    const preview = !diff && isHtmlPath(path);
     const tabs = exists
-      ? cur.tabs.map((t) => (t.key === key && diff ? { ...t, diff } : t))
-      : [...cur.tabs, { key, wt, path, name, dirty: false, diff }];
+      ? cur.tabs.map((t) => (t.key !== key ? t : diff ? { ...t, diff } : preview ? { ...t, preview, diff: false } : t))
+      : [...cur.tabs, { key, wt, path, name, dirty: false, diff, preview }];
     get().patch(pid, { tabs, center: key });
   },
   closeTab: (pid, key) => {
@@ -135,6 +141,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const cur = get().projects[pid];
     if (!cur) return;
     get().patch(pid, { tabs: cur.tabs.map((t) => (t.key === key ? { ...t, diff } : t)) });
+  },
+  setPreview: (pid, key, preview) => {
+    const cur = get().projects[pid];
+    if (!cur) return;
+    get().patch(pid, { tabs: cur.tabs.map((t) => (t.key === key ? { ...t, preview, diff: preview ? false : t.diff } : t)) });
   },
   addTerminal: (pid) => {
     const cur = get().projects[pid];

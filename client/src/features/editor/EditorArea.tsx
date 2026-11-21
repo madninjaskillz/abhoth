@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Editor, { DiffEditor, type OnMount } from "@monaco-editor/react";
-import { FileDiff, Loader2, MessagesSquare, Plus, Save, SquareTerminal, X } from "lucide-react";
+import { Code, Eye, FileDiff, Loader2, MessagesSquare, Plus, Save, SquareTerminal, X } from "lucide-react";
 import { ApiError, projectApi } from "@/lib/api";
 import { DIFF_OPTIONS, EDITOR_OPTIONS, monaco } from "@/lib/monaco";
 import { useProject, useSession } from "@/store/session";
@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Tip } from "@/components/ui/misc";
 import { cn, languageOf } from "@/lib/utils";
+import { HtmlPreview } from "./HtmlPreview";
+import { isHtmlPath } from "./previewNav";
 
 const modelUri = (pid: string, tab: EditorTab) =>
   monaco.Uri.from({ scheme: "openorca", authority: pid, path: "/" + encodeURIComponent(tab.wt) + "/" + tab.path });
@@ -172,6 +174,14 @@ function FileEditor({ tab, visible }: { tab: EditorTab; visible: boolean }) {
   const qc = useQueryClient();
   const setDirty = useWorkspace((s) => s.setDirty);
   const setDiff = useWorkspace((s) => s.setDiff);
+  const setPreview = useWorkspace((s) => s.setPreview);
+  const html = isHtmlPath(tab.path);
+  const previewing = html && !!tab.preview && !tab.diff;
+  // Once shown, the preview stays mounted (hidden) so its page and history survive a look at the source.
+  const [previewMounted, setPreviewMounted] = useState(previewing);
+  useEffect(() => {
+    if (previewing) setPreviewMounted(true);
+  }, [previewing]);
   const api = projectApi(pid, tab.wt);
   const stateKey = pid + tab.key;
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -271,8 +281,8 @@ function FileEditor({ tab, visible }: { tab: EditorTab; visible: boolean }) {
   }, [api, model, pid, stateKey, setDirty, tab.key, tab.path]);
 
   useEffect(() => {
-    if (visible) editorRef.current?.focus();
-  }, [visible]);
+    if (visible && !previewing) editorRef.current?.focus();
+  }, [visible, previewing]);
 
   const onMount: OnMount = (editor) => {
     editorRef.current = editor;
@@ -309,14 +319,38 @@ function FileEditor({ tab, visible }: { tab: EditorTab; visible: boolean }) {
           <Button size="sm" variant="ghost" onClick={() => void reload()}>Reload from disk</Button>
         )}
         <span className="ml-auto" />
+        {html && (
+          <div className="flex shrink-0 rounded-md border p-px" role="group" aria-label="Show as">
+            <Button
+              size="sm"
+              variant={previewing ? "secondary" : "ghost"}
+              className="h-6 px-2"
+              onClick={() => setPreview(pid, tab.key, true)}
+              aria-pressed={previewing}
+              data-testid="show-preview"
+            >
+              <Eye /> <span className="max-sm:hidden">Preview</span>
+            </Button>
+            <Button
+              size="sm"
+              variant={!previewing && !tab.diff ? "secondary" : "ghost"}
+              className="h-6 px-2"
+              onClick={() => setPreview(pid, tab.key, false)}
+              aria-pressed={!previewing && !tab.diff}
+              data-testid="show-source"
+            >
+              <Code /> <span className="max-sm:hidden">Source</span>
+            </Button>
+          </div>
+        )}
         <Tip label={tab.diff ? "Back to the editor" : "Diff against HEAD"}>
           <Button size="sm" variant={tab.diff ? "secondary" : "ghost"} onClick={() => setDiff(pid, tab.key, !tab.diff)} data-testid="toggle-diff">
-            <FileDiff /> Diff
+            <FileDiff /> <span className="max-sm:hidden">Diff</span>
           </Button>
         </Tip>
         <Tip label="Save (Ctrl+S)">
           <Button size="sm" variant="ghost" disabled={!tab.dirty || saving || missing} onClick={() => void save()} data-testid="save">
-            {saving ? <Loader2 className="animate-spin" /> : <Save />} Save
+            {saving ? <Loader2 className="animate-spin" /> : <Save />} <span className="max-sm:hidden">Save</span>
           </Button>
         </Tip>
       </div>
@@ -349,6 +383,11 @@ function FileEditor({ tab, visible }: { tab: EditorTab; visible: boolean }) {
               onMount={onMount}
             />
           )
+        )}
+        {previewMounted && !missing && (
+          <div className={cn("absolute inset-0 z-10", !previewing && "invisible")}>
+            <HtmlPreview pid={pid} wt={tab.wt} path={tab.path} onSource={() => setPreview(pid, tab.key, false)} />
+          </div>
         )}
         {missing && !tab.diff && <Centered>The file isn't on disk (deleted?). Use Diff to see it at HEAD.</Centered>}
       </div>

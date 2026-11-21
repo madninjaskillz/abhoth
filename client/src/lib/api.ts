@@ -606,6 +606,9 @@ export function projectApi(pid: string, wt?: string | null) {
     tree: (dir: string, ignored: boolean) => request<FileListing>("GET", `${base}/tree${q({ wt, dir, ignored: ignored || undefined })}`),
     changes: () => request<Changes>("GET", `${base}/changes${q({ wt })}`),
     markers: () => request<EditMarkers>("GET", `${base}/markers`),
+    /** A signed, expiring URL that serves an HTML file's folder to the sandboxed preview frame. */
+    preview: (path: string) =>
+      request<{ url: string; base: string; dir: string; expires: string }>("POST", `${base}/preview${q({ wt })}`, { path }),
     readFile: (path: string) => request<FileContent>("GET", `${base}/file${q({ wt, path })}`),
     writeFile: (path: string, content: string, etag: string | null, bom: boolean) =>
       request<FileWriteResult>("PUT", `${base}/file${q({ wt })}`, { path, content, etag, bom }),
