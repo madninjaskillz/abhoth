@@ -3,9 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Loader2, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { api, type LayoutDefinition, type ProfileList, type SwitchJob, type SwitchPlan } from "@/lib/api";
+import { api, type CardPick, type LayoutDefinition, type ProfileInfo, type ProfileList, type SwitchJob, type SwitchPlan } from "@/lib/api";
 import { menuRow } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
+import { artifactOf, pickProblem } from "@/features/bench/queueLogic";
 
 /**
  * Inference profiles: a profile names a server layout (what runs on each GPU of the inference box)
@@ -256,15 +257,22 @@ export function ServerLayoutControl({ narrow, menu }: { narrow?: boolean; menu?:
   );
 }
 
-function LayoutTable({ data, onSwitch }: { data: ProfileList; onSwitch: (profile: string) => void }) {
-  const entries = Object.entries(data.profiles ?? {});
+/** "A: dense-pi-abl on ninfer-gaps-4lane · B: same". */
+export function cardsText(p: ProfileInfo | undefined | null): string {
+  const c = p?.cards;
+  if (!c) return p?.bridge ? "no cards (CLI bridge)" : "";
+  const one = (v: CardPick | null | undefined) => (!v || v === "off" ? "off" : v === "same" ? "same as A" : `${v.model} on ${v.engineProfile}`);
+  return `A: ${one(c.A)} · B: ${one(c.B)}`;
+}
+
+function LayoutTable({ data, onSwitch, onDelete }: { data: ProfileList; onSwitch: (profile: string) => void; onDelete?: (profile: string) => void }) {
+  const entries = Object.entries(data.profiles ?? {}).filter(([, p]) => !p.hidden);
   return (
-    <div className="max-h-[60vh] overflow-auto">
+    <div className="max-h-[50vh] overflow-auto">
       <table className="w-full text-xs" data-testid="profile-table">
         <thead className="text-left text-muted-foreground">
           <tr className="border-b">
             <th className="py-1.5 pr-2 font-medium">Profile</th>
-            <th className="px-2 font-medium">Layout</th>
             <th className="px-2 font-medium">About</th>
             <th className="px-2" />
           </tr>
@@ -272,22 +280,31 @@ function LayoutTable({ data, onSwitch }: { data: ProfileList; onSwitch: (profile
         <tbody>
           {entries.map(([name, p]) => (
             <tr key={name} className="border-b last:border-0 align-top">
-              <td className="py-1.5 pr-2 font-mono">{name}</td>
-              <td className="px-2">
-                <span className="font-mono">{p.layout ?? "none"}</span>
-                {p.layout && <div className="text-[11px] text-muted-foreground">{layoutSummary(data.layouts?.[p.layout])}</div>}
+              <td className="py-1.5 pr-2 font-mono">
+                {name}
+                {p.source === "user" && <div className="font-sans text-[10px] text-muted-foreground">saved here</div>}
               </td>
               <td className="px-2">
-                {p.title}
+                <div className="font-medium">{p.title}</div>
+                {p.description && <div className="text-[11px] text-muted-foreground">{p.description}</div>}
+                <div className="font-mono text-[11px]">
+                  {cardsText(p)}
+                  {p.mode ? ` · mode ${p.mode}` : ""}
+                </div>
                 {p.restore && <div className="text-[11px] text-warning">{p.restore}</div>}
               </td>
-              <td className="px-2 text-right">
+              <td className="space-y-1 px-2 text-right">
                 {p.fits ? (
                   <span className="text-[11px] text-success">{p.layout ? "live" : "no server needed"}</span>
                 ) : (
                   <Button size="sm" variant="outline" className="h-6" disabled={data.offline} onClick={() => onSwitch(name)} data-testid={`switch-${name}`}>
                     Switch…
                   </Button>
+                )}
+                {p.source === "user" && onDelete && (
+                  <button className="block text-[11px] text-muted-foreground underline" onClick={() => onDelete(name)}>
+                    delete
+                  </button>
                 )}
               </td>
             </tr>
@@ -298,7 +315,129 @@ function LayoutTable({ data, onSwitch }: { data: ProfileList; onSwitch: (profile
   );
 }
 
-/** Chat footer: this project's profile. Its session restarts on the same conversation with the next prompt. */
+const MODE_HELP =
+  "auto: the Lead decides when to hand work to helpers. hands-on: the Lead does the work itself. orchestrator: the Lead plans and delegates. peer: parallel pieces go to equal helpers.";
+
+type PickState = { engine: string; engineProfile: string; model: string };
+const emptyPick: PickState = { engine: "", engineProfile: "", model: "" };
+
+/** One card: engine → engine profile → model, each narrowed to what fits. */
+function CardBuilder({ card, d, pick, onPick, allowOff }: { card: string; d: ProfileList; pick: PickState; onPick: (p: PickState) => void; allowOff: boolean }) {
+  const eps = Object.entries(d.engineProfiles ?? {}).filter(([, ep]) => ep.engine === pick.engine);
+  const models = Object.entries(d.models ?? {}).filter(([name]) => pick.engine && artifactOf(d, name, pick.engine));
+  const problem = pick.engine && pick.engine !== "off" && pick.engineProfile && pick.model ? pickProblem(d, card, pick) : null;
+  const sel = "rounded border bg-background px-1 py-0.5 text-xs";
+  return (
+    <div className="space-y-1" data-testid={`builder-card-${card}`}>
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="w-14 font-mono">card {card}</span>
+        <select className={sel} value={pick.engine} onChange={(e) => onPick({ engine: e.target.value, engineProfile: "", model: "" })} data-testid={`builder-engine-${card}`}>
+          <option value="">engine…</option>
+          {allowOff && <option value="off">off</option>}
+          {Object.entries(d.engines ?? {}).map(([n, e]) => (
+            <option key={n} value={n}>
+              {e.title ?? n}
+            </option>
+          ))}
+        </select>
+        {pick.engine && pick.engine !== "off" && (
+          <>
+            <select className={sel} value={pick.engineProfile} onChange={(e) => onPick({ ...pick, engineProfile: e.target.value })} data-testid={`builder-engine-profile-${card}`}>
+              <option value="">engine profile…</option>
+              {eps.map(([n, ep]) => (
+                <option key={n} value={n}>
+                  {ep.title ?? n}
+                </option>
+              ))}
+            </select>
+            <select className={sel} value={pick.model} onChange={(e) => onPick({ ...pick, model: e.target.value })} data-testid={`builder-model-${card}`}>
+              <option value="">model…</option>
+              {models.map(([n, m]) => (
+                <option key={n} value={n}>
+                  {m.title ?? n}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+      </div>
+      {pick.engineProfile && <p className="pl-16 text-[11px] text-muted-foreground">{d.engineProfiles?.[pick.engineProfile]?.description}</p>}
+      {pick.model && <p className="pl-16 text-[11px] text-muted-foreground">{d.models?.[pick.model]?.description}</p>}
+      {problem && <p className="pl-16 text-[11px] text-destructive">{problem}</p>}
+    </div>
+  );
+}
+
+/** Build a setup per card (+ mode): use it in this project as it is, or save it under a name. */
+function ProfileBuilder({ d, open, onClose, onUse }: { d: ProfileList; open: boolean; onClose: () => void; onUse: (profile: string, mode: string | null) => Promise<void> }) {
+  const qc = useQueryClient();
+  const [a, setA] = useState<PickState>(emptyPick);
+  const [b, setB] = useState<PickState>(emptyPick);
+  const [same, setSame] = useState(true);
+  const [mode, setMode] = useState("auto");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const complete = (p: PickState) => p.engine === "off" || (!!p.engine && !!p.engineProfile && !!p.model);
+  const asCard = (p: PickState): CardPick => (p.engine === "off" ? "off" : { engine: p.engine, engineProfile: p.engineProfile, model: p.model });
+  const cards: Record<string, CardPick> = { A: asCard(a), B: same ? "same" : asCard(b) };
+  const problems = [a.engine && a.engine !== "off" && complete(a) ? pickProblem(d, "A", a) : null, !same && b.engine && b.engine !== "off" && complete(b) ? pickProblem(d, "B", b) : null].filter(Boolean);
+  const ready = complete(a) && (same || complete(b)) && !(a.engine === "off" && (same || b.engine === "off")) && problems.length === 0;
+  const go = async (save: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const profile = save ? (await api.profileSave({ name, cards, mode })).profile : (await api.profileCompose(cards)).profile;
+      await qc.invalidateQueries({ queryKey: ["profiles"] });
+      await onUse(profile, save ? null : mode);
+      onClose();
+    } catch (e) {
+      setError((e as { data?: { error?: string } }).data?.error ?? (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl" data-testid="profile-builder">
+        <DialogTitle>Build a setup</DialogTitle>
+        <DialogDescription>
+          Per card: an engine, one of its engine profiles (slots, cache, images) and a model that runs on that engine. Card A is the fast V100-SXM3, B the
+          V100-PCIe. Only combinations that can run are offered; the VRAM check is a rough estimate.
+        </DialogDescription>
+        <CardBuilder card="A" d={d} pick={a} onPick={setA} allowOff={!same} />
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={same} onChange={(e) => setSame(e.target.checked)} data-testid="builder-same" /> same on both cards
+        </label>
+        {!same && <CardBuilder card="B" d={d} pick={b} onPick={setB} allowOff />}
+        <label className="flex items-center gap-2 text-xs">
+          Mode
+          <select className="rounded border bg-background px-1 py-0.5" value={mode} onChange={(e) => setMode(e.target.value)} title={MODE_HELP} data-testid="builder-mode">
+            {(d.allModes ?? ["auto", "hands-on", "orchestrator", "peer"]).map((m) => (
+              <option key={m}>{m}</option>
+            ))}
+          </select>
+        </label>
+        <div className="flex flex-wrap items-center gap-2 border-t pt-2 text-xs">
+          <input className="h-7 w-48 rounded border bg-background px-1" placeholder="name to save it as" value={name} onChange={(e) => setName(e.target.value)} data-testid="builder-name" />
+          <Button size="sm" variant="outline" disabled={!ready || !name.trim() || busy} onClick={() => void go(true)} data-testid="builder-save">
+            Save and use
+          </Button>
+          <Button size="sm" disabled={!ready || busy} onClick={() => void go(false)} data-testid="builder-use">
+            Use without saving
+          </Button>
+          {busy && <Loader2 className="size-3.5 animate-spin" />}
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Chat footer: this project's profile (a saved setup, or one built here) and its mode, chosen on its own.
+ * Changing either restarts the session on the same conversation with the next prompt.
+ */
 export function ProfilePicker({ pid, busy, onChanged }: { pid: string; busy: boolean; onChanged?: () => void }) {
   const qc = useQueryClient();
   const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: 60000 });
@@ -307,17 +446,29 @@ export function ProfilePicker({ pid, busy, onChanged }: { pid: string; busy: boo
   const sw = useServerSwitch();
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [about, setAbout] = useState(false);
+  const [building, setBuilding] = useState(false);
   const d = profiles.data;
   if (!d?.available || !d.profiles) return null;
+  const all = d.profiles;
   const current = d.projects[pid] ?? null;
-  const cur = current ? d.profiles[current] : null;
+  const prof = current ? all[current] : null;
+  const mode = d.projectModes?.[pid] ?? null;
+  const defaultMode = prof?.defaultMode ?? "auto";
+  const modes = d.allModes ?? ["auto", "hands-on", "orchestrator", "peer"];
+  const disabled = busy || saving || primary;
+  const why = primary
+    ? "This project's session is the TUI's own: /profile there switches it"
+    : busy
+      ? "Change this when the current turn has finished"
+      : undefined;
 
-  const choose = async (name: string | null) => {
+  const run = async (f: () => Promise<{ ok: boolean; message?: string | null }>) => {
     setError(null);
     setSaving(true);
     try {
-      const r = await api.setProjectProfile(pid, name);
-      if (!r.ok) setError(r.message ?? "Not switched.");
+      const r = await f();
+      if (!r.ok) setError(r.message ?? "Not changed.");
       await qc.invalidateQueries({ queryKey: ["profiles"] });
       onChanged?.();
     } catch (e) {
@@ -326,44 +477,111 @@ export function ProfilePicker({ pid, busy, onChanged }: { pid: string; busy: boo
       setSaving(false);
     }
   };
+  const select = "rounded border bg-background px-1 py-0.5 text-[11px] disabled:opacity-50";
 
   return (
-    <span className="inline-flex items-center gap-1.5" data-testid="profile-picker">
+    <span className="inline-flex flex-wrap items-center gap-1.5" data-testid="profile-picker">
       <label className="inline-flex items-center gap-1">
         <span>Profile</span>
         <select
-          className="rounded border bg-background px-1 py-0.5 text-[11px] disabled:opacity-50"
+          className={select}
           value={current ?? ""}
-          disabled={busy || saving || primary}
-          title={
-            primary
-              ? "This project's session is the TUI's own: /profile there switches it"
-              : busy
-                ? "Switch profiles when the current turn has finished"
-                : "The inference profile this project's session runs with"
-          }
-          onChange={(e) => void choose(e.target.value || null)}
+          disabled={disabled}
+          title={why ?? (prof ? `${prof.title ?? current}: ${cardsText(prof)}` : "The inference profile this project's session runs with")}
+          onChange={(e) => void run(() => api.setProjectProfile(pid, e.target.value || null))}
           data-testid="profile-select"
         >
           <option value="">config's own</option>
-          {Object.entries(d.profiles).map(([name, p]) => (
-            <option key={name} value={name}>
-              {name}
-              {p.fits ? "" : " (switch server)"}
-            </option>
-          ))}
+          {Object.entries(all)
+            .filter(([name, p]) => !p.hidden || name === current)
+            .map(([name, p]) => (
+              <option key={name} value={name}>
+                {p.source === "composed" ? `built: ${p.title ?? name}` : name}
+                {p.fits ? "" : " (switch server)"}
+              </option>
+            ))}
         </select>
       </label>
+      <button className="underline decoration-dotted disabled:opacity-50" disabled={disabled} onClick={() => setBuilding(true)} data-testid="profile-build">
+        build…
+      </button>
+      {!prof?.bridge && (
+        <label className="inline-flex items-center gap-1">
+          <span>Mode</span>
+          <select
+            className={select}
+            value={mode ?? ""}
+            disabled={disabled}
+            title={why ?? MODE_HELP}
+            onChange={(e) => void run(() => api.setProjectMode(pid, e.target.value || null))}
+            data-testid="mode-select"
+          >
+            <option value="">default: {defaultMode}</option>
+            {modes.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <button className="underline decoration-dotted" onClick={() => setAbout(true)} title="What the profiles do" data-testid="profile-about">
+        about
+      </button>
       {saving && <Loader2 className="size-3 animate-spin" />}
-      {cur && !cur.fits && (
+      {current && prof && !prof.fits && (
         <span className="text-warning">
-          needs layout <span className="font-mono">{cur.layout}</span> (live: {d.live?.layout ?? "?"}){" "}
-          <button className="underline" onClick={() => void sw.start(current!)} data-testid="profile-switch-server">
+          needs layout <span className="font-mono">{prof.layout}</span> (live: {d.live?.layout ?? "?"}){" "}
+          <button className="underline" onClick={() => void sw.start(current)} data-testid="profile-switch-server">
             switch server…
           </button>
         </span>
       )}
       {error && <span className="text-destructive">{error}</span>}
+      <ProfileBuilder
+        d={d}
+        open={building}
+        onClose={() => setBuilding(false)}
+        onUse={async (profile, m) => {
+          await run(() => api.setProjectProfile(pid, profile));
+          if (m) await run(() => api.setProjectMode(pid, m));
+        }}
+      />
+      <Dialog open={about} onOpenChange={setAbout}>
+        <DialogContent className="max-w-3xl" data-testid="profile-about-dialog">
+          <DialogTitle>Inference profiles</DialogTitle>
+          <DialogDescription>
+            A profile = per card an engine, an engine profile and a model, plus a default mode. This project:{" "}
+            <span className="font-mono text-foreground">{current ?? "the config's own settings"}</span>
+            {!prof?.bridge && (
+              <>
+                {" "}
+                · mode <span className="font-mono text-foreground">{mode ?? `${defaultMode} (the profile's default)`}</span>
+              </>
+            )}{" "}
+            · live server layout <span className="font-mono text-foreground">{d.live?.layout ?? "unknown"}</span>
+          </DialogDescription>
+          {prof && (
+            <div className="space-y-1 rounded-md border p-2 text-sm" data-testid="profile-active">
+              <div className="font-medium">{prof.title ?? current}</div>
+              {prof.description && <p className="text-muted-foreground">{prof.description}</p>}
+              <p className="font-mono text-xs">{cardsText(prof)}</p>
+              {prof.summary && <p className="text-xs text-muted-foreground">{prof.summary}</p>}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">Modes work with any layout; a profile's own mode is only its default. {MODE_HELP}</p>
+          <LayoutTable
+            data={d}
+            onSwitch={(p) => {
+              setAbout(false);
+              void sw.start(p);
+            }}
+            onDelete={(p) => {
+              if (confirm(`Delete the saved profile ${p}?`)) void api.profileDelete(p).then(() => qc.invalidateQueries({ queryKey: ["profiles"] }));
+            }}
+          />
+        </DialogContent>
+      </Dialog>
       <ServerSwitchDialog sw={sw} />
     </span>
   );

@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, GitFork, Loader2, Pause, PencilLine, Play, RefreshCw, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { api, type BenchRunInfo, type BenchState, type BenchSuite } from "@/lib/api";
+import { api, type BenchRunInfo, type BenchState, type BenchSuite, type ProfileList } from "@/lib/api";
+import { useProfiles } from "@/features/profiles/Profiles";
+import { ALL, QueuePanel, QueuePicker, matches, type Selection } from "./Queue";
 import { BenchResults } from "./Results";
 import { Compose } from "./Compose";
 import { LiveBatches, useBenchLive } from "./Live";
@@ -97,8 +99,17 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
   const live = stream.runs ?? polled;
   const running = live.filter((r) => r.status !== "queued" && !r.endedAt && ["setup", "running", "scoring"].includes(r.status));
 
+  const profiles = useProfiles();
+  const [sel, setSel] = useState<Selection>({ suite: ALL, source: "saved", profile: "", A: { engine: ALL, engineProfile: ALL, model: ALL }, B: { engine: ALL, engineProfile: ALL, model: ALL }, perCard: false, mode: "" });
+  const [onlyMatching, setOnlyMatching] = useState(true);
+  const allRows = results.data ?? [];
+  const matching = useMemo(() => allRows.filter((r) => matches(r, sel, profiles.data)), [allRows, sel, profiles.data]);
   const start = useMutation({
-    mutationFn: (name: string) => api.benchStart(name),
+    mutationFn: async (name: string) => {
+      const confirmSwitch = await confirmSuiteSwitch(suites.find((x) => x.name === name), profiles.data);
+      if (confirmSwitch === null) throw new Error("Not started.");
+      return api.benchStart(name, confirmSwitch);
+    },
     onSuccess: (r) => {
       setFocus(r.batch);
       return qc.invalidateQueries({ queryKey: ["bench"] });
@@ -212,9 +223,21 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
           <Compose suites={suites} from={chosen} onSaved={setSuite} onQueued={setFocus} />
         </section>
 
-        <LiveBatches live={live} results={results.data ?? []} focus={focus} onWatch={onWatch} />
+        <section className="rounded-lg border bg-panel p-3" data-testid="bench-queue-section">
+          <h2 className="mb-2 text-sm font-semibold">Queue a setup</h2>
+          <QueuePicker suites={suites} sel={sel} onSel={setSel} matching={matching.length} />
+          <div className="mt-3 border-t pt-2">
+            <QueuePanel onWatch={onWatch} onShowBatch={setFocus} running={live} />
+          </div>
+        </section>
 
-        <BenchResults rows={results.data ?? []} />
+        <LiveBatches live={live} results={allRows} focus={focus} onWatch={onWatch} />
+
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input type="checkbox" checked={onlyMatching} onChange={(e) => setOnlyMatching(e.target.checked)} data-testid="results-only-matching" />
+          Results: only the setup picked under Queue ({matching.length} of {allRows.length})
+        </label>
+        <BenchResults rows={onlyMatching ? matching : allRows} />
       </div>
     </div>
   );
@@ -297,4 +320,39 @@ function RunLine({ run, onWatch, live }: { run: BenchRunInfo; onWatch: (pid: str
       )}
     </div>
   );
+}
+
+/**
+ * A saved suite whose arms need another server layout: show what switching costs and ask. Returns
+ * true (confirmed), false (nothing to switch), null (declined). The runner refuses unconfirmed switches.
+ */
+async function confirmSuiteSwitch(suite: BenchSuite | undefined, d: ProfileList | undefined): Promise<boolean | null> {
+  if (!suite) return false;
+  const refs = [...new Set(suite.arms.map((a) => a.profile ?? suite.profile).filter((x): x is string => !!x))];
+  const off = refs.filter((ref) => {
+    let p: string | undefined = ref;
+    for (let i = 0; p && i < 4 && d?.aliases?.[p]; i++) p = d.aliases[p];
+    const info = p ? d?.profiles?.[p] : undefined;
+    return !info?.fits;
+  });
+  if (!off.length) return false;
+  const lines: string[] = [];
+  for (const ref of off) {
+    try {
+      const plan = await api.profilePlan(ref);
+      if (plan.fits) continue;
+      lines.push(`- ${ref}: switch to ${plan.layout} (about ${Math.max(1, Math.ceil(plan.estimateSeconds / 60))} min)` + (plan.refusals.length ? `; for now: ${plan.refusals.join("; ")}` : ""));
+    } catch (e) {
+      lines.push(`- ${ref}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  if (!lines.length) return false;
+  const users = d?.live?.leases?.length ? `In use now: ${d.live.leases.map((l) => l.slot + (l.who ? ` (${l.who})` : "")).join(", ")}; the runs wait for them.\n` : "";
+  return confirm(
+    `This suite needs the server switched (live: ${d?.live?.layout ?? "unknown"}):\n${lines.join("\n")}\n` +
+      users +
+      "Each switch restarts the model servers; everything using them waits. When the suite ends the server switches back. Go ahead?",
+  )
+    ? true
+    : null;
 }
