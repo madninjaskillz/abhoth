@@ -256,13 +256,16 @@ export interface EngineProfileInfo {
   options?: Record<string, unknown> | null;
 }
 
-/** A model and its artifact per engine it runs on ({file, id, vramGiB?}). */
+/** A model's build for one engine. engineProfiles (non-empty) = the only engine profiles it may use there. */
+export type ModelArtifact = { file?: string | null; id?: string | null; vramGiB?: number | null; engineProfiles?: string[] | null };
+
+/** A model and its artifact per engine it runs on ({file, id, vramGiB?, engineProfiles?}). */
 export interface ModelInfo {
   title?: string | null;
   description?: string | null;
   vision: boolean;
   vramGiB?: number | null;
-  artifacts: Record<string, { file?: string | null; id?: string | null; vramGiB?: number | null } | string | null>;
+  artifacts: Record<string, ModelArtifact | string | null>;
 }
 
 export interface ProfileInfo {

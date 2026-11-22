@@ -1,7 +1,7 @@
 // Setups: per card ENGINE → ENGINE PROFILE → MODEL (only compatible ones), a MODE for the whole setup; saved
 // profiles are named setups. The bench queue's "All" expansion and result matching. Pure (type imports only), so
 // plain node tests it (test/queue.test.ts); the profile builder (Profiles.tsx) uses the same rules.
-import type { BenchResult, BenchSuite, CardPick, ProfileList } from "../../lib/api";
+import type { BenchResult, BenchSuite, CardPick, ModelArtifact, ProfileList } from "../../lib/api";
 
 export const ALL = "*";
 export const OFF = "off";
@@ -41,10 +41,16 @@ export interface Setup {
 
 export const MAX_ADD = 500;
 
-export function artifactOf(d: ProfileList | undefined, model: string, engine: string): { file?: string | null; id?: string | null; vramGiB?: number | null } | null {
+export function artifactOf(d: ProfileList | undefined, model: string, engine: string): ModelArtifact | null {
   const a = d?.models?.[model]?.artifacts?.[engine];
   if (a == null) return null;
   return typeof a === "string" ? { file: a } : a;
+}
+
+/** The engine profiles a model may use on an engine; null = any of that engine's (no list, or an empty one, as the server reads it). */
+export function allowedEngineProfiles(d: ProfileList | undefined, model: string, engine: string): string[] | null {
+  const only = artifactOf(d, model, engine)?.engineProfiles;
+  return Array.isArray(only) && only.length ? only : null;
 }
 
 /** Why a pick can't run on a card (null = fine). */
@@ -57,6 +63,8 @@ export function pickProblem(d: ProfileList | undefined, card: string, p: Pick): 
   if (!m) return `card ${card}: unknown model ${p.model}`;
   const art = artifactOf(d, p.model, p.engine);
   if (!art) return `card ${card}: ${p.model} has no ${p.engine} build (runs on: ${Object.keys(m.artifacts ?? {}).join(", ") || "nothing"})`;
+  const only = allowedEngineProfiles(d, p.model, p.engine);
+  if (only && !only.includes(p.engineProfile)) return `card ${card}: ${p.model} runs on ${p.engine} only with ${only.join(", ")}, not ${p.engineProfile}`;
   const need = (art.vramGiB ?? m.vramGiB ?? 0) + (ep.vramGiB ?? 0);
   if (need > CARD_VRAM - RESERVE) return `card ${card}: needs about ${need.toFixed(1)} GiB by our rough estimate, more than the card has to spare`;
   return null;
@@ -74,6 +82,33 @@ export function picksFor(d: ProfileList | undefined, card: string, f: CardFilter
       const p = { engine: ep.engine, engineProfile: epName, model };
       if (!pickProblem(d, card, p)) out.push(p);
     }
+  }
+  return out;
+}
+
+const anyOf = (v: string) => (!v || v === ALL ? ALL : v);
+
+/** Engine profiles of the engine (ALL = any engine) that some allowed model can use (just `model` when one is picked; "" or ALL = any). */
+export function engineProfileOptions(d: ProfileList | undefined, card: string, engine: string, model: string): string[] {
+  if (!engine || engine === OFF) return [];
+  return [...new Set(picksFor(d, card, { engine, engineProfile: ALL, model: anyOf(model) }).map((p) => p.engineProfile))];
+}
+
+/** Models that can run on the engine (on `engineProfile` when one is picked; "" or ALL = any). */
+export function modelOptions(d: ProfileList | undefined, card: string, engine: string, engineProfile: string): string[] {
+  if (!engine || engine === OFF) return [];
+  if (engine === ALL) return Object.keys(d?.models ?? {});
+  return [...new Set(picksFor(d, card, { engine, engineProfile: anyOf(engineProfile), model: ALL }).map((p) => p.model))];
+}
+
+/** Models with a build for the engine that are hidden under this engine profile, each with the reason. */
+export function hiddenModels(d: ProfileList | undefined, card: string, engine: string, engineProfile: string): { model: string; reason: string }[] {
+  if (!engine || engine === ALL || engine === OFF || !engineProfile || engineProfile === ALL) return [];
+  const out: { model: string; reason: string }[] = [];
+  for (const model of Object.keys(d?.models ?? {})) {
+    if (!artifactOf(d, model, engine)) continue;
+    const why = pickProblem(d, card, { engine, engineProfile, model });
+    if (why) out.push({ model, reason: why.replace(/^card \w+: /, "") });
   }
   return out;
 }

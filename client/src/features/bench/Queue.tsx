@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { api, type BenchQueueItem, type BenchQueuePlan, type BenchSuite, type ProfileList } from "@/lib/api";
 import { useProfiles } from "@/features/profiles/Profiles";
-import { ALL, MAX_ADD, MODES, OFF, expand, picksFor, type CardFilter, type Selection } from "./queueLogic";
+import { ALL, MAX_ADD, MODES, OFF, engineProfileOptions, expand, picksFor, type CardFilter, type Selection } from "./queueLogic";
 export { ALL, expand, matches, type Selection } from "./queueLogic";
 import { cn } from "@/lib/utils";
 
@@ -14,12 +14,14 @@ const select = "h-7 rounded border bg-background px-1 text-xs";
 
 /** Engine → engine profile → model for one card, each with "All"; options narrow to compatible ones. */
 function CardFilterPickers({ card, f, onChange, d, allowOff }: { card: string; f: CardFilter; onChange: (f: CardFilter) => void; d: ProfileList | undefined; allowOff: boolean }) {
-  const eps = Object.entries(d?.engineProfiles ?? {}).filter(([, ep]) => f.engine === ALL || ep.engine === f.engine);
-  const models = Object.entries(d?.models ?? {}).filter(([name, m]) => {
-    if (f.engine === ALL) return true;
-    if (!m.artifacts?.[f.engine]) return false;
-    return f.engineProfile === ALL || picksFor(d, card, { engine: f.engine, engineProfile: f.engineProfile, model: name }).length > 0;
-  });
+  // only engine profiles / models with at least one valid combo (allowed engine profiles, compat, VRAM) given the other picks
+  const eps = engineProfileOptions(d, card, f.engine, f.model).map((name) => [name] as const);
+  const modelsFor = (engineProfile: string) => [...new Set(picksFor(d, card, { ...f, engineProfile, model: ALL }).map((p) => p.model))];
+  const models = modelsFor(f.engineProfile).map((name) => [name] as const);
+  // a pick that rules out the other one resets it to All
+  const pickEngineProfile = (engineProfile: string) => onChange({ ...f, engineProfile, model: f.model !== ALL && !modelsFor(engineProfile).includes(f.model) ? ALL : f.model });
+  const pickModel = (model: string) =>
+    onChange({ ...f, model, engineProfile: f.engineProfile !== ALL && !engineProfileOptions(d, card, f.engine, model).includes(f.engineProfile) ? ALL : f.engineProfile });
   return (
     <span className="inline-flex flex-wrap items-end gap-1" data-testid={`queue-card-${card}`}>
       <span className="self-center font-mono text-muted-foreground">{card}</span>
@@ -34,7 +36,7 @@ function CardFilterPickers({ card, f, onChange, d, allowOff }: { card: string; f
       </select>
       {f.engine !== OFF && (
         <>
-          <select className={select} value={f.engineProfile} onChange={(e) => onChange({ ...f, engineProfile: e.target.value })} data-testid={`queue-engine-profile-${card}`}>
+          <select className={select} value={f.engineProfile} onChange={(e) => pickEngineProfile(e.target.value)} data-testid={`queue-engine-profile-${card}`}>
             <option value={ALL}>All engine profiles</option>
             {eps.map(([name]) => (
               <option key={name} value={name}>
@@ -42,7 +44,7 @@ function CardFilterPickers({ card, f, onChange, d, allowOff }: { card: string; f
               </option>
             ))}
           </select>
-          <select className={select} value={f.model} onChange={(e) => onChange({ ...f, model: e.target.value })} data-testid={`queue-model-${card}`}>
+          <select className={select} value={f.model} onChange={(e) => pickModel(e.target.value)} data-testid={`queue-model-${card}`}>
             <option value={ALL}>All models</option>
             {models.map(([name]) => (
               <option key={name} value={name}>

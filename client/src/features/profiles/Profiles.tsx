@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { api, type CardPick, type LayoutDefinition, type ProfileInfo, type ProfileList, type SwitchJob, type SwitchPlan } from "@/lib/api";
 import { menuRow } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
-import { artifactOf, pickProblem } from "@/features/bench/queueLogic";
+import { engineProfileOptions, hiddenModels, modelOptions, pickProblem } from "@/features/bench/queueLogic";
 
 /**
  * Inference profiles: a profile names a server layout (what runs on each GPU of the inference box)
@@ -321,10 +321,18 @@ const MODE_HELP =
 type PickState = { engine: string; engineProfile: string; model: string };
 const emptyPick: PickState = { engine: "", engineProfile: "", model: "" };
 
-/** One card: engine → engine profile → model, each narrowed to what fits. */
+/** One card: engine → engine profile → model, each narrowed to what fits (a model's allowed engine profiles, VRAM),
+ *  whichever of engine profile / model is picked first. */
 function CardBuilder({ card, d, pick, onPick, allowOff }: { card: string; d: ProfileList; pick: PickState; onPick: (p: PickState) => void; allowOff: boolean }) {
-  const eps = Object.entries(d.engineProfiles ?? {}).filter(([, ep]) => ep.engine === pick.engine);
-  const models = Object.entries(d.models ?? {}).filter(([name]) => pick.engine && artifactOf(d, name, pick.engine));
+  const epNames = engineProfileOptions(d, card, pick.engine, pick.model);
+  const eps = epNames.map((n) => [n, d.engineProfiles![n]] as const);
+  const models = modelOptions(d, card, pick.engine, pick.engineProfile).map((n) => [n, d.models![n]] as const);
+  const hidden = hiddenModels(d, card, pick.engine, pick.engineProfile);
+  // a choice that rules out the other one clears it, so an invalid combo is never left selected
+  const pickEngineProfile = (engineProfile: string) =>
+    onPick({ ...pick, engineProfile, model: pick.model && !modelOptions(d, card, pick.engine, engineProfile).includes(pick.model) ? "" : pick.model });
+  const pickModel = (model: string) =>
+    onPick({ ...pick, model, engineProfile: pick.engineProfile && !engineProfileOptions(d, card, pick.engine, model).includes(pick.engineProfile) ? "" : pick.engineProfile });
   const problem = pick.engine && pick.engine !== "off" && pick.engineProfile && pick.model ? pickProblem(d, card, pick) : null;
   const sel = "rounded border bg-background px-1 py-0.5 text-xs";
   return (
@@ -342,7 +350,7 @@ function CardBuilder({ card, d, pick, onPick, allowOff }: { card: string; d: Pro
         </select>
         {pick.engine && pick.engine !== "off" && (
           <>
-            <select className={sel} value={pick.engineProfile} onChange={(e) => onPick({ ...pick, engineProfile: e.target.value })} data-testid={`builder-engine-profile-${card}`}>
+            <select className={sel} value={pick.engineProfile} onChange={(e) => pickEngineProfile(e.target.value)} data-testid={`builder-engine-profile-${card}`}>
               <option value="">engine profile…</option>
               {eps.map(([n, ep]) => (
                 <option key={n} value={n}>
@@ -350,7 +358,7 @@ function CardBuilder({ card, d, pick, onPick, allowOff }: { card: string; d: Pro
                 </option>
               ))}
             </select>
-            <select className={sel} value={pick.model} onChange={(e) => onPick({ ...pick, model: e.target.value })} data-testid={`builder-model-${card}`}>
+            <select className={sel} value={pick.model} onChange={(e) => pickModel(e.target.value)} data-testid={`builder-model-${card}`}>
               <option value="">model…</option>
               {models.map(([n, m]) => (
                 <option key={n} value={n}>
@@ -363,6 +371,11 @@ function CardBuilder({ card, d, pick, onPick, allowOff }: { card: string; d: Pro
       </div>
       {pick.engineProfile && <p className="pl-16 text-[11px] text-muted-foreground">{d.engineProfiles?.[pick.engineProfile]?.description}</p>}
       {pick.model && <p className="pl-16 text-[11px] text-muted-foreground">{d.models?.[pick.model]?.description}</p>}
+      {hidden.length > 0 && (
+        <p className="pl-16 text-[11px] text-muted-foreground" data-testid={`builder-hidden-${card}`}>
+          Not offered here: {hidden.map((h) => `${d.models?.[h.model]?.title ?? h.model} (${h.reason})`).join("; ")}
+        </p>
+      )}
       {problem && <p className="pl-16 text-[11px] text-destructive">{problem}</p>}
     </div>
   );
