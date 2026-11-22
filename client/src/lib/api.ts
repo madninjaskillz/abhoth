@@ -547,6 +547,8 @@ export interface BenchResult {
   bridge_turns?: number | null;
   cost_usd?: number | null;
   mean_w?: number | null;
+  /** Set by the server on rows read from an archive-* folder (older results moved aside); absent = results.jsonl. */
+  archive?: string | null;
   orca_version?: string | null;
 }
 

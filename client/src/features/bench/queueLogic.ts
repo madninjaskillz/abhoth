@@ -175,6 +175,33 @@ export function profileOfResult(r: BenchResult, d: ProfileList | undefined): str
   return p;
 }
 
+/** The Queue picker's starting selection: every suite, the config's own profile, each profile's default mode. */
+export const INITIAL_SELECTION: Selection = {
+  suite: ALL,
+  source: "saved",
+  profile: "",
+  A: { engine: ALL, engineProfile: ALL, model: ALL },
+  B: { engine: ALL, engineProfile: ALL, model: ALL },
+  perCard: false,
+  mode: "",
+};
+
+/**
+ * The rows the Results section shows: all of them, unless "only the setup picked under Queue" is on.
+ * Off by default: the picker's starting selection (the config's own profile) matches no run of a
+ * profile, so on it hid every result.
+ */
+export const ONLY_MATCHING_BY_DEFAULT = false;
+export function shownResults(rows: BenchResult[], onlyMatching: boolean, sel: Selection, d: ProfileList | undefined): BenchResult[] {
+  return onlyMatching ? rows.filter((r) => matches(r, sel, d)) : rows;
+}
+
+/** A result's status for people: stopped runs never reached the checker; archived rows say where they came from. */
+export function statusLabel(r: BenchResult): string {
+  const base = r.status === "stopped" ? `stopped${r.quiet_window_stop ? " (quiet window)" : ""} · not scored` : r.status || "unknown";
+  return r.archive ? `${base} · archived` : base;
+}
+
 /** Whether a result belongs to the selection (ALL matches anything). */
 export function matches(r: BenchResult, sel: Selection, d: ProfileList | undefined): boolean {
   if (sel.suite !== ALL && sel.suite && r.suite !== sel.suite) return false;

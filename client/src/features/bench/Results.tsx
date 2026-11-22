@@ -17,6 +17,7 @@ import {
   type Tariff,
 } from "./score";
 import { cellKey, cellLabel, cellTip, heatmap, wallPosition, type HeatCell, type Heatmap } from "./heatmap";
+import { modeOfResult, statusLabel } from "./queueLogic";
 
 /**
  * Results: the scorecard's views over results.jsonl. Settings (tariff, grouping, suite), the
@@ -133,7 +134,10 @@ export function BenchResults({ rows }: { rows: BenchResult[] }) {
       ))}
 
       <section className="rounded-lg border bg-panel">
-        <h2 className="border-b px-3 py-2 text-sm font-semibold">Runs ({inSuite.length})</h2>
+        <h2 className="border-b px-3 py-2 text-sm font-semibold">
+          Runs ({inSuite.length})
+          <RunCounts rows={inSuite} />
+        </h2>
         <RunsTable rows={inSuite} pence={pence} grouping={grouping} colours={colours} onOpen={setDetail} />
       </section>
 
@@ -444,8 +448,20 @@ const statusTone: Record<string, string> = {
   failed: "text-destructive",
   error: "text-destructive",
   timeout: "text-warning",
-  stopped: "text-muted-foreground",
+  stopped: "text-muted-foreground italic",
+  cancelled: "text-muted-foreground italic",
 };
+
+/** "· 22 passed · 21 failed · 1 stopped · 44 archived" after the runs heading. */
+function RunCounts({ rows }: { rows: BenchResult[] }) {
+  const by = new Map<string, number>();
+  for (const r of rows) by.set(r.status, (by.get(r.status) ?? 0) + 1);
+  const archived = rows.filter((r) => r.archive).length;
+  const parts = [...by].map(([s, n]) => `${n} ${s}`);
+  if (archived) parts.push(`${archived} archived`);
+  if (!parts.length) return null;
+  return <span className="font-normal text-muted-foreground" data-testid="bench-run-counts"> · {parts.join(" · ")}</span>;
+}
 
 const kTok = (x?: number | null) => (x == null ? "—" : x >= 1000 ? `${(x / 1000).toFixed(1)}k` : String(x));
 const fmt = (x: number | null | undefined, d = 0) => (x == null ? "—" : x.toLocaleString(undefined, { maximumFractionDigits: d }));
@@ -475,6 +491,7 @@ function RunsTable({
             <th className="px-3 py-1.5 font-medium">When</th>
             <th className="px-2 font-medium">Task</th>
             <th className="px-2 font-medium">Setup</th>
+            <th className="px-2 font-medium">Mode</th>
             <th className="px-2 font-medium">Layout</th>
             <th className="px-2 font-medium">Result</th>
             <th className="px-2 text-right font-medium">Tests</th>
@@ -492,15 +509,23 @@ function RunsTable({
             const setup = setupOf(r, grouping);
             const c = pence.get(r.id);
             return (
-              <tr key={r.id} className="cursor-pointer border-b last:border-0 hover:bg-accent/40" onClick={() => onOpen(r)} title={r.reason ?? r.note ?? ""}>
+              <tr
+                key={r.id}
+                className={cn("cursor-pointer border-b last:border-0 hover:bg-accent/40", (r.status === "stopped" || r.archive) && "bg-muted/30")}
+                onClick={() => onOpen(r)}
+                title={[r.reason ?? r.note, r.archive && `from ${r.archive}/results.jsonl`].filter(Boolean).join(" · ")}
+                data-status={r.status}
+                data-archive={r.archive ?? undefined}
+              >
                 <td className="whitespace-nowrap px-3 py-1 text-muted-foreground">{r.started ? new Date(r.started).toLocaleString() : "—"}</td>
                 <td className="px-2 font-mono">{r.task}</td>
                 <td className="px-2 font-mono">
                   <span className="mr-1 inline-block size-2 rounded-full" style={{ background: colours.get(setup) }} />
                   {setup} <span className="text-muted-foreground">r{r.rep}</span>
                 </td>
+                <td className="px-2 font-mono">{modeOfResult(r)}</td>
                 <td className="px-2 font-mono text-muted-foreground">{r.layout ?? "—"}</td>
-                <td className={cn("px-2", statusTone[r.status])}>{r.status}</td>
+                <td className={cn("whitespace-nowrap px-2", statusTone[r.status])}>{statusLabel(r)}</td>
                 <td className="px-2 text-right tabular-nums">{r.tests_total ? `${r.tests_passed}/${r.tests_total}` : "—"}</td>
                 <td className="px-2 text-right tabular-nums">{r.wall_s == null ? "—" : `${(r.wall_s / 60).toFixed(1)} min`}</td>
                 <td className="px-2 text-right tabular-nums" title={copyText(r.copy_tps) ?? undefined}>

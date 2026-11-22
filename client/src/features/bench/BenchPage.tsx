@@ -4,7 +4,8 @@ import { Eye, GitFork, Loader2, Pause, PencilLine, Play, RefreshCw, Square } fro
 import { Button } from "@/components/ui/button";
 import { api, type BenchRunInfo, type BenchState, type BenchSuite, type ProfileList } from "@/lib/api";
 import { useProfiles } from "@/features/profiles/Profiles";
-import { ALL, QueuePanel, QueuePicker, matches, type Selection } from "./Queue";
+import { QueuePanel, QueuePicker, matches, type Selection } from "./Queue";
+import { INITIAL_SELECTION, ONLY_MATCHING_BY_DEFAULT } from "./queueLogic";
 import { BenchResults } from "./Results";
 import { Compose } from "./Compose";
 import { LiveBatches, useBenchLive } from "./Live";
@@ -100,9 +101,10 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
   const running = live.filter((r) => r.status !== "queued" && !r.endedAt && ["setup", "running", "scoring"].includes(r.status));
 
   const profiles = useProfiles();
-  const [sel, setSel] = useState<Selection>({ suite: ALL, source: "saved", profile: "", A: { engine: ALL, engineProfile: ALL, model: ALL }, B: { engine: ALL, engineProfile: ALL, model: ALL }, perCard: false, mode: "" });
-  const [onlyMatching, setOnlyMatching] = useState(true);
+  const [sel, setSel] = useState<Selection>(INITIAL_SELECTION);
+  const [onlyMatching, setOnlyMatching] = useState(ONLY_MATCHING_BY_DEFAULT);
   const allRows = results.data ?? [];
+  // Same rule as shownResults (queueLogic, tested), memoised so the charts don't recompute on every poll.
   const matching = useMemo(() => allRows.filter((r) => matches(r, sel, profiles.data)), [allRows, sel, profiles.data]);
   const start = useMutation({
     mutationFn: async (name: string) => {
@@ -237,6 +239,11 @@ export function BenchPage({ onWatch }: { onWatch: (projectId: string) => void })
           <input type="checkbox" checked={onlyMatching} onChange={(e) => setOnlyMatching(e.target.checked)} data-testid="results-only-matching" />
           Results: only the setup picked under Queue ({matching.length} of {allRows.length})
         </label>
+        {onlyMatching && !matching.length && allRows.length > 0 && (
+          <p className="text-xs text-warning" data-testid="results-filtered-out">
+            None of the {allRows.length} results match the setup picked under Queue. Untick the box to see them all.
+          </p>
+        )}
         <BenchResults rows={onlyMatching ? matching : allRows} />
       </div>
     </div>
