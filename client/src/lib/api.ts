@@ -651,6 +651,51 @@ export interface CloneStatus {
   projectId?: string | null;
 }
 
+export interface GitHubAppStatus {
+  configured: boolean;
+  slug?: string | null;
+  installUrl?: string | null;
+  signedIn: boolean;
+  login?: string | null;
+  avatarUrl?: string | null;
+  setup?: string | null;
+}
+
+export interface GitHubDeviceStart {
+  flowId: string;
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+  interval: number;
+}
+
+export interface GitHubDevicePoll {
+  state: "pending" | "done" | "expired" | "denied" | "error";
+  interval: number;
+  login?: string | null;
+  error?: string | null;
+}
+
+export interface GitHubRepo {
+  fullName: string;
+  owner: string;
+  name: string;
+  private: boolean;
+  description?: string | null;
+  updatedAt?: string | null;
+  defaultBranch?: string | null;
+  htmlUrl?: string | null;
+}
+
+export interface GitHubRepoPage {
+  total: number;
+  page: number;
+  perPage: number;
+  items: GitHubRepo[];
+  installations: { id: number; account: string; type?: string | null }[];
+  installUrl?: string | null;
+}
+
 export const api = {
   info: () => request<ServerInfo>("GET", "/api/info"),
   projects: () => request<ProjectList>("GET", "/api/projects"),
@@ -681,6 +726,16 @@ export const api = {
   makeFolder: (parent: string, name: string) => request<{ path: string }>("POST", "/api/fs/mkdir", { parent, name }),
   clone: (url: string, parent: string, name?: string, token?: string) =>
     request<CloneStatus>("POST", "/api/projects/clone", { url, parent, name, token: token || undefined }),
+  githubApp: () => request<GitHubAppStatus>("GET", "/api/github/app"),
+  githubDeviceStart: () => request<GitHubDeviceStart>("POST", "/api/github/app/device"),
+  githubDevicePoll: (flowId: string) => request<GitHubDevicePoll>("POST", `/api/github/app/device/${encodeURIComponent(flowId)}`),
+  githubSignOut: () => request<{ ok: boolean; removed: boolean; revokeUrl: string }>("POST", "/api/github/app/signout"),
+  githubRepos: (query: string, page: number, reload = false) =>
+    request<GitHubRepoPage>("GET", `/api/github/app/repos${q({ q: query, page: String(page), perPage: "30", reload: reload || undefined })}`),
+  githubBranches: (repo: string) =>
+    request<{ defaultBranch?: string | null; branches: string[]; truncated: boolean }>("GET", `/api/github/app/branches${q({ repo })}`),
+  githubClone: (body: { repo: string; branch?: string; parent: string; name?: string }) =>
+    request<CloneStatus>("POST", "/api/github/app/clone", body),
   validateGithub: (body: { token?: string; pid?: string; url?: string }) => request<GitHubCheck>("POST", "/api/github/validate", body),
   benchLogs: async (id: string) => {
     const res = await fetch(`/api/bench/runs/${encodeURIComponent(id)}/logs`, { credentials: "same-origin" });
