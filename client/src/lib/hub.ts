@@ -4,6 +4,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import { existingSessionStore, sessionStore, useConnection, type EngineResult, type LiveEvent, type LiveSnapshot } from "@/store/session";
 import { normPath, useWorkspace } from "@/store/workspace";
 import type { EditMarkers } from "@/lib/api";
+import { beginLoad, finishLoad, openedAgents, routeAgentEvents } from "@/features/agents/agentStore";
+import type { AgentTranscriptWire } from "@/features/agents/agentTabs";
 
 // One SignalR connection to /hub/session for every project. A project's events that arrive while
 // its snapshot loads are held and applied after it (those already in the snapshot drop by Seq).
@@ -56,6 +58,7 @@ export function startHub(queryClient: QueryClient): signalR.HubConnection {
   conn.on("events", (pid: string, events: LiveEvent[]) => {
     if (loading.has(pid)) held.get(pid)?.push(...events);
     else existingSessionStore(pid)?.getState().applyEvents(events);
+    routeAgentEvents(pid, events);
   });
   conn.on("markers", (pid: string, markers: EditMarkers) => useWorkspace.getState().setMarkers(pid, markers));
   conn.on("files", (pid: string, folder: string, dirs: string[] | null) => {
@@ -80,6 +83,8 @@ export function startHub(queryClient: QueryClient): signalR.HubConnection {
   conn.onreconnected(async () => {
     setConnection("connected");
     await Promise.all([...watched].map((pid) => loadSnapshot(conn, pid)));
+    // Agent tabs that were open missed events while away: fetch them again.
+    await Promise.all([...watched].flatMap((pid) => openedAgents(pid).map((a) => loadAgentTranscript(pid, a))));
     void queryClient.invalidateQueries();
   });
   conn.onclose(() => setConnection("disconnected"));
@@ -142,4 +147,47 @@ export async function setEngine(pid: string, engine: string): Promise<EngineResu
 export async function answerQuestion(pid: string, id: string, answer: string): Promise<boolean> {
   if (!connection) return false;
   return await connection.invoke<boolean>("AnswerQuestion", pid, id, answer);
+}
+
+// ── sub-agent tabs ───────────────────────────────────────────────────────────
+
+/** Fetch a sub-agent's transcript (its tab opened, or a refresh); live events keep it current after. */
+export async function loadAgentTranscript(pid: string, agentId: string): Promise<void> {
+  beginLoad(pid, agentId);
+  if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+    finishLoad(pid, agentId, null, "Not connected.");
+    return;
+  }
+  try {
+    const t = await connection.invoke<AgentTranscriptWire | null>("GetAgentTranscript", pid, agentId);
+    finishLoad(pid, agentId, t ?? null);
+  } catch (e) {
+    finishLoad(pid, agentId, null, hubMessage(e));
+  }
+}
+
+export interface AgentMessageResult {
+  ok: boolean;
+  outcome: string;
+  message?: string | null;
+}
+
+/** Message a sub-agent: queued while it runs, or continues it once finished. */
+export async function sendAgentMessage(pid: string, agentId: string, text: string): Promise<AgentMessageResult> {
+  if (!connection) return { ok: false, outcome: "error", message: "Not connected." };
+  try {
+    return await connection.invoke<AgentMessageResult>("SendAgentMessage", pid, agentId, text);
+  } catch (e) {
+    return { ok: false, outcome: "error", message: hubMessage(e) };
+  }
+}
+
+/** Stop one running sub-agent. */
+export async function cancelAgent(pid: string, agentId: string): Promise<boolean> {
+  if (!connection) return false;
+  try {
+    return await connection.invoke<boolean>("CancelAgent", pid, agentId);
+  } catch {
+    return false;
+  }
 }
