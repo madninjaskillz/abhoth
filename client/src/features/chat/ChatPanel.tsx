@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Mascot, MascotThinking } from "@/components/Mascot";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -19,16 +19,25 @@ import type { Components } from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Badge, Textarea } from "@/components/ui/misc";
 import { cn, formatMs } from "@/lib/utils";
-import { AgentBars } from "@/features/agents/AgentBars";
+import { AgentBars, useViewedAgent } from "@/features/agents/AgentBars";
+import { AgentChat } from "@/features/agents/AgentChat";
 
 export function ChatPanel() {
+  // In the tabs view, a sub-agent's tab shows its own conversation in place of the main chat.
+  const viewed = useViewedAgent();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <AgentBars />
-      <Transcript />
-      <QuestionPrompts />
-      <PermissionPrompts />
-      <ComposerOrWatching />
+      {viewed ? (
+        <AgentChat agent={viewed} />
+      ) : (
+        <>
+          <Transcript />
+          <QuestionPrompts />
+          <PermissionPrompts />
+          <ComposerOrWatching />
+        </>
+      )}
       <MediaViewer />
     </div>
   );
@@ -91,6 +100,11 @@ function UserText({ text }: { text: string }) {
 function Transcript() {
   const items = useSession((s) => s.items);
   const busy = useSession((s) => s.busy);
+  return <TranscriptList items={items} busy={busy} empty={<EmptyState />} />;
+}
+
+/** A list of chat items as the main chat draws them (also a sub-agent's tab). */
+export function TranscriptList({ items, busy, empty, testId = "transcript" }: { items: ChatItem[]; busy: boolean; empty?: ReactNode; testId?: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   // Each media file once per turn, outside the collapsible blocks (see planMedia).
@@ -107,8 +121,8 @@ function Transcript() {
   }, [items]);
 
   return (
-    <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-6" data-testid="transcript">
-      {items.length === 0 && <EmptyState />}
+    <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-6" data-testid={testId}>
+      {items.length === 0 && empty}
       <div className="w-full space-y-3">
         {items.map((item) => (
           <Item key={item.key} item={item} media={media.get(item.key)?.join("\n")} />
@@ -309,7 +323,7 @@ function prettyJson(s: string): string {
   }
 }
 
-function PermissionPrompts() {
+export function PermissionPrompts() {
   const { id: pid } = useProject();
   const permissions = useSession((s) => s.permissions);
   if (permissions.length === 0) return null;
