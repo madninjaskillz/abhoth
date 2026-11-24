@@ -299,7 +299,10 @@ export interface LiveLayout {
   description?: string | null;
   summary?: string | null;
   healthy?: boolean;
-  cards?: Record<string, { engine?: string | null; slots?: number | null; model?: string | null; healthy?: boolean | null; detail?: string | null }>;
+  cards?: Record<
+    string,
+    { engine?: string | null; slots?: number | null; model?: string | null; healthy?: boolean | null; detail?: string | null; options?: { alias?: string | null } | null }
+  >;
   leases?: { slot: string; who?: string | null }[];
   quietWindow?: boolean;
   job?: { id?: string | null; state?: string | null; layout?: string | null } | null;

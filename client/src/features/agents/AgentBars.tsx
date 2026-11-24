@@ -1,5 +1,9 @@
 import { Cpu, Server } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useSession, type LiveAgent } from "@/store/session";
+import { api, type LiveLayout } from "@/lib/api";
+import { useProfiles } from "@/features/profiles/Profiles";
+import { modelLabel } from "@/features/agents/modelLabel";
 import { agentColor, cn } from "@/lib/utils";
 import { Tip } from "@/components/ui/misc";
 import { MascotThinking } from "@/components/Mascot";
@@ -11,12 +15,16 @@ export function AgentBars() {
   const busy = useSession((s) => s.busy);
   const helpers = agents.filter((a) => !a.isLead);
   const lead = agents.find((a) => a.isLead);
+  // The live server layout names the model behind the config's alias until a reply says.
+  const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: 60000 });
+  const live = useProfiles(!!info.data?.profiles).data?.live ?? null;
+  const localModel = lead?.requestedModel ?? null;
 
   return (
     <div className="border-b bg-panel/60 px-3 py-2 space-y-1.5">
-      {lead && <Bar agent={{ ...lead, status: busy ? "running" : lead.status }} />}
+      {lead && <Bar agent={{ ...lead, status: busy ? "running" : lead.status }} live={live} localModel={localModel} />}
       {helpers.map((a) => (
-        <Bar key={a.id} agent={a} />
+        <Bar key={a.id} agent={a} live={live} localModel={localModel} />
       ))}
       {slots && (
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -33,11 +41,12 @@ export function AgentBars() {
   );
 }
 
-function Bar({ agent }: { agent: LiveAgent }) {
+function Bar({ agent, live, localModel }: { agent: LiveAgent; live: LiveLayout | null; localModel: string | null }) {
   const color = agentColor(agent.letter);
   const running = agent.status === "running" || agent.status === "pending";
   const pct = Math.max(0, Math.min(1, agent.progress ?? (running ? 0 : agent.status === "idle" ? 0 : 1)));
   const detail = agent.activity || agent.note;
+  const model = modelLabel(agent, live, localModel);
   return (
     <div className="flex items-center gap-2 text-xs min-w-0" data-testid="agent-bar">
       <span
@@ -57,12 +66,12 @@ function Bar({ agent }: { agent: LiveAgent }) {
       <span className={cn("w-14 text-right tabular-nums", running ? "text-foreground" : "text-muted-foreground")}>
         {running && agent.progress != null ? `${Math.round(pct * 100)}%` : agent.status}
       </span>
-      <Tip label={<span>slot {agent.slot ?? "—"} · model {agent.model ?? "—"}{detail ? <><br />{detail}</> : null}</span>}>
+      <Tip label={<span>slot {agent.slot ?? "—"} · {model.tip}{detail ? <><br />{detail}</> : null}</span>}>
         <span className="hidden sm:inline-flex items-center gap-1 text-muted-foreground max-w-[14rem] truncate">
           <Cpu className="size-3 shrink-0" />
           <span className="truncate">
             {agent.slot ? `${agent.slot} · ` : ""}
-            {agent.model ?? ""}
+            <span data-testid="agent-model" data-source={model.source}>{model.text}</span>
           </span>
         </span>
       </Tip>

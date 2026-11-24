@@ -20,7 +20,12 @@ export interface LiveAgent {
   note?: string | null;
   activity?: string | null;
   slot?: string | null;
+  /** What it served on when known, else the model it asks for. */
   model?: string | null;
+  /** The model id it sends (a gateway alias); null for a bridge. */
+  requestedModel?: string | null;
+  /** What answered its last request; null = not known. */
+  servedModel?: string | null;
   isLead: boolean;
 }
 
