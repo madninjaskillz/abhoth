@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, CheckCircle2, Folder, FolderGit2, GitBranch, Github, HardDrive, Loader2, XCircle } from "lucide-react";
+import { ArrowUp, CheckCircle2, Folder, FolderGit2, FolderPlus, GitBranch, Github, HardDrive, Loader2, XCircle } from "lucide-react";
+import { folderNameError } from "./folderName";
 import { api, type CloneStatus, type Project } from "@/lib/api";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,14 @@ export function AddProjectDialog({ open, onOpenChange, onAdded }: {
   const [mode, setMode] = useState("folder");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl" data-testid="add-project">
+      <DialogContent
+        className="max-w-xl"
+        data-testid="add-project"
+        // Escape in an inline box (the new folder's name) closes that box, not the dialog.
+        onEscapeKeyDown={(e) => {
+          if (e.target instanceof Element && e.target.closest("[data-escape-local]")) e.preventDefault();
+        }}
+      >
         <div className="flex items-center gap-3">
           <Mascot size={64} glow={false} className="mx-0 shrink-0" />
           <div className="min-w-0">
@@ -56,6 +64,38 @@ function FolderPicker({ path, setPath, pickLabel }: { path: string; setPath: (p:
     if (!path && listing.data) setPath(listing.data.path);
   }, [path, listing.data, setPath]);
   const data = listing.data;
+
+  // "New folder": an inline name box; the folder is made inside the one being browsed, then opened.
+  const qc = useQueryClient();
+  const [naming, setNaming] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [makeError, setMakeError] = useState<string | null>(null);
+  const [making, setMaking] = useState(false);
+  const closeNaming = () => {
+    setNaming(false);
+    setNewName("");
+    setMakeError(null);
+  };
+  useEffect(closeNaming, [path]);
+  const makeFolder = async () => {
+    const name = newName;
+    const problem = folderNameError(name);
+    if (problem) return setMakeError(problem);
+    if (!data) return;
+    setMaking(true);
+    setMakeError(null);
+    try {
+      const made = await api.makeFolder(data.path, name);
+      await qc.invalidateQueries({ queryKey: ["browse", path] });
+      closeNaming();
+      setPath(made.path);
+    } catch (e) {
+      setMakeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMaking(false);
+    }
+  };
+
   return (
     <div className="flex min-h-0 flex-col gap-2">
       <div className="flex gap-1.5">
@@ -72,7 +112,50 @@ function FolderPicker({ path, setPath, pickLabel }: { path: string; setPath: (p:
         <Button size="sm" variant="ghost" disabled={!data?.parent} onClick={() => data?.parent && setPath(data.parent)} title="Up a folder">
           <ArrowUp />
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!data}
+          onClick={() => (naming ? closeNaming() : setNaming(true))}
+          title="New folder here"
+          data-testid="new-folder"
+        >
+          <FolderPlus />
+        </Button>
       </div>
+      {naming && data && (
+        <div className="flex flex-col gap-1">
+          <div className="flex gap-1.5">
+            <input
+              autoFocus
+              className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-ring"
+              value={newName}
+              onChange={(e) => {
+                setNewName(e.target.value);
+                setMakeError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void makeFolder();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  closeNaming();
+                }
+              }}
+              placeholder={`New folder in ${data.path}`}
+              aria-label="New folder name"
+              data-testid="new-folder-name"
+              data-escape-local
+            />
+            <Button size="sm" disabled={making || !newName.trim()} onClick={() => void makeFolder()} data-testid="new-folder-create">
+              {making && <Loader2 className="animate-spin" />} Create
+            </Button>
+            <Button size="sm" variant="ghost" onClick={closeNaming}>Cancel</Button>
+          </div>
+          {makeError && <div className="text-xs text-destructive" data-testid="new-folder-error">{makeError}</div>}
+        </div>
+      )}
       {data && (
         <div className="flex flex-wrap gap-1">
           {data.places.map((p) => (

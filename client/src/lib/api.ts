@@ -678,6 +678,7 @@ export const api = {
     return res.ok ? res.text() : "(no checker output for this run)";
   },
   browse: (path?: string) => request<FolderListing>("GET", `/api/fs/browse${q({ path })}`),
+  makeFolder: (parent: string, name: string) => request<{ path: string }>("POST", "/api/fs/mkdir", { parent, name }),
   clone: (url: string, parent: string, name?: string, token?: string) =>
     request<CloneStatus>("POST", "/api/projects/clone", { url, parent, name, token: token || undefined }),
   validateGithub: (body: { token?: string; pid?: string; url?: string }) => request<GitHubCheck>("POST", "/api/github/validate", body),
