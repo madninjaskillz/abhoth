@@ -170,11 +170,11 @@ function Account({ login, avatarUrl, onSignedOut }: { login?: string | null; ava
     <div className="flex flex-col gap-1 rounded-md border bg-muted/30 px-2 py-1.5" data-testid="github-account">
       <div className="flex items-center gap-2">
         {avatarUrl ? <img src={avatarUrl} alt="" className="size-5 rounded-full" referrerPolicy="no-referrer" /> : <Github className="size-4" />}
-        <span>Signed in as <span className="font-medium" data-testid="github-login">@{login ?? "?"}</span></span>
+        <span className="min-w-0 truncate">Signed in as <span className="font-medium" data-testid="github-login">@{login ?? "?"}</span></span>
         <span className="ml-auto" />
         {!confirming && (
-          <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={() => setConfirming(true)} data-testid="github-signout">
-            <LogOut /> Sign out of GitHub
+          <Button size="sm" variant="ghost" className="h-6 shrink-0 px-1.5" onClick={() => setConfirming(true)} data-testid="github-signout" title="Sign out of GitHub">
+            <LogOut /> <span className="hidden sm:inline">Sign out of GitHub</span><span className="sm:hidden">Sign out</span>
           </Button>
         )}
       </div>
@@ -281,7 +281,7 @@ function RepoList({ installUrl, onPick, onSignedOut }: { installUrl?: string | n
           <Button size="sm" variant="outline" onClick={reload}><RefreshCw /> I've installed it: refresh</Button>
         </div>
       ) : (
-        <div className="h-64 overflow-y-auto rounded-md border bg-background" data-testid="github-repo-list">
+        <div className="h-64 overflow-y-auto overflow-x-hidden rounded-md border bg-background" data-testid="github-repo-list">
           {repos.isLoading && <div className="p-3 text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /></div>}
           {repos.error && !signedOut(repos.error) && <div className="p-3 text-destructive">{errorText(repos.error)}</div>}
           {data?.items.length === 0 && <div className="p-3 text-muted-foreground">{query ? `No repositories match "${query}".` : "No repositories."}</div>}
@@ -289,31 +289,36 @@ function RepoList({ installUrl, onPick, onSignedOut }: { installUrl?: string | n
             <button
               key={r.fullName}
               onClick={() => onPick(r)}
-              className="flex w-full flex-col gap-0.5 border-b px-2 py-1.5 text-left last:border-b-0 hover:bg-accent/60"
+              className="flex w-full min-w-0 flex-col gap-0.5 border-b px-2 py-1.5 text-left last:border-b-0 hover:bg-accent/60"
+              title={r.description ? `${r.fullName}: ${r.description}` : r.fullName}
               data-testid="github-repo"
             >
-              <div className="flex items-center gap-1.5">
+              <div className="flex w-full min-w-0 items-center gap-1.5">
                 {r.private ? <Lock className="size-3 shrink-0 text-muted-foreground" /> : <Globe className="size-3 shrink-0 text-muted-foreground" />}
-                <span className="truncate">
+                <span className="min-w-0 truncate">
                   <span className="text-muted-foreground">{r.owner}/</span>
                   <span className="font-medium">{r.name}</span>
                 </span>
                 <span className="ml-auto shrink-0 rounded border px-1 text-[10px] text-muted-foreground">{r.private ? "private" : "public"}</span>
               </div>
-              <div className="flex items-center gap-2 pl-[18px] text-[11px] text-muted-foreground">
-                {r.defaultBranch && <span className="flex items-center gap-0.5"><GitBranch className="size-3" />{r.defaultBranch}</span>}
-                {r.updatedAt && <span>updated {timeAgo(r.updatedAt)}</span>}
-                {r.description && <span className="truncate">· {r.description}</span>}
+              <div className="flex w-full min-w-0 items-center gap-2 whitespace-nowrap pl-[18px] text-[11px] text-muted-foreground">
+                {r.defaultBranch && (
+                  <span className="flex min-w-0 max-w-[40%] items-center gap-0.5"><GitBranch className="size-3 shrink-0" /><span className="truncate">{r.defaultBranch}</span></span>
+                )}
+                {r.updatedAt && <span className="shrink-0">updated {timeAgo(r.updatedAt)}</span>}
+                {/* Beside the meta line when there's room; on its own line under it on narrow screens. */}
+                {r.description && <span className="hidden min-w-0 flex-1 truncate sm:block" data-testid="github-repo-desc">· {r.description}</span>}
               </div>
+              {r.description && <div className="w-full min-w-0 truncate pl-[18px] text-[11px] text-muted-foreground sm:hidden">{r.description}</div>}
             </button>
           ))}
         </div>
       )}
       {!noInstall && (
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span data-testid="github-repo-range">{data ? pageRange(data.page, data.perPage, data.total) : ""}</span>
+        <div className="flex min-w-0 items-center gap-2 whitespace-nowrap text-[11px] text-muted-foreground">
+          <span className="shrink-0" data-testid="github-repo-range">{data ? pageRange(data.page, data.perPage, data.total) : ""}</span>
           {installUrl && (
-            <a href={installUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline" title="Install the app on another account or organization, or choose which repositories it can see">
+            <a href={installUrl} target="_blank" rel="noopener noreferrer" className="min-w-0 truncate hover:text-foreground hover:underline" title="Install the app on another account or organization, or choose which repositories it can see">
               Missing a repository? Configure the app
             </a>
           )}
@@ -367,10 +372,10 @@ function ClonePlace({ repo, onBack, onSignedOut, onStarted, error, setError }: {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={onBack} data-testid="github-repo-back"><ArrowLeft /> Repositories</Button>
-        {repo.private ? <Lock className="size-3 text-muted-foreground" /> : <Globe className="size-3 text-muted-foreground" />}
-        <span className="truncate font-medium" data-testid="github-picked">{repo.fullName}</span>
+      <div className="flex min-w-0 items-center gap-2">
+        <Button size="sm" variant="ghost" className="h-6 shrink-0 px-1.5" onClick={onBack} data-testid="github-repo-back"><ArrowLeft /> Repositories</Button>
+        {repo.private ? <Lock className="size-3 shrink-0 text-muted-foreground" /> : <Globe className="size-3 shrink-0 text-muted-foreground" />}
+        <span className="min-w-0 truncate font-medium" data-testid="github-picked">{repo.fullName}</span>
       </div>
       <label className="flex items-center gap-2">
         <span className="shrink-0 text-muted-foreground"><GitBranch className="mr-1 inline size-3" />Branch</span>
@@ -402,8 +407,8 @@ function ClonePlace({ repo, onBack, onSignedOut, onStarted, error, setError }: {
         />
       </label>
       {error && <div className="text-destructive" data-testid="github-clone-error">{error}</div>}
-      <div className="flex items-center justify-end gap-2">
-        <span className="mr-auto truncate font-mono text-[11px] text-muted-foreground">
+      <div className="flex min-w-0 items-center justify-end gap-2">
+        <span className="mr-auto min-w-0 truncate font-mono text-[11px] text-muted-foreground">
           {parent ? `${parent.replace(/[\\/]+$/, "")}${parent.includes("\\") ? "\\" : "/"}${name.trim() || suggested}` : ""}
         </span>
         <Button size="sm" disabled={!parent || busy} onClick={() => void start()} data-testid="github-clone-start">

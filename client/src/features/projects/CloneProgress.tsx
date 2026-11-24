@@ -34,11 +34,11 @@ export function useClonePolling(
 export function CloneProgress({ job, onBack }: { job: CloneStatus; onBack: () => void }) {
   return (
     <div className="flex flex-col gap-2 text-xs" data-testid="clone-progress">
-      <div className="flex items-center gap-2">
-        {job.state === "running" && <Loader2 className="size-4 animate-spin text-primary" />}
+      <div className="flex min-w-0 items-center gap-2">
+        {job.state === "running" && <Loader2 className="size-4 shrink-0 animate-spin text-primary" />}
         {job.state === "done" && <CheckCircle2 className="size-4 text-success" />}
         {job.state === "failed" && <XCircle className="size-4 text-destructive" />}
-        <span className="truncate font-mono">{job.url}</span>
+        <span className="min-w-0 truncate font-mono">{job.url}</span>
       </div>
       <div className="truncate text-muted-foreground">into {job.destination}</div>
       <pre className="h-40 overflow-auto whitespace-pre-wrap rounded-md border bg-background p-2 font-mono text-[11px] text-muted-foreground">

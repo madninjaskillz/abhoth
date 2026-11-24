@@ -41,19 +41,26 @@ export function AddProjectDialog({ open, onOpenChange, onAdded }: {
             <DialogDescription>Folders are on the machine OpenOrca runs on, not the one this browser is on.</DialogDescription>
           </div>
         </div>
-        <Tabs value={mode} onValueChange={setMode} className="flex min-h-0 flex-col gap-3">
-          <TabsList className="w-full">
-            <TabsTrigger value="folder" className="flex-1"><Folder /> Open a folder</TabsTrigger>
-            <TabsTrigger value="github" className="flex-1" data-testid="tab-github"><Github /> Clone from GitHub</TabsTrigger>
-            <TabsTrigger value="clone" className="flex-1"><Link2 /> Clone a repository</TabsTrigger>
+        <Tabs value={mode} onValueChange={setMode} className="flex min-h-0 min-w-0 flex-col gap-3">
+          {/* Three tabs share the width: each shrinks and truncates; narrow screens get short labels. */}
+          <TabsList className="flex w-full min-w-0">
+            <TabsTrigger value="folder" className="min-w-0 flex-1 px-1.5 sm:px-3" title="Open a folder">
+              <Folder /><span className="truncate"><span className="sm:hidden">Folder</span><span className="hidden sm:inline">Open a folder</span></span>
+            </TabsTrigger>
+            <TabsTrigger value="github" className="min-w-0 flex-1 px-1.5 sm:px-3" data-testid="tab-github" title="Clone from GitHub">
+              <Github /><span className="truncate"><span className="sm:hidden">GitHub</span><span className="hidden sm:inline">Clone from GitHub</span></span>
+            </TabsTrigger>
+            <TabsTrigger value="clone" className="min-w-0 flex-1 px-1.5 sm:px-3" title="Clone a repository (URL)">
+              <Link2 /><span className="truncate"><span className="sm:hidden">By URL</span><span className="hidden sm:inline">Clone a repository</span></span>
+            </TabsTrigger>
           </TabsList>
-          <TabsContent value="folder" className="min-h-0">
+          <TabsContent value="folder" className="min-h-0 min-w-0">
             {open && <FolderStep onAdded={onAdded} />}
           </TabsContent>
-          <TabsContent value="github" className="min-h-0">
+          <TabsContent value="github" className="min-h-0 min-w-0">
             {open && <GitHubCloneStep onAdded={onAdded} />}
           </TabsContent>
-          <TabsContent value="clone" className="min-h-0">
+          <TabsContent value="clone" className="min-h-0 min-w-0">
             {open && <CloneStep onAdded={onAdded} />}
           </TabsContent>
         </Tabs>
@@ -84,8 +91,8 @@ function FolderStep({ onAdded }: { onAdded: (p: Project) => void }) {
     <div className="flex flex-col gap-2">
       <FolderPicker path={path} setPath={setPath} />
       {error && <div className="text-xs text-destructive">{error}</div>}
-      <div className="flex items-center justify-end gap-2">
-        <span className="mr-auto truncate font-mono text-[11px] text-muted-foreground">{path}</span>
+      <div className="flex min-w-0 items-center justify-end gap-2">
+        <span className="mr-auto min-w-0 truncate font-mono text-[11px] text-muted-foreground">{path}</span>
         <Button size="sm" disabled={!path || busy} onClick={() => void add()} data-testid="add-folder">
           {busy && <Loader2 className="animate-spin" />} Open this folder
         </Button>
