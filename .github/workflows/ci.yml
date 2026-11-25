@@ -38,6 +38,8 @@ jobs:
   # Format, clippy (with and without the desktop feature) and the whole test suite, with the
   # desktop feature on so its unit tests run too (D114).
   rust-linux:
+    # Never on a pull request from a fork (the runner's job-started hook refuses those too).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, abhoth]
     timeout-minutes: 60
     steps:
@@ -97,6 +99,8 @@ jobs:
   # The React client: typecheck, tests, and the checked-in dist must match a fresh build
   # (the binaries embed client/dist). Node comes from the runner image.
   client:
+    # Never on a pull request from a fork (the runner's job-started hook refuses those too).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, abhoth]
     timeout-minutes: 20
     defaults:
@@ -116,6 +120,8 @@ jobs:
   # Setup.exe and a Linux AppImage. Kept on deepthought (builds/); an artifact by hand or on
   # a tag; a GitHub Release on a tag.
   package:
+    # Never on a pull request from a fork (the runner's job-started hook refuses those too).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, abhoth]
     timeout-minutes: 60
     permissions:

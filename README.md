@@ -108,3 +108,8 @@ build its Release CLI there, then
 
 Porting notes, decisions and the test setup: [`PORTING.md`](PORTING.md); progress and gaps:
 [`STATUS.md`](STATUS.md).
+
+## Licence
+
+MIT ([`LICENSE`](LICENSE)). Abhoth is a port of OpenOrca (MIT, Copyright (c) 2025 OpenOrca
+Contributors); its notice is kept in `LICENSE`.
