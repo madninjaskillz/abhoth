@@ -139,11 +139,13 @@ async fn multiline_output_and_streaming_callback() {
 #[tokio::test]
 async fn slow_command_returns_process_id_and_can_be_stopped() {
     let _serial = PROCESS_TESTS.lock().await;
+    // A scope of its own: "last" then can't pick a process another test started meanwhile.
+    let scope: Option<std::sync::Arc<str>> = Some("slow-command-test".into());
     let started = Instant::now();
     let r = run(
         &BashTool {
             idle_timeout_seconds: 2,
-            scope: None,
+            scope: scope.clone(),
         },
         json!({"command": slow_command()}),
     )
@@ -157,19 +159,23 @@ async fn slow_command_returns_process_id_and_can_be_stopped() {
     assert!(started.elapsed() < Duration::from_secs(15));
     let id = r.content.split('"').nth(1).unwrap().to_string();
 
-    let out = GetProcessOutputTool::default()
-        .execute(&json!({"process_id": "last"}), &ctx())
-        .await;
+    let out = GetProcessOutputTool {
+        scope: scope.clone(),
+    }
+    .execute(&json!({"process_id": "last"}), &ctx())
+    .await;
     assert!(out.content.contains("Status: Running"), "{}", out.content);
-    let stop = StopProcessTool::default()
-        .execute(&json!({"process_id": id}), &ctx())
-        .await;
+    let stop = StopProcessTool {
+        scope: scope.clone(),
+    }
+    .execute(&json!({"process_id": id}), &ctx())
+    .await;
     assert!(
         stop.content.starts_with(&format!("Stopped process {id}")),
         "{}",
         stop.content
     );
-    let p = process::get(&id).unwrap();
+    let p = process::get_in(&id, scope.as_deref()).unwrap();
     assert!(p.wait_for_exit(Duration::from_secs(5)).await);
 }
 
