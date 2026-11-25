@@ -16,19 +16,29 @@ use super::*;
 use crate::client::tool_images;
 use crate::client::{ContentPart, Role};
 
-struct Dir(tempfile::TempDir);
+/// A temp folder under its long path: on Windows the temp folder can be an 8.3 short name
+/// (`C:\Users\RUNNER~1\...` on CI), and the link resolver does not take `~` inside a path
+/// segment (like C#).
+/// (The `TempDir` is held only so the folder is deleted on drop.)
+struct Dir(#[expect(dead_code)] tempfile::TempDir, std::path::PathBuf);
 
 impl Dir {
     fn new() -> Self {
-        Self(tempfile::tempdir().expect("temp dir"))
+        let dir = tempfile::tempdir().expect("temp dir");
+        let long = std::fs::canonicalize(dir.path()).expect("canonical temp dir");
+        let long = match long.to_string_lossy().strip_prefix(r"\\?\") {
+            Some(rest) => std::path::PathBuf::from(rest),
+            None => long.clone(),
+        };
+        Self(dir, long)
     }
 
     fn path(&self) -> String {
-        self.0.path().to_string_lossy().into_owned()
+        self.1.to_string_lossy().into_owned()
     }
 
     fn write(&self, relative: &str, bytes: &[u8]) -> String {
-        let path = self.0.path().join(relative);
+        let path = self.1.join(relative);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, bytes).unwrap();
         // Path.GetFullPath: separators normalised.

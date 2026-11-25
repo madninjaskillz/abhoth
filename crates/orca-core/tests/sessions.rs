@@ -515,7 +515,21 @@ fn csharp_session_maps_to_messages() {
 fn csharp_session_round_trips_through_messages() {
     // What Rust writes for a conversation it loaded is what C# wrote (ids, times, title and
     // directory are per save).
-    let data: SessionData = serde_json::from_str(&fixture_text("sessions/csharp01.json")).unwrap();
+    let mut data: SessionData =
+        serde_json::from_str(&fixture_text("sessions/csharp01.json")).unwrap();
+    // The fixture was saved on Windows, and tool-call arguments are re-serialized with the
+    // platform's newline (like C#), so elsewhere they come back with "\n".
+    if !cfg!(windows) {
+        for call in data
+            .messages
+            .iter_mut()
+            .flat_map(|m| m.tool_calls.iter_mut().flatten())
+        {
+            if let Some(a) = &mut call.arguments {
+                *a = a.replace("\r\n", "\n");
+            }
+        }
+    }
     let again = messages_to_session(&session_to_messages(&data));
     assert_eq!(again.system_prompt, data.system_prompt);
     assert_eq!(again.messages, data.messages);
