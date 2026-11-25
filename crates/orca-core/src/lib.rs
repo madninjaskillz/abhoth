@@ -2,6 +2,7 @@
 //! OpenAI-compatible chat client and the agent loop.
 
 pub mod agent;
+pub mod attachments;
 pub mod chat;
 pub mod client;
 pub mod config;

@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 
 use super::f32_json;
 use super::served_models::{self, ServedModels};
+use super::tool_images;
 use super::types::{
     ChatMessage, ChatOptions, ChatResponse, StreamControl, StreamEvent, ToolCall, Usage,
 };
@@ -74,6 +75,9 @@ pub struct ClientSettings {
     pub session_field: Option<(String, Value)>,
     /// The request went straight to a model server (a slot copy), not through a gateway.
     pub direct: bool,
+    /// Whether the server takes images (`lmStudio.vision`); `None` = ask the server once
+    /// ([`super::tool_images::supports_vision`]).
+    pub vision: Option<bool>,
 }
 
 impl ClientSettings {
@@ -91,6 +95,7 @@ impl ClientSettings {
             echo_reasoning: false,
             session_field: None,
             direct: false,
+            vision: None,
         }
     }
 }
@@ -140,6 +145,11 @@ impl OpenAiClient {
 
     pub fn settings(&self) -> &ClientSettings {
         &self.settings
+    }
+
+    /// For switches the REPL changes between requests (`/uncensored`).
+    pub fn settings_mut(&mut self) -> &mut ClientSettings {
+        &mut self.settings
     }
 
     pub fn served_models(&self) -> &Arc<ServedModels> {
@@ -216,7 +226,19 @@ impl OpenAiClient {
         Ok(Value::Object(body))
     }
 
-    /// Non-streaming request.
+    /// Whether this server takes images now (`ToolImagesChatClient.SupportsVisionAsync`).
+    async fn supports_vision(&self) -> bool {
+        tool_images::supports_vision(
+            &self.settings.base_url,
+            Some(&self.settings.api_key),
+            self.settings.vision,
+        )
+        .await
+    }
+
+    /// Non-streaming request. Images in the messages go as `ToolImagesChatClient` sends them
+    /// ([`tool_images::rewrite`]); a server that refuses them gets the request once more
+    /// without.
     pub async fn complete(
         &self,
         actor: &str,
@@ -226,6 +248,29 @@ impl OpenAiClient {
         if let Some(router) = &self.router {
             return router.complete(actor, messages, options).await;
         }
+        if !tool_images::has_images(messages) {
+            return self.complete_once(actor, messages, options).await;
+        }
+        let with_images = self.supports_vision().await;
+        match self
+            .complete_once(actor, &tool_images::rewrite(messages, with_images), options)
+            .await
+        {
+            Err(e) if with_images && tool_images::is_vision_refusal(&e) => {
+                tool_images::mark_refused(&self.settings.base_url, self.settings.vision, &e);
+            }
+            other => return other,
+        }
+        self.complete_once(actor, &tool_images::rewrite(messages, false), options)
+            .await
+    }
+
+    async fn complete_once(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+    ) -> Result<ChatResponse, ChatError> {
         let body = self.build_body(messages, options, false)?;
         let requested = body["model"].as_str().map(str::to_string);
         self.served.begin(actor);
@@ -310,6 +355,41 @@ impl OpenAiClient {
                 .stream_with_control(actor, messages, options, on_event)
                 .await;
         }
+        if !tool_images::has_images(messages) {
+            return self.stream_once(actor, messages, options, on_event).await;
+        }
+        let with_images = self.supports_vision().await;
+        match self
+            .stream_once(
+                actor,
+                &tool_images::rewrite(messages, with_images),
+                options,
+                on_event,
+            )
+            .await
+        {
+            // The refusal is the answer to the request itself: nothing has streamed yet.
+            Err(e) if with_images && tool_images::is_vision_refusal(&e) => {
+                tool_images::mark_refused(&self.settings.base_url, self.settings.vision, &e);
+            }
+            other => return other,
+        }
+        self.stream_once(
+            actor,
+            &tool_images::rewrite(messages, false),
+            options,
+            on_event,
+        )
+        .await
+    }
+
+    async fn stream_once(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+    ) -> Result<ChatResponse, ChatError> {
         let body = self.build_body(messages, options, true)?;
         let requested = body["model"].as_str().map(str::to_string);
         self.served.begin(actor);

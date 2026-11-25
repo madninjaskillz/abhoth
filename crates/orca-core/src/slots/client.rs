@@ -248,6 +248,7 @@ impl FactoryParts {
         settings.echo_reasoning = echo;
         settings.direct = direct;
         settings.session_field = self.config.agent.uncensored.field();
+        settings.vision = lm.vision;
         let inner: Arc<dyn ChatBackend> =
             Arc::new(OpenAiClient::new(settings, self.served.clone()));
         Arc::new(SlotDefaults::new(inner, extra))

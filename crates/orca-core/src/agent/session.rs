@@ -108,6 +108,8 @@ pub struct AgentSession {
     /// The current call is the first of several in one response: C# records its argument
     /// text compact (the rest indented).
     pub(super) record_raw_arguments: bool,
+    /// Image parts of the last tool result, for its tool message (`ToolResultImages`).
+    pub(super) last_tool_images: Vec<crate::client::ImagePart>,
     /// Successful file modifications so far (`MutationEpoch`).
     pub mutation_epoch: u64,
     pub(super) turn_history_start: usize,
@@ -175,6 +177,7 @@ impl AgentSession {
             last_assistant_response: None,
             files_read: Default::default(),
             record_raw_arguments: false,
+            last_tool_images: Vec::new(),
             mutation_epoch: 0,
             turn_history_start: 0,
             recent_tool_errors: Default::default(),

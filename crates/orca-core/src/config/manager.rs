@@ -82,6 +82,14 @@ impl ConfigManager {
         Ok(())
     }
 
+    /// Take over a session's (edited) config together with the paths its profile and mode
+    /// override, so [`Self::save`] writes it as the manager that applied them would (the
+    /// overridden paths keep the file's values). Used by `/config`'s "Save & Exit".
+    pub fn adopt(&mut self, config: OrcaConfig, overlay_paths: Vec<String>) {
+        self.config = config;
+        self.overlay_paths = overlay_paths;
+    }
+
     /// `ApplyMode`: apply an agent mode over the config and any profile already applied; like a
     /// profile, it never reaches config.json. Errors for an unknown mode.
     pub fn apply_mode(&mut self, mode: &str) -> Result<(), String> {

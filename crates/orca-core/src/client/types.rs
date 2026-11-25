@@ -31,6 +31,54 @@ pub struct ToolCall {
     pub arguments: String,
 }
 
+/// An image in a message (`DataContent` with an image media type): attached to a prompt, or
+/// returned by a tool. `name` is the file it came from (a prompt attachment's path), if any.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImagePart {
+    pub data: Vec<u8>,
+    pub media_type: String,
+    pub name: Option<String>,
+}
+
+impl ImagePart {
+    pub fn new(data: Vec<u8>, media_type: impl Into<String>) -> Self {
+        Self {
+            data,
+            media_type: media_type.into(),
+            name: None,
+        }
+    }
+
+    /// The `data:` URI the OpenAI client sends (`data:image/png;base64,...`).
+    pub fn data_uri(&self) -> String {
+        use base64::Engine;
+        format!(
+            "data:{};base64,{}",
+            self.media_type,
+            base64::engine::general_purpose::STANDARD.encode(&self.data)
+        )
+    }
+}
+
+/// A content part after a message's text ([`ChatMessage::parts`]).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentPart {
+    Text(String),
+    Image(ImagePart),
+}
+
+impl ContentPart {
+    /// The OpenAI wire form of the part, as the .NET SDK writes it.
+    pub fn to_wire(&self) -> Value {
+        match self {
+            ContentPart::Text(t) => json!({"type": "text", "text": t}),
+            ContentPart::Image(i) => {
+                json!({"type": "image_url", "image_url": {"url": i.data_uri()}})
+            }
+        }
+    }
+}
+
 /// One conversation message.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChatMessage {
@@ -46,6 +94,11 @@ pub struct ChatMessage {
     /// The stream opened with an empty content delta before the text. The C# client keeps
     /// that as a separate empty text part and so sends the content as a parts array.
     pub leading_empty_part: bool,
+    /// Content parts after `content` (C# `Contents` beyond the text): images attached to a
+    /// prompt or returned by a tool, and the notes that replace them for a server without
+    /// vision. A user or system message with parts goes on the wire as a parts array, text
+    /// first (`[{"type":"text",...}, {"type":"image_url",...}]`). Sessions keep only the text.
+    pub parts: Vec<ContentPart>,
 }
 
 impl ChatMessage {
@@ -57,7 +110,39 @@ impl ChatMessage {
             tool_calls: Vec::new(),
             tool_call_id: None,
             leading_empty_part: false,
+            parts: Vec::new(),
         }
+    }
+
+    /// The message with `images` appended as parts.
+    pub fn with_images(mut self, images: impl IntoIterator<Item = ImagePart>) -> Self {
+        self.parts
+            .extend(images.into_iter().map(ContentPart::Image));
+        self
+    }
+
+    /// The image parts.
+    pub fn images(&self) -> impl Iterator<Item = &ImagePart> {
+        self.parts.iter().filter_map(|p| match p {
+            ContentPart::Image(i) => Some(i),
+            ContentPart::Text(_) => None,
+        })
+    }
+
+    /// True when the message carries an image part.
+    pub fn has_images(&self) -> bool {
+        self.images().next().is_some()
+    }
+
+    /// All text (content plus text parts), as `ChatMessage.Text` concatenates it in C#.
+    pub fn text(&self) -> String {
+        let mut out = self.content.clone().unwrap_or_default();
+        for p in &self.parts {
+            if let ContentPart::Text(t) = p {
+                out.push_str(t);
+            }
+        }
+        out
     }
 
     pub fn system(content: impl Into<String>) -> Self {
@@ -120,10 +205,15 @@ impl ChatMessage {
                 }
             }
             Role::System | Role::User => {
-                m.insert(
-                    "content".into(),
-                    json!(self.content.clone().unwrap_or_default()),
-                );
+                let text = self.content.clone().unwrap_or_default();
+                let content = if self.parts.is_empty() {
+                    json!(text)
+                } else {
+                    let mut parts = vec![json!({"type": "text", "text": text})];
+                    parts.extend(self.parts.iter().map(ContentPart::to_wire));
+                    Value::Array(parts)
+                };
+                m.insert("content".into(), content);
             }
         }
         Value::Object(m)
@@ -277,6 +367,7 @@ impl ChatResponse {
             tool_calls: self.tool_calls.clone(),
             tool_call_id: None,
             leading_empty_part: self.leading_empty_part,
+            parts: Vec::new(),
         }
     }
 }

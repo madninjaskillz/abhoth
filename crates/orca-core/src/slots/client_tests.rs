@@ -264,6 +264,7 @@ fn history() -> Vec<ChatMessage> {
             .collect(),
         tool_call_id: None,
         leading_empty_part: false,
+        parts: Vec::new(),
     };
     vec![
         ChatMessage::system("sys"),
