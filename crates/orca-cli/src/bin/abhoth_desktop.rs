@@ -3,11 +3,12 @@
 #![windows_subsystem = "windows"]
 
 fn main() {
+    // Velopack first (D136): Setup.exe / Update.exe run this exe with `--veloapp-install <ver>`
+    // and friends (the user PATH is edited, then the process exits); an update downloaded in an
+    // earlier session is applied before the window opens.
+    orca_cli::updater::startup(true);
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    // Velopack's hooks: Setup.exe / Update.exe run the main exe with `--veloapp-install <ver>`,
-    // `--veloapp-updated`, `--veloapp-obsolete` or `--veloapp-uninstall` and kill it after
-    // 15-30 s. There is nothing to do on them yet, so exit at once rather than open a window.
-    // (The Velopack Rust SDK would handle these and add auto-update; not wired in yet.)
+    // Any other `--veloapp-*` call (none is expected) must not open a window either.
     if args.first().is_some_and(|a| a.starts_with("--veloapp-")) {
         std::process::exit(0);
     }

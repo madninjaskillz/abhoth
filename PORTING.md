@@ -584,7 +584,8 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   without admin and builds the same way in CI; pinned to 5.0.2 (newer majors add the Open
   Source Maintenance Fee terms, which need checking before an upgrade). The
   workflow `abhoth-installer.yml` (tag `abhoth-v*` or by hand) builds it and uploads the MSI
-  and its SHA-256 as an artifact. Not signed.
+  and its SHA-256 as an artifact. Not signed. **Retired by D136** (the MSI, `installer/` and the
+  workflow are gone).
 - **D130** Abhoth no longer reads files outside `rust/` at build time, so the same tree builds
   in openorca and in the split abhoth repo. `orca-webui/build.rs` finds the client's `dist`
   (`../../client/dist` in the abhoth layout, then `../../../src/OpenOrca.WebUi/client/dist`;
@@ -613,6 +614,20 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   `println!`, which panics on a broken pipe. A harness that read only the URL line and dropped
   the pipe killed the host at its next activity line (seen on the CI runners); the tests drain
   stdout now too.
+- **D136** (user decision) Velopack replaces the MSI (D115). CI's `package` job (ci.yml, on the
+  self-hosted Linux runners) cross-builds the Windows exes with cargo-xwin and packs a Windows
+  Setup.exe and a Linux AppImage with `vpk` (pinned, 1.2.161); on an `abhoth-v*` tag it first
+  downloads the previous release from GitHub (`vpk download github`) so the new one carries a
+  delta package, and publishes the Release with the feed files (`releases.<channel>.json`,
+  full/delta `.nupkg`). The repo is public, so the apps read the feed without a token.
+  `orca-cli` uses the Velopack Rust SDK (`velopack` =1.2.161, desktop feature only; module
+  `updater`): both exes call `VelopackApp::run` first (the install/update hooks put
+  `%LOCALAPPDATA%\Abhoth\current` on the user PATH through PowerShell, keeping REG_EXPAND_SZ;
+  the uninstall hook takes it off; each hook exits at once). The desktop app applies an update
+  downloaded earlier at start; the console exe never restarts itself. A background thread
+  checks GitHub Releases at start and every 6 hours, downloads a newer release and adds
+  "Update available: restart into <version>" to the tray menu, which stops the host and hands
+  over to Velopack's updater. Outside a Velopack install it is all a no-op.
 - **D109** User-visible "openorca" text reads Abhoth (`brand::PRODUCT_NAME` / `BINARY_NAME`):
   the `--hostui-set-password` usage line, the requester names of profile switches (TUI, web UI,
   bench runner), the slot request labels (`Abhoth lead`, `Abhoth A: <label>`), the file log's

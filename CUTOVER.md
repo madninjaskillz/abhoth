@@ -79,35 +79,36 @@ rust/tools/split-abhoth-repo.sh <openorca clone> <empty dir> feature/rust-port -
   weeks, a job (or a local run) checks out `openorca` at its last commit, builds the C#
   Release CLI and runs `orca-crosscheck --csharp <that exe>`. When openorca is archived, the
   scenarios are frozen as golden files from the last C# outputs, or the crate is dropped.
-- **Release workflow** (tag `abhoth-v*`):
-  - builds `abhoth.exe` and `abhoth-desktop.exe` (with `desktop`) for
-    x86_64-pc-windows-msvc, and `abhoth` (headless) for x86_64-unknown-linux-gnu;
-  - builds the Windows MSI (today `abhoth-installer.yml` uploads it as a workflow
-    artifact only);
-  - attaches everything to a GitHub Release with SHA-256 sums.
+- **Releases** (tag `abhoth-v<version>`, matching the workspace version): CI's `package` job
+  (ci.yml, on the self-hosted Linux runners) cross-builds `abhoth.exe` and `abhoth-desktop.exe`
+  with cargo-xwin, builds the Linux binaries, packs both with Velopack (deltas against the
+  previous release) and publishes a GitHub Release with the Setup.exe, the AppImage, the zipped
+  exes, SHA-256 sums and the Velopack feed files the apps update from (D136).
 - openorca's CI stays as it is until the repo is archived.
 
 ## 3. Release and install on Windows (user triggers the install)
 
-- **Artifact:** `abhoth-<version>-x64.msi` (D115, `rust/installer/`), a per-user MSI built
-  with WiX v5 (`rust/installer/build.ps1`; CI: `abhoth-installer.yml`). It holds `abhoth.exe`
-  (console; embeds the web client) and `abhoth-desktop.exe` (no console, the shortcut target).
-  WebView2 is part of Windows 11, and `--desktop` says so clearly if it is missing.
-- **Install:** double-click the MSI, or `msiexec /i abhoth-<version>-x64.msi [ADDTOPATH=0]`.
-  - Files go to `%LOCALAPPDATA%\Programs\Abhoth`; the folder is added to the user PATH unless
-    `ADDTOPATH=0`; a Start-menu shortcut "Abhoth" runs `abhoth-desktop.exe` with the mascot icon.
-  - No admin rights are needed. A newer MSI replaces the older version in place.
-  - **Uninstall:** Settings > Apps, or `msiexec /x`. It removes the files, the shortcut and the
-    PATH entry, and leaves `~/.abhoth` alone.
-  - `winget`/Scoop manifests later.
-- **Not yet:** code signing (SmartScreen warns on an unsigned MSI) and attaching the MSI to a
-  GitHub Release.
+- **Artifact:** `abhoth-<version>-win-x64-setup.exe` on the GitHub Release (D136), a Velopack
+  installer cross-built on Linux. It holds `abhoth.exe` (console; embeds the web client) and
+  `abhoth-desktop.exe` (no console, the shortcut target). WebView2 is part of Windows 11, and
+  `--desktop` says so clearly if it is missing.
+- **Install:** run the Setup.exe. No admin rights and no questions.
+  - Files go to `%LOCALAPPDATA%\Abhoth\current`; that folder is added to the user PATH (the
+    install hook); a Start-menu shortcut "Abhoth" runs `abhoth-desktop.exe`.
+  - **Updates:** the desktop app checks GitHub Releases at start and every 6 hours, downloads a
+    newer version (a delta when it can) and offers "Update available: restart into <version>" in
+    the tray; otherwise it applies it at the next start.
+  - **Uninstall:** Settings > Apps. It removes the files, the shortcut and the PATH entry, and
+    leaves `~/.abhoth` alone.
+  - **From the old MSI (D115, retired):** uninstall "Abhoth" in Settings > Apps first (it
+    removes `%LOCALAPPDATA%\Programs\Abhoth` and its PATH entry), then run the Setup.exe.
+- **Not yet:** code signing (SmartScreen warns on an unsigned download).
 - **First run:** the exe copies `~/.openorca` to `~/.abhoth` once (D89). The C# install keeps
   working side by side because the binaries have different names and homes.
 - **Desktop:** closing the window hides it to the tray by default (agents keep running);
   Quit is in the tray menu, and `desktop.closeToTray: false` switches to quit-on-close
   (D113).
-- **Later:** signing, MSIX, and auto-update, only if they're wanted.
+- **Later:** signing, and `winget`/Scoop manifests.
 
 ## 4. DeepThought web container (user triggers)
 

@@ -143,11 +143,11 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   quits.
 - CI builds and unit-tests the desktop feature on Linux, macOS and Windows (job `rust-desktop`,
   D114); on Linux the web view goes into tao's GTK box (Wayland and X11).
-- Windows installer (D115): a per-user MSI (WiX v5, `installer/build.ps1`), no admin: both
-  binaries, a Start-menu shortcut, optional user PATH, uninstall. Workflow
-  `abhoth-installer.yml` on `abhoth-v*` tags or by hand. Built locally (abhoth-0.15.0-x64.msi,
-  25 MB); a silent per-user install and uninstall on Windows 11 put in and took out the files,
-  shortcut (with icon), PATH entry and HKCU keys.
+- Install and updates (D136; replaces the MSI of D115): Velopack packages cross-built on the
+  self-hosted Linux runners (ci.yml `package`): a Windows Setup.exe (per-user, no admin, Start-menu
+  shortcut, user PATH via the install hook) and a Linux AppImage, published with the update feed
+  and delta packages to a GitHub Release on `abhoth-v*` tags. The desktop app checks the
+  releases at start and every 6 hours and offers "restart into <version>" in the tray.
 - Fresh install (D116): `--hostui` and `--desktop` start with no model; a prompt gets a
   "No model is configured yet" notice, and setting the model in the settings applies to the
   running session (e2e test `hostui_fresh_install_e2e`). The desktop app shows a native error
@@ -185,7 +185,7 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 1. Bench parity run (user-scheduled; the gate for the cutover, CUTOVER.md step 0).
 2. Fresh install: the desktop app must start without a configured model and show why; an icon
    in the `.exe` files.
-3. Phase 7 follow-ups: code signing for the MSI; a GitHub Release with the MSI (CUTOVER.md).
+3. Phase 7 follow-ups: code signing for the Setup.exe (CUTOVER.md).
 4. Cutover (user-triggered): the abhoth repo split (`tools/split-abhoth-repo.sh`, tested), the
    web container, the local install (CUTOVER.md).
 
@@ -238,7 +238,7 @@ worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
   sent back, D92).
 - Bench runs: kit timeouts kill only the process.
 - Desktop: the Linux and macOS builds are CI-only (never run with a window); no first-hide
-  tray notification (D113); the MSI is unsigned, so SmartScreen warns.
+  tray notification (D113); the Setup.exe is unsigned, so SmartScreen warns.
 - grep: files in sorted order; regex error texts differ from .NET (lookaround/backreferences work, D112).
 - C# REPL bugs kept out of the cross-check (D127): custom markdown commands ("Unknown command" in
   C#), `/memory <unknown>` (crashes C#), `/retry` on a second model (C# drops the prompt).

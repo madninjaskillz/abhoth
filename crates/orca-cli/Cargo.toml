@@ -54,6 +54,7 @@ wry = { workspace = true, optional = true }
 tao = { workspace = true, optional = true }
 tray-icon = { workspace = true, optional = true }
 rfd = { workspace = true, optional = true }
+velopack = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 
@@ -68,7 +69,7 @@ image = ["dep:orca-tools-image"]
 # `abhoth router`: the gateway that replaces LiteLLM on DeepThought (ROUTER.md).
 router = ["dep:orca-router"]
 # `abhoth --desktop`: the web UI in a native window (WebView2 / WKWebView / WebKitGTK).
-desktop = ["dep:wry", "dep:tao", "dep:tray-icon", "dep:rfd", "dep:image", "dep:futures-util"]
+desktop = ["dep:wry", "dep:tao", "dep:tray-icon", "dep:rfd", "dep:image", "dep:futures-util", "dep:velopack"]
 
 # Windows targets: the icon and version info in abhoth.exe / abhoth-desktop.exe (build.rs, D117).
 # Not host-specific, so a Linux host cross-compiling for Windows embeds them too (llvm-rc).

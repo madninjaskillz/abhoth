@@ -19,6 +19,8 @@ pub mod render;
 pub mod repl;
 pub mod sessions;
 pub mod ui;
+#[cfg(feature = "desktop")]
+pub mod updater;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

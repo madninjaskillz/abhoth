@@ -1,4 +1,7 @@
 fn main() {
+    // Velopack's install hooks exit here (D136); the console exe never auto-applies an update.
+    #[cfg(feature = "desktop")]
+    orca_cli::updater::startup(false);
     use tracing_subscriber::Layer;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;

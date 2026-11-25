@@ -4,7 +4,8 @@
 //! window is just another client of the same HTTP/websocket API. One instance per state home: a
 //! second launch asks the first to show its window and exits. A tray icon offers Show and Quit.
 //! Closing the window hides it to the tray (agents keep running; tray Quit exits), or quits with
-//! `desktop.closeToTray` off (D113).
+//! `desktop.closeToTray` off (D113). Installed with Velopack, it checks GitHub Releases in the
+//! background and the tray offers "Restart to update" once a new version is downloaded (D136).
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
@@ -35,6 +36,8 @@ enum UserEvent {
     Focus,
     Menu(MenuId),
     TrayClick,
+    /// A newer release has been downloaded (its version); the tray offers to restart into it.
+    UpdateReady(String),
 }
 
 /// What closing the window does.
@@ -327,6 +330,15 @@ pub fn run(raw: Vec<String>) -> i32 {
 
     let show_id = MenuId::new("show");
     let quit_id = MenuId::new("quit");
+    let update_id = MenuId::new("update");
+    let update_slot: crate::updater::Slot = Arc::new(std::sync::Mutex::new(None));
+    {
+        let proxy = proxy.clone();
+        crate::updater::spawn_checker(update_slot.clone(), move |version| {
+            let _ = proxy.send_event(UserEvent::UpdateReady(version));
+        });
+    }
+    let mut menu: Option<Menu> = None;
     let mut tray: Option<TrayIcon> = None;
     let mut webview: Option<wry::WebView> = None;
     let mut web_context = wry::WebContext::new(Some(home.join("webview")));
@@ -350,15 +362,16 @@ pub fn run(raw: Vec<String>) -> i32 {
         *control_flow = ControlFlow::Wait;
         match event {
             Event::NewEvents(StartCause::Init) => {
-                let menu = Menu::new();
+                let tray_menu = Menu::new();
                 let show = MenuItem::with_id(show_id.clone(), "Show", true, None);
                 let quit_item = MenuItem::with_id(quit_id.clone(), "Quit", true, None);
-                let _ = menu.append_items(&[&show, &quit_item]);
+                let _ = tray_menu.append_items(&[&show, &quit_item]);
+                menu = Some(tray_menu.clone());
                 tray = tray_icon::Icon::from_rgba(rgba.clone(), w, h)
                     .ok()
                     .and_then(|icon| {
                         TrayIconBuilder::new()
-                            .with_menu(Box::new(menu))
+                            .with_menu(Box::new(tray_menu))
                             .with_tooltip(orca_core::brand::PRODUCT_NAME)
                             .with_icon(icon)
                             .build()
@@ -431,8 +444,34 @@ pub fn run(raw: Vec<String>) -> i32 {
                 window.set_minimized(false);
                 window.set_focus();
             }
+            Event::UserEvent(UserEvent::UpdateReady(version)) => {
+                let label = format!("Update available: restart into {version}");
+                if let Some(m) = &menu {
+                    let item = MenuItem::with_id(update_id.clone(), &label, true, None);
+                    let _ = m.insert(&item, 0);
+                }
+                if let Some(t) = &tray {
+                    let _ = t.set_tooltip(Some(format!(
+                        "{} ({label})",
+                        orca_core::brand::PRODUCT_NAME
+                    )));
+                }
+            }
             Event::UserEvent(UserEvent::Menu(id)) => {
-                if id == show_id {
+                if id == update_id {
+                    let ready = update_slot.lock().ok().and_then(|s| s.clone());
+                    if let Some(ready) = ready {
+                        // Stop the host cleanly first; Velopack's updater waits for this
+                        // process to exit, applies the update and starts the new version.
+                        drop(webview.take());
+                        drop(tray.take());
+                        let _ = quit(&mut stop, &mut host, &mut lock);
+                        if let Err(e) = ready.apply_and_restart() {
+                            report_error(&format!("Could not apply the update: {e}"));
+                        }
+                        finish(0);
+                    }
+                } else if id == show_id {
                     window.set_visible(true);
                     window.set_minimized(false);
                     window.set_focus();

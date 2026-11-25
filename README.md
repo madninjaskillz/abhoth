@@ -32,24 +32,24 @@ abhoth --help                        # the common options
 Closing the desktop window hides it to the tray and agents keep running; tray Quit exits. Set
 `desktop.closeToTray` to false (settings, Desktop section) to quit on close instead.
 
-## Windows installer
+## Install and updates
 
-A per-user MSI (no admin rights): it installs `abhoth.exe` and `abhoth-desktop.exe` to
-`%LOCALAPPDATA%\Programs\Abhoth`, adds an "Abhoth" Start-menu shortcut to the desktop app, and
-puts the folder on the user PATH.
+Releases are on [GitHub Releases](https://github.com/madninjaskillz/abhoth/releases) (tags
+`abhoth-v<version>`), packaged with [Velopack](https://velopack.io) by CI on Linux:
 
-```powershell
-dotnet tool install --global wix --version 5.0.2   # once; per-user
-pwsh installer/build.ps1                          # -> target/installer/abhoth-<version>-x64.msi
-msiexec /i target\installer\abhoth-0.15.0-x64.msi              # or double-click it
-msiexec /i target\installer\abhoth-0.15.0-x64.msi ADDTOPATH=0  # without the PATH entry
-msiexec /x target\installer\abhoth-0.15.0-x64.msi              # uninstall (or Settings > Apps)
-```
+- **Windows:** `abhoth-<version>-win-x64-setup.exe`. One click, no admin rights, no questions:
+  it installs `abhoth.exe` and `abhoth-desktop.exe` to `%LOCALAPPDATA%\Abhoth\current`, adds an
+  "Abhoth" Start-menu shortcut to the desktop app, puts that folder on the user PATH and starts
+  the app. Uninstall from Settings > Apps (the PATH entry goes too).
+- **Linux:** `abhoth-<version>-linux-x64.AppImage` (the desktop app; needs WebKitGTK 4.1).
+- `abhoth-<version>-win-x64.zip` holds the two bare exes, for running without installing.
 
-`build.ps1 -NoCargo` packages the binaries already in `target\release`. The workflow
-`.github/workflows/installer.yml` builds the MSI on a tag `abhoth-v*` or when run by hand
-and uploads it as an artifact. The state home (`~/.abhoth`) is never touched by install or
-uninstall. The MSI is not signed yet, so SmartScreen may warn.
+**Auto-update:** the installed desktop app checks the releases in the background (at start, then
+every 6 hours). When a newer one is out it is downloaded (a delta package when there is one), and
+the tray menu shows "Update available: restart into <version>"; clicking it restarts into the
+new version. Otherwise it is applied the next time the app starts. The state home
+(`~/.abhoth`) is never touched by install, update or uninstall. Nothing is signed yet, so
+SmartScreen may warn on the first download.
 
 On a fresh install with no model configured, the desktop app and `--hostui` still start: open
 Settings, LLM Server, and set the Base URL of your model server and its Models; the next prompt

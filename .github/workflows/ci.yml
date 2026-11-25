@@ -157,20 +157,33 @@ jobs:
       - name: Velopack packages
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          REPO_URL: https://github.com/${{ github.repository }}
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/pkg"; rm -rf "$out"; mkdir -p "$out/win" "$out/linux" "$out/dist"
+          # A release carries a delta from the previous one: vpk makes it when the previous
+          # full package is in its output folder (none before the first Velopack release).
+          if [[ "$GITHUB_REF" == refs/tags/abhoth-v* ]]; then
+            for ch in win linux; do
+              vpk download github --repoUrl "$REPO_URL" --token "$GH_TOKEN" --channel "$ch" \
+                --outputDir "$out/vpk-$ch" || echo "No previous $ch release to delta against."
+            done
+          fi
           rel="$CARGO_TARGET_DIR/$WIN/release"
           cp "$rel/abhoth.exe" "$rel/abhoth-desktop.exe" "$out/win/"
           cp "$CARGO_TARGET_DIR/release/abhoth" "$CARGO_TARGET_DIR/release/abhoth-desktop" "$out/linux/"
           file "$out/win/"*.exe "$out/linux/"*
 
           vpk '[win]' pack --packId Abhoth --packVersion "$VERSION" --packTitle Abhoth \
-            --packAuthors Abhoth --runtime win-x64 --packDir "$out/win" --mainExe abhoth-desktop.exe \
+            --packAuthors Abhoth --runtime win-x64 --channel win --shortcuts StartMenuRoot \
+            --packDir "$out/win" --mainExe abhoth-desktop.exe \
             --icon assets/abhoth/icons/abhoth.ico --outputDir "$out/vpk-win"
           vpk '[linux]' pack --packId Abhoth --packVersion "$VERSION" --packTitle Abhoth \
-            --packAuthors Abhoth --runtime linux-x64 --packDir "$out/linux" --mainExe abhoth-desktop \
+            --packAuthors Abhoth --runtime linux-x64 --channel linux \
+            --packDir "$out/linux" --mainExe abhoth-desktop \
             --icon assets/abhoth/icons/abhoth-256.png --outputDir "$out/vpk-linux"
+          ls -la "$out/vpk-win" "$out/vpk-linux"
 
           # Found by glob: vpk's file names carry the channel and can change with a release.
           setup=$(ls "$out"/vpk-win/*Setup.exe | head -1)
@@ -198,12 +211,20 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
+      # The Velopack feed (releases.<channel>.json, full and delta .nupkg, Setup, Portable) is
+      # what installed apps update from (D136); then the renamed downloads and SHA256SUMS.
       - name: GitHub Release
         if: startsWith(github.ref, 'refs/tags/abhoth-v')
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
+          REPO_URL: https://github.com/${{ github.repository }}
         run: |
-          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --title "Abhoth $VERSION" --notes "Abhoth $VERSION" --verify-tag
+          set -euo pipefail
+          for ch in win linux; do
+            vpk upload github --repoUrl "$REPO_URL" --token "$GH_TOKEN" --channel "$ch" \
+              --tag "$GITHUB_REF_NAME" --releaseName "Abhoth $VERSION" --publish --merge \
+              --outputDir "$RUNNER_TEMP/pkg/vpk-$ch"
+          done
           gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP"/pkg/dist/* --clobber
+          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name'
