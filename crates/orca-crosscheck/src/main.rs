@@ -354,6 +354,26 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
     }
     let mut home_files = BTreeMap::new();
     let checkpoints = home.path().join("checkpoints");
+    // Backup file name -> the (normalised) file it backs up, from the manifests: several
+    // backups made in the same second differ only in the path hash, so they are keyed by
+    // their file instead.
+    let mut backup_of: BTreeMap<String, String> = BTreeMap::new();
+    for e in walkdir::WalkDir::new(&checkpoints)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name() == "manifest.json")
+    {
+        let manifest: Value = serde_json::from_slice(&std::fs::read(e.path())?)
+            .with_context(|| format!("{} wrote a bad manifest", exe.display()))?;
+        for entry in manifest.as_array().into_iter().flatten() {
+            if let (Some(name), Some(path)) =
+                (entry["backupFile"].as_str(), entry["filePath"].as_str())
+            {
+                let shown = norm(json!(path)).as_str().unwrap_or_default().to_string();
+                backup_of.insert(name.to_string(), shown);
+            }
+        }
+    }
     for e in walkdir::WalkDir::new(&checkpoints)
         .into_iter()
         .filter_map(Result::ok)
@@ -382,10 +402,11 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         } else {
             let name = rel.rsplit('/').next().unwrap_or_default();
             let dir = &rel[..rel.len() - name.len()];
-            (
-                format!("{dir}{}", normalize_backup_name(name, None)),
-                json!(String::from_utf8_lossy(&bytes)),
-            )
+            let key = match backup_of.get(name) {
+                Some(file) => format!("{dir}<STAMP>_<{file}>.bak"),
+                None => format!("{dir}{}", normalize_backup_name(name, None)),
+            };
+            (key, json!(String::from_utf8_lossy(&bytes)))
         };
         home_files.insert(key, value);
     }

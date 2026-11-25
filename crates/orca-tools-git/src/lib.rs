@@ -16,15 +16,16 @@ pub use github::GitHubTool;
 /// Every tool in this crate: the nine git tools and `github`.
 pub fn all_tools() -> Vec<Arc<dyn Tool>> {
     vec![
-        Arc::new(GitStatusTool),
-        Arc::new(GitDiffTool),
-        Arc::new(GitLogTool),
-        Arc::new(GitCommitTool),
+        // C# order: tool classes by name within the plugin.
         Arc::new(GitBranchTool),
         Arc::new(GitCheckoutTool),
+        Arc::new(GitCommitTool),
+        Arc::new(GitDiffTool),
+        Arc::new(GitLogTool),
         Arc::new(GitPullTool),
         Arc::new(GitPushTool),
         Arc::new(GitStashTool),
+        Arc::new(GitStatusTool),
         Arc::new(GitHubTool::default()),
     ]
 }

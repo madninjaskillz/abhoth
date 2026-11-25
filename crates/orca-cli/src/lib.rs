@@ -2,6 +2,7 @@
 //! interactive REPL/TUI and the web host follow in later phases (see PORTING.md).
 
 pub mod args;
+pub mod prompter;
 pub mod sessions;
 
 use std::io::Write;
@@ -31,14 +32,25 @@ pub struct SinglePromptResult {
     pub success: bool,
 }
 
-/// The tool set, registered at compile time (D3): file, shell, git/GitHub and web tools.
+/// The compiled-in tools (C# loads them from plugin DLLs). Registration order is the C# one:
+/// plugin assemblies in file-name order (Agent, Archive, FileSystem, Git, GitHub,
+/// ImageGeneration, Interactive, Lsp, Network, Shell, Utility, Web), and within each the tool
+/// classes sorted by name. The advertised list keeps this order.
 pub fn build_registry(config: &OrcaConfig) -> ToolRegistry {
     let mut r = ToolRegistry::new();
+    #[cfg(feature = "archive")]
+    r.register_all(orca_tools_archive::all_tools());
     r.register_all(orca_tools_fs::all_tools());
+    r.register_all(orca_tools_git::all_tools());
+    r.register_all(orca_tools_utility::interactive_tools(Some(Arc::new(
+        prompter::ConsolePrompter,
+    ))));
+    #[cfg(feature = "network")]
+    r.register_all(orca_tools_network::all_tools());
     r.register_all(orca_tools_shell::all_tools(
         config.shell.idle_timeout_seconds,
     ));
-    r.register_all(orca_tools_git::all_tools());
+    r.register_all(orca_tools_utility::utility_tools());
     r.register_all(orca_tools_web::all_tools());
     // Disabled tools stay registered; the permission check refuses them (as in C#).
     r

@@ -1,0 +1,22 @@
+[package]
+name = "orca-tools-network"
+description = "The network_diagnostics tool: ping, DNS lookup, HTTP reachability (port of OpenOrca.Tools.Network)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+orca-abstractions.workspace = true
+orca-tools-common = { workspace = true, features = ["http"] }
+async-trait.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+
+[lints]
+workspace = true

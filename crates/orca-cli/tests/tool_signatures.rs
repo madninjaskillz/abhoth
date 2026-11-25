@@ -18,3 +18,92 @@ fn format_all_registered_tools_produce_non_empty_single_line_signatures() {
         assert!(!sig.contains('\n'), "{sig}");
     }
 }
+
+/// The registry keeps the C# order (plugin DLLs by file name, tool classes by name), and the
+/// advertised subset is the C# default list minus the tools not ported yet.
+#[test]
+fn registry_order_matches_csharp_plugin_order() {
+    let registry = orca_cli::build_registry(&OrcaConfig::default());
+    let names = registry.names();
+    let expected = [
+        "archive",
+        "apply_patch",
+        "cd",
+        "copy_file",
+        "create_directory",
+        "delete_file",
+        "edit_file",
+        "glob",
+        "grep",
+        "list_directory",
+        "mkdir",
+        "move_file",
+        "multi_edit",
+        "read_file",
+        "rename_file",
+        "write_file",
+        "git_branch",
+        "git_checkout",
+        "git_commit",
+        "git_diff",
+        "git_log",
+        "git_pull",
+        "git_push",
+        "git_stash",
+        "git_status",
+        "github",
+        "ask_user",
+        "network_diagnostics",
+        "bash",
+        "get_process_output",
+        "list_processes",
+        "start_background_process",
+        "stop_process",
+        "env",
+        "print",
+        "task_list",
+        "think",
+        "web_fetch",
+        "web_search",
+    ];
+    assert_eq!(names, expected);
+    let config = OrcaConfig::default();
+    let advertised: Vec<&str> = expected
+        .iter()
+        .copied()
+        .filter(|n| orca_core::agent::tool_exposure::is_advertised(n, &config))
+        .collect();
+    assert_eq!(
+        advertised,
+        [
+            "delete_file",
+            "edit_file",
+            "glob",
+            "grep",
+            "list_directory",
+            "mkdir",
+            "move_file",
+            "multi_edit",
+            "read_file",
+            "write_file",
+            "git_branch",
+            "git_checkout",
+            "git_commit",
+            "git_diff",
+            "git_log",
+            "git_status",
+            "github",
+            "ask_user",
+            "bash",
+            "get_process_output",
+            "list_processes",
+            "start_background_process",
+            "stop_process",
+            "print",
+            "task_list",
+            "think",
+            "web_fetch",
+            "web_search",
+        ]
+    );
+}

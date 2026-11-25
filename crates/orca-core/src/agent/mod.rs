@@ -16,6 +16,7 @@ mod streaming;
 pub mod system_prompt;
 pub mod think_tag_filter;
 pub mod tool_call_parser;
+pub mod tool_exposure;
 pub mod tool_hooks;
 mod turn;
 
