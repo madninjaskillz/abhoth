@@ -3,11 +3,12 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::files::edit_tracker::{EditMarkers, EditTracker};
 use crate::files::watcher::FolderWatcher;
+use crate::git::github_app::GitHubAppService;
 use crate::git::tokens::{APP_LINK, GitTokenStore};
 use crate::git::worktrees::{self, WorktreeInfo};
 use crate::live::{LiveSession, SessionFactory};
@@ -132,9 +133,6 @@ impl ProjectRuntime {
     }
 }
 
-/// Gives the GitHub sign-in's current access token.
-pub type AppTokenFn = Arc<dyn Fn() -> Option<String> + Send + Sync>;
-
 pub struct ProjectManager {
     store: ProjectStore,
     factory: Option<SessionFactory>,
@@ -151,8 +149,9 @@ pub struct ProjectManager {
     pub profiles: EngineChoiceStore,
     /// Each project's agent mode; none = its profile's own.
     pub modes: EngineChoiceStore,
-    /// The GitHub sign-in's access token for projects linked to it (`None`: not set up).
-    pub github_app_token: Mutex<Option<AppTokenFn>>,
+    /// The GitHub sign-in (the "Clone from GitHub" wizard), whose access token projects linked
+    /// to it use (unset: not set up).
+    pub github_app: OnceLock<Arc<GitHubAppService>>,
 }
 
 impl ProjectManager {
@@ -175,7 +174,7 @@ impl ProjectManager {
             transient: Mutex::new(Vec::new()),
             listeners: Arc::new(Listeners::default()),
             primary: info.clone(),
-            github_app_token: Mutex::new(None),
+            github_app: OnceLock::new(),
         });
         pm.create(info, primary, true, false);
         pm.reload();
@@ -196,18 +195,22 @@ impl ProjectManager {
     }
 
     /// The token git should use for a project's fetch, pull and push: its own saved token, or,
-    /// for a project linked to the GitHub sign-in, that sign-in's access token.
-    pub fn git_token(&self, project_id: &str) -> Result<Option<String>, String> {
+    /// for a project linked to the GitHub sign-in, that sign-in's access token (refreshed when
+    /// near expiry). `Err`: the link's sign-in is gone (a message for the user).
+    pub async fn git_token(&self, project_id: &str) -> Result<Option<String>, String> {
         let saved = self.tokens.get(project_id);
         if saved.as_deref() != Some(APP_LINK) {
             return Ok(saved);
         }
-        let f = self.github_app_token.lock().unwrap().clone();
-        match f {
+        match self.github_app.get() {
             None => Err(
                 "This project uses the GitHub sign-in, which isn't set up on this server.".into(),
             ),
-            Some(f) => Ok(f()),
+            Some(app) => app
+                .access_token(false)
+                .await
+                .map(Some)
+                .map_err(|e| e.to_string()),
         }
     }
 

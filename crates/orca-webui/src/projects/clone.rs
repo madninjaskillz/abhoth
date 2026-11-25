@@ -28,6 +28,8 @@ pub struct CloneStatus {
 
 struct Job {
     token: Option<String>,
+    /// Cloned with the GitHub sign-in: the project is linked to it, not given a token copy.
+    github_app: bool,
     status: Mutex<CloneStatus>,
     cancel: tokio::sync::Notify,
 }
@@ -125,6 +127,20 @@ impl CloneService {
         token: Option<&str>,
         branch: Option<&str>,
     ) -> Result<CloneStatus, String> {
+        self.start_with(url, parent_folder, name, token, branch, false)
+    }
+
+    /// [`Self::start`]; `github_app`: the token is the GitHub sign-in's, and the new project is
+    /// linked to the sign-in (fetch/pull/push use it, refreshed as needed).
+    pub fn start_with(
+        &self,
+        url: &str,
+        parent_folder: &str,
+        name: Option<&str>,
+        token: Option<&str>,
+        branch: Option<&str>,
+        github_app: bool,
+    ) -> Result<CloneStatus, String> {
         static CRED: OnceLock<regex::Regex> = OnceLock::new();
         static BRANCH: OnceLock<regex::Regex> = OnceLock::new();
         let url = expand_url(url);
@@ -203,6 +219,7 @@ impl CloneService {
         };
         let job = Arc::new(Job {
             token,
+            github_app,
             status: Mutex::new(status.clone()),
             cancel: tokio::sync::Notify::new(),
         });
@@ -281,7 +298,9 @@ async fn run(
     }
     match projects.add(&dest.to_string_lossy(), None) {
         Ok(rt) => {
-            if let Some(t) = &job.token {
+            if job.github_app {
+                projects.tokens.link_app(rt.id());
+            } else if let Some(t) = &job.token {
                 let _ = projects.tokens.set(rt.id(), t);
             }
             let mut s = job.status.lock().unwrap();

@@ -104,9 +104,17 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   `~/.openorca`), `ABHOTH_*` env vars first. See [`README.md`](README.md) and
   [`CUTOVER.md`](CUTOVER.md).
 
+### `rust-port/ghapp` (2026-11-25)
+
+- GitHub App "Clone from GitHub" (D91): device flow with interval / slow_down, token refresh
+  (5-minute margin, single flight, rotation), sign-out, repositories across installations
+  (60 s cache, search, paging), branches, clone linked to the sign-in so fetch/pull/push get a
+  fresh token through the credential helper. C# tests ported against a fake GitHub (API and
+  `git http-backend`).
+
 ## Next
 
-1. GitHub App device flow; Anthropic/Ollama clients; tool-argument number formatting.
+1. Anthropic/Ollama clients; tool-argument number formatting.
 2. Bridge engines under `--hostui` and in the REPL; sub-agent approval prompter; `lead_mode` for
    `leadMode: auto`.
 3. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).

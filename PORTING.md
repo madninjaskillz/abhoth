@@ -417,3 +417,11 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D90** The cross-check reads the Rust build's "Abhoth"/"abhoth" as "OpenOrca"/"openorca" in
   every compared string (outputs, requests, files, screens), so the rebrand is not a difference.
   Both builds still get the same `OPENORCA_HOME`.
+- **D91** (`rust-port/ghapp`) The GitHub App device flow ports as `orca_webui::git::github_app`
+  (+ `github_app_endpoints`), JSON shapes as the React client reads them. The clock is a
+  `Clock` trait (tests use `ManualClock`); a finished device flow is forgotten on the next poll a
+  minute later (C# runs a one-minute timer). Timestamps without an offset from GitHub are read
+  as UTC (C# uses the local offset). `ProjectManager::git_token` is async and asks the service
+  (refreshing near expiry), replacing the sync `github_app_token` hook. Config reads
+  `ABHOTH_GITHUB_APP_*` then `OPENORCA_GITHUB_APP_*`, and `ABHOTH_GITHUB_URL` / `_API_URL`; the
+  setup hint names the `ABHOTH_*` variables.
