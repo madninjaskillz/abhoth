@@ -6,4 +6,6 @@ pub mod chat;
 pub mod client;
 pub mod config;
 pub mod hooks;
+pub mod orchestration;
+pub mod progress;
 pub mod session;

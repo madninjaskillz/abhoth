@@ -13,7 +13,14 @@ use anyhow::{Context, Result};
 use orca_abstractions::{ToolContext, ToolResult};
 use orca_core::agent::{AgentObserver, AgentSession, ToolCallRecord, ToolRegistry};
 use orca_core::client::{ServedModels, ToolCall, client_from_config};
+use orca_core::agent::sub_agent_tools::{ClientFactory, SessionToolExecutor, SharedPipeline};
 use orca_core::config::{ConfigManager, OrcaConfig};
+use orca_core::orchestration::custom_agents::CustomAgentLoader;
+use orca_core::orchestration::types::AgentTypeRegistry;
+use orca_core::orchestration::{
+    AgentChatClient, AgentManager, AgentOrchestrator, DefaultClientProvider,
+};
+pub use orca_tools_agent::AgentToolsHandle;
 use serde::Serialize;
 
 pub use args::CliArgs;
@@ -31,8 +38,15 @@ pub struct SinglePromptResult {
     pub success: bool,
 }
 
-/// The tool set, registered at compile time (D3): file, shell, git/GitHub and web tools.
+/// The tool set, registered at compile time (D3): file, shell, git/GitHub, web and agent tools.
+/// The agent tools stay unwired (see [`build_registry_with_agents`]).
 pub fn build_registry(config: &OrcaConfig) -> ToolRegistry {
+    build_registry_with_agents(config).0
+}
+
+/// [`build_registry`] and the handle that wires its agent tools to a session's sub-agents.
+pub fn build_registry_with_agents(config: &OrcaConfig) -> (ToolRegistry, AgentToolsHandle) {
+    let handle = AgentToolsHandle::new();
     let mut r = ToolRegistry::new();
     r.register_all(orca_tools_fs::all_tools());
     r.register_all(orca_tools_shell::all_tools(
@@ -40,8 +54,81 @@ pub fn build_registry(config: &OrcaConfig) -> ToolRegistry {
     ));
     r.register_all(orca_tools_git::all_tools());
     r.register_all(orca_tools_web::all_tools());
+    r.register_all(orca_tools_agent::all_tools(&handle));
     // Disabled tools stay registered; the permission check refuses them (as in C#).
-    r
+    (r, handle)
+}
+
+/// Sub-agents for `session` (`ToolWiring`, agent part): the orchestrator with the session's
+/// tools and custom agent types, sub-agent tool calls through a copy of the session's
+/// pipeline, and the agent tools wired to the manager. Start/finish lines go to stderr unless
+/// `quiet`.
+pub fn wire_agents(
+    session: &mut AgentSession,
+    handle: &AgentToolsHandle,
+    served: Arc<ServedModels>,
+    config_dir: Option<&Path>,
+    quiet: bool,
+) -> Result<Arc<AgentManager>> {
+    let config = session.config.clone();
+    let cwd = session.ctx.cwd.clone();
+    let client: Arc<dyn AgentChatClient> = Arc::new(client_from_config(&config, served.clone())?);
+    let mut types = AgentTypeRegistry::new();
+    if let Some(dir) = config_dir {
+        let names: Vec<String> = session
+            .registry
+            .definitions()
+            .into_iter()
+            .map(|d| d.name)
+            .collect();
+        let custom = CustomAgentLoader::discover_agents(dir, &cwd, Some(&names), &mut |w| {
+            tracing::warn!("{w}");
+            if !quiet {
+                eprintln!("\u{26a0} {w}");
+            }
+        });
+        types.register_custom(custom.iter());
+    }
+    let orchestrator = AgentOrchestrator::new(
+        Arc::new(DefaultClientProvider::new(client)),
+        config.clone(),
+        types,
+        cwd,
+    );
+    // Sub-agents never choose a Lead mode.
+    orchestrator.set_tools(
+        session
+            .registry
+            .definitions()
+            .into_iter()
+            .filter(|d| d.name != orca_core::agent::policies::LEAD_MODE_TOOL_NAME)
+            .collect(),
+    );
+    orchestrator.set_use_streaming(true);
+    let shared = SharedPipeline::new();
+    let factory_config = config.clone();
+    let factory_served = served;
+    let factory: ClientFactory = Arc::new(move || {
+        client_from_config(&factory_config, factory_served.clone())
+            .expect("the main client was built from the same config")
+    });
+    orchestrator.set_executor(Some(Arc::new(SessionToolExecutor::new(
+        config,
+        session.registry.clone(),
+        session.ctx.clone(),
+        session.tool_hooks.clone(),
+        factory,
+        shared.clone(),
+        &orchestrator,
+    ))));
+    let manager = AgentManager::new(orchestrator.clone());
+    if !quiet {
+        manager.set_line_sink(Some(Arc::new(|line: &str| eprintln!("{line}"))));
+    }
+    handle.set(Some(manager.clone()));
+    session.orchestrator = Some(orchestrator);
+    session.sub_agent_pipeline = Some(shared);
+    Ok(manager)
 }
 
 /// Prints streamed text to stderr when a human is watching (not in JSON mode).
@@ -97,8 +184,8 @@ pub async fn run_single_prompt_in_session(
     restored: Option<sessions::RestoredSession>,
 ) -> Result<SinglePromptResult> {
     let served = Arc::new(ServedModels::new());
-    let client = client_from_config(&config, served)?;
-    let registry = build_registry(&config);
+    let client = client_from_config(&config, served.clone())?;
+    let (registry, agent_tools) = build_registry_with_agents(&config);
     let tool_hooks = config_dir.map(|d| orca_core::agent::ToolHooks::from_config(&config, d));
     let mut session = AgentSession::new(config, client, registry, ToolContext::new(cwd));
     // C# runs the startup probes (max_tokens negotiation, context-window detection) before
@@ -112,6 +199,7 @@ pub async fn run_single_prompt_in_session(
         session.messages = r.messages;
         session.tool_hooks.session_id = Some(r.id);
     }
+    wire_agents(&mut session, &agent_tools, served, config_dir, quiet)?;
     let result = run_prepared(&mut session, prompt, quiet).await;
     // Post-hooks run in the background; give them a moment before the process exits.
     session

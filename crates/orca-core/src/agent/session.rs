@@ -146,7 +146,19 @@ pub struct AgentSession {
     pub server_identity: crate::client::ServerIdentity,
     /// HTTP client for the startup probes and the server error probe (15 s timeout).
     pub probe_http: reqwest::Client,
+    /// Sub-agents (spawn tools, lead mode, delegated checks); None = no agent tools wired.
+    pub orchestrator: Option<Arc<crate::orchestration::AgentOrchestrator>>,
+    /// The pipeline state shared with sub-agents' tool calls (see `sub_agent_tools`).
+    pub sub_agent_pipeline: Option<super::sub_agent_tools::SharedPipeline>,
+    /// Called when the Lead would end its turn (`CollectBackgroundWork`): a message to continue
+    /// the turn with (peer mode: background helpers' reports it never collected), or None.
+    pub collect_background: Option<BackgroundCollector>,
 }
+
+/// See [`AgentSession::collect_background`].
+pub type BackgroundCollector = Arc<
+    dyn Fn() -> futures_util::future::BoxFuture<'static, Option<String>> + Send + Sync,
+>;
 
 impl AgentSession {
     pub fn new(
@@ -195,6 +207,9 @@ impl AgentSession {
                 .timeout(Duration::from_secs(HTTP_PROBE_TIMEOUT_SECONDS))
                 .build()
                 .expect("reqwest client builds with static settings"),
+            orchestrator: None,
+            sub_agent_pipeline: None,
+            collect_background: None,
         }
     }
 
@@ -443,9 +458,21 @@ impl AgentSession {
             return ToolResult::blocked(err);
         }
 
+        // A spawn tool's sub-agents share this pipeline's state; their calls are recorded
+        // before the spawn call itself.
+        let shared = self
+            .sub_agent_pipeline
+            .clone()
+            .filter(|_| crate::orchestration::activity::is_agent_tool(tool.name()));
+        if let Some(shared) = &shared {
+            shared.seed_from(self);
+        }
         let started = Instant::now();
         let result = self.run_tool(&tool, &args, observer).await;
         let elapsed = started.elapsed().as_millis() as i64;
+        if let Some(shared) = &shared {
+            shared.drain_into(self);
+        }
         self.tool_hooks.post_hook(
             &call.name,
             &call.arguments,

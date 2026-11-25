@@ -12,6 +12,7 @@ pub mod registry;
 pub mod response_quality;
 pub mod run_evidence;
 pub mod session;
+pub mod sub_agent_tools;
 mod streaming;
 pub mod system_prompt;
 pub mod think_tag_filter;

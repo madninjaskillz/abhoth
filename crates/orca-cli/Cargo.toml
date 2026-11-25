@@ -21,6 +21,7 @@ orca-tools-fs.workspace = true
 orca-tools-shell.workspace = true
 orca-tools-git.workspace = true
 orca-tools-web.workspace = true
+orca-tools-agent.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

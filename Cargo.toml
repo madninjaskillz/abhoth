@@ -8,6 +8,7 @@ members = [
     "crates/orca-tools-shell",
     "crates/orca-tools-git",
     "crates/orca-tools-web",
+    "crates/orca-tools-agent",
     "crates/orca-cli",
     "crates/orca-testkit",
     "crates/orca-crosscheck",
@@ -30,6 +31,7 @@ orca-tools-fs = { path = "crates/orca-tools-fs" }
 orca-tools-shell = { path = "crates/orca-tools-shell" }
 orca-tools-git = { path = "crates/orca-tools-git" }
 orca-tools-web = { path = "crates/orca-tools-web" }
+orca-tools-agent = { path = "crates/orca-tools-agent" }
 orca-testkit = { path = "crates/orca-testkit" }
 
 anyhow = "=1.0.105"
