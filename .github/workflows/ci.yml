@@ -1,36 +1,49 @@
-# CI of the abhoth repo: test, clippy and fmt on Linux and Windows, the desktop feature on
-# Linux, macOS and Windows, and the React client. The cross-check against the C# reference is
-# not here (it needs the openorca repo; see README, "Tests and the cross-check").
+# CI of the abhoth repo. The cross-check against the C# reference is not here (it needs the
+# openorca repo; see README, "Tests and the cross-check").
+#
+# Where the jobs run (deploy/ci-runner/README.md):
+# - Linux jobs on the self-hosted runners on deepthought (`abhoth-ci`, label `abhoth`): fmt,
+#   clippy and tests (default features and the desktop feature), the React client, and
+#   `package`, which cross-compiles abhoth.exe / abhoth-desktop.exe with cargo-xwin, runs
+#   clippy for the Windows target, and packs a Velopack Setup.exe and a Linux AppImage.
+# - Windows (GitHub-hosted): the tests only, because they exercise Windows behaviour
+#   (ConPTY, paths, the shell tool); clippy for Windows is the cross job's.
+# - macOS (GitHub-hosted, 10x minutes): the desktop feature only on workflow_dispatch or a tag.
+#
+# Rollback to hosted runners: change `runs-on: [self-hosted, linux, abhoth]` back to
+# `ubuntu-latest` (the desktop job then needs its apt step again; see the README).
 name: CI
 
 on:
   push:
     branches: [main]
+    tags: ['abhoth-v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-# Debug info off: the full workspace's test binaries with debug info fill the runner's disk
-# (ld died with a bus error on ubuntu-latest). Incremental builds are useless on CI anyway.
+# Debug info off: the full workspace's test binaries with debug info fill a hosted runner's
+# disk (ld died with a bus error on ubuntu-latest), and keep the deepthought caches small.
+# Incremental builds are useless on CI.
 env:
   CARGO_PROFILE_DEV_DEBUG: "0"
   CARGO_PROFILE_TEST_DEBUG: "0"
   CARGO_INCREMENTAL: "0"
 
 jobs:
-  rust:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  # Format, clippy (with and without the desktop feature) and the whole test suite, with the
+  # desktop feature on so its unit tests run too (D114).
+  rust-linux:
+    runs-on: [self-hosted, linux, abhoth]
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install toolchain
-        run: rustup show active-toolchain || rustup toolchain install
+      - name: Toolchain
+        run: rustup show active-toolchain
 
       - name: Format
         run: cargo fmt --all --check
@@ -38,24 +51,38 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: Test
-        run: cargo test --workspace --locked --no-fail-fast
+      - name: Clippy (desktop)
+        run: cargo clippy --workspace --all-targets --locked --features orca-cli/desktop -- -D warnings
 
-  # The desktop app (feature `desktop`), built and unit-tested on each desktop OS (D114).
-  desktop:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+      - name: Test
+        run: cargo test --workspace --locked --no-fail-fast --features orca-cli/desktop
+
+  # Windows: the tests (desktop feature included), on a GitHub-hosted runner.
+  rust-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Linux packages
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libdbus-1-dev libwayland-dev
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      # Swatinem/rust-cache v2.9.3: the dependency builds survive between runs, which is
+      # most of this job's minutes.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          shared-key: windows-test
+
+      - name: Test
+        run: cargo test --workspace --locked --no-fail-fast --features orca-cli/desktop
+
+  # macOS: the desktop feature builds and its unit tests pass. Only by hand or on a tag.
+  desktop-macos:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
 
       - name: Install toolchain
         run: rustup show active-toolchain || rustup toolchain install
@@ -67,23 +94,107 @@ jobs:
         run: cargo test -p orca-cli --features desktop --locked --lib desktop
 
   # The React client: typecheck, tests, and the checked-in dist must match a fresh build
-  # (the binaries embed client/dist).
+  # (the binaries embed client/dist). Node comes from the runner image.
   client:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, abhoth]
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: client
     steps:
       - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: client/package-lock.json
-
+      - run: node --version
       - run: npm ci
       - run: npm test
       - run: npm run build
       - name: dist is up to date
         run: git diff --exit-code --stat -- dist
+
+  # The Windows exes cross-compiled on Linux (cargo-xwin, x86_64-pc-windows-msvc), clippy for
+  # the Windows target, the Linux release build, and Velopack packages of both: a Windows
+  # Setup.exe and a Linux AppImage. Artifacts on every run; a GitHub Release on a tag.
+  package:
+    runs-on: [self-hosted, linux, abhoth]
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      WIN: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Version
+        id: version
+        run: |
+          base=$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r '.packages[] | select(.name == "orca-cli") | .version')
+          if [[ "$GITHUB_REF" == refs/tags/abhoth-v* ]]; then
+            version="${GITHUB_REF#refs/tags/abhoth-v}"
+            [ "$version" = "$base" ] || { echo "::error::tag $version but Cargo.toml says $base"; exit 1; }
+          else
+            version="$base-ci.$GITHUB_RUN_NUMBER"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version $version"
+
+      - name: Clippy (Windows target)
+        run: cargo xwin clippy --target "$WIN" --workspace --all-targets --locked --features orca-cli/desktop -- -D warnings
+
+      - name: Build abhoth.exe and abhoth-desktop.exe (cross-compiled)
+        run: cargo xwin build --release --locked --target "$WIN" -p orca-cli --features desktop --bins
+
+      - name: Build abhoth and abhoth-desktop (Linux)
+        run: cargo build --release --locked -p orca-cli --features desktop --bins
+
+      - name: Velopack packages
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/pkg"; rm -rf "$out"; mkdir -p "$out/win" "$out/linux" "$out/dist"
+          rel="$CARGO_TARGET_DIR/$WIN/release"
+          cp "$rel/abhoth.exe" "$rel/abhoth-desktop.exe" "$out/win/"
+          cp "$CARGO_TARGET_DIR/release/abhoth" "$CARGO_TARGET_DIR/release/abhoth-desktop" "$out/linux/"
+          file "$out/win/"*.exe "$out/linux/"*
+
+          vpk '[win]' pack --packId Abhoth --packVersion "$VERSION" --packTitle Abhoth \
+            --packAuthors Abhoth --packDir "$out/win" --mainExe abhoth-desktop.exe \
+            --icon assets/abhoth/icons/abhoth.ico --outputDir "$out/vpk-win"
+          vpk '[linux]' pack --packId Abhoth --packVersion "$VERSION" --packTitle Abhoth \
+            --packAuthors Abhoth --packDir "$out/linux" --mainExe abhoth-desktop \
+            --icon assets/abhoth/icons/abhoth-256.png --outputDir "$out/vpk-linux"
+
+          # Found by glob: vpk's file names carry the channel and can change with a release.
+          setup=$(ls "$out"/vpk-win/*Setup.exe | head -1)
+          appimage=$(ls "$out"/vpk-linux/*.AppImage | head -1)
+          cp "$setup" "$out/dist/abhoth-$VERSION-win-x64-setup.exe"
+          cp "$appimage" "$out/dist/abhoth-$VERSION-linux-x64.AppImage"
+          (cd "$out/win" && zip -q -9 "$out/dist/abhoth-$VERSION-win-x64.zip" abhoth.exe abhoth-desktop.exe)
+          (cd "$out/dist" && sha256sum * > SHA256SUMS)
+          cat "$out/dist/SHA256SUMS"
+          ls -la "$out/dist"
+
+          # A copy on deepthought, the last five kept (the artifact storage quota is small).
+          keep="$CI_ROOT/builds"; mkdir -p "$keep"
+          cp -r "$out/dist" "$keep/$GITHUB_RUN_NUMBER-${GITHUB_SHA::8}"
+          ls -1dt "$keep"/*/ | tail -n +6 | xargs -r rm -rf
+
+      # Short retention and non-fatal: the account's artifact storage quota is small, and the
+      # builds are also kept on deepthought.
+      - uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: abhoth-${{ steps.version.outputs.version }}
+          path: ${{ runner.temp }}/pkg/dist/*
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/abhoth-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "Abhoth $VERSION" --notes "Abhoth $VERSION" --verify-tag
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP"/pkg/dist/* --clobber

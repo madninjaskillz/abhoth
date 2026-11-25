@@ -1,16 +1,15 @@
 //! Windows: the mascot icon and version info in `abhoth.exe` and `abhoth-desktop.exe`
-//! (PORTING.md D117). Built only when both the build host and the target are Windows; the Linux
-//! build (Docker image, CI) never compiles or links a resource.
+//! (PORTING.md D117). Built whenever the target is Windows: with rc.exe on a Windows host, and
+//! with llvm-rc when cross-compiling from Linux (cargo-xwin in CI's `package` job). A Linux
+//! target never compiles or links a resource.
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    #[cfg(windows)]
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         windows::embed();
     }
 }
 
-#[cfg(windows)]
 mod windows {
     use std::path::PathBuf;
 

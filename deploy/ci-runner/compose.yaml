@@ -1,0 +1,61 @@
+# abhoth-ci on deepthought: two GitHub Actions runners for madninjaskillz/abhoth, labels
+# `self-hosted, linux, x64, deepthought, abhoth` (deploy/ci-runner/README.md).
+#
+# Everything lives in the Storage/abhoth-ci dataset (quota 40 GB), NOT on the Apps pool:
+#   image/            a copy of this directory, the build context
+#   runners/<n>/      each runner's install, registration and _work
+#   cache/<n>/        each runner's CARGO_HOME, target dir, xwin SDK, npm cache and TMPDIR,
+#                     capped at 14 GB per runner by job-started.sh before every job
+#   builds/           the last few packaged builds (ci.yml `package`)
+#
+# CPUs: 16 threads each on NUMA node 1, clear of ninfer-a/b (node 0) and stable-audio
+# (48-71,144-167), so CI cannot starve the GPU engines or the video renders; a cpuset
+# rather than a CPU quota so nproc / available_parallelism say 16 and cargo and the test
+# harness size themselves to it. 24 GB of memory each.
+#
+# Started with `docker compose -p abhoth-ci up -d --build` (not a TrueNAS custom app: the
+# middleware's Docker status reads FAILED since the Apps pool incident of 2026-11-21, so
+# app.create is not trusted to work; see the README).
+x-runner: &runner
+  build: { context: $ABHOTH_CI_ROOT/image }
+  image: abhoth-ci-runner:2.338.0
+  restart: unless-stopped
+  mem_limit: 24g
+  volumes:
+    - $ABHOTH_CI_ROOT:$ABHOTH_CI_ROOT
+x-env: &env
+  CI_ROOT: $ABHOTH_CI_ROOT
+  RUNNER_URL: https://github.com/madninjaskillz/abhoth
+  RUNNER_LABELS: deepthought,abhoth
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "16"
+  RUST_TEST_THREADS: "16"
+  XWIN_ACCEPT_LICENSE: "1"
+
+services:
+  runner-1:
+    <<: *runner
+    cpuset: "72-79,168-175"
+    environment:
+      <<: *env
+      RUNNER_NAME: abhoth-dt-1
+      RUNNER_DIR: $ABHOTH_CI_ROOT/runners/1
+      RUNNER_CACHE: $ABHOTH_CI_ROOT/cache/1
+      CARGO_HOME: $ABHOTH_CI_ROOT/cache/1/cargo
+      CARGO_TARGET_DIR: $ABHOTH_CI_ROOT/cache/1/target
+      XWIN_CACHE_DIR: $ABHOTH_CI_ROOT/cache/1/xwin
+      npm_config_cache: $ABHOTH_CI_ROOT/cache/1/npm
+      TMPDIR: $ABHOTH_CI_ROOT/cache/1/tmp
+  runner-2:
+    <<: *runner
+    cpuset: "80-87,176-183"
+    environment:
+      <<: *env
+      RUNNER_NAME: abhoth-dt-2
+      RUNNER_DIR: $ABHOTH_CI_ROOT/runners/2
+      RUNNER_CACHE: $ABHOTH_CI_ROOT/cache/2
+      CARGO_HOME: $ABHOTH_CI_ROOT/cache/2/cargo
+      CARGO_TARGET_DIR: $ABHOTH_CI_ROOT/cache/2/target
+      XWIN_CACHE_DIR: $ABHOTH_CI_ROOT/cache/2/xwin
+      npm_config_cache: $ABHOTH_CI_ROOT/cache/2/npm
+      TMPDIR: $ABHOTH_CI_ROOT/cache/2/tmp

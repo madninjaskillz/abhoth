@@ -1,12 +1,10 @@
-# The Abhoth Windows installer (installer/, PORTING.md D115): a per-user MSI with
-# abhoth.exe and abhoth-desktop.exe, built on a tag `abhoth-v*` or by hand, and uploaded as an
-# artifact. Signing and publishing a GitHub Release are not done here yet (CUTOVER.md).
-name: Abhoth installer
+# The Abhoth Windows MSI (installer/, PORTING.md D115): a per-user MSI with abhoth.exe and
+# abhoth-desktop.exe, built BY HAND only and uploaded as an artifact. Tags no longer build it:
+# the release installer is the Velopack Setup.exe that ci.yml's `package` job cross-builds on
+# Linux (deepthought) and attaches to the GitHub Release, which costs no hosted Windows minutes.
+name: Abhoth installer (MSI)
 
 on:
-  push:
-    tags:
-      - 'abhoth-v*'
   workflow_dispatch:
 
 permissions:

@@ -4,6 +4,13 @@
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // Velopack's hooks: Setup.exe / Update.exe run the main exe with `--veloapp-install <ver>`,
+    // `--veloapp-updated`, `--veloapp-obsolete` or `--veloapp-uninstall` and kill it after
+    // 15-30 s. There is nothing to do on them yet, so exit at once rather than open a window.
+    // (The Velopack Rust SDK would handle these and add auto-update; not wired in yet.)
+    if args.first().is_some_and(|a| a.starts_with("--veloapp-")) {
+        std::process::exit(0);
+    }
     if !args.iter().any(|a| a == "--desktop") {
         args.push("--desktop".into());
     }

@@ -70,8 +70,9 @@ router = ["dep:orca-router"]
 # `abhoth --desktop`: the web UI in a native window (WebView2 / WKWebView / WebKitGTK).
 desktop = ["dep:wry", "dep:tao", "dep:tray-icon", "dep:rfd", "dep:image", "dep:futures-util"]
 
-# Windows: the icon and version info in abhoth.exe / abhoth-desktop.exe (build.rs, D117).
-[target.'cfg(windows)'.build-dependencies]
+# Windows targets: the icon and version info in abhoth.exe / abhoth-desktop.exe (build.rs, D117).
+# Not host-specific, so a Linux host cross-compiling for Windows embeds them too (llvm-rc).
+[build-dependencies]
 embed-resource.workspace = true
 
 [dev-dependencies]
