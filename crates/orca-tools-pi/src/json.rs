@@ -137,7 +137,7 @@ mod tests {
             serde_json::from_str(r#"{"a":"x\"y<&>é😀","b":[1,2.5],"c":{},"d":[]}"#).unwrap();
         assert_eq!(
             to_compact(&v),
-            r#"{"a":"x\"y<&>é😀","b":[1,2.5],"c":{},"d":[]}"#
+            "{\"a\":\"x\\\"y<&>é\x5CuD83D\x5CuDE00\",\"b\":[1,2.5],\"c\":{},\"d\":[]}"
         );
         assert_eq!(
             to_pretty(&v),
