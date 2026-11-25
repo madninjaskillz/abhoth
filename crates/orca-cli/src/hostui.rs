@@ -78,12 +78,6 @@ pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i
         eprintln!("openorca: --tui needs the interactive mode, which is not ported to Rust yet.");
         return Ok(2);
     }
-    if args.bench_dir.is_some() {
-        eprintln!(
-            "openorca: --hostui-bench (the Benchmarks page) is not ported to Rust yet; use the C# build for benches."
-        );
-        return Ok(2);
-    }
     if args.login {
         eprintln!(
             "openorca: --hostui-login (sign-in mode) is not ported to Rust yet; use the token."
@@ -134,6 +128,9 @@ pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i
     options.profiles_cache_file =
         Some(orca_core::config::default_config_dir().join("profiles-cache.json"));
     options.config_home = Some(orca_core::config::default_config_dir());
+    if let Some(dir) = &args.bench_dir {
+        options.bench = Some(bench_options(dir, &args, &config, others.clone()));
+    }
     let mut server = match WebUiServer::start(options, primary.clone()).await {
         Ok(s) => s,
         Err(e) => {
@@ -177,6 +174,85 @@ pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i
         s.shutdown().await;
     }
     Ok(0)
+}
+
+/// `HostUiSetup.BenchOptionsFor`: the bench runner of `--hostui-bench`. Each run gets an
+/// in-process native session in its workspace, configured from the run's own home
+/// (OPENORCA_HOME/config.json: the arm's lead mode and settings); the base config is this
+/// process's config.json. C# starts a worker process per run instead (decision D74).
+fn bench_options(
+    dir: &Path,
+    args: &HostUiArgs,
+    config: &OrcaConfig,
+    others: Arc<Mutex<Vec<ToolServices>>>,
+) -> orca_webui::bench::BenchOptions {
+    let full = |p: &Path| std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
+    let home = orca_core::config::default_config_dir();
+    let script = std::env::var("OPENORCA_BENCHKIT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|e| e.parent().map(Path::to_path_buf))
+                .unwrap_or_default()
+                .join("bench")
+                .join("benchkit.py")
+        });
+    let kit = args
+        .bench_kit
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dir.join("kit"));
+    let factory: orca_webui::bench::BenchSessionFactory = Arc::new(
+        move |folder: &str, env: &std::collections::BTreeMap<String, String>| -> Arc<dyn LiveSession> {
+            let failed = |error: String| -> Arc<dyn LiveSession> {
+                Arc::new(FailedSession {
+                    bus: Arc::new(LiveEventBus::new()),
+                    folder: folder.to_string(),
+                    error,
+                })
+            };
+            let run_home = env.get("OPENORCA_HOME").map(PathBuf::from);
+            let config = match crate::load_config(run_home.as_deref()) {
+                Ok(c) => c,
+                Err(e) => return failed(format!("{e:#}")),
+            };
+            if orca_core::engines::selected_bridge(&config).is_some() {
+                return failed(format!(
+                    "the Rust bench runs the native engine only (agent.engine is {})",
+                    config.agent.engine
+                ));
+            }
+            match session_for(&config, Path::new(folder)) {
+                Ok((s, svc)) => {
+                    others.lock().unwrap().push(svc);
+                    AgentLiveSession::start(s, Arc::new(LiveEventBus::new()), "worker")
+                }
+                Err(e) => failed(e.to_string()),
+            }
+        },
+    );
+    let mut o = orca_webui::bench::BenchOptions::new(
+        full(dir),
+        full(&kit),
+        script,
+        home.join("config.json"),
+        factory,
+    );
+    o.registry_url = config
+        .slots
+        .as_ref()
+        .filter(|s| s.enabled)
+        .and_then(|s| s.registry_url.clone());
+    o.power_env_file = args.bench_power.as_deref().map(PathBuf::from);
+    if let Ok(repo) = std::env::var("REALTASKS_REPO")
+        && !repo.is_empty()
+    {
+        o.environment.insert("REALTASKS_REPO".into(), repo);
+    }
+    o
 }
 
 /// A project whose session could not be built: its tab shows why.
