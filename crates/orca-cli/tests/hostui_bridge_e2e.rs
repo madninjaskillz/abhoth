@@ -107,6 +107,13 @@ async fn hostui_switches_to_the_bridge_and_runs_a_turn() {
         .args(["--hostui=127.0.0.1:0", &format!("--hostui-token={TOKEN}")])
         .current_dir(work.path())
         .env("OPENORCA_HOME", home.path())
+        // An admin exists (D140): the token then signs in as them.
+        .env("ABHOTH_ADMIN_USER", "admin")
+        .env("ABHOTH_ADMIN_PASSWORD_FILE", {
+            let f = home.path().join("admin-password");
+            std::fs::write(&f, "e2e admin password").unwrap();
+            f
+        })
         .env("ABHOTH_HOME", home.path())
         .env("FAKE_CLAUDE_SCRIPT", "claude-script.jsonl")
         .env_remove("RUST_LOG")

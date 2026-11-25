@@ -81,6 +81,42 @@ pub fn build_registry_with(
     cwd: &Path,
     asker: Arc<dyn orca_tools_utility::UserPrompter>,
 ) -> (ToolRegistry, ToolServices) {
+    build_registry_scoped(config, cwd, asker, None)
+}
+
+/// The per-session state of tools that is process-wide otherwise: background processes, the
+/// task list and Pi jobs. Each web UI session gets its own, so one user's agent can't list,
+/// read or stop another's (D140). Sub-agents share their Lead's (the registry is cloned).
+#[derive(Clone)]
+pub struct ToolScope {
+    pub id: Arc<str>,
+    pub tasks: Arc<orca_tools_common::task_store::TaskStore>,
+    pub jobs: Arc<orca_tools_pi::PiJobManager>,
+}
+
+impl ToolScope {
+    pub fn new() -> Self {
+        Self {
+            id: Arc::from(orca_webui::util::new_token()),
+            tasks: Arc::new(Default::default()),
+            jobs: Arc::new(orca_tools_pi::PiJobManager::new()),
+        }
+    }
+}
+
+impl Default for ToolScope {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// [`build_registry_with`] in `scope` (`None`: the process-wide state, as in C#).
+pub fn build_registry_scoped(
+    config: &OrcaConfig,
+    cwd: &Path,
+    asker: Arc<dyn orca_tools_utility::UserPrompter>,
+    scope: Option<ToolScope>,
+) -> (ToolRegistry, ToolServices) {
     let mut r = ToolRegistry::new();
     #[allow(unused_mut)]
     let mut services = ToolServices::default();
@@ -107,14 +143,18 @@ pub fn build_registry_with(
     let _ = cwd;
     #[cfg(feature = "network")]
     r.register_all(orca_tools_network::all_tools());
-    r.register_all(orca_tools_shell::all_tools(
+    r.register_all(orca_tools_shell::all_tools_in(
         config.shell.idle_timeout_seconds,
+        scope.as_ref().map(|s| s.id.clone()),
     ));
-    r.register_all(orca_tools_utility::utility_tools());
+    r.register_all(match &scope {
+        Some(s) => orca_tools_utility::utility_tools_with(s.tasks.clone()),
+        None => orca_tools_utility::utility_tools(),
+    });
     r.register_all(orca_tools_web::all_tools());
     // Disabled tools stay registered; the permission check refuses them (as in C#).
     if orca_tools_pi::is_pi_profile(&config.tool_profile) {
-        pi_profile::register(&mut r, config);
+        pi_profile::register_with(&mut r, config, scope.as_ref().map(|s| s.jobs.clone()));
     }
     let exposure = config.clone();
     r.set_advertise_filter(Arc::new(move |name: &str| {
@@ -600,6 +640,7 @@ Usage:
   {bin} -p \"<prompt>\"            one prompt, then exit (--print; --output json)
   {bin} --hostui[=host:port]     the web UI (--hostui-open, --hostui-login, --hostui-token <t>)
   {bin} --desktop                the web UI in its own window (desktop builds)
+  {bin} admin create <user>      web UI accounts (also reset-password, reset-2fa, list)
 
 Common options:
   -c, --continue                 continue the last session
@@ -628,7 +669,8 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         return orca_router::cli::run(raw[1..].to_vec()).await;
     }
     let cwd = std::env::current_dir().context("reading the current directory")?;
-    // --hostui-set-password / --hostui-reset-2fa: manage the web UI's sign-in account, then exit.
+    // `abhoth admin ...` (and the old --hostui-set-password / --hostui-reset-2fa): the web UI's
+    // accounts, then exit.
     if let Some(code) = hostui_password::try_run(&raw) {
         return Ok(code);
     }

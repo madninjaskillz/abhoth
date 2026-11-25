@@ -22,6 +22,10 @@ pub struct ProjectInfo {
     pub path: String,
     #[serde(default)]
     pub added_at: String,
+    /// The user it belongs to (D140); none: the server's own (the primary project, projects
+    /// from before accounts), which admins see.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -64,11 +68,19 @@ impl ProjectStore {
         full.parent().map(Path::to_path_buf).unwrap_or(full)
     }
 
-    /// Stable id for a folder (the same folder gets the same tab id after a restart).
-    pub fn id_for(path: &str) -> String {
+    /// Stable id for a folder (the same folder gets the same tab id after a restart). A user's
+    /// project hashes the owner in too, so two users opening one folder get two projects;
+    /// owner-less ones keep the id they had before accounts.
+    pub fn id_for(path: &str, owner: Option<i64>) -> String {
         let mut norm = paths::normalize(path).to_string_lossy().to_string();
         if paths::case_insensitive() {
             norm = norm.to_uppercase();
+        }
+        if let Some(o) = owner {
+            norm = format!(
+                "user:{o}
+{norm}"
+            );
         }
         let hash = Sha256::digest(norm.as_bytes());
         crate::util::hex_lower(&hash)[..12].to_string()
@@ -79,12 +91,12 @@ impl ProjectStore {
         self.read()
     }
 
-    /// Add a folder (or return the existing entry for it).
-    pub fn add(&self, path: &str, name: Option<&str>) -> ProjectInfo {
+    /// Add a folder for `owner` (or return the existing entry for it).
+    pub fn add(&self, path: &str, name: Option<&str>, owner: Option<i64>) -> ProjectInfo {
         let full = paths::normalize(path).to_string_lossy().to_string();
         let _g = self.lock.lock().unwrap();
         let mut list = self.read();
-        let id = Self::id_for(&full);
+        let id = Self::id_for(&full, owner);
         if let Some(existing) = list.iter().find(|p| p.id == id) {
             return existing.clone();
         }
@@ -96,6 +108,7 @@ impl ProjectStore {
             },
             path: full,
             added_at: crate::util::utc_now_iso(),
+            owner,
         };
         list.push(info.clone());
         self.write(&list);
@@ -128,7 +141,7 @@ impl ProjectStore {
             .into_iter()
             .filter(|p| !p.path.is_empty())
             .map(|mut p| {
-                p.id = Self::id_for(&p.path);
+                p.id = Self::id_for(&p.path, p.owner);
                 p
             })
             .collect()

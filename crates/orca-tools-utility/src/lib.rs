@@ -15,10 +15,15 @@ fn schema(text: &str) -> Value {
 
 /// The Utility tools (class names sorted, as C# registers them).
 pub fn utility_tools() -> Vec<Arc<dyn Tool>> {
+    utility_tools_with(TaskStore::shared())
+}
+
+/// [`utility_tools`] with its own task list (one per web UI session, D140).
+pub fn utility_tools_with(tasks: Arc<TaskStore>) -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(EnvTool),
         Arc::new(PrintTool),
-        Arc::new(TaskListTool::default()),
+        Arc::new(TaskListTool { store: tasks }),
         Arc::new(ThinkTool),
     ]
 }

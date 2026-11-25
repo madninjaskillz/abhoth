@@ -37,34 +37,30 @@ async fn brand_images_are_public_nothing_else_is() {
         .unwrap();
     assert_eq!(mascot.status(), StatusCode::OK);
     assert_eq!(mascot.headers()["content-type"], "image/webp");
+    // Pages without a session are the sign-in page (the app shows the form; D140).
     let page = c.get(host.url("/")).send().await.unwrap();
-    assert_eq!(page.status(), StatusCode::UNAUTHORIZED);
-    assert!(
-        page.text()
-            .await
-            .unwrap()
-            .contains("/brand/mascot-256.webp")
-    );
+    assert_eq!(page.status(), StatusCode::OK);
+    assert!(page.text().await.unwrap().contains("<div id=\"root\">"));
     assert_eq!(
         c.post(host.url("/brand/x")).send().await.unwrap().status(),
         StatusCode::UNAUTHORIZED
     );
-    assert_eq!(
-        c.get(host.url("/branding")).send().await.unwrap().status(),
-        StatusCode::UNAUTHORIZED
-    );
+    // Any other page path is the app (the sign-in form): no data behind it.
+    let other = c.get(host.url("/branding")).send().await.unwrap();
+    assert_eq!(other.status(), StatusCode::OK);
+    assert!(other.text().await.unwrap().contains("<div id=\"root\">"));
     assert_eq!(
         c.get(host.url("/api/info")).send().await.unwrap().status(),
         StatusCode::UNAUTHORIZED
     );
-    assert_eq!(
-        c.get(host.url("/?token=wrong-token-xyz"))
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::UNAUTHORIZED
-    );
+    // A wrong launch token signs nobody in: just the sign-in page, no cookie.
+    let wrong = c
+        .get(host.url("/?token=wrong-token-xyz"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(wrong.status(), StatusCode::OK);
+    assert!(wrong.headers().get("set-cookie").is_none());
     // The hub needs the token too.
     let ws =
         tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/hub/ws", host.server.port()))
@@ -84,13 +80,14 @@ async fn a_token_in_the_query_sets_the_cookie_and_redirects_without_it() {
         .unwrap();
     assert_eq!(first.status(), StatusCode::FOUND);
     assert_eq!(first.headers()["location"], "/");
+    // The launch token stands for the first admin (D140): a session cookie, not the token.
     let cookie = first.headers()["set-cookie"].to_str().unwrap().to_string();
-    let name = format!("openorca_token_{}", host.server.port());
-    assert!(cookie.starts_with(&format!("{name}={TOKEN}")), "{cookie}");
+    assert!(cookie.starts_with("abhoth_session="), "{cookie}");
+    assert!(!cookie.contains(TOKEN), "{cookie}");
     assert!(cookie.to_lowercase().contains("httponly"));
 
     // The cookie alone is enough afterwards: the page, a client route, the API.
-    let jar = format!("{name}={TOKEN}");
+    let jar = cookie.split(';').next().unwrap().to_string();
     for path in ["/", "/projects/abc"] {
         let page = c
             .get(host.url(path))
@@ -112,7 +109,8 @@ async fn a_token_in_the_query_sets_the_cookie_and_redirects_without_it() {
         .unwrap();
     assert_eq!(info["hub"], "ws");
     assert_eq!(info["mode"], "headless");
-    assert_eq!(info["auth"], "token");
+    assert_eq!(info["auth"], "login");
+    assert_eq!(info["user"], common::ADMIN);
     // Unknown API paths are 404, not the page.
     let missing = c
         .get(host.url("/api/nothing"))

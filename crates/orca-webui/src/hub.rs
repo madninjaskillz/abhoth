@@ -56,6 +56,9 @@ pub struct Connection {
     pub id: String,
     out: Mutex<ConnOut>,
     pub caller: Caller,
+    /// Signed out, disabled or its rights changed (D140): the socket closes.
+    revoked: std::sync::atomic::AtomicBool,
+    kick: tokio::sync::Notify,
 }
 
 impl Connection {
@@ -70,7 +73,13 @@ impl Connection {
                 detached_at: None,
             }),
             caller,
+            revoked: std::sync::atomic::AtomicBool::new(false),
+            kick: tokio::sync::Notify::new(),
         }
+    }
+
+    fn is_revoked(&self) -> bool {
+        self.revoked.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Number, keep and (when attached) send one message.
@@ -139,10 +148,14 @@ impl Connection {
 }
 
 /// Every connection, and the broadcast to all of them.
+/// May this caller see this project's events (D140)?
+pub type AccessFn = Arc<dyn Fn(&Caller, &str) -> bool + Send + Sync>;
+
 pub struct Hub {
     connections: Mutex<HashMap<String, Arc<Connection>>>,
     grace: Duration,
     pumps: Mutex<HashMap<String, EventPump>>,
+    access: std::sync::OnceLock<AccessFn>,
 }
 
 impl Hub {
@@ -151,6 +164,7 @@ impl Hub {
             connections: Mutex::new(HashMap::new()),
             grace,
             pumps: Mutex::new(HashMap::new()),
+            access: std::sync::OnceLock::new(),
         });
         // Forget connections whose socket stayed away longer than the grace period.
         let weak = Arc::downgrade(&hub);
@@ -176,6 +190,40 @@ impl Hub {
         }
     }
 
+    /// Who sees which project's events (set once by the server).
+    pub fn set_access(&self, f: AccessFn) {
+        let _ = self.access.set(f);
+    }
+
+    /// `broadcast` to the connections that may see project `pid`.
+    pub fn broadcast_project(&self, pid: &str, method: &str, args: Vec<Value>) {
+        let msg = json!({"type": "event", "method": method, "args": args});
+        let all: Vec<_> = self.connections.lock().unwrap().values().cloned().collect();
+        for c in all {
+            if self.access.get().is_none_or(|f| f(&c.caller, pid)) {
+                c.send(msg.clone());
+            }
+        }
+    }
+
+    /// Close and forget the connections `pick` selects (a signed-out session, a disabled user).
+    pub fn drop_where(&self, pick: impl Fn(&Caller) -> bool) {
+        let gone: Vec<Arc<Connection>> = {
+            let mut all = self.connections.lock().unwrap();
+            let ids: Vec<String> = all
+                .iter()
+                .filter(|(_, c)| pick(&c.caller))
+                .map(|(k, _)| k.clone())
+                .collect();
+            ids.iter().filter_map(|k| all.remove(k)).collect()
+        };
+        for c in gone {
+            c.revoked.store(true, std::sync::atomic::Ordering::SeqCst);
+            c.detach();
+            c.kick.notify_one();
+        }
+    }
+
     pub fn connection_count(&self) -> usize {
         self.connections.lock().unwrap().len()
     }
@@ -188,13 +236,16 @@ impl Hub {
             let Some(hub) = weak.upgrade() else { return };
             match e {
                 ProjectEvent::RuntimeCreated(rt) => hub.attach_runtime(&rt),
-                ProjectEvent::Markers(pid, m) => hub.broadcast(
+                ProjectEvent::Markers(pid, m) => hub.broadcast_project(
+                    &pid,
                     MARKERS_METHOD,
                     vec![json!(pid), serde_json::to_value(m).unwrap_or(Value::Null)],
                 ),
-                ProjectEvent::Files(pid, folder, dirs) => {
-                    hub.broadcast(FILES_METHOD, vec![json!(pid), json!(folder), json!(dirs)])
-                }
+                ProjectEvent::Files(pid, folder, dirs) => hub.broadcast_project(
+                    &pid,
+                    FILES_METHOD,
+                    vec![json!(pid), json!(folder), json!(dirs)],
+                ),
                 ProjectEvent::ListChanged => {
                     // Pumps of closed projects stop; the clients reload the list.
                     if let Some(pm) = pm.upgrade() {
@@ -242,7 +293,12 @@ impl Hub {
     ) {
         let (mut sink, mut stream) = socket.split();
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-        let existing = resume.and_then(|id| self.connections.lock().unwrap().get(&id).cloned());
+        // Only the same user (and browser session) can resume a connection.
+        let existing = resume
+            .and_then(|id| self.connections.lock().unwrap().get(&id).cloned())
+            .filter(|c| {
+                c.caller.uid == caller.uid && c.caller.sid == caller.sid && !c.is_revoked()
+            });
         let (conn, resumed) = match existing {
             Some(c) if c.attach(tx.clone(), last.or(Some(0))) => (c, true),
             _ => {
@@ -285,7 +341,17 @@ impl Hub {
             let _ = sink.close().await;
         });
         let mut closed_by_client = false;
-        while let Some(Ok(msg)) = stream.next().await {
+        loop {
+            if conn.is_revoked() {
+                break;
+            }
+            let msg = tokio::select! {
+                m = stream.next() => match m {
+                    Some(Ok(m)) => m,
+                    _ => break,
+                },
+                _ = conn.kick.notified() => continue,
+            };
             let text = match msg {
                 Message::Text(t) => t.to_string(),
                 Message::Binary(b) => String::from_utf8_lossy(&b).into_owned(),
@@ -362,7 +428,8 @@ impl EventPump {
                     }
                 }
                 let Some(hub) = hub.upgrade() else { break };
-                hub.broadcast(
+                hub.broadcast_project(
+                    &project_id,
                     EVENTS_METHOD,
                     vec![
                         json!(project_id),
@@ -413,6 +480,12 @@ pub async fn dispatch(
 ) -> Result<Value, String> {
     let audit: &AuditLog = &state.audit;
     let pid = arg_str(args, 0).unwrap_or_default();
+    // Another user's project is "no such project" (D140).
+    if let Some(info) = state.projects.info(&pid)
+        && !caller.can_access(info.owner)
+    {
+        return Err("No such project.".into());
+    }
     match method {
         "GetSnapshot" => {
             let rt = session_of(state, &pid)?;

@@ -19,6 +19,8 @@ use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message;
 
 pub const TOKEN: &str = "test-token-123456";
+pub const ADMIN: &str = "admin";
+pub const ADMIN_PASSWORD: &str = "admin password 123";
 
 pub struct Host {
     pub server: WebUiServer,
@@ -39,6 +41,10 @@ impl Host {
         o.port = 0;
         o.projects_file = Some(state_dir.path().join("projects.json"));
         o.resume_grace = Duration::from_secs(10);
+        // An admin exists (the launch token then signs in as them); cheap hashes.
+        o.login.bootstrap_user = Some(ADMIN.into());
+        o.login.bootstrap_password = Some(ADMIN_PASSWORD.into());
+        o.login.cost = orca_webui::login::password::Cost::FAST;
         tweak(&mut o);
         let server = WebUiServer::start(o, session).await.unwrap();
         Self { server, state_dir }
@@ -93,14 +99,42 @@ impl Ws {
         if let Some((id, last)) = resume {
             url.push_str(&format!("&resume={id}&last={last}"));
         }
-        let (mut socket, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+        Self::open(url, None).await.unwrap()
+    }
+
+    /// Connect with an API key (`Authorization: Bearer`) instead of the launch token.
+    pub async fn connect_as(port: u16, key: &str, resume: Option<(&str, u64)>) -> Self {
+        let mut url = format!("ws://127.0.0.1:{port}/hub/ws");
+        if let Some((id, last)) = resume {
+            url.push_str(&format!("?resume={id}&last={last}"));
+        }
+        Self::open(url, Some(format!("Bearer {key}")))
+            .await
+            .unwrap()
+    }
+
+    /// Connect; `Err` with the HTTP status when the handshake is refused.
+    pub async fn open(url: String, authorization: Option<String>) -> Result<Self, u16> {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let mut req = url.into_client_request().unwrap();
+        if let Some(a) = authorization {
+            req.headers_mut()
+                .insert("authorization", a.parse().unwrap());
+        }
+        let mut socket = match tokio_tungstenite::connect_async(req).await {
+            Ok((s, _)) => s,
+            Err(tokio_tungstenite::tungstenite::Error::Http(r)) => {
+                return Err(r.status().as_u16());
+            }
+            Err(e) => panic!("websocket: {e}"),
+        };
         let welcome = loop {
             let v = read(&mut socket).await;
             if v["type"] == "welcome" {
                 break v;
             }
         };
-        Self {
+        Ok(Self {
             socket,
             connection_id: welcome["connectionId"].as_str().unwrap().to_string(),
             resumed: welcome["resumed"].as_bool().unwrap(),
@@ -108,10 +142,25 @@ impl Ws {
             next_id: 0,
             pending: VecDeque::new(),
             leftover: VecDeque::new(),
-        }
+        })
     }
 
     /// The next numbered message (pings skipped).
+    /// The server closes the socket within `wait` (any messages before the close are skipped).
+    #[allow(dead_code)]
+    pub async fn closed_within(&mut self, wait: Duration) -> bool {
+        tokio::time::timeout(wait, async {
+            loop {
+                match self.socket.next().await {
+                    None | Some(Err(_)) | Some(Ok(Message::Close(_))) => return,
+                    Some(Ok(_)) => {}
+                }
+            }
+        })
+        .await
+        .is_ok()
+    }
+
     pub async fn next(&mut self) -> Value {
         if let Some(v) = self.pending.pop_front() {
             return v;

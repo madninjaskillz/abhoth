@@ -1,6 +1,6 @@
 //! `WebUiServer`: the axum host inside the CLI process, serving the embedded React client, the
-//! hub over the live sessions, the terminal websocket and the API. Every request needs the
-//! token (see [`crate::auth`]).
+//! hub over the live sessions, the terminal websocket and the API. Every request needs a
+//! signed-in user, an API key or the launch token (see [`crate::login`], D140).
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
@@ -33,7 +33,8 @@ pub struct WebUiOptions {
     pub host: String,
     /// TCP port; 0 picks a free one (tests).
     pub port: u16,
-    /// The access token every request must carry (query, cookie or header).
+    /// The launch token: the URL this process prints or gives the desktop window carries it.
+    /// It stands for the first admin (with `login.exposed`: it only unlocks the first-run setup).
     pub token: String,
     /// The OpenOrca home whose config.json the settings page's server defaults edit.
     pub config_home: Option<PathBuf>,
@@ -43,10 +44,10 @@ pub struct WebUiOptions {
     pub projects_file: Option<PathBuf>,
     /// Makes the session for another project folder; `None`: one project only.
     pub session_factory: Option<SessionFactory>,
-    /// Audit log (JSON lines); `None`: none (token mode).
+    /// Audit log (JSON lines); `None`: `webui/audit.log` in the state home.
     pub audit_file: Option<PathBuf>,
-    /// Sign-in mode (`--hostui-login`) in place of the token.
-    pub login: Option<crate::login::LoginOptions>,
+    /// Accounts: the database, exposure, 2FA policy, session limits (D140).
+    pub login: crate::login::LoginOptions,
     /// The inference server's profiles API; `None` = off.
     pub profiles_url: Option<String>,
     pub profiles_cache_file: Option<PathBuf>,
@@ -98,7 +99,7 @@ impl WebUiOptions {
             projects_file: None,
             session_factory: None,
             audit_file: None,
-            login: None,
+            login: crate::login::LoginOptions::default(),
             profiles_url: None,
             profiles_cache_file: None,
             image_directory: None,
@@ -138,8 +139,8 @@ pub struct AppState {
     pub clones: crate::projects::clone::CloneService,
     /// The GitHub sign-in ("Clone from GitHub").
     pub github_app: Arc<crate::git::github_app::GitHubAppService>,
-    /// Sign-in mode; `None`: the token.
-    pub login: Option<Arc<crate::login::LoginAuth>>,
+    /// The accounts.
+    pub login: Arc<crate::login::LoginAuth>,
 }
 
 #[derive(rust_embed::RustEmbed)]
@@ -184,9 +185,6 @@ impl WebUiServer {
         options: WebUiOptions,
         session: Arc<dyn LiveSession>,
     ) -> Result<Self, StartError> {
-        if options.token.is_empty() && options.login.is_none() {
-            return Err(StartError::BadOptions("A token is required.".into()));
-        }
         let address = parse_address(&options.host).map_err(StartError::BadOptions)?;
         let listener = tokio::net::TcpListener::bind(SocketAddr::new(address, options.port))
             .await
@@ -209,18 +207,36 @@ impl WebUiServer {
         let projects = ProjectManager::new(store, session, options.session_factory.clone());
         let hub = Hub::new(options.resume_grace);
         hub.attach_projects(&projects);
-        let audit = Arc::new(AuditLog::new(options.audit_file.clone().or_else(|| {
+        let state_home = projects.store().state_dir();
+        let audit = Arc::new(AuditLog::new(
             options
-                .login
-                .as_ref()
-                .map(|l| l.state_dir.join("audit.log"))
-        })));
-        let login = match options.login.clone() {
-            Some(l) => Some(Arc::new(
-                crate::login::LoginAuth::new(l, &audit).map_err(StartError::BadOptions)?,
-            )),
-            None => None,
-        };
+                .audit_file
+                .clone()
+                .or_else(|| Some(state_home.join("webui").join("audit.log"))),
+        ));
+        let db_path = options
+            .login
+            .db_path
+            .clone()
+            .unwrap_or_else(|| state_home.join("abhoth.db"));
+        let login = Arc::new(
+            crate::login::LoginAuth::new(
+                options.login.clone(),
+                db_path,
+                options.token.clone(),
+                options.desktop.is_some(),
+                audit.clone(),
+            )
+            .map_err(StartError::BadOptions)?,
+        );
+        {
+            let pm = Arc::downgrade(&projects);
+            hub.set_access(Arc::new(move |caller, pid| {
+                pm.upgrade()
+                    .and_then(|pm| pm.info(pid))
+                    .is_none_or(|info| caller.can_access(info.owner))
+            }));
+        }
         let profiles = options.profiles_url.as_deref().map(|url| {
             Arc::new(orca_core::profiles::ProfileService::new(
                 Some(url),
@@ -308,13 +324,19 @@ impl WebUiServer {
         &self.base_url
     }
 
-    /// URL with the token, to print or open.
+    /// URL with the launch token, to print or open (it signs in as the first admin, or leads
+    /// to the first-run setup).
     pub fn url_with_token(&self) -> String {
         format!(
             "{}?token={}",
             self.base_url,
-            crate::util::escape_data(&self.state.options.token)
+            crate::util::escape_data(self.state.login.setup_code())
         )
+    }
+
+    /// No user exists yet: the first-run setup is open (to the launch token).
+    pub fn setup_needed(&self) -> bool {
+        self.state.login.setup_needed()
     }
 
     pub fn projects(&self) -> &Arc<ProjectManager> {
@@ -386,20 +408,11 @@ fn router(state: Arc<AppState>) -> Router {
     if state.bench.is_some() {
         api = api.merge(crate::bench::endpoints::routes());
     }
-    if state.login.is_some() {
-        api = api
-            .merge(crate::login::routes())
-            .fallback(static_or_index)
-            .layer(axum::middleware::from_fn_with_state(
-                state.clone(),
-                crate::login::login_auth,
-            ));
-        return api.with_state(state);
-    }
-    api.fallback(static_or_index)
+    api.merge(crate::login::routes())
+        .fallback(static_or_index)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            crate::auth::token_auth,
+            crate::login::login_auth,
         ))
         .with_state(state)
 }
@@ -419,20 +432,29 @@ async fn pick_folder(
     axum::Json(json!({"path": picked.map(|p| p.to_string_lossy().into_owned())})).into_response()
 }
 
-async fn info(State(state): State<Arc<AppState>>) -> Response {
-    let primary = state.projects.get(&state.projects.primary.id);
+async fn info(
+    State(state): State<Arc<AppState>>,
+    principal: Option<axum::Extension<crate::login::Principal>>,
+) -> Response {
+    let admin = principal.as_ref().is_some_and(|p| p.admin);
+    let primary = state
+        .projects
+        .get(&state.projects.primary.id)
+        .filter(|_| admin);
     let (wd, mode) = primary
         .map(|p| (p.session.working_directory(), p.session.mode()))
         .unwrap_or_default();
     let mut info = json!({
         "workingDirectory": wd,
         "mode": mode,
-        "primary": state.projects.primary.id,
+        "primary": if admin { state.projects.primary.id.clone() } else { String::new() },
         "canAddProjects": state.projects.can_add_projects(),
         "caseInsensitivePaths": crate::paths::case_insensitive(),
         "version": env!("CARGO_PKG_VERSION"),
         "terminal": crate::pty::is_supported(),
-        "auth": if state.login.is_some() { "login" } else { "token" },
+        "auth": "login",
+        "user": principal.as_ref().map(|p| p.username.clone()),
+        "admin": admin,
         "bench": state.bench.is_some(),
         "profiles": state.options.profiles_url.is_some(),
         // The React client picks its hub transport from this (absent: the C# SignalR hub).
@@ -459,7 +481,7 @@ async fn hub_socket(
     // Sign-in mode: the signed-in user and the client IP behind the proxy.
     let caller = crate::audit::request_caller().unwrap_or(Caller {
         ip: Some(addr.ip().to_string()),
-        user: None,
+        ..Default::default()
     });
     let hub = state.hub.clone();
     ws.max_message_size(crate::hub::MAX_RECEIVE_BYTES)

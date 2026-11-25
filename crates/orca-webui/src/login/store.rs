@@ -1,11 +1,8 @@
-//! `SessionStore` (in-memory browser sessions) and `LoginThrottle` (brute-force brakes).
+//! `LoginThrottle` (brute-force brakes on sign-in and 2FA codes) and the clock tests move.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
 /// Seconds since the Unix epoch; tests move it.
 pub type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
@@ -17,118 +14,6 @@ pub fn system_clock() -> Clock {
             .map(|d| d.as_secs_f64())
             .unwrap_or_default()
     })
-}
-
-/// A browser session: after the password (stage "totp"/"enroll") or signed in ("ok").
-#[derive(Debug, Clone)]
-pub struct WebSession {
-    pub id: String,
-    pub user: String,
-    pub stage: String,
-    /// Sent back on every state-changing request (header X-OpenOrca-CSRF).
-    pub csrf: String,
-    pub created: f64,
-    pub last_seen: f64,
-    /// A TOTP secret shown for setup, not yet confirmed.
-    pub pending_secret: Option<String>,
-}
-
-/// 256-bit random, URL-safe base64.
-pub fn new_id() -> String {
-    let mut b = [0u8; 32];
-    getrandom::fill(&mut b).expect("random bytes");
-    URL_SAFE_NO_PAD.encode(b)
-}
-
-/// In-memory sessions (a restart signs everyone out). A session ends after `idle` without
-/// requests or `absolute` after sign-in, whichever is first; a half-signed-in one after
-/// `pending`.
-pub struct SessionStore {
-    sessions: Mutex<HashMap<String, WebSession>>,
-    clock: Clock,
-    pub idle: Duration,
-    pub absolute: Duration,
-    pub pending: Duration,
-}
-
-impl SessionStore {
-    pub fn new(clock: Clock, idle: Duration, absolute: Duration) -> Self {
-        Self {
-            sessions: Mutex::new(HashMap::new()),
-            clock,
-            idle,
-            absolute,
-            pending: Duration::from_secs(5 * 60),
-        }
-    }
-
-    fn expired(&self, s: &WebSession, now: f64) -> bool {
-        let limit = if s.stage == "ok" {
-            self.absolute
-        } else {
-            self.pending
-        };
-        now - s.created > limit.as_secs_f64() || now - s.last_seen > self.idle.as_secs_f64()
-    }
-
-    pub fn create(&self, user: &str, stage: &str) -> WebSession {
-        let now = (self.clock)();
-        let s = WebSession {
-            id: new_id(),
-            user: user.into(),
-            stage: stage.into(),
-            csrf: new_id(),
-            created: now,
-            last_seen: now,
-            pending_secret: None,
-        };
-        let mut all = self.sessions.lock().unwrap();
-        all.retain(|_, v| !self.expired(v, now));
-        all.insert(s.id.clone(), s.clone());
-        s
-    }
-
-    /// The live session for a cookie value (touching it), or `None`.
-    pub fn get(&self, id: Option<&str>) -> Option<WebSession> {
-        let id = id.filter(|i| !i.is_empty())?;
-        let now = (self.clock)();
-        let mut all = self.sessions.lock().unwrap();
-        let s = all.get_mut(id)?;
-        if self.expired(s, now) {
-            all.remove(id);
-            return None;
-        }
-        s.last_seen = now;
-        Some(s.clone())
-    }
-
-    /// Change a live session in place (its pending secret).
-    pub fn update(&self, id: &str, f: impl FnOnce(&mut WebSession)) -> Option<WebSession> {
-        let mut all = self.sessions.lock().unwrap();
-        let s = all.get_mut(id)?;
-        f(s);
-        Some(s.clone())
-    }
-
-    /// Signed in: a new id (no fixation), stage "ok", the absolute timeout restarted.
-    pub fn promote(&self, pending: &WebSession) -> WebSession {
-        self.remove(Some(&pending.id));
-        self.create(&pending.user, "ok")
-    }
-
-    pub fn remove(&self, id: Option<&str>) {
-        if let Some(id) = id {
-            self.sessions.lock().unwrap().remove(id);
-        }
-    }
-
-    pub fn clear(&self) {
-        self.sessions.lock().unwrap().clear();
-    }
-
-    pub fn count(&self) -> usize {
-        self.sessions.lock().unwrap().len()
-    }
 }
 
 #[derive(Default)]
@@ -212,27 +97,6 @@ mod tests {
         let t = Arc::new(AtomicU64::new(1_000_000));
         let c = t.clone();
         (Arc::new(move || c.load(Ordering::SeqCst) as f64), t)
-    }
-
-    #[test]
-    fn sessions_end_when_idle_or_too_old_and_promotion_changes_the_id() {
-        let (c, t) = clock();
-        let store = SessionStore::new(c, Duration::from_secs(3600), Duration::from_secs(12 * 3600));
-        let pending = store.create("me", "totp");
-        assert!(store.get(Some(&pending.id)).is_some());
-        let full = store.promote(&pending);
-        assert_ne!(full.id, pending.id);
-        assert_ne!(full.csrf, pending.csrf);
-        assert!(store.get(Some(&pending.id)).is_none());
-        assert_eq!(store.get(Some(&full.id)).unwrap().stage, "ok");
-        t.fetch_add(3000, Ordering::SeqCst);
-        assert!(store.get(Some(&full.id)).is_some(), "touched");
-        t.fetch_add(3601, Ordering::SeqCst);
-        assert!(store.get(Some(&full.id)).is_none(), "idle");
-        let p = store.create("me", "enroll");
-        t.fetch_add(301, Ordering::SeqCst);
-        assert!(store.get(Some(&p.id)).is_none(), "pending lasts 5 min");
-        assert!(store.get(None).is_none());
     }
 
     #[test]

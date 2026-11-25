@@ -169,7 +169,7 @@ async fn put_global(
 fn caller(addr: std::net::SocketAddr) -> Caller {
     Caller {
         ip: Some(addr.ip().to_string()),
-        user: None,
+        ..Default::default()
     }
 }
 

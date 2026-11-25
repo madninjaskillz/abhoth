@@ -28,6 +28,8 @@ pub struct CloneStatus {
 
 struct Job {
     token: Option<String>,
+    /// The user who started it (D140): the project is theirs, and only they see the job.
+    owner: Option<i64>,
     /// Cloned with the GitHub sign-in: the project is linked to it, not given a token copy.
     github_app: bool,
     status: Mutex<CloneStatus>,
@@ -219,6 +221,7 @@ impl CloneService {
         };
         let job = Arc::new(Job {
             token,
+            owner: crate::audit::request_caller().and_then(|c| c.uid),
             github_app,
             status: Mutex::new(status.clone()),
             cancel: tokio::sync::Notify::new(),
@@ -228,6 +231,11 @@ impl CloneService {
         let branch = branch.map(str::to_string);
         tokio::spawn(async move { run(job, projects, url, dest, branch).await });
         Ok(status)
+    }
+
+    /// Who started a job (`None`: no such job).
+    pub fn owner_of(&self, id: &str) -> Option<Option<i64>> {
+        self.jobs.lock().unwrap().get(id).map(|j| j.owner)
     }
 
     pub fn get(&self, id: &str) -> Option<CloneStatus> {
@@ -296,7 +304,7 @@ async fn run(
             .unwrap_or_else(|| format!("git clone failed (exit {code})."));
         return job.fail(&msg);
     }
-    match projects.add(&dest.to_string_lossy(), None) {
+    match projects.add(&dest.to_string_lossy(), None, job.owner) {
         Ok(rt) => {
             if job.github_app {
                 projects.tokens.link_app(rt.id());

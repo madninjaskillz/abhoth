@@ -169,7 +169,7 @@ async fn open(
     s.audit.write(
         Some(&Caller {
             ip: Some(addr.ip().to_string()),
-            user: None,
+            ..Default::default()
         }),
         "terminal.open",
         json!({"project": pid, "cwd": cwd.to_string_lossy()}),

@@ -34,7 +34,7 @@ use crate::server::AppState;
 fn caller(addr: SocketAddr) -> Caller {
     Caller {
         ip: Some(addr.ip().to_string()),
-        user: None,
+        ..Default::default()
     }
 }
 

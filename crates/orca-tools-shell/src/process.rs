@@ -25,6 +25,9 @@ pub struct ManagedProcess {
     pub working_directory: PathBuf,
     pub started: Instant,
     pub started_at: SystemTime,
+    /// Whose it is: the tool registry (one per web UI session) that started it; `None`: the
+    /// process's own (terminal, `--print`). Tools only see their own scope's processes (D140).
+    pub scope: Option<Arc<str>>,
     pid: Option<u32>,
     output: Mutex<Output>,
     exit: watch::Receiver<Option<i32>>,
@@ -143,6 +146,15 @@ fn new_id() -> String {
 /// Start `command` in `working_directory`: cmd.exe (with `@echo off`) on Windows, /bin/bash
 /// elsewhere, the command written to stdin to avoid argument quoting problems.
 pub fn start(command: &str, working_directory: &Path) -> std::io::Result<Arc<ManagedProcess>> {
+    start_in(command, working_directory, None)
+}
+
+/// [`start`] in a scope (see [`ManagedProcess::scope`]).
+pub fn start_in(
+    command: &str,
+    working_directory: &Path,
+    scope: Option<Arc<str>>,
+) -> std::io::Result<Arc<ManagedProcess>> {
     let windows = cfg!(windows);
     let mut cmd = tokio::process::Command::new(if windows { "cmd.exe" } else { "/bin/bash" });
     cmd.current_dir(working_directory)
@@ -177,6 +189,7 @@ pub fn start(command: &str, working_directory: &Path) -> std::io::Result<Arc<Man
         working_directory: working_directory.to_path_buf(),
         started: Instant::now(),
         started_at: SystemTime::now(),
+        scope,
         pid: child.id(),
         output: Mutex::new(Output::default()),
         exit: exit_rx,
@@ -233,17 +246,43 @@ fn spawn_reader(
 }
 
 pub fn get(id: &str) -> Option<Arc<ManagedProcess>> {
-    cleanup_exited();
-    PROCESSES.lock().unwrap().get(id).cloned()
+    get_in(id, None)
 }
 
 pub fn list_all() -> Vec<Arc<ManagedProcess>> {
-    cleanup_exited();
-    PROCESSES.lock().unwrap().values().cloned().collect()
+    list_in(None)
 }
 
 pub fn stop(id: &str) -> bool {
-    match PROCESSES.lock().unwrap().get(id) {
+    stop_in(id, None)
+}
+
+/// A process of `scope` (another scope's is "not found").
+pub fn get_in(id: &str, scope: Option<&str>) -> Option<Arc<ManagedProcess>> {
+    cleanup_exited();
+    PROCESSES
+        .lock()
+        .unwrap()
+        .get(id)
+        .filter(|p| p.scope.as_deref() == scope)
+        .cloned()
+}
+
+/// The processes of `scope`.
+pub fn list_in(scope: Option<&str>) -> Vec<Arc<ManagedProcess>> {
+    cleanup_exited();
+    PROCESSES
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|p| p.scope.as_deref() == scope)
+        .cloned()
+        .collect()
+}
+
+/// Kill a process of `scope`.
+pub fn stop_in(id: &str, scope: Option<&str>) -> bool {
+    match get_in(id, scope) {
         Some(p) => {
             p.kill();
             true

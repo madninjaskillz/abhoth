@@ -31,6 +31,16 @@ pub const PI_AGENT_TYPES: [(&str, &str); 4] = [
 
 /// Registers the Pi profile's tools on `r` and limits what is advertised to Pi's set.
 pub fn register(r: &mut ToolRegistry, config: &OrcaConfig) {
+    register_with(r, config, None);
+}
+
+/// [`register`] with the Pi jobs in `jobs` (one manager per web UI session, D140; `None`: the
+/// process-wide one).
+pub fn register_with(
+    r: &mut ToolRegistry,
+    config: &OrcaConfig,
+    jobs: Option<Arc<orca_tools_pi::PiJobManager>>,
+) {
     let shell = match orca_tools_pi::shell::resolve(config.pi.shell_path.as_deref()) {
         Ok(s) => {
             tracing::info!("Pi profile: bash = {}", s.path);
@@ -57,7 +67,7 @@ pub fn register(r: &mut ToolRegistry, config: &OrcaConfig) {
         shell,
         bash_default_timeout_seconds: config.pi.bash_timeout_seconds.max(0),
         session_environment: session_environment(config),
-        job_manager: None,
+        job_manager: jobs,
     });
     for tool in tools {
         if tool.name() == "bash" && !has_shell {

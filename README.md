@@ -23,7 +23,7 @@ cargo build --release                # target/release/abhoth(.exe)
 cargo build --release --features desktop   # + abhoth-desktop.exe (no console) and --desktop
 abhoth                               # interactive session in the current folder
 abhoth -p "fix the failing test"     # one prompt, then exit
-abhoth --hostui                      # the web UI (prints a URL with a token)
+abhoth --hostui                      # the web UI (prints a URL with a token; first run: setup)
 abhoth --desktop                     # the web UI in its own window (feature "desktop";
                                      # one instance, tray Show/Quit, native folder dialog)
 abhoth --help                        # the common options
@@ -61,7 +61,7 @@ uses them. The executables carry the mascot icon and version info.
   `--version`, `--help`, the web UI (title, favicon, mascot, sign-in and token pages) and the
   desktop window all say Abhoth. The system prompt introduces the agent as Abhoth; prompt files
   on disk keep their shared text.
-- **State:** `~/.abhoth` (config.json, sessions, prompts, projects, web UI accounts). On the first
+- **State:** `~/.abhoth` (config.json, sessions, prompts, projects, `abhoth.db` with the web UI accounts). On the first
   run without `ABHOTH_HOME`/`OPENORCA_HOME`, Abhoth copies `~/.openorca` there once (logs,
   checkpoints and `config.json.bak*` stay behind) and leaves the old folder untouched, so the C#
   build keeps working until it is retired. The file formats are unchanged.
@@ -72,6 +72,58 @@ uses them. The executables carry the mascot icon and version info.
 - **Mascot:** `assets/abhoth/abhoth.svg` (vector original) and `abhoth-reference.webp`; the
   PNGs, the multi-size `abhoth.ico` and the web client's `brand/` files are rendered from the SVG
   (resvg, then Pillow for the .ico and .webp files).
+
+## Security: web UI accounts
+
+The web UI (`--hostui`, `--desktop`, Docker) has accounts, kept in SQLite at
+`<home>/abhoth.db` (`ABHOTH_HOME`, else `~/.abhoth`). Details and reasons: PORTING.md, D140.
+
+- **First run.** With no account yet, every page redirects to `/setup`, which creates the
+  admin. Setup needs the setup code, which is the launch token in the URL the server prints
+  (`http://127.0.0.1:8192/?token=...`). Opening that URL fills the code in, and the desktop
+  window does it by itself. Only one setup can succeed, even when two run at once. For headless
+  or Docker use, create the admin from the command line or the environment:
+  ```sh
+  abhoth admin create <name>               # password typed twice, or one line on stdin
+  ABHOTH_ADMIN_USER=<name> ABHOTH_ADMIN_PASSWORD_FILE=/run/secrets/admin-password abhoth --hostui ...
+  abhoth admin reset-password <name>       # also ends that user's sessions
+  abhoth admin reset-2fa <name>            # abhoth admin list shows the users
+  ```
+- **Users.** Admins create, disable and delete users, reset their passwords and 2FA, grant
+  admin rights, and read the audit log (Users page). Each user has their own projects and their
+  chats in them. The server checks ownership on every endpoint and on the hub websocket:
+  someone else's project answers "no such project". Admins see every project. Only admins
+  change server and global settings, use the bench and the shared GitHub sign-in, and switch
+  the inference server's layout. Users who aren't admins open folders only inside the
+  projects locations (`ABHOTH_PROJECT_ROOTS` / `ABHOTH_PROJECTS_ROOT`), never in the state home.
+- **Sign-in.** Passwords are hashed with Argon2id. The only rules are 12 to 1024 characters,
+  with no composition rules. Repeated failures lock the account name and the client IP with a
+  doubling backoff. Wrong usernames and wrong passwords get the same answer after the same work.
+- **Sessions.** Sessions live on the server: a random 256-bit cookie, stored only as a hash.
+  The cookie is HttpOnly and SameSite=Lax, and `__Host-`/Secure over HTTPS. Sessions end after
+  12 hours idle or 7 days. The Account page lists your sessions and can sign out one or all of
+  them.
+- **Requests.** State-changing browser requests need the session's CSRF header and an Origin
+  from this site. Websockets need that Origin as well.
+- **2FA.** Optional TOTP per user: enrol with a QR code, then confirm a code. You get ten
+  single-use recovery codes, shown once. `--hostui-require-2fa` makes 2FA mandatory.
+- **API keys.** Each user can make API keys (`abk_...`) for scripts and the CLI, sent as
+  `Authorization: Bearer <key>`. A key is shown once, stored hashed, and revocable.
+- **The launch token.** On a local `--hostui`, the printed URL signs in as the first admin, as
+  before. The desktop window does the same without showing the token, and its session lasts
+  while the app runs. `--hostui-login` marks an exposed server: there the token only unlocks
+  the first-run setup, and plain HTTP is refused except from this machine (HTTPS through
+  `--hostui-trust-proxy`). Being on loopback grants nothing by itself, because behind a reverse
+  proxy every request comes from loopback.
+- **Upgrading.** The old single sign-in account (`<home>/webui/account.json`) is imported as
+  the first admin, keeping its password and 2FA. The password is re-hashed with Argon2id at the
+  next sign-in. The file is left as it was, so a rollback still works. Projects from before
+  accounts keep their ids and belong to the admins.
+- **Limits.** Accounts separate users in the web UI and its API, not in the operating system.
+  Agents' shell tools and the terminal run as the server's OS user, so a user's agent can read
+  anything that user can. Background processes, the task list and Pi jobs are kept per session,
+  so agents can't list or stop each other's. Give accounts only to people you would trust with
+  a shell on the server.
 
 ## Docker (web UI)
 
@@ -84,7 +136,8 @@ docker compose -f deploy/docker/compose.yaml up -d   # adapt volumes, ports and 
 ```
 
 - The entrypoint runs `abhoth --hostui=0.0.0.0:$PORT --hostui-login`; `/app/openorca` is a
-  symlink to `/app/abhoth`, so `docker exec <c> /app/openorca --hostui-set-password` still works.
+  symlink to `/app/abhoth`, so `docker exec <c> /app/openorca --hostui-set-password <user>` still
+  works (it now sets that account's password in `abhoth.db`; `abhoth admin ...` is the new form).
 - `OPENORCA_HOME=/state/openorca` is still honoured (fallback for `ABHOTH_HOME`), so an
   existing OpenOrca container state is used as is; no migration.
 - Rollback: point the app back at the previous OpenOrca image; the state formats are shared.

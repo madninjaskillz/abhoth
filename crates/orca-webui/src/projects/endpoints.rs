@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Router;
 use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::StatusCode;
@@ -19,6 +20,7 @@ use super::manager::ProjectRuntime;
 use crate::audit::Caller;
 use crate::files::service::{FileError, FileService};
 use crate::git::service::{GitFile, GitService};
+use crate::login::Principal;
 use crate::paths;
 use crate::server::AppState;
 
@@ -39,7 +41,7 @@ fn forbidden() -> Response {
 fn caller(addr: SocketAddr) -> Caller {
     Caller {
         ip: Some(addr.ip().to_string()),
-        user: None,
+        ..Default::default()
     }
 }
 
@@ -89,14 +91,106 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route(&format!("{p}/file"), get(read_file).put(write_file))
 }
 
-async fn list(State(s): State<Arc<AppState>>) -> Response {
-    let projects: Vec<Value> = s.projects.list().iter().map(|r| describe(r)).collect();
+/// The caller's projects (an admin's include the server's own; `?all=1`: everyone's).
+async fn list(
+    State(s): State<Arc<AppState>>,
+    Extension(p): Extension<Principal>,
+    Query(q): Q,
+) -> Response {
+    let all = p.admin && q.get("all").is_some_and(|v| v == "1" || v == "true");
+    let mine = |owner: Option<i64>| {
+        if p.admin {
+            all || owner.is_none() || owner == Some(p.user_id)
+        } else {
+            owner == Some(p.user_id)
+        }
+    };
+    let names: HashMap<i64, String> = if all {
+        s.login
+            .db
+            .users()
+            .into_iter()
+            .map(|u| (u.id, u.username))
+            .collect()
+    } else {
+        HashMap::new()
+    };
+    let list = s.projects.list_where(|i| mine(i.owner));
+    let projects: Vec<Value> = list
+        .iter()
+        .map(|r| {
+            let mut v = describe(r);
+            if let Some(name) = r.info.owner.and_then(|o| names.get(&o)) {
+                v["owner"] = json!(name);
+            }
+            v
+        })
+        .collect();
+    let primary = if list.iter().any(|r| r.is_primary) {
+        s.projects.primary.id.clone()
+    } else {
+        String::new()
+    };
     axum::Json(json!({
-        "primary": s.projects.primary.id,
-        "canAdd": s.projects.can_add_projects(),
+        "primary": primary,
+        "canAdd": s.projects.can_add_projects() && (p.admin || !user_roots(&s).is_empty()),
         "projects": projects,
     }))
     .into_response()
+}
+
+/// The folders users who aren't admins may open projects in.
+fn user_roots(s: &AppState) -> Vec<String> {
+    match &s.options.login.user_roots {
+        Some(r) => r
+            .iter()
+            .filter(|p| p.is_dir())
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect(),
+        None => browser::project_roots()
+            .into_iter()
+            .map(|r| r.path)
+            .collect(),
+    }
+}
+
+/// Admins open any folder; other users only folders inside the projects locations (the
+/// project roots), and never the server's state home. Symlinks are resolved first.
+pub fn path_allowed(s: &AppState, p: &Principal, path: &str) -> Result<(), String> {
+    if p.admin {
+        return Ok(());
+    }
+    let full = paths::normalize(&super::manager::expand_env(path.trim().trim_matches('"')));
+    // A folder that doesn't exist yet (a new folder, a clone): its nearest existing parent.
+    let mut probe = full.as_path();
+    let real = loop {
+        if let Ok(r) = std::fs::canonicalize(probe) {
+            break r;
+        }
+        match probe.parent() {
+            Some(parent) => probe = parent,
+            None => return Err("That folder isn't available to you.".into()),
+        }
+    };
+    let canon = |p: &std::path::Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let state_home = canon(&s.projects.store().state_dir());
+    if paths::is_under(&real, &state_home) {
+        return Err("That folder isn't available to you.".into());
+    }
+    let roots = user_roots(s);
+    if roots.is_empty() {
+        return Err(
+            "No projects location is set up for users; ask an admin (ABHOTH_PROJECT_ROOTS).".into(),
+        );
+    }
+    if roots
+        .iter()
+        .any(|r| paths::is_under(&real, &canon(std::path::Path::new(r))))
+    {
+        Ok(())
+    } else {
+        Err("Projects go inside the projects locations on this server.".into())
+    }
 }
 
 #[derive(Deserialize)]
@@ -109,13 +203,17 @@ struct AddFolderRequest {
 
 async fn add(
     State(s): State<Arc<AppState>>,
+    Extension(p): Extension<Principal>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     axum::Json(req): axum::Json<AddFolderRequest>,
 ) -> Response {
-    match s
-        .projects
-        .add(req.path.as_deref().unwrap_or(""), req.name.as_deref())
+    let path = req.path.as_deref().unwrap_or("");
+    if !path.trim().is_empty()
+        && let Err(e) = path_allowed(&s, &p, path)
     {
+        return err(StatusCode::FORBIDDEN, &e);
+    }
+    match s.projects.add(path, req.name.as_deref(), Some(p.user_id)) {
         Ok(rt) => {
             s.audit.write(
                 Some(&caller(addr)),
@@ -154,9 +252,34 @@ fn browse_error(e: BrowseError) -> Response {
     }
 }
 
-async fn browse(Query(q): Q) -> Response {
-    match browser::list(q.get("path").map(String::as_str)).await {
-        Ok(l) => axum::Json(l).into_response(),
+async fn browse(
+    State(s): State<Arc<AppState>>,
+    Extension(p): Extension<Principal>,
+    Query(q): Q,
+) -> Response {
+    let mut path = q.get("path").cloned().filter(|p| !p.trim().is_empty());
+    if !p.admin {
+        // Users start in (and stay inside) the projects locations.
+        if path.is_none() {
+            path = user_roots(&s).into_iter().next();
+        }
+        if let Err(e) = path_allowed(&s, &p, path.as_deref().unwrap_or("")) {
+            return err(StatusCode::FORBIDDEN, &e);
+        }
+    }
+    match browser::list(path.as_deref()).await {
+        Ok(mut l) => {
+            if !p.admin {
+                l.places.retain(|pl| path_allowed(&s, &p, &pl.path).is_ok());
+                if l.parent
+                    .as_deref()
+                    .is_some_and(|par| path_allowed(&s, &p, par).is_err())
+                {
+                    l.parent = None;
+                }
+            }
+            axum::Json(l).into_response()
+        }
         Err(e) => browse_error(e),
     }
 }
@@ -171,9 +294,13 @@ struct CreateFolderRequest {
 
 async fn mkdir(
     State(s): State<Arc<AppState>>,
+    Extension(p): Extension<Principal>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     axum::Json(req): axum::Json<CreateFolderRequest>,
 ) -> Response {
+    if let Err(e) = path_allowed(&s, &p, req.parent.as_deref().unwrap_or("")) {
+        return err(StatusCode::FORBIDDEN, &e);
+    }
     match browser::create_folder(req.parent.as_deref(), req.name.as_deref()) {
         Ok(path) => {
             s.audit
@@ -200,10 +327,14 @@ struct CloneRequest {
 
 async fn clone(
     State(s): State<Arc<AppState>>,
+    Extension(p): Extension<Principal>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     axum::Json(req): axum::Json<CloneRequest>,
 ) -> Response {
     let url = req.url.clone().unwrap_or_default();
+    if let Err(e) = path_allowed(&s, &p, req.parent.as_deref().unwrap_or("")) {
+        return err(StatusCode::FORBIDDEN, &e);
+    }
     match s.clones.start(
         &url,
         req.parent.as_deref().unwrap_or(""),
@@ -223,14 +354,35 @@ async fn clone(
     }
 }
 
-async fn clone_status(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+/// A clone job the caller may see (their own; an admin any).
+fn own_clone(s: &AppState, p: &Principal, id: &str) -> bool {
+    s.clones
+        .owner_of(id)
+        .is_some_and(|o| crate::login::can_access(Some(p.user_id), p.admin, o))
+}
+
+async fn clone_status(
+    State(s): State<Arc<AppState>>,
+    Extension(p): Extension<Principal>,
+    Path(id): Path<String>,
+) -> Response {
+    if !own_clone(&s, &p, &id) {
+        return err(StatusCode::NOT_FOUND, "No such clone.");
+    }
     match s.clones.get(&id) {
         Some(st) => axum::Json(st).into_response(),
         None => err(StatusCode::NOT_FOUND, "No such clone."),
     }
 }
 
-async fn clone_cancel(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+async fn clone_cancel(
+    State(s): State<Arc<AppState>>,
+    Extension(p): Extension<Principal>,
+    Path(id): Path<String>,
+) -> Response {
+    if !own_clone(&s, &p, &id) {
+        return err(StatusCode::NOT_FOUND, "No such clone.");
+    }
     axum::Json(json!({"ok": s.clones.cancel(&id)})).into_response()
 }
 

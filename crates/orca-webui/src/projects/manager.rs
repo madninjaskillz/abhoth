@@ -161,7 +161,7 @@ impl ProjectManager {
         factory: Option<SessionFactory>,
     ) -> Arc<Self> {
         let dir = store.state_dir();
-        let info = store.add(&primary.working_directory(), None);
+        let info = store.add(&primary.working_directory(), None, None);
         let pm = Arc::new(Self {
             tokens: GitTokenStore::new(&dir),
             engines: EngineChoiceStore::engines(&dir),
@@ -221,6 +221,56 @@ impl ProjectManager {
         order.iter().filter_map(|i| self.get(&i.id)).collect()
     }
 
+    /// The projects in tab order that `visible` keeps (no session is started for the others).
+    pub fn list_where(&self, visible: impl Fn(&ProjectInfo) -> bool) -> Vec<Arc<ProjectRuntime>> {
+        self.reload();
+        let order = self.order.lock().unwrap().clone();
+        order
+            .iter()
+            .filter(|i| visible(i))
+            .filter_map(|i| self.get(&i.id))
+            .collect()
+    }
+
+    /// A project's entry without starting its session.
+    pub fn info(&self, id: &str) -> Option<ProjectInfo> {
+        if let Some(rt) = self.runtimes.lock().unwrap().get(id) {
+            return Some(rt.info.clone());
+        }
+        let found = self
+            .order
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|p| p.id == id)
+            .cloned();
+        found.or_else(|| self.store.load().into_iter().find(|p| p.id == id))
+    }
+
+    /// How many saved projects `owner` has.
+    pub fn count_owned_by(&self, owner: i64) -> usize {
+        self.store
+            .load()
+            .iter()
+            .filter(|p| p.owner == Some(owner))
+            .count()
+    }
+
+    /// Forget every project of a deleted user (the folders stay); how many.
+    pub async fn forget_owned_by(&self, owner: i64) -> usize {
+        let ids: Vec<String> = self
+            .store
+            .load()
+            .into_iter()
+            .filter(|p| p.owner == Some(owner))
+            .map(|p| p.id)
+            .collect();
+        for id in &ids {
+            let _ = self.remove(id).await;
+        }
+        ids.len()
+    }
+
     pub fn get(&self, id: &str) -> Option<Arc<ProjectRuntime>> {
         if id.is_empty() {
             return None;
@@ -240,8 +290,14 @@ impl ProjectManager {
         Some(self.create(info, session, false, false))
     }
 
-    /// Add a folder on this machine as a project. Err: why it is not a usable folder.
-    pub fn add(&self, path: &str, name: Option<&str>) -> Result<Arc<ProjectRuntime>, String> {
+    /// Add a folder on this machine as `owner`'s project (none: the server's own). Err: why it
+    /// is not a usable folder.
+    pub fn add(
+        &self,
+        path: &str,
+        name: Option<&str>,
+        owner: Option<i64>,
+    ) -> Result<Arc<ProjectRuntime>, String> {
         if self.factory.is_none() {
             return Err("This server shows a single project.".into());
         }
@@ -261,7 +317,7 @@ impl ProjectManager {
                 "{problem} Abhoth needs to read and write the project folder."
             ));
         }
-        let info = self.store.add(&full.to_string_lossy(), name);
+        let info = self.store.add(&full.to_string_lossy(), name, owner);
         self.reload();
         self.listeners.emit(ProjectEvent::ListChanged);
         self.get(&info.id)
@@ -280,6 +336,7 @@ impl ProjectManager {
             name: name.into(),
             path: paths::normalize(path).to_string_lossy().to_string(),
             added_at: crate::util::utc_now_iso(),
+            owner: None,
         };
         self.transient.lock().unwrap().push(info.clone());
         let rt = self.create(info, session, false, true);

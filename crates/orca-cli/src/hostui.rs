@@ -51,10 +51,17 @@ fn browser_session(
     config: &OrcaConfig,
     cwd: &Path,
     questions: &Arc<QuestionBroker>,
+    scope: &crate::ToolScope,
 ) -> Result<(AgentSession, ToolServices)> {
     let client = crate::wire_host_client(config, orca_core::logging::process_sink());
     let (registry, services) =
-        crate::build_registry_with(config, cwd, Arc::new(BrowserAsker(questions.clone())));
+        // Each web UI session has its own processes, task list and Pi jobs (D140).
+        crate::build_registry_scoped(
+            config,
+            cwd,
+            Arc::new(BrowserAsker(questions.clone())),
+            Some(scope.clone()),
+        );
     let mut session = AgentSession::new(config.clone(), client, registry, ToolContext::new(cwd));
     session.startup_probes = true;
     Ok((session, services))
@@ -251,7 +258,8 @@ pub async fn run_with(
     }
     let bus = Arc::new(LiveEventBus::new());
     let questions = Arc::new(QuestionBroker::new(bus.clone()));
-    let (mut session, mut services) = browser_session(&config, &cwd, &questions)?;
+    let (mut session, mut services) =
+        browser_session(&config, &cwd, &questions, &crate::ToolScope::new())?;
     services
         .start_mcp(&config, &cwd, &mut session.registry)
         .await;
@@ -283,24 +291,32 @@ pub async fn run_with(
         let dir = PathBuf::from(folder);
         let bus = Arc::new(LiveEventBus::new());
         let questions = Arc::new(QuestionBroker::new(bus.clone()));
-        match browser_session(&factory_config, &dir, &questions) {
+        // One scope per project, kept when its session is made again for another profile.
+        let scope = crate::ToolScope::new();
+        match browser_session(&factory_config, &dir, &questions, &scope) {
             Ok((s, svc)) => {
                 // The project's profile and mode: the session is made again with them before
                 // its next turn (C# restarts the worker with --profile / --mode).
-                let (base, keep, q) = (
+                let (base, keep, q, sc) = (
                     factory_config.clone(),
                     factory_services.clone(),
                     questions.clone(),
+                    scope.clone(),
                 );
                 let rebuild: orca_webui::native::RebuildFn =
                     Arc::new(move |profile: Option<String>, mode: Option<String>| {
-                        let (base, keep, q, dir) =
-                            (base.clone(), keep.clone(), q.clone(), dir.clone());
+                        let (base, keep, q, dir, sc) = (
+                            base.clone(),
+                            keep.clone(),
+                            q.clone(),
+                            dir.clone(),
+                            sc.clone(),
+                        );
                         Box::pin(async move {
                             let (config, overlay) =
                                 config_for(&base, profile.as_deref(), mode.as_deref()).await?;
-                            let (mut session, svc) =
-                                browser_session(&config, &dir, &q).map_err(|e| e.to_string())?;
+                            let (mut session, svc) = browser_session(&config, &dir, &q, &sc)
+                                .map_err(|e| e.to_string())?;
                             // The agent tools again (the tabs keep the first session's agents).
                             let home = orca_core::config::manager::default_config_dir();
                             if let Err(e) = crate::wire_agents(
@@ -344,12 +360,19 @@ pub async fn run_with(
         .unwrap_or_else(orca_webui::util::new_token);
     let mut options = WebUiOptions::new(token);
     options.host = args.endpoint.host.clone();
-    if args.login {
-        let mut login = orca_webui::login::LoginOptions::new(args.state_dir.clone());
-        login.trusted_proxies = args.trusted_proxies.clone();
-        login.require_totp = args.require_totp;
-        options.login = Some(login);
-    }
+    // Accounts (D140): abhoth.db in the state home; the old single account (webui/account.json)
+    // becomes the first admin; ABHOTH_ADMIN_USER + ABHOTH_ADMIN_PASSWORD_FILE create one
+    // headless. --hostui-login: an exposed server (the launch token only unlocks the setup).
+    options.login = orca_webui::login::LoginOptions {
+        exposed: args.login,
+        trusted_proxies: args.trusted_proxies.clone(),
+        require_totp: args.require_totp,
+        legacy_dir: Some(args.state_dir.clone()),
+        bootstrap_user: orca_core::brand::env_var("ADMIN_USER"),
+        bootstrap_password_file: orca_core::brand::env_var("ADMIN_PASSWORD_FILE")
+            .map(PathBuf::from),
+        ..Default::default()
+    };
     options.port = args.endpoint.port;
     options.session_factory = Some(factory);
     options.profiles_url = orca_core::profiles::resolve_server_url(&config);
@@ -386,8 +409,10 @@ pub async fn run_with(
         orca_core::brand::PRODUCT_NAME,
         crate::version()
     );
-    // Sign-in mode: no token in the URL.
-    let url = if args.login {
+    // An exposed server prints no token once an admin exists (the token would only open the
+    // setup, which is closed by then).
+    let setup = server.setup_needed();
+    let url = if args.login && !setup {
         server.base_url().to_string()
     } else {
         server.url_with_token()
@@ -397,6 +422,12 @@ pub async fn run_with(
         say!("● Desktop window on {}", server.base_url());
     } else {
         say!("● Web UI {url}");
+    }
+    if setup && ready.is_none() {
+        say!(
+            "  First run: the URL above opens the setup of the admin account (or {} admin create <name>).",
+            orca_core::brand::BINARY_NAME
+        );
     }
     if args.login {
         if args.trusted_proxies.is_empty() {
@@ -409,7 +440,7 @@ pub async fn run_with(
             );
         }
     } else if args.endpoint.is_lan() {
-        say!("  Open to the network: anyone with the token can drive this session.");
+        say!("  Open to the network: anyone with the URL's token is signed in as the admin.");
     }
     say!("Working folder: {}", cwd.display());
     say!("Ctrl+C stops it.");

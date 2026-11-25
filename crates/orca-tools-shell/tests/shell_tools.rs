@@ -143,6 +143,7 @@ async fn slow_command_returns_process_id_and_can_be_stopped() {
     let r = run(
         &BashTool {
             idle_timeout_seconds: 2,
+            scope: None,
         },
         json!({"command": slow_command()}),
     )
@@ -156,11 +157,11 @@ async fn slow_command_returns_process_id_and_can_be_stopped() {
     assert!(started.elapsed() < Duration::from_secs(15));
     let id = r.content.split('"').nth(1).unwrap().to_string();
 
-    let out = GetProcessOutputTool
+    let out = GetProcessOutputTool::default()
         .execute(&json!({"process_id": "last"}), &ctx())
         .await;
     assert!(out.content.contains("Status: Running"), "{}", out.content);
-    let stop = StopProcessTool
+    let stop = StopProcessTool::default()
         .execute(&json!({"process_id": id}), &ctx())
         .await;
     assert!(
@@ -190,6 +191,7 @@ async fn completed_within_timeout_returns_full_output() {
     let r = run(
         &BashTool {
             idle_timeout_seconds: 30,
+            scope: None,
         },
         json!({"command": "echo completed_ok"}),
     )
@@ -247,7 +249,9 @@ async fn start_background_process_same_command_already_running_blocked() {
         format!("sleep 30 # {nonce}")
     };
     let args = json!({"command": long_running});
-    let first = StartBackgroundProcessTool.execute(&args, &ctx()).await;
+    let first = StartBackgroundProcessTool::default()
+        .execute(&args, &ctx())
+        .await;
     assert!(!first.is_error, "{}", first.content);
     let id = first
         .content
@@ -255,7 +259,9 @@ async fn start_background_process_same_command_already_running_blocked() {
         .and_then(|r| r.split(':').next())
         .unwrap()
         .to_string();
-    let second = StartBackgroundProcessTool.execute(&args, &ctx()).await;
+    let second = StartBackgroundProcessTool::default()
+        .execute(&args, &ctx())
+        .await;
     process::stop(&id);
     assert!(second.is_error);
     assert_eq!(second.error_code, orca_abstractions::ToolErrorCode::Blocked);
@@ -266,7 +272,7 @@ async fn start_background_process_same_command_already_running_blocked() {
 #[tokio::test]
 async fn start_background_process_missing_directory_and_listing() {
     let _serial = PROCESS_TESTS.lock().await;
-    let r = StartBackgroundProcessTool
+    let r = StartBackgroundProcessTool::default()
         .execute(
             &json!({"command": "echo hi", "working_directory": "no_such_dir_xyz"}),
             &ctx(),
@@ -276,7 +282,7 @@ async fn start_background_process_missing_directory_and_listing() {
     assert!(r.content.starts_with("Working directory not found: "));
 
     let cmd = "echo listed";
-    let started = StartBackgroundProcessTool
+    let started = StartBackgroundProcessTool::default()
         .execute(&json!({"command": cmd}), &ctx())
         .await;
     assert!(
@@ -284,7 +290,9 @@ async fn start_background_process_missing_directory_and_listing() {
             .content
             .contains("Use get_process_output with process_id")
     );
-    let list = ListProcessesTool.execute(&json!({}), &ctx()).await;
+    let list = ListProcessesTool::default()
+        .execute(&json!({}), &ctx())
+        .await;
     assert!(!list.is_error);
     assert!(
         list.content.contains("background process(es):"),
@@ -292,4 +300,62 @@ async fn start_background_process_missing_directory_and_listing() {
         list.content
     );
     assert!(list.content.contains("  Command: echo listed"));
+}
+
+/// Web UI sessions (D140): tools of one scope can't list, read or stop another scope's
+/// processes, nor the process-wide ones.
+#[tokio::test]
+async fn process_tools_only_see_their_own_scope() {
+    let _serial = PROCESS_TESTS.lock().await;
+    let ann: std::sync::Arc<str> = std::sync::Arc::from("scope-ann");
+    let bob: std::sync::Arc<str> = std::sync::Arc::from("scope-bob");
+    let tools = |s: &std::sync::Arc<str>| {
+        (
+            StartBackgroundProcessTool {
+                scope: Some(s.clone()),
+            },
+            ListProcessesTool {
+                scope: Some(s.clone()),
+            },
+            GetProcessOutputTool {
+                scope: Some(s.clone()),
+            },
+            StopProcessTool {
+                scope: Some(s.clone()),
+            },
+        )
+    };
+    let (start_a, list_a, _, _) = tools(&ann);
+    let (_, list_b, get_b, stop_b) = tools(&bob);
+    let r = start_a
+        .execute(&json!({"command": slow_command()}), &ctx())
+        .await;
+    assert!(!r.is_error, "{}", r.content);
+    let id = r.content.split('"').nth(1).unwrap().to_string();
+    assert!(
+        list_a
+            .execute(&json!({}), &ctx())
+            .await
+            .content
+            .contains(&id)
+    );
+    assert!(
+        !list_b
+            .execute(&json!({}), &ctx())
+            .await
+            .content
+            .contains(&id)
+    );
+    let unscoped = ListProcessesTool::default()
+        .execute(&json!({}), &ctx())
+        .await;
+    assert!(!unscoped.content.contains(&id));
+    let read = get_b.execute(&json!({"process_id": id}), &ctx()).await;
+    assert!(read.is_error, "{}", read.content);
+    let stop = stop_b.execute(&json!({"process_id": id}), &ctx()).await;
+    assert!(stop.is_error, "{}", stop.content);
+    let p = process::get_in(&id, Some("scope-ann")).unwrap();
+    assert!(!p.has_exited(), "Bob could not stop it");
+    assert!(process::get(&id).is_none());
+    assert!(process::stop_in(&id, Some("scope-ann")));
 }

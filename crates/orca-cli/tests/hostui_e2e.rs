@@ -23,6 +23,13 @@ async fn hostui_prints_the_url_and_serves_the_api() {
         .args(["--hostui=127.0.0.1:0", "--hostui-token=e2e-token-123"])
         .current_dir(work.path())
         .env("OPENORCA_HOME", home.path())
+        // An admin exists (D140): the token then signs in as them.
+        .env("ABHOTH_ADMIN_USER", "admin")
+        .env("ABHOTH_ADMIN_PASSWORD_FILE", {
+            let f = home.path().join("admin-password");
+            std::fs::write(&f, "e2e admin password").unwrap();
+            f
+        })
         .env_remove("RUST_LOG")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -92,6 +99,13 @@ fn bad_hostui_flags_exit_2() {
         let out = Command::new(env!("CARGO_BIN_EXE_abhoth"))
             .args(&args)
             .env("OPENORCA_HOME", home.path())
+            // An admin exists (D140): the token then signs in as them.
+            .env("ABHOTH_ADMIN_USER", "admin")
+            .env("ABHOTH_ADMIN_PASSWORD_FILE", {
+                let f = home.path().join("admin-password");
+                std::fs::write(&f, "e2e admin password").unwrap();
+                f
+            })
             .output()
             .unwrap();
         assert_eq!(out.status.code(), Some(2), "{args:?}");
@@ -181,6 +195,13 @@ async fn hostui_bench_runs_a_suite_in_its_own_home_and_records_the_row_with_toke
         ])
         .current_dir(work.path())
         .env("OPENORCA_HOME", home.path())
+        // An admin exists (D140): the token then signs in as them.
+        .env("ABHOTH_ADMIN_USER", "admin")
+        .env("ABHOTH_ADMIN_PASSWORD_FILE", {
+            let f = home.path().join("admin-password");
+            std::fs::write(&f, "e2e admin password").unwrap();
+            f
+        })
         .env("OPENORCA_BENCHKIT", &kit)
         .env_remove("RUST_LOG")
         .env_remove("REALTASKS_REPO")
@@ -329,4 +350,95 @@ stderr: {}",
         text.contains("[INF] Usage: Slot usage lead on provider: prompt 100, cached 60, re-read 40, output 20,"),
         "{text}"
     );
+}
+
+/// First run (D140): with no account, the printed URL leads to the setup and every page
+/// redirects there; `abhoth admin create` (password on stdin) makes the admin, after which the
+/// launch token signs in as them.
+#[tokio::test(flavor = "multi_thread")]
+async fn hostui_first_run_offers_the_setup_until_admin_create() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_abhoth"))
+        .args(["--hostui=127.0.0.1:0", "--hostui-token=e2e-token-123"])
+        .current_dir(work.path())
+        .env("OPENORCA_HOME", home.path())
+        .env("ABHOTH_HOME", home.path())
+        .env_remove("ABHOTH_ADMIN_USER")
+        .env_remove("OPENORCA_ADMIN_USER")
+        .env_remove("RUST_LOG")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (url, first_run) = tokio::task::spawn_blocking(move || {
+        let mut lines = BufReader::new(stdout).lines();
+        let mut url = String::new();
+        while let Some(Ok(line)) = lines.next() {
+            if let Some(u) = line.strip_prefix("● Web UI ") {
+                url = u.trim().to_string();
+            }
+            if line.contains("First run") {
+                std::thread::spawn(move || lines.for_each(drop));
+                return (url, true);
+            }
+            if line.starts_with("Ctrl+C") {
+                std::thread::spawn(move || lines.for_each(drop));
+                return (url, false);
+            }
+        }
+        (url, false)
+    })
+    .await
+    .unwrap();
+    assert!(first_run, "the setup hint");
+    let base = url.trim_end_matches("?token=e2e-token-123").to_string();
+    let c = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let page = c.get(&base).send().await.unwrap();
+    assert_eq!(page.status(), 302);
+    assert_eq!(page.headers()["location"], "/setup");
+    let api = c
+        .get(format!("{base}api/info"))
+        .header("X-OpenOrca-Token", "e2e-token-123")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(api.status(), 403);
+
+    let mut admin = Command::new(env!("CARGO_BIN_EXE_abhoth"))
+        .args(["admin", "create", "root"])
+        .env("OPENORCA_HOME", home.path())
+        .env("ABHOTH_HOME", home.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write;
+        let mut stdin = admin.stdin.take().unwrap();
+        writeln!(stdin, "a long admin password").unwrap();
+    }
+    let out = admin.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Created admin root"));
+    let info = c
+        .get(format!("{base}api/info"))
+        .header("X-OpenOrca-Token", "e2e-token-123")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(info.status(), 200);
+    let info: Value = info.json().await.unwrap();
+    assert_eq!(info["user"], "root");
+    let _ = child.kill();
+    let _ = child.wait();
 }

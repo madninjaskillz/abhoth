@@ -1,79 +1,176 @@
-//! `LoginAuth`: sign-in for a web UI reachable from outside (`--hostui-login`). A username and
-//! password, then a TOTP code (set up with a QR code), then a session cookie, in place of the URL
-//! token. Everything but the page, its assets and `/api/auth/*` needs a signed-in session;
-//! state-changing requests also need the session's CSRF header and, like WebSockets, an Origin
-//! equal to this site. Requests must arrive over HTTPS (from the trusted reverse proxy) unless
-//! they come from this machine.
+//! Web UI accounts (D140): users in SQLite (`<home>/abhoth.db`), server-side browser sessions,
+//! per-user API keys, optional TOTP 2FA with recovery codes, and the admin audit log.
+//!
+//! Every request but the app shell, its assets and `/api/auth/*` needs a principal:
+//! - a browser session cookie (HttpOnly, SameSite=Lax, Secure over HTTPS); state-changing
+//!   requests then also need the session's CSRF header, and they and websockets an Origin equal
+//!   to this site;
+//! - `Authorization: Bearer abk_...`, a user's API key (scripts, the CLI);
+//! - the launch token this process made (`?token=` in the URL it printed or gave the desktop
+//!   window, or the `X-OpenOrca-Token` header): it stands for the first admin, except with
+//!   `--hostui-login` (an exposed server), where it only unlocks the first-run setup.
+//!
+//! With no users yet every page redirects to `/setup`, which creates the first admin (once,
+//! atomically) for whoever holds the launch token (the setup code).
 
 pub mod accounts;
+pub mod admin;
+pub mod db;
+pub mod endpoints;
+pub mod password;
+pub mod recovery;
 pub mod store;
 pub mod totp;
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::Duration;
 
-use axum::Router;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
 use serde_json::{Value, json};
 
 use crate::audit::{AuditLog, Caller};
+use crate::auth::starts_with_segment as seg;
 use crate::server::AppState;
-use accounts::AccountStore;
-use store::{Clock, LoginThrottle, SessionStore, WebSession};
+use db::{Session, User, UserDb};
+use password::Cost;
+use store::{Clock, LoginThrottle};
 
 pub const CSRF_HEADER: &str = "X-OpenOrca-CSRF";
 pub const ISSUER: &str = orca_core::brand::PRODUCT_NAME;
+/// API keys start with this (and are told apart from the launch token by it).
+pub const API_KEY_PREFIX: &str = "abk_";
+/// Holds the setup code from the launch URL while no user exists.
+pub const SETUP_COOKIE: &str = "abhoth_setup";
+/// A half-signed-in session (password done, 2FA code pending) lasts this long.
+pub const PENDING_SECONDS: i64 = 5 * 60;
 
-/// Sign-in mode settings (`--hostui-login`).
+/// How the accounts work on this server.
 #[derive(Clone)]
 pub struct LoginOptions {
-    /// Folder for account.json and audit.log.
-    pub state_dir: PathBuf,
+    /// The database; `None`: `abhoth.db` next to the project list (the state home).
+    pub db_path: Option<PathBuf>,
+    /// Where the old single account (`account.json`, `--hostui-login` before D140) may be:
+    /// imported as the first admin while the database has no users.
+    pub legacy_dir: Option<PathBuf>,
+    /// `--hostui-login`: a server reachable from outside. The launch token then only unlocks
+    /// the first-run setup, and plain HTTP is refused except from this machine.
+    pub exposed: bool,
     /// Reverse proxies whose X-Forwarded-For / -Proto / -Host are believed.
     pub trusted_proxies: Vec<IpAddr>,
-    /// Refuse plain HTTP except from this machine.
-    pub require_https: bool,
-    /// Make TOTP 2FA mandatory (set up at the next sign-in); else opt-in from the signed-in UI,
-    /// and once set up always asked for.
+    /// Make TOTP 2FA mandatory (set up at the next sign-in); else opt-in per user.
     pub require_totp: bool,
     pub idle_timeout: Duration,
     pub absolute_timeout: Duration,
-    /// Create the account from these when account.json doesn't exist yet.
+    /// Create the first admin from these while there are no users (`ABHOTH_ADMIN_USER`,
+    /// `ABHOTH_ADMIN_PASSWORD_FILE`).
     pub bootstrap_user: Option<String>,
     pub bootstrap_password_file: Option<PathBuf>,
+    /// The same with the password itself (tests).
+    pub bootstrap_password: Option<String>,
     /// The time (tests move it); `None`: the system clock.
     pub clock: Option<Clock>,
+    /// Argon2 cost (tests use [`Cost::FAST`]).
+    pub cost: Cost,
+    /// Where users who aren't admins may open projects; `None`: the projects locations
+    /// (`ABHOTH_PROJECT_ROOTS` / `ABHOTH_PROJECTS_ROOT`, else /projects on Linux).
+    pub user_roots: Option<Vec<PathBuf>>,
 }
 
-impl LoginOptions {
-    pub fn new(state_dir: PathBuf) -> Self {
+impl Default for LoginOptions {
+    fn default() -> Self {
         Self {
-            state_dir,
+            db_path: None,
+            legacy_dir: None,
+            exposed: false,
             trusted_proxies: Vec::new(),
-            require_https: true,
             require_totp: false,
-            idle_timeout: Duration::from_secs(3600),
-            absolute_timeout: Duration::from_secs(12 * 3600),
+            idle_timeout: Duration::from_secs(12 * 3600),
+            absolute_timeout: Duration::from_secs(7 * 24 * 3600),
             bootstrap_user: None,
             bootstrap_password_file: None,
+            bootstrap_password: None,
             clock: None,
+            cost: Cost::default(),
+            user_roots: None,
         }
     }
 }
 
+/// Who a request comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Principal {
+    pub user_id: i64,
+    pub username: String,
+    pub admin: bool,
+    pub via: Via,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Via {
+    /// A browser session (cookie): the session id and its CSRF token.
+    Session {
+        id: i64,
+        csrf: String,
+    },
+    ApiKey(i64),
+    /// The launch token (the first admin).
+    LaunchToken,
+}
+
+impl Principal {
+    fn of(user: &User, via: Via) -> Self {
+        Self {
+            user_id: user.id,
+            username: user.username.clone(),
+            admin: user.admin,
+            via,
+        }
+    }
+
+    pub fn session_id(&self) -> Option<i64> {
+        match &self.via {
+            Via::Session { id, .. } => Some(*id),
+            _ => None,
+        }
+    }
+
+    pub fn caller(&self, ip: Option<String>) -> Caller {
+        Caller {
+            ip,
+            user: Some(self.username.clone()),
+            uid: Some(self.user_id),
+            admin: self.admin,
+            sid: self.session_id(),
+        }
+    }
+}
+
+/// May `uid` (an admin or not) see a project owned by `owner`? Projects without an owner are
+/// the server's own (the primary project, bench runs, projects from before accounts): admins'.
+pub fn can_access(uid: Option<i64>, admin: bool, owner: Option<i64>) -> bool {
+    admin || (owner.is_some() && owner == uid)
+}
+
 pub struct LoginAuth {
     pub options: LoginOptions,
-    pub accounts: AccountStore,
-    pub sessions: SessionStore,
+    pub db: UserDb,
     pub throttle: LoginThrottle,
     clock: Clock,
+    launch_token: String,
+    /// This server backs the desktop window (its sessions live as long as this process).
+    pub desktop: bool,
+    started: i64,
+    has_users: AtomicBool,
+    last_purge: AtomicI64,
+    /// The file audit log (also gets the account events).
+    audit_file: Arc<AuditLog>,
 }
 
 /// Constant-time byte comparison.
@@ -85,63 +182,233 @@ pub fn fixed_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// The request as this server sees it once the trusted proxy's headers are applied.
-#[derive(Debug, Clone)]
-struct Seen {
-    ip: Option<IpAddr>,
-    https: bool,
+#[derive(Debug, Clone, Default)]
+pub struct Seen {
+    pub ip: Option<IpAddr>,
+    pub https: bool,
     /// Scheme-less authority ("host:port" or "host").
-    host: Option<String>,
+    pub host: Option<String>,
 }
 
-fn header_str<'a>(h: &'a HeaderMap, name: &str) -> Option<&'a str> {
+impl Seen {
+    pub fn ip_text(&self) -> Option<String> {
+        self.ip.map(|i| i.to_string())
+    }
+}
+
+pub(crate) fn header_str<'a>(h: &'a HeaderMap, name: &str) -> Option<&'a str> {
     h.get(name)
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
         .filter(|s| !s.is_empty())
 }
 
+/// A username: 1-64 letters, digits and `. _ - @`.
+pub fn check_username(name: &str) -> Result<String, String> {
+    let n = name.trim();
+    if n.is_empty() || n.chars().count() > 64 {
+        return Err("A username is 1 to 64 characters.".into());
+    }
+    if !n
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '@'))
+    {
+        return Err("A username has letters, digits and . _ - @ only.".into());
+    }
+    Ok(n.to_string())
+}
+
 impl LoginAuth {
-    /// Opens the account store and creates the account from the bootstrap secret when there is
-    /// none yet (the password file is read, hashed and never logged).
-    pub fn new(options: LoginOptions, audit: &AuditLog) -> Result<Self, String> {
-        let clock = options.clock.clone().unwrap_or_else(store::system_clock);
-        let accounts = AccountStore::new(&options.state_dir);
-        if accounts.load().is_none()
-            && let (Some(user), Some(file)) = (
-                options.bootstrap_user.as_deref().filter(|u| !u.is_empty()),
-                options.bootstrap_password_file.as_ref(),
-            )
-        {
-            let text = std::fs::read_to_string(file).map_err(|_| {
-                format!(
-                    "The sign-in password file {} does not exist.",
-                    file.display()
-                )
-            })?;
-            accounts.create(user, text.trim_end_matches(['\r', '\n']))?;
-            audit.write(None, "account.created", json!({"user": user}));
-        }
-        let sessions = SessionStore::new(
-            clock.clone(),
-            options.idle_timeout,
-            options.absolute_timeout,
-        );
-        let throttle = LoginThrottle::new(clock.clone());
-        Ok(Self {
-            options,
-            accounts,
-            sessions,
-            throttle,
-            clock,
-        })
+    /// Open the database, import the old single account when there are no users yet, then
+    /// create the first admin from the bootstrap settings if there still are none.
+    pub fn new(
+        options: LoginOptions,
+        db_path: PathBuf,
+        launch_token: String,
+        desktop: bool,
+        audit_file: Arc<AuditLog>,
+    ) -> Result<Self, String> {
+        let db = UserDb::open(&db_path)?;
+        Self::with_db(options, db, launch_token, desktop, audit_file)
     }
 
-    fn now(&self) -> i64 {
+    pub fn with_db(
+        options: LoginOptions,
+        db: UserDb,
+        launch_token: String,
+        desktop: bool,
+        audit_file: Arc<AuditLog>,
+    ) -> Result<Self, String> {
+        let clock = options.clock.clone().unwrap_or_else(store::system_clock);
+        let throttle = LoginThrottle::new(clock.clone());
+        let started = clock() as i64;
+        let launch_token = if launch_token.is_empty() {
+            crate::util::new_token()
+        } else {
+            launch_token
+        };
+        let auth = Self {
+            options,
+            db,
+            throttle,
+            clock,
+            launch_token,
+            desktop,
+            started,
+            has_users: AtomicBool::new(false),
+            last_purge: AtomicI64::new(0),
+            audit_file,
+        };
+        auth.import_legacy();
+        auth.bootstrap()?;
+        Ok(auth)
+    }
+
+    fn import_legacy(&self) {
+        let Some(dir) = &self.options.legacy_dir else {
+            return;
+        };
+        if self.db.user_count() > 0 {
+            return;
+        }
+        let Some(account) = accounts::AccountStore::new(dir)
+            .load()
+            .filter(|a| !a.username.is_empty() && !a.password_hash.is_empty())
+        else {
+            return;
+        };
+        if let Ok(u) = self.db.import_legacy(&account, self.now()) {
+            // account.json stays as it was (the rollback reads it).
+            self.record(
+                "user.imported",
+                None,
+                Some(&u.username),
+                None,
+                json!({"from": "account.json", "totp": u.totp_enabled}),
+            );
+            tracing::info!(
+                "web UI: imported the account {} as the first admin",
+                u.username
+            );
+        }
+    }
+
+    fn bootstrap(&self) -> Result<(), String> {
+        if self.db.user_count() > 0 {
+            return Ok(());
+        }
+        let Some(user) = self
+            .options
+            .bootstrap_user
+            .as_deref()
+            .filter(|u| !u.trim().is_empty())
+        else {
+            return Ok(());
+        };
+        let password = match (
+            &self.options.bootstrap_password,
+            &self.options.bootstrap_password_file,
+        ) {
+            (Some(p), _) => p.clone(),
+            (None, Some(file)) => std::fs::read_to_string(file)
+                .map_err(|_| {
+                    format!(
+                        "The admin password file {} could not be read.",
+                        file.display()
+                    )
+                })?
+                .trim_end_matches(['\r', '\n'])
+                .to_string(),
+            (None, None) => {
+                return Err(
+                    "ABHOTH_ADMIN_USER needs ABHOTH_ADMIN_PASSWORD_FILE (a file holding the password)."
+                        .into(),
+                );
+            }
+        };
+        let name = check_username(user)?;
+        password::check(&password)?;
+        let hash = password::hash(&password, self.options.cost);
+        match self.db.create_user(&name, &hash, true, true, self.now()) {
+            Ok(u) => {
+                self.record(
+                    "user.created",
+                    None,
+                    Some(&u.username),
+                    None,
+                    json!({"admin": true, "via": "bootstrap"}),
+                );
+                Ok(())
+            }
+            Err(db::CreateError::NotFirst) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    pub fn now(&self) -> i64 {
         (self.clock)() as i64
     }
 
+    /// The code `/setup` asks for (the launch token).
+    pub fn setup_code(&self) -> &str {
+        &self.launch_token
+    }
+
+    pub fn launch_token_matches(&self, candidate: Option<&str>) -> bool {
+        candidate.is_some_and(|c| {
+            !c.is_empty() && fixed_time_eq(c.as_bytes(), self.launch_token.as_bytes())
+        })
+    }
+
+    /// No user exists yet (first-run setup).
+    pub fn setup_needed(&self) -> bool {
+        if self.has_users.load(Ordering::Relaxed) {
+            return false;
+        }
+        let some = self.db.user_count() > 0;
+        if some {
+            self.has_users.store(true, Ordering::Relaxed);
+        }
+        !some
+    }
+
+    /// An account event: in the database's audit table and the audit log file.
+    pub fn record(
+        &self,
+        event: &str,
+        actor: Option<&Principal>,
+        target: Option<&str>,
+        ip: Option<&str>,
+        detail: Value,
+    ) {
+        self.db.audit(
+            self.now(),
+            event,
+            actor.map(|a| a.user_id),
+            actor.map(|a| a.username.as_str()),
+            target,
+            ip,
+            &detail,
+        );
+        let mut fields = json!({"target": target});
+        if let (Some(f), Some(d)) = (fields.as_object_mut(), detail.as_object()) {
+            for (k, v) in d {
+                f.insert(k.clone(), v.clone());
+            }
+        }
+        self.audit_file.write(
+            Some(&Caller {
+                ip: ip.map(str::to_string),
+                user: actor.map(|a| a.username.clone()),
+                ..Default::default()
+            }),
+            event,
+            fields,
+        );
+    }
+
     /// `UseForwardedHeaders` with the known proxies and a forward limit of 1.
-    fn seen(&self, peer: Option<IpAddr>, headers: &HeaderMap) -> Seen {
+    pub fn seen(&self, peer: Option<IpAddr>, headers: &HeaderMap) -> Seen {
         let mut s = Seen {
             ip: peer,
             https: false,
@@ -169,61 +436,170 @@ impl LoginAuth {
     }
 
     /// "__Host-" pins it to this host, path "/" and Secure.
-    fn cookie_name(https: bool) -> &'static str {
+    pub fn cookie_name(https: bool) -> &'static str {
         if https {
-            "__Host-openorca_session"
+            "__Host-abhoth_session"
         } else {
-            "openorca_session"
+            "abhoth_session"
         }
     }
 
-    fn set_cookie(https: bool, id: &str) -> String {
+    pub fn set_cookie(https: bool, token: &str) -> String {
         format!(
-            "{}={id}; path=/; samesite=strict; httponly{}",
+            "{}={token}; path=/; samesite=lax; httponly{}",
             Self::cookie_name(https),
             if https { "; secure" } else { "" }
         )
     }
 
-    fn clear_cookie(https: bool) -> String {
+    pub fn clear_cookie(https: bool) -> String {
         format!(
-            "{}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; samesite=strict; httponly{}",
+            "{}=; max-age=0; path=/; samesite=lax; httponly{}",
             Self::cookie_name(https),
             if https { "; secure" } else { "" }
         )
     }
 
-    fn state(&self, s: Option<&WebSession>) -> Value {
+    fn purge(&self, now: i64) {
+        let last = self.last_purge.load(Ordering::Relaxed);
+        if now - last < 60 {
+            return;
+        }
+        self.last_purge.store(now, Ordering::Relaxed);
+        self.db.purge_sessions(
+            now,
+            self.options.idle_timeout.as_secs() as i64,
+            self.options.absolute_timeout.as_secs() as i64,
+            PENDING_SECONDS,
+            self.desktop.then_some(self.started),
+        );
+    }
+
+    /// The session behind a cookie, if it is still valid (any stage), with its user.
+    pub fn session(&self, token: Option<&str>) -> Option<(Session, User)> {
+        let token = token.filter(|t| !t.is_empty())?;
+        let now = self.now();
+        self.purge(now);
+        let s = self.db.session_by_token(token)?;
+        let expired = if s.desktop {
+            // The desktop window's session lasts while the process that made it runs.
+            !self.desktop || s.created < self.started
+        } else if s.stage == "ok" {
+            now - s.created > self.options.absolute_timeout.as_secs() as i64
+                || now - s.last_seen > self.options.idle_timeout.as_secs() as i64
+        } else {
+            now - s.created > PENDING_SECONDS
+        };
+        let user = self.db.user(s.user_id).filter(|u| !u.disabled);
+        let Some(user) = user.filter(|_| !expired) else {
+            self.db.delete_session(s.id);
+            return None;
+        };
+        if now - s.last_seen >= 30 {
+            self.db.touch_session(s.id, now);
+        }
+        Some((s, user))
+    }
+
+    /// Start a browser session; returns the cookie value and the row.
+    pub fn start_session(
+        &self,
+        user: &User,
+        stage: &str,
+        seen: &Seen,
+        headers: &HeaderMap,
+        desktop: bool,
+    ) -> Option<(String, Session)> {
+        let token = store_token();
+        let s = self.db.create_session(
+            &token,
+            user.id,
+            stage,
+            &store_token(),
+            self.now(),
+            seen.ip_text().as_deref(),
+            header_str(headers, "user-agent"),
+            desktop && self.desktop,
+        )?;
+        Some((token, s))
+    }
+
+    /// The principal of an `Authorization: Bearer` API key (`Err`: a key that is not valid).
+    fn api_key(&self, headers: &HeaderMap) -> Option<Result<Principal, ()>> {
+        let auth = header_str(headers, "authorization")?;
+        let (scheme, key) = auth.split_once(' ')?;
+        if !scheme.eq_ignore_ascii_case("bearer") {
+            return None;
+        }
+        let key = key.trim();
+        let found = key
+            .starts_with(API_KEY_PREFIX)
+            .then(|| self.db.api_key_by_secret(key))
+            .flatten()
+            .and_then(|k| {
+                self.db
+                    .user(k.user_id)
+                    .filter(|u| !u.disabled)
+                    .map(|u| (k, u))
+            });
+        Some(match found {
+            Some((k, u)) => {
+                self.db.touch_api_key(k.id, self.now());
+                Ok(Principal::of(&u, Via::ApiKey(k.id)))
+            }
+            None => Err(()),
+        })
+    }
+
+    /// The owner the launch token stands for (not on an exposed server).
+    fn launch_principal(&self) -> Option<Principal> {
+        if self.options.exposed {
+            return None;
+        }
+        self.db
+            .first_admin()
+            .map(|u| Principal::of(&u, Via::LaunchToken))
+    }
+
+    /// The JSON the client reads at `/api/auth/state`.
+    pub fn state_json(&self, session: Option<&(Session, User)>, setup_cookie: bool) -> Value {
+        let setup = self.setup_needed();
+        let ok = session.filter(|(s, _)| s.stage == "ok");
         json!({
             "mode": "login",
-            "stage": s.map_or("signedOut", |s| s.stage.as_str()),
-            "totp": self.accounts.load().is_some_and(|a| a.totp_confirmed),
+            "setup": setup,
+            "setupCodeNeeded": setup && !setup_cookie,
+            "stage": session.map_or("signedOut", |(s, _)| s.stage.as_str()),
+            "user": ok.map(|(_, u)| u.username.clone()),
+            "userId": ok.map(|(_, u)| u.id),
+            "admin": ok.is_some_and(|(_, u)| u.admin),
+            "totp": session.is_some_and(|(_, u)| u.totp_enabled),
             "totpRequired": self.options.require_totp,
-            "user": s.filter(|s| s.stage == "ok").map(|s| s.user.clone()),
-            "csrf": s.map(|s| s.csrf.clone()),
-            "idleMinutes": self.sessions.idle.as_secs() / 60,
+            "csrf": session.map(|(s, _)| s.csrf.clone()),
+            "idleMinutes": self.options.idle_timeout.as_secs() / 60,
+            "desktop": session.is_some_and(|(s, _)| s.desktop),
         })
     }
 }
 
-/// The session the middleware found for this request (cookie), for the /api/auth handlers.
-#[derive(Clone)]
-struct Current {
-    session: Option<WebSession>,
-    seen: Seen,
+/// 256-bit random, URL-safe base64.
+pub fn store_token() -> String {
+    use base64::Engine;
+    let mut b = [0u8; 32];
+    getrandom::fill(&mut b).expect("random bytes");
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b)
 }
 
-fn is_public_path(path: &str) -> bool {
-    use crate::auth::starts_with_segment as seg;
-    seg(path, "/api/auth")
-        || seg(path, "/brand")
-        || seg(path, "/assets")
-        || matches!(path, "/" | "/index.html" | "/favicon.ico")
+/// What the middleware found, for the `/api/auth` and `/api/account` handlers.
+#[derive(Clone, Default)]
+pub struct Current {
+    pub session: Option<(Session, User)>,
+    pub seen: Seen,
+    pub setup_cookie: Option<String>,
 }
 
-/// The Origin header is present and names this host (scheme, host and port as the proxy
-/// forwarded them).
-fn origin_matches(headers: &HeaderMap, seen: &Seen) -> bool {
+/// The Origin header names this host (scheme, host and port as the proxy forwarded them).
+pub fn origin_matches(headers: &HeaderMap, seen: &Seen) -> bool {
     let Some(origin) = header_str(headers, "origin").and_then(|o| reqwest::Url::parse(o).ok())
     else {
         return false;
@@ -244,7 +620,7 @@ fn origin_matches(headers: &HeaderMap, seen: &Seen) -> bool {
         && origin.port_or_known_default() == host.port_or_known_default()
 }
 
-fn csrf_ok(headers: &HeaderMap, session: Option<&WebSession>) -> bool {
+fn csrf_ok(headers: &HeaderMap, session: Option<&Session>) -> bool {
     session.is_some_and(|s| {
         fixed_time_eq(
             header_str(headers, CSRF_HEADER).unwrap_or("").as_bytes(),
@@ -264,8 +640,63 @@ fn harden(mut r: Response) -> Response {
     r
 }
 
-fn status(code: StatusCode) -> Response {
-    code.into_response()
+pub(crate) fn error(code: StatusCode, text: &str) -> Response {
+    let mut r = (code, axum::Json(json!({"error": text}))).into_response();
+    r.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    r
+}
+
+/// Paths only admins may use (server and global settings, the bench, the shared GitHub
+/// sign-in, the desktop's folder dialog, user management).
+pub fn admin_only(path: &str, method: &Method) -> bool {
+    seg(path, "/api/admin")
+        || seg(path, "/api/settings")
+        || seg(path, "/api/bench")
+        || seg(path, "/api/github/app")
+        || seg(path, "/api/desktop")
+        // A project's settings are saved to the shared config.json.
+        || project_of(path).is_some_and(|pid| path == format!("/api/projects/{pid}/settings"))
+        || (method != Method::GET
+            && ["save", "delete", "switch"]
+                .iter()
+                .any(|p| seg(path, &format!("/api/profiles/{p}"))))
+}
+
+/// The project id of `/api/projects/{pid}[/...]` (not `/api/projects/clone`).
+pub fn project_of(path: &str) -> Option<&str> {
+    let rest = path.strip_prefix("/api/projects/")?;
+    let pid = rest.split('/').next().filter(|p| !p.is_empty())?;
+    (pid != "clone" || rest.contains('/')).then_some(pid)
+}
+
+fn redirect(location: &str) -> Response {
+    Response::builder()
+        .status(StatusCode::FOUND)
+        .header(header::LOCATION, location)
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::empty())
+        .unwrap()
+}
+
+/// The URL without its `token` query parameter.
+fn without_token(path: &str, pairs: &[(String, String)]) -> String {
+    let rest: Vec<String> = pairs
+        .iter()
+        .filter(|(k, _)| k != crate::auth::QUERY_NAME)
+        .map(|(k, v)| {
+            format!(
+                "{}={}",
+                crate::util::escape_data(k),
+                crate::util::escape_data(v)
+            )
+        })
+        .collect();
+    if rest.is_empty() {
+        path.to_string()
+    } else {
+        format!("{path}?{}", rest.join("&"))
+    }
 }
 
 pub async fn login_auth(
@@ -273,353 +704,229 @@ pub async fn login_auth(
     mut req: Request<Body>,
     next: Next,
 ) -> Response {
-    let Some(auth) = state.login.clone() else {
-        return next.run(req).await;
-    };
+    let auth = state.login.clone();
     let peer = req
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|c| c.0.ip());
     let seen = auth.seen(peer, req.headers());
     let loopback = seen.ip.is_some_and(|ip| ip.is_loopback());
-    // Plain HTTP only from this machine; everyone else via the HTTPS proxy.
-    if auth.options.require_https && !seen.https && !loopback {
+    // Exposed: plain HTTP only from this machine; everyone else via the HTTPS proxy.
+    if auth.options.exposed && !seen.https && !loopback {
         return harden((StatusCode::FORBIDDEN, "HTTPS required.").into_response());
     }
-    let cookie = crate::auth::cookie(req.headers(), LoginAuth::cookie_name(seen.https));
-    let session = auth.sessions.get(cookie.as_deref());
-    let signed_in = session.as_ref().is_some_and(|s| s.stage == "ok");
-    let caller = Caller {
-        ip: seen.ip.map(|i| i.to_string()),
-        user: session
-            .as_ref()
-            .filter(|_| signed_in)
-            .map(|s| s.user.clone()),
-    };
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     let headers = req.headers().clone();
     let websocket = crate::auth::is_websocket(&headers);
     let unsafe_method =
         !(method == Method::GET || method == Method::HEAD || method == Method::OPTIONS);
-    let run = |req: Request<Body>| {
-        let caller = caller.clone();
-        async move { harden(crate::audit::with_caller(caller, next.run(req)).await) }
-    };
-    // Origin: required and equal to this site on WebSockets and every state-changing request.
-    if (websocket || unsafe_method) && !origin_matches(&headers, &seen) {
+    let is_api = seg(&path, "/api") || seg(&path, "/hub");
+    let page_get = method == Method::GET && !websocket && !is_api;
+    let ip = seen.ip_text();
+
+    // A browser request from another site: refused outright.
+    if (unsafe_method || websocket)
+        && header_str(&headers, "origin").is_some()
+        && !origin_matches(&headers, &seen)
+    {
         state.audit.write(
-            Some(&caller),
+            Some(&Caller {
+                ip: ip.clone(),
+                ..Default::default()
+            }),
             "origin.rejected",
             json!({"path": path, "origin": header_str(&headers, "origin").unwrap_or("")}),
         );
-        return harden(status(StatusCode::FORBIDDEN));
+        return harden(error(StatusCode::FORBIDDEN, "Cross-site request refused."));
     }
-    // The HTML preview's files: their signed, expiring path token is checked there.
-    if crate::auth::starts_with_segment(&path, crate::files::preview::PREFIX)
-        && (method == Method::GET || method == Method::HEAD)
+    // The HTML preview's files carry their own signed, expiring token; the brand images and
+    // hashed assets are public (the sign-in and setup pages show them).
+    if (method == Method::GET || method == Method::HEAD)
         && !websocket
+        && (seg(&path, crate::files::preview::PREFIX)
+            || seg(&path, "/brand")
+            || seg(&path, "/assets")
+            || path == "/favicon.ico")
     {
-        return run(req).await;
+        return harden(next.run(req).await);
     }
-    req.extensions_mut().insert(Current {
-        session: session.clone(),
-        seen: seen.clone(),
-    });
-    use crate::auth::starts_with_segment as seg;
-    if is_public_path(&path)
-        || (!seg(&path, "/api") && !seg(&path, "/hub") && method == Method::GET && !websocket)
-    {
-        // The app shell (it shows the sign-in form) and the sign-in API.
-        if unsafe_method
-            && seg(&path, "/api/auth")
-            && !seg(&path, "/api/auth/login")
-            && !csrf_ok(&headers, session.as_ref())
-        {
-            return harden(status(StatusCode::FORBIDDEN));
+
+    let pairs = crate::auth::query_pairs(req.uri().query());
+    let query_token = pairs
+        .iter()
+        .find(|(k, _)| k == crate::auth::QUERY_NAME)
+        .map(|(_, v)| v.clone());
+    let launch = auth.launch_token_matches(query_token.as_deref())
+        || auth.launch_token_matches(header_str(&headers, crate::auth::HEADER_NAME));
+    let setup_cookie =
+        crate::auth::cookie(&headers, SETUP_COOKIE).filter(|c| auth.launch_token_matches(Some(c)));
+    let session =
+        auth.session(crate::auth::cookie(&headers, LoginAuth::cookie_name(seen.https)).as_deref());
+
+    // ---- first run: nothing but the setup ----
+    if auth.setup_needed() {
+        if page_get && launch && query_token.is_some() {
+            // The launch URL: remember the setup code, then the setup page.
+            let mut r = redirect("/setup");
+            if let Ok(v) = format!(
+                "{SETUP_COOKIE}={}; path=/; samesite=strict; httponly{}",
+                auth.setup_code(),
+                if seen.https { "; secure" } else { "" }
+            )
+            .parse()
+            {
+                r.headers_mut().append(header::SET_COOKIE, v);
+            }
+            return harden(r);
         }
-        return run(req).await;
-    }
-    if !signed_in {
-        let mut r = status(StatusCode::UNAUTHORIZED);
+        if seg(&path, "/api/auth") {
+            req.extensions_mut().insert(Current {
+                session: None,
+                seen,
+                setup_cookie,
+            });
+            return harden(next.run(req).await);
+        }
+        if page_get {
+            if path == "/setup" {
+                return harden(next.run(req).await);
+            }
+            return harden(redirect("/setup"));
+        }
+        let mut r = (
+            StatusCode::FORBIDDEN,
+            axum::Json(json!({"error": "Create the admin account first (/setup).", "setup": true})),
+        )
+            .into_response();
         r.headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         return harden(r);
     }
-    // CSRF: a state-changing request carries the session's token.
-    if unsafe_method && !csrf_ok(&headers, session.as_ref()) {
-        state
-            .audit
-            .write(Some(&caller), "csrf.rejected", json!({"path": path}));
-        return harden(status(StatusCode::FORBIDDEN));
+
+    // ---- who is it ----
+    let mut principal: Option<Principal> = None;
+    let mut cookie_auth = false;
+    match auth.api_key(&headers) {
+        Some(Ok(p)) => principal = Some(p),
+        Some(Err(())) => {
+            auth.record(
+                "apikey.rejected",
+                None,
+                None,
+                ip.as_deref(),
+                json!({"path": path}),
+            );
+            return harden(error(StatusCode::UNAUTHORIZED, "Not a valid API key."));
+        }
+        None => {}
     }
-    run(req).await
-}
-
-pub fn routes() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/api/auth/state", get(auth_state))
-        .route("/api/auth/login", post(login))
-        .route("/api/auth/enroll/start", post(enroll_start))
-        .route("/api/auth/enroll", get(enroll))
-        .route("/api/auth/totp", post(totp_code))
-        .route("/api/auth/logout", post(logout))
-}
-
-fn auth_of(state: &AppState) -> Arc<LoginAuth> {
-    state
-        .login
-        .clone()
-        .expect("sign-in routes need sign-in mode")
-}
-
-fn current(req: &Request<Body>) -> Current {
-    req.extensions()
-        .get::<Current>()
-        .cloned()
-        .unwrap_or(Current {
-            session: None,
-            seen: Seen {
-                ip: None,
-                https: false,
-                host: None,
+    if principal.is_none() && launch {
+        principal = auth.launch_principal();
+        // The printed URL / desktop window: a browser session from here on, token out of the
+        // address bar.
+        if let (Some(p), true, true) = (&principal, page_get, query_token.is_some())
+            && let Some(user) = auth.db.user(p.user_id)
+            && let Some((token, s)) = auth.start_session(&user, "ok", &seen, &headers, auth.desktop)
+        {
+            if let Some(old) = &session {
+                auth.db.delete_session(old.0.id);
+            }
+            auth.record(
+                "login.ok",
+                Some(p),
+                Some(&user.username),
+                ip.as_deref(),
+                json!({"via": if s.desktop { "desktop" } else { "launch-token" }}),
+            );
+            auth.db.touch_login(user.id, auth.now());
+            let mut r = redirect(&without_token(&path, &pairs));
+            if let Ok(v) = LoginAuth::set_cookie(seen.https, &token).parse() {
+                r.headers_mut().append(header::SET_COOKIE, v);
+            }
+            return harden(r);
+        }
+    }
+    if principal.is_none()
+        && let Some((s, u)) = session.as_ref().filter(|(s, _)| s.stage == "ok")
+    {
+        principal = Some(Principal::of(
+            u,
+            Via::Session {
+                id: s.id,
+                csrf: s.csrf.clone(),
             },
-        })
-}
-
-fn caller_of(c: &Current, user: Option<&str>) -> Caller {
-    Caller {
-        ip: c.seen.ip.map(|i| i.to_string()),
-        user: user.map(str::to_string),
+        ));
+        cookie_auth = true;
     }
-}
 
-fn no_store(v: Value) -> Response {
-    let mut r = axum::Json(v).into_response();
-    r.headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    r
-}
-
-fn with_cookie(mut r: Response, cookie: String) -> Response {
-    if let Ok(v) = cookie.parse() {
-        r.headers_mut().append(header::SET_COOKIE, v);
-    }
-    r
-}
-
-async fn body_json(req: Request<Body>) -> Option<Value> {
-    let bytes = axum::body::to_bytes(req.into_body(), 64 * 1024)
-        .await
-        .ok()?;
-    serde_json::from_slice(&bytes).ok()
-}
-
-async fn auth_state(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
-    let auth = auth_of(&state);
-    no_store(auth.state(current(&req).session.as_ref()))
-}
-
-/// Too many attempts from this IP or for this account.
-fn locked(auth: &LoginAuth, audit: &AuditLog, c: &Current, user: &str) -> Option<Response> {
-    let ip = c.seen.ip.map(|i| i.to_string());
-    let wait = auth
-        .throttle
-        .locked_for(&LoginThrottle::ip_key(ip.as_deref()))
-        .or_else(|| {
-            (!user.is_empty())
-                .then(|| auth.throttle.locked_for(&LoginThrottle::account_key(user)))
-                .flatten()
-        })?;
-    audit.write(
-        Some(&caller_of(c, None)),
-        "login.locked",
-        json!({"user": user, "seconds": wait.as_secs()}),
-    );
-    let mut r = (
-        StatusCode::TOO_MANY_REQUESTS,
-        axum::Json(json!({"error": format!(
-            "Too many attempts. Try again in {} min.",
-            (wait.as_secs_f64() / 60.0).ceil()
-        )})),
-    )
-        .into_response();
-    if let Ok(v) = (wait.as_secs_f64().ceil() as u64).to_string().parse() {
-        r.headers_mut().insert(header::RETRY_AFTER, v);
-    }
-    Some(r)
-}
-
-fn failed(auth: &LoginAuth, audit: &AuditLog, c: &Current, user: &str, step: &str) -> Response {
-    let ip = c.seen.ip.map(|i| i.to_string());
-    let ip_lock = auth.throttle.fail(
-        &LoginThrottle::ip_key(ip.as_deref()),
-        auth.throttle.ip_free_failures,
-    );
-    let user_lock = (!user.is_empty())
-        .then(|| {
-            auth.throttle.fail(
-                &LoginThrottle::account_key(user),
-                auth.throttle.account_free_failures,
-            )
-        })
-        .flatten();
-    let caller = caller_of(c, None);
-    audit.write(
-        Some(&caller),
-        "login.fail",
-        json!({"user": user, "step": step}),
-    );
-    if let Some(lock) = ip_lock.or(user_lock) {
-        tracing::warn!(
-            "Web UI sign-in locked for {}s after repeated failures from {}",
-            lock.as_secs(),
-            ip.as_deref().unwrap_or("?")
-        );
-        audit.write(
-            Some(&caller),
-            "login.lockout",
-            json!({"user": user, "seconds": lock.as_secs()}),
-        );
-    }
-    let error = if step == "totp" {
-        "That code didn't work."
-    } else {
-        "Wrong username or password."
-    };
-    (
-        StatusCode::UNAUTHORIZED,
-        axum::Json(json!({"error": error})),
-    )
-        .into_response()
-}
-
-async fn login(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
-    let auth = auth_of(&state);
-    let c = current(&req);
-    let body = body_json(req).await;
-    let user = body
-        .as_ref()
-        .and_then(|b| b["username"].as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let password = body
-        .as_ref()
-        .and_then(|b| b["password"].as_str())
-        .unwrap_or("")
-        .to_string();
-    if let Some(r) = locked(&auth, &state.audit, &c, &user) {
-        return r;
-    }
-    let account = auth.accounts.load();
-    // Same work for an unknown user as for a wrong password (no username probing by timing).
-    let ok = match &account {
-        Some(a) if a.username == user => {
-            let (p, h) = (password.clone(), a.password_hash.clone());
-            tokio::task::spawn_blocking(move || accounts::verify_password(&p, &h))
-                .await
-                .unwrap_or(false)
+    // The sign-in API and the app shell (it shows the sign-in page).
+    if seg(&path, "/api/auth") || (page_get && principal.is_none()) {
+        if unsafe_method
+            && seg(&path, "/api/auth")
+            && !seg(&path, "/api/auth/login")
+            && !seg(&path, "/api/auth/setup")
+            && !csrf_ok(&headers, session.as_ref().map(|(s, _)| s))
+        {
+            return harden(error(StatusCode::FORBIDDEN, "Missing or wrong CSRF token."));
         }
-        _ => {
-            let p = password.clone();
-            let _ = tokio::task::spawn_blocking(move || {
-                accounts::verify_password(&p, &accounts::DUMMY_HASH)
-            })
-            .await;
-            false
+        if page_get && path == "/setup" {
+            return harden(redirect("/"));
         }
-    };
-    let Some(account) = account.filter(|_| ok) else {
-        return failed(&auth, &state.audit, &c, &user, "password");
-    };
-    let ip = c.seen.ip.map(|i| i.to_string());
-    auth.throttle.succeed(&LoginThrottle::ip_key(ip.as_deref()));
-    if let Some(old) = &c.session {
-        auth.sessions.remove(Some(&old.id));
+        req.extensions_mut().insert(Current {
+            session,
+            seen,
+            setup_cookie,
+        });
+        return harden(next.run(req).await);
     }
-    // 2FA: always once set up; before that only when sign-in mode requires it (set up now).
-    let stage = if account.totp_confirmed {
-        "totp"
-    } else if auth.options.require_totp {
-        "enroll"
-    } else {
-        "ok"
+    let Some(principal) = principal else {
+        let mut r = error(StatusCode::UNAUTHORIZED, "Sign in first.");
+        r.headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        return harden(r);
     };
-    let https = c.seen.https;
-    if stage == "ok" {
-        auth.throttle
-            .succeed(&LoginThrottle::account_key(&account.username));
-        let full = auth
-            .sessions
-            .promote(&auth.sessions.create(&account.username, "password"));
-        state.audit.write(
-            Some(&caller_of(&c, Some(&full.user))),
-            "login.ok",
-            json!({"user": full.user, "totp": false}),
-        );
-        return with_cookie(
-            no_store(auth.state(Some(&full))),
-            LoginAuth::set_cookie(https, &full.id),
-        );
+    if cookie_auth {
+        // A cookie rides along on any request: state changes need the CSRF token, and they
+        // and websockets an Origin from this site.
+        if (unsafe_method || websocket) && !origin_matches(&headers, &seen) {
+            return harden(error(StatusCode::FORBIDDEN, "Cross-site request refused."));
+        }
+        if unsafe_method && !csrf_ok(&headers, session.as_ref().map(|(s, _)| s)) {
+            state.audit.write(
+                Some(&principal.caller(ip.clone())),
+                "csrf.rejected",
+                json!({"path": path}),
+            );
+            return harden(error(StatusCode::FORBIDDEN, "Missing or wrong CSRF token."));
+        }
     }
-    let s = auth.sessions.create(&account.username, stage);
-    state.audit.write(
-        Some(&caller_of(&c, None)),
-        "login.password_ok",
-        json!({"user": account.username, "next": stage}),
-    );
-    with_cookie(
-        no_store(auth.state(Some(&s))),
-        LoginAuth::set_cookie(https, &s.id),
-    )
+    if admin_only(&path, &method) && !principal.admin {
+        return harden(error(StatusCode::FORBIDDEN, "Only an admin can do that."));
+    }
+    if let Some(pid) = project_of(&path)
+        && let Some(info) = state.projects.info(pid)
+        && !can_access(Some(principal.user_id), principal.admin, info.owner)
+    {
+        return harden(error(StatusCode::NOT_FOUND, "No such project."));
+    }
+    let caller = principal.caller(ip);
+    req.extensions_mut().insert(principal);
+    req.extensions_mut().insert(Current {
+        session,
+        seen,
+        setup_cookie,
+    });
+    harden(crate::audit::with_caller(caller, next.run(req)).await)
 }
 
-/// 2FA setup from a signed-in session (opt in).
-async fn enroll_start(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
-    let auth = auth_of(&state);
-    let c = current(&req);
-    let Some(s) = c.session.as_ref().filter(|s| s.stage == "ok") else {
-        return status(StatusCode::FORBIDDEN);
-    };
-    if !auth.accounts.load().is_some_and(|a| !a.totp_confirmed) {
-        return status(StatusCode::FORBIDDEN);
-    }
-    let e = auth.sessions.create(&s.user, "enroll");
-    auth.sessions.remove(Some(&s.id));
-    with_cookie(
-        axum::Json(auth.state(Some(&e))).into_response(),
-        LoginAuth::set_cookie(c.seen.https, &e.id),
-    )
+/// The principal the middleware attached (handlers behind it always have one).
+pub fn principal_of(req: &Request<Body>) -> Option<Principal> {
+    req.extensions().get::<Principal>().cloned()
 }
 
-/// The secret as a QR code and as text.
-async fn enroll(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
-    let auth = auth_of(&state);
-    let c = current(&req);
-    let Some(s) = c.session.as_ref().filter(|s| s.stage == "enroll") else {
-        return status(StatusCode::FORBIDDEN);
-    };
-    let Some(s) = auth.sessions.update(&s.id, |s| {
-        if s.pending_secret.is_none() {
-            s.pending_secret = Some(totp::new_secret());
-        }
-    }) else {
-        return status(StatusCode::FORBIDDEN);
-    };
-    let secret = s.pending_secret.clone().unwrap_or_default();
-    let uri = totp::uri(ISSUER, &s.user, &secret);
-    let qr = match qr_png(&uri) {
-        Some(png) => {
-            use base64::Engine;
-            format!(
-                "data:image/png;base64,{}",
-                base64::engine::general_purpose::STANDARD.encode(png)
-            )
-        }
-        None => return status(StatusCode::INTERNAL_SERVER_ERROR),
-    };
-    no_store(json!({"qr": qr, "secret": secret, "uri": uri}))
+pub fn routes() -> axum::Router<Arc<AppState>> {
+    endpoints::routes().merge(admin::routes())
 }
 
 /// `PngByteQRCode(data).GetGraphic(6, black, white, drawQuietZones: true)` at ECC level M.
@@ -646,81 +953,55 @@ pub fn qr_png(text: &str) -> Option<Vec<u8>> {
     Some(out.into_inner())
 }
 
-async fn totp_code(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
-    let auth = auth_of(&state);
-    let c = current(&req);
-    let Some(s) = c
-        .session
-        .clone()
-        .filter(|s| s.stage == "totp" || s.stage == "enroll")
-    else {
-        return status(StatusCode::FORBIDDEN);
-    };
-    if let Some(r) = locked(&auth, &state.audit, &c, &s.user) {
-        return r;
-    }
-    let body = body_json(req).await;
-    let code = body
-        .as_ref()
-        .and_then(|b| b["code"].as_str())
-        .map(str::to_string);
-    let Some(mut account) = auth.accounts.load() else {
-        return status(StatusCode::FORBIDDEN);
-    };
-    let enrolling = s.stage == "enroll";
-    // The secret shown at setup lives on the session (fetched again: GET /enroll set it).
-    let live = auth.sessions.get(Some(&s.id));
-    let secret = if enrolling {
-        live.and_then(|l| l.pending_secret)
-    } else {
-        account.totp_secret.clone()
-    };
-    let last = if enrolling { 0 } else { account.totp_last_step };
-    let Some(step) = secret
-        .as_deref()
-        .and_then(|sec| totp::verify(sec, code.as_deref(), auth.now(), last))
-    else {
-        return failed(&auth, &state.audit, &c, &s.user, "totp");
-    };
-    account.totp_last_step = step;
-    if enrolling {
-        account.totp_secret = secret;
-        account.totp_confirmed = true;
-        state.audit.write(
-            Some(&caller_of(&c, None)),
-            "totp.enrolled",
-            json!({"user": s.user}),
-        );
-    }
-    let _ = auth.accounts.save(&account);
-    auth.throttle.succeed(&LoginThrottle::account_key(&s.user));
-    let ip = c.seen.ip.map(|i| i.to_string());
-    auth.throttle.succeed(&LoginThrottle::ip_key(ip.as_deref()));
-    let full = auth.sessions.promote(&s);
-    state.audit.write(
-        Some(&caller_of(&c, Some(&full.user))),
-        "login.ok",
-        json!({"user": full.user}),
-    );
-    with_cookie(
-        no_store(auth.state(Some(&full))),
-        LoginAuth::set_cookie(c.seen.https, &full.id),
-    )
+/// The QR code of a TOTP secret as a data URL, the secret and its otpauth URI.
+pub fn enroll_json(user: &str, secret: &str) -> Option<Value> {
+    use base64::Engine;
+    let uri = totp::uri(ISSUER, user, secret);
+    let png = qr_png(&uri)?;
+    Some(json!({
+        "qr": format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)),
+        "secret": secret,
+        "uri": uri,
+    }))
 }
 
-async fn logout(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
-    let auth = auth_of(&state);
-    let c = current(&req);
-    if let Some(s) = &c.session {
-        auth.sessions.remove(Some(&s.id));
-        state.audit.write(
-            Some(&caller_of(&c, Some(&s.user))),
-            "logout",
-            json!({"user": s.user}),
-        );
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admin_paths_and_project_ids_are_recognised() {
+        assert!(admin_only("/api/admin/users", &Method::GET));
+        assert!(admin_only("/api/settings", &Method::GET));
+        assert!(admin_only("/api/bench/start", &Method::POST));
+        assert!(admin_only("/api/github/app/clone", &Method::POST));
+        assert!(admin_only("/api/profiles/switch", &Method::POST));
+        assert!(!admin_only("/api/profiles", &Method::GET));
+        assert!(admin_only("/api/projects/abc/settings", &Method::PUT));
+        assert!(!admin_only("/api/projects/abc/file", &Method::PUT));
+        assert!(!admin_only("/api/settingsx", &Method::GET));
+        assert_eq!(project_of("/api/projects/abc/file"), Some("abc"));
+        assert_eq!(project_of("/api/projects/abc"), Some("abc"));
+        assert_eq!(project_of("/api/projects/clone"), None);
+        assert_eq!(project_of("/api/projects"), None);
     }
-    with_cookie(
-        axum::Json(auth.state(None)).into_response(),
-        LoginAuth::clear_cookie(c.seen.https),
-    )
+
+    #[test]
+    fn owners_and_admins_reach_a_project() {
+        assert!(can_access(Some(2), false, Some(2)));
+        assert!(!can_access(Some(3), false, Some(2)));
+        assert!(!can_access(Some(3), false, None));
+        assert!(can_access(Some(1), true, Some(2)));
+        assert!(can_access(Some(1), true, None));
+        assert!(!can_access(None, false, None));
+    }
+
+    #[test]
+    fn usernames_are_checked() {
+        assert_eq!(check_username(" ann ").unwrap(), "ann");
+        assert!(check_username("").is_err());
+        assert!(check_username("a b").is_err());
+        assert!(check_username("ann@example.org").is_ok());
+        assert!(check_username(&"a".repeat(65)).is_err());
+    }
 }

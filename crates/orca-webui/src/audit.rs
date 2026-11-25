@@ -12,6 +12,18 @@ use serde_json::{Map, Value};
 pub struct Caller {
     pub ip: Option<String>,
     pub user: Option<String>,
+    /// The signed-in user's id (accounts, D140).
+    pub uid: Option<i64>,
+    pub admin: bool,
+    /// The browser session it came through, if any.
+    pub sid: Option<i64>,
+}
+
+impl Caller {
+    /// May this caller see the project owned by `owner`?
+    pub fn can_access(&self, owner: Option<i64>) -> bool {
+        crate::login::can_access(self.uid, self.admin, owner)
+    }
 }
 
 tokio::task_local! {
@@ -63,6 +75,7 @@ impl AuditLog {
                 merged = Caller {
                     ip: s.ip.or_else(|| c.and_then(|c| c.ip.clone())),
                     user: c.and_then(|c| c.user.clone()).or(s.user),
+                    ..Default::default()
                 };
                 Some(&merged)
             }

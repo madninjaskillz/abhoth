@@ -458,7 +458,7 @@ async fn upload(
     s.audit.write(
         Some(&Caller {
             ip: Some(addr.ip().to_string()),
-            user: None,
+            ..Default::default()
         }),
         "attachments.upload",
         json!({"project": pid, "files": saved.len()}),

@@ -665,3 +665,59 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   and compiles it with embed-resource 3.0.12, a build dependency only on Windows hosts, and
   only when the target is Windows too. Linux builds don't compile it (checked with
   `tools/linux-check.sh` in WSL).
+- **D140** (user decision 2026-11-25) Web UI accounts. They replace the URL-token mode and the
+  single sign-in account (D85).
+  - **Storage.** `orca_webui::login` keeps users, sessions, API keys, recovery codes and an
+    audit table in SQLite at `<home>/abhoth.db`. It uses rusqlite 0.43.0 (bundled) with WAL,
+    and migrations numbered by `PRAGMA user_version`; a newer schema is refused.
+  - **Passwords and secrets.** Passwords are Argon2id (argon2 0.5.3, m=19 MiB, t=2, p=1), 12 to
+    1024 characters with no composition rules. Session cookies, API keys and recovery codes are
+    stored as SHA-256 hashes; they are high-entropy, so no salt is needed.
+  - **Sessions.** Sessions live on the server: HttpOnly, SameSite=Lax cookies, `__Host-` and
+    Secure over HTTPS. They end after 12 hours idle or 7 days. A half-signed-in session (2FA
+    pending) lasts 5 minutes.
+  - **Requests and brakes.** Cookie requests that change state need the CSRF header
+    (`X-OpenOrca-CSRF`) and an Origin from this site; websockets need that Origin too. A
+    cross-site Origin is refused on any request. `LoginThrottle` brakes sign-in, the setup
+    code, 2FA codes and password confirmations. Unknown users get the same work and the same
+    answer as a wrong password. Every comparison is constant-time or done on hashes.
+  - **First run.** With no users, pages redirect to `/setup` and the API answers 403 with
+    `setup: true`. Setup needs the setup code, which is the launch token. A plain
+    `--hostui=0.0.0.0` would otherwise give the server to the first visitor. The launch URL
+    stores the code in an HttpOnly cookie, so the printed URL and the desktop window go straight
+    to the form. Creation is a single `INSERT ... WHERE NOT EXISTS (SELECT 1 FROM users)`, so
+    two concurrent setups can't both win. Headless setups use `abhoth admin create` or
+    `ABHOTH_ADMIN_USER` with `ABHOTH_ADMIN_PASSWORD_FILE`. `abhoth admin
+    reset-password|reset-2fa|list` manage users. `--hostui-set-password` and
+    `--hostui-reset-2fa` map onto these commands.
+  - **The launch token.** It used to be the only credential. On a local server it now stands for
+    the first active admin: the printed URL turns into a session cookie and leaves the address
+    bar, and `X-OpenOrca-Token` still works for scripts. With `--hostui-login` (exposed) the
+    token only opens the setup, and plain HTTP is refused except from this machine.
+  - **Desktop.** The window loads the per-launch token and gets a session marked `desktop`.
+    That session lasts while the process that made it runs, and the next desktop start drops
+    older ones. Loopback grants nothing by itself, because behind the Docker proxy every request
+    is loopback.
+  - **Migration.** While the database has no users, `webui/account.json` (D85) is imported as
+    the first admin, with its PBKDF2 hash and TOTP. The hash is re-hashed with Argon2id at the
+    next sign-in, and the file is left alone for the rollback.
+  - **Ownership.** `projects.json` entries gain an optional `owner` (user id). An owner-less
+    entry (the primary project, bench tabs, everything from before D140) belongs to the admins
+    and keeps its old id. A user's project id hashes the owner in, so two users opening one
+    folder get two sessions.
+  - **Enforcement.** One middleware checks `/api/projects/{pid}/...` against the owner and
+    answers 404 for someone else's project. The hub checks each method's project and sends a
+    project's events only to connections allowed to see it; a connection is resumed only by the
+    same user and session, and is closed when its session, password, rights or account change.
+    Clone jobs belong to their starter. Users who aren't admins browse and open folders only in
+    the projects locations, never in the state home; symlinks are resolved first.
+  - **Admin only.** Global and per-project settings (both write config.json), the bench, the
+    shared GitHub App sign-in, profile save/delete/switch, the desktop folder dialog, and
+    `/api/admin/*`.
+  - **Per-session tool state.** Agent tools that kept process-wide state now keep it per web
+    session (`ToolScope`): background processes (`orca_tools_shell::all_tools_in`), the task
+    list and Pi jobs. One user's agent can't list, read or stop another's. Sub-agents share
+    their Lead's registry and so its scope. The CLI and REPL keep the process-wide state
+    (C# parity).
+  - **Limit, documented in the README.** Users are not separated from the OS: agents and the
+    terminal run as the server's user.

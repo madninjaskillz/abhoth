@@ -3,6 +3,8 @@
 #   strata-api-key   the model server key (exported as the env var config.json's slots.apiKeyEnv names)
 #   git-deploy-key   optional: an SSH private key for git (a per-repo deploy key)
 #   git-credentials  optional: a git credential-store file (https://user:token@host)
+#   admin-password   optional: with ADMIN_USER set, creates that admin on the first start
+#                    (ABHOTH_ADMIN_USER / ABHOTH_ADMIN_PASSWORD_FILE; ignored once accounts exist)
 # Nothing here prints a secret.
 set -euo pipefail
 umask 077
@@ -32,8 +34,14 @@ git config --global --get-all safe.directory 2>/dev/null | grep -qx '\*' || git 
 git config --global --get user.name >/dev/null || git config --global user.name "${GIT_USER_NAME:-Abhoth}"
 git config --global --get user.email >/dev/null || git config --global user.email "${GIT_USER_EMAIL:-abhoth@localhost}"
 
-# Account commands pass straight through: docker exec … /app/entrypoint.sh --hostui-set-password <user>
-if [[ "${1:-}" == --hostui-set-password || "${1:-}" == --hostui-reset-2fa ]]; then
+if [[ -n "${ADMIN_USER:-}" && -r /run/secrets/admin-password ]]; then
+  export ABHOTH_ADMIN_USER="$ADMIN_USER" ABHOTH_ADMIN_PASSWORD_FILE=/run/secrets/admin-password
+fi
+
+# Account commands pass straight through (D140):
+#   docker exec -it <c> /app/entrypoint.sh admin create|reset-password|reset-2fa <user> | admin list
+# The old --hostui-set-password <user> / --hostui-reset-2fa [<user>] still work.
+if [[ "${1:-}" == admin || "${1:-}" == --hostui-set-password || "${1:-}" == --hostui-reset-2fa ]]; then
   exec "$BIN" "$@"
 fi
 

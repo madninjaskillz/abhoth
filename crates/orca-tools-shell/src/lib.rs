@@ -14,14 +14,27 @@ pub mod process;
 
 /// Every tool in this crate, in the C# registration order (class names sorted).
 pub fn all_tools(idle_timeout_seconds: i32) -> Vec<Arc<dyn Tool>> {
+    all_tools_in(idle_timeout_seconds, None)
+}
+
+/// [`all_tools`] whose processes belong to `scope` (one per web UI session, D140): they list,
+/// read and stop only that scope's processes.
+pub fn all_tools_in(idle_timeout_seconds: i32, scope: Option<Arc<str>>) -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(BashTool {
             idle_timeout_seconds,
+            scope: scope.clone(),
         }),
-        Arc::new(GetProcessOutputTool),
-        Arc::new(ListProcessesTool),
-        Arc::new(StartBackgroundProcessTool),
-        Arc::new(StopProcessTool),
+        Arc::new(GetProcessOutputTool {
+            scope: scope.clone(),
+        }),
+        Arc::new(ListProcessesTool {
+            scope: scope.clone(),
+        }),
+        Arc::new(StartBackgroundProcessTool {
+            scope: scope.clone(),
+        }),
+        Arc::new(StopProcessTool { scope }),
     ]
 }
 
@@ -46,12 +59,15 @@ const MAX_OUTPUT_CHARS: usize = 28_000;
 pub struct BashTool {
     /// `shell.idleTimeoutSeconds`: how long to wait before handing back a process ID.
     pub idle_timeout_seconds: i32,
+    /// See [`all_tools_in`].
+    pub scope: Option<Arc<str>>,
 }
 
 impl Default for BashTool {
     fn default() -> Self {
         Self {
             idle_timeout_seconds: 120,
+            scope: None,
         }
     }
 }
@@ -147,7 +163,7 @@ impl Tool for BashTool {
                 work_dir.display()
             ));
         }
-        let managed = match process::start(command, &work_dir) {
+        let managed = match process::start_in(command, &work_dir, self.scope.clone()) {
             Ok(m) => m,
             Err(e) => return ToolResult::error(format!("Failed to execute command: {e}")),
         };
@@ -238,7 +254,10 @@ impl Tool for BashTool {
     }
 }
 
-pub struct GetProcessOutputTool;
+#[derive(Default)]
+pub struct GetProcessOutputTool {
+    pub scope: Option<Arc<str>>,
+}
 
 #[async_trait::async_trait]
 impl Tool for GetProcessOutputTool {
@@ -289,12 +308,15 @@ impl Tool for GetProcessOutputTool {
         };
         let tail = get_i32_lenient(args.get("tail_lines"), 50).max(0) as usize;
         if id.eq_ignore_ascii_case("last") || id.eq_ignore_ascii_case("latest") {
-            match process::list_all().into_iter().max_by_key(|p| p.started) {
+            match process::list_in(self.scope.as_deref())
+                .into_iter()
+                .max_by_key(|p| p.started)
+            {
                 Some(p) => id = p.id.clone(),
                 None => return ToolResult::error("No background processes found."),
             }
         }
-        let Some(p) = process::get(&id) else {
+        let Some(p) = process::get_in(&id, self.scope.as_deref()) else {
             return ToolResult::error(format!(
                 "No process found with ID \"{id}\". Use start_background_process first."
             ));
@@ -320,7 +342,10 @@ impl Tool for GetProcessOutputTool {
     }
 }
 
-pub struct StopProcessTool;
+#[derive(Default)]
+pub struct StopProcessTool {
+    pub scope: Option<Arc<str>>,
+}
 
 #[async_trait::async_trait]
 impl Tool for StopProcessTool {
@@ -365,11 +390,11 @@ impl Tool for StopProcessTool {
             Ok(i) => i,
             Err(e) => return ToolResult::error(e),
         };
-        let Some(p) = process::get(id) else {
+        let Some(p) = process::get_in(id, self.scope.as_deref()) else {
             return ToolResult::error(format!("No process found with ID \"{id}\"."));
         };
         let was_running = !p.has_exited();
-        process::stop(id);
+        process::stop_in(id, self.scope.as_deref());
         tokio::time::sleep(Duration::from_millis(200)).await;
         let lines = p.tail_lines(20);
         let mut sb = String::new();
@@ -394,7 +419,10 @@ impl Tool for StopProcessTool {
     }
 }
 
-pub struct ListProcessesTool;
+#[derive(Default)]
+pub struct ListProcessesTool {
+    pub scope: Option<Arc<str>>,
+}
 
 #[async_trait::async_trait]
 impl Tool for ListProcessesTool {
@@ -429,7 +457,7 @@ impl Tool for ListProcessesTool {
     }
 
     async fn execute(&self, _args: &Value, _ctx: &ToolContext) -> ToolResult {
-        let mut processes = process::list_all();
+        let mut processes = process::list_in(self.scope.as_deref());
         if processes.is_empty() {
             return ToolResult::success("No background processes.");
         }
@@ -460,7 +488,10 @@ impl Tool for ListProcessesTool {
     }
 }
 
-pub struct StartBackgroundProcessTool;
+#[derive(Default)]
+pub struct StartBackgroundProcessTool {
+    pub scope: Option<Arc<str>>,
+}
 
 #[async_trait::async_trait]
 impl Tool for StartBackgroundProcessTool {
@@ -527,7 +558,7 @@ impl Tool for StartBackgroundProcessTool {
 
         // Relaunch guard: a model that cannot observe a GUI app will happily start the same
         // command forever, leaking a process (and window) each time.
-        if let Some(existing) = process::list_all()
+        if let Some(existing) = process::list_in(self.scope.as_deref())
             .into_iter()
             .find(|p| !p.has_exited() && p.command == command)
         {
@@ -540,7 +571,7 @@ impl Tool for StartBackgroundProcessTool {
             );
         }
 
-        match process::start(command, &work_dir) {
+        match process::start_in(command, &work_dir, self.scope.clone()) {
             Ok(m) => ToolResult::success(format!(
                 "Started background process {id}: {command}\nWorking directory: {}\nUse get_process_output with process_id \"{id}\" to check output.",
                 work_dir.display(),

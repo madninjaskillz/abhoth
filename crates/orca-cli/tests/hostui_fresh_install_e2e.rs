@@ -96,6 +96,13 @@ async fn hostui_starts_without_a_model_and_picks_one_up_from_the_settings() {
         .args(["--hostui=127.0.0.1:0", &format!("--hostui-token={TOKEN}")])
         .current_dir(work.path())
         .env("OPENORCA_HOME", home.path())
+        // An admin exists (D140): the token then signs in as them.
+        .env("ABHOTH_ADMIN_USER", "admin")
+        .env("ABHOTH_ADMIN_PASSWORD_FILE", {
+            let f = home.path().join("admin-password");
+            std::fs::write(&f, "e2e admin password").unwrap();
+            f
+        })
         .env("ABHOTH_HOME", home.path())
         .env_remove("RUST_LOG")
         .stdout(Stdio::piped())
