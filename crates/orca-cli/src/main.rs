@@ -2,7 +2,11 @@ fn main() {
     use tracing_subscriber::Layer;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
-    // The file log (~/.openorca/logs/openorca-{date}.log, FileLoggerProvider): every run; the
+    // The one-time copy of ~/.openorca into ~/.abhoth (D89), before anything creates ~/.abhoth.
+    if let Some(line) = orca_core::config::manager::migrate_default_home() {
+        eprintln!("{line}");
+    }
+    // The file log (~/.abhoth/logs/openorca-{date}.log, FileLoggerProvider): every run; the
     // per-request "Slot usage" lines go there too. Stderr only when asked for (RUST_LOG=debug),
     // so --print stdout stays JSON.
     let log = orca_core::logging::FileLog::open(&orca_core::config::default_config_dir());

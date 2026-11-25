@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { brandName } from "@/lib/brand";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
 import { Button } from "@/components/ui/button";
@@ -31,9 +32,7 @@ export function SignIn({ state, onDone }: { state: AuthState; onDone: () => void
     <div className="flex min-h-full items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
         <Mascot size={128} className="mb-6" />
-        <h1 className="mb-1 text-center text-lg font-semibold">
-          Open<span className="text-primary">Orca</span>
-        </h1>
+        <h1 className="mb-1 text-center text-lg font-semibold text-primary">{brandName()}</h1>
         <p className="mb-6 text-center text-sm text-muted-foreground">
           {stage === "enroll" ? "Set up two-factor sign-in" : stage === "totp" ? "Enter the code from your authenticator app" : "Sign in to continue"}
         </p>

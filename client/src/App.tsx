@@ -325,7 +325,7 @@ function Header({
     <header ref={headerRef} className="relative flex h-10 shrink-0 items-stretch gap-2 border-b bg-panel pl-3 pr-2" data-collapsed={collapsed}>
       <div ref={brandRef} className="flex shrink-0 items-center gap-2 font-semibold">
         <MascotBadge />
-        {!narrow && <span className="tracking-tight">Open<span className="text-primary">Orca</span></span>}
+        {!narrow && <span className="tracking-tight text-primary">{brandName()}</span>}
       </div>
       <nav ref={navRef} className="flex min-w-0 flex-1 items-end gap-px overflow-x-auto pt-1.5" role="tablist" data-testid="project-tabs">
         {projects.map((p) => (

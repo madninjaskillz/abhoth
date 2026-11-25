@@ -599,10 +599,6 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         println!("{}", version_line());
         return Ok(0);
     }
-    // The one-time copy of ~/.openorca into ~/.abhoth (D89).
-    if let Some(line) = orca_core::config::manager::migrate_default_home() {
-        eprintln!("{line}");
-    }
     // --hostui: the web UI, headless (src/OpenOrca.Cli/HostUi). Ignored with --print.
     let hostui_args = if args.single_prompt.is_none() {
         orca_webui::hostui::HostUiArgs::parse(&raw)
