@@ -4,11 +4,21 @@
 
 **Abhoth** is the Rust successor of OpenOrca: the same autonomous coding agent for local models
 (OpenAI-compatible servers, Strata/ninfer slots, LiteLLM), rewritten in Rust as one `abhoth`
-binary. The C# build (`openorca`) stays the parity reference until it is retired; see
-[`CUTOVER.md`](CUTOVER.md).
+binary: an interactive terminal session, one-shot `--print` runs with sub-agents, a web UI
+(`--hostui`, React client in `client/`) and a desktop window (`--desktop`).
+
+This repo was split out of `openorca` (the `rust/` folder and the web client, with their
+history). The C# build in the `openorca` repo stays the parity reference and the rollback for
+about two weeks after the cutover; see [`CUTOVER.md`](CUTOVER.md).
+
+Developed with AI assistance (Claude).
+
+## Build
+
+Needs the toolchain in `rust-toolchain.toml` (rustup installs it). The web client is embedded
+from the checked-in `client/dist`; rebuild it with `npm ci && npm run build` in `client/`.
 
 ```sh
-cd rust
 cargo build --release                # target/release/abhoth(.exe)
 cargo build --release --features desktop   # + abhoth-desktop.exe (no console) and --desktop
 abhoth                               # interactive session in the current folder
@@ -30,14 +40,14 @@ puts the folder on the user PATH.
 
 ```powershell
 dotnet tool install --global wix --version 5.0.2   # once; per-user
-pwsh rust/installer/build.ps1                     # -> rust/target/installer/abhoth-<version>-x64.msi
-msiexec /i rust\target\installer\abhoth-0.15.0-x64.msi              # or double-click it
-msiexec /i rust\target\installer\abhoth-0.15.0-x64.msi ADDTOPATH=0  # without the PATH entry
-msiexec /x rust\target\installer\abhoth-0.15.0-x64.msi              # uninstall (or Settings > Apps)
+pwsh installer/build.ps1                          # -> target/installer/abhoth-<version>-x64.msi
+msiexec /i target\installer\abhoth-0.15.0-x64.msi              # or double-click it
+msiexec /i target\installer\abhoth-0.15.0-x64.msi ADDTOPATH=0  # without the PATH entry
+msiexec /x target\installer\abhoth-0.15.0-x64.msi              # uninstall (or Settings > Apps)
 ```
 
 `build.ps1 -NoCargo` packages the binaries already in `target\release`. The workflow
-`.github/workflows/abhoth-installer.yml` builds the MSI on a tag `abhoth-v*` or when run by hand
+`.github/workflows/installer.yml` builds the MSI on a tag `abhoth-v*` or when run by hand
 and uploads it as an artifact. The state home (`~/.abhoth`) is never touched by install or
 uninstall. The MSI is not signed yet, so SmartScreen may warn.
 
@@ -58,6 +68,39 @@ uninstall. The MSI is not signed yet, so SmartScreen may warn.
 - **Mascot:** `assets/abhoth/abhoth.svg` (vector original) and `abhoth-reference.webp`; the
   PNGs, the multi-size `abhoth.ico` and the web client's `brand/` files are rendered from the SVG
   (resvg, then Pillow for the .ico and .webp files).
+
+## Docker (web UI)
+
+`deploy/docker/` holds the Linux image for the web UI: a headless release build of `abhoth`
+on a runtime with the .NET SDK, Node and the Claude Code / Codex CLIs.
+
+```sh
+docker build -f deploy/docker/Dockerfile -t local/abhoth-web:<n> .
+docker compose -f deploy/docker/compose.yaml up -d   # adapt volumes, ports and secrets first
+```
+
+- The entrypoint runs `abhoth --hostui=0.0.0.0:$PORT --hostui-login`; `/app/openorca` is a
+  symlink to `/app/abhoth`, so `docker exec <c> /app/openorca --hostui-set-password` still works.
+- `OPENORCA_HOME=/state/openorca` is still honoured (fallback for `ABHOTH_HOME`), so an
+  existing OpenOrca container state is used as is; no migration.
+- Rollback: point the app back at the previous OpenOrca image; the state formats are shared.
+  The full procedure is in [`CUTOVER.md`](CUTOVER.md), section 4.
+
+## Tests and the cross-check
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace            # add --all-features for the desktop feature
+```
+
+`cargo test` needs nothing outside this repo: the C# fixtures it compares against are checked
+in (`crates/*/tests/fixtures`, `crates/orca-core/tests/data`). The cross-check
+(`crates/orca-crosscheck`, scenarios in `crosscheck/scenarios`) runs the same scenarios
+through Abhoth and the C# CLI and diffs them, so it is not part of `cargo test` or CI. It
+needs the C# reference, which lives in the `openorca` repo (kept for the rollback period):
+build its Release CLI there, then
+`cargo run -p orca-crosscheck -- --csharp <openorca>\src\OpenOrca.Cli\bin\Release\net10.0\openorca.exe --rust target\debug\abhoth.exe`.
 
 Porting notes, decisions and the test setup: [`PORTING.md`](PORTING.md); progress and gaps:
 [`STATUS.md`](STATUS.md).

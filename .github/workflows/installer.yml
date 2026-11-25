@@ -1,4 +1,3 @@
-# Copy for the abhoth repo (see ci.yml next to it); the workspace is at the root there.
 # The Abhoth Windows installer (installer/, PORTING.md D115): a per-user MSI with
 # abhoth.exe and abhoth-desktop.exe, built on a tag `abhoth-v*` or by hand, and uploaded as an
 # artifact. Signing and publishing a GitHub Release are not done here yet (CUTOVER.md).

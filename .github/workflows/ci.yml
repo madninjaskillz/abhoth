@@ -1,6 +1,6 @@
-# CI of the abhoth repo. This file sits in rust/.github in the openorca repo, where GitHub
-# ignores it; tools/split-abhoth-repo.sh moves it to the root of the abhoth repo (CUTOVER.md).
-# The jobs match openorca's `rust` / `rust-desktop` jobs, with the workspace at the root.
+# CI of the abhoth repo: test, clippy and fmt on Linux and Windows, the desktop feature on
+# Linux, macOS and Windows, and the React client. The cross-check against the C# reference is
+# not here (it needs the openorca repo; see README, "Tests and the cross-check").
 name: CI
 
 on:

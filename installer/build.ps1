@@ -1,7 +1,7 @@
 # Builds the per-user Windows installer (PORTING.md D115): target\installer\abhoth-<version>-x64.msi.
 #
-#   pwsh rust/installer/build.ps1            # cargo build --release --features desktop, then the MSI
-#   pwsh rust/installer/build.ps1 -NoCargo   # the MSI from the binaries already in target\release
+#   pwsh installer/build.ps1                 # cargo build --release --features desktop, then the MSI
+#   pwsh installer/build.ps1 -NoCargo        # the MSI from the binaries already in target\release
 #
 # Needs the WiX v5 .NET tool (per-user, no admin): dotnet tool install --global wix --version 5.0.2
 param([switch]$NoCargo)
