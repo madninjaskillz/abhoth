@@ -595,3 +595,8 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   history: `tools/split-abhoth-repo.sh` runs git-filter-repo, mapping `rust/` to the root and
   `src/OpenOrca.WebUi/client/` to `client/`, and checks the layout, the Anthropic key prefix across all history
   and the build. The repo is created and pushed by the user at cutover (CUTOVER.md step 1).
+- **D132** Linux build checks for the port's branches: the main CI runs only for `main`, so a
+  Windows-only crossterm call on `feature/rust-port` reached the Linux web image unnoticed. The
+  workflow `rust-port-linux.yml` runs clippy and the tests on ubuntu for `feature/rust-port` and
+  `rust-port/**`, and `tools/linux-check.sh` runs `cargo check --workspace --all-targets` in WSL
+  (rustup per-user, its own target dir) before a merge or deploy. It caught the bug above.
