@@ -1,132 +1,19 @@
-//! Prompt text and tag helpers used by the agent loop.
+//! Prompt helpers used by the agent loop: the tool signature formatter
+//! (`ToolSignatureFormatter`) and the reply tag helpers (`<think>`, `<next-prompt>`).
 //!
-//! Phase 1 uses a compact built-in system prompt. The C# prompt system (`PromptManager`,
-//! `SystemPromptBuilder`, `prompts/default.md` with its version stamp, project instructions,
-//! model notes) is ported in phase 2; see `PORTING.md`.
+//! The prompt texts live in [`super::prompt_constants`] (re-exported here so existing callers
+//! keep compiling), the system prompt in [`super::system_prompt`] and the template files in
+//! [`crate::config::prompt_manager`].
 
 use std::sync::LazyLock;
 
 use regex::Regex;
 use serde_json::Value;
 
-use super::registry::ToolRegistry;
-
-/// `PromptConstants.SummaryRequestMessage`: asked after a turn that ran tools ends without a
-/// substantive wrap-up.
-/// The C# raw string literal keeps the source file's line breaks (CRLF in a Windows checkout);
-/// [`summary_request_message`] gives the platform form.
-pub const SUMMARY_REQUEST_MESSAGE: &str = "All tool calls are complete. Provide a final summary of what you did.
-Use markdown formatting (headers, bold, bullets, inline code) directly in your response \u{2014} do NOT wrap it in a code fence.
-Structure:
-- **Summary**: 1\u{2013}3 sentences describing what you did overall.
-- **Changes made**: A bulleted list of files created, modified, or deleted, with brief descriptions.
-- **Key findings**: Any notable discoveries, warnings, or issues encountered (omit if none).
-- **Suggested next steps**: Actionable follow-ups the user might want to do (omit if none).
-Keep it concise. Use `code` formatting for file paths and commands. Do NOT call any tools.
-
-IMPORTANT: At the very end of your response, on its own line, add a <next-prompt> tag containing
-a short follow-up prompt the user might type next (under 80 chars).
-Example: <next-prompt>run the tests</next-prompt>
-If there is no natural follow-up, omit the tag.";
-
-/// [`SUMMARY_REQUEST_MESSAGE`] with platform line breaks, as the C# build sends it.
-pub fn summary_request_message() -> String {
-    platform_lines(SUMMARY_REQUEST_MESSAGE)
-}
-
-/// A multi-line prompt constant with platform line breaks (see [`SUMMARY_REQUEST_MESSAGE`]).
-pub fn platform_lines(text: &str) -> String {
-    text.replace('\n', orca_tools_common::NEWLINE)
-}
-
-/// `PromptConstants.VerificationMessage`: sent once after a turn modified files and nothing
-/// since shows the code working (`agent.verificationMode` "auto").
-pub const VERIFICATION_MESSAGE: &str = "VERIFICATION STEP \u{2014} You MUST verify your implementation before finishing.
-
-STEP 1: Use read_file to re-read every file you created or modified. Do NOT rely on memory.
-   (Exception: a file you already re-read AFTER your last edit to it does not need reading again \u{2014} read each file at most once in this step.)
-STEP 2: For EACH requirement from the user's original request, trace through the code you just read:
-   - Quote the specific line numbers that implement the requirement.
-   - Mentally execute the code: what ACTUALLY happens at runtime? Follow variable assignments,
-     function return values, and control flow step by step.
-   - Common bugs to check for:
-     * Score/counter incrementing every frame instead of only on specific events
-     * Return values from functions not being used by the caller
-     * Visual effects (fading, transparency) that don't actually change over time
-     * Missing initial state (e.g., empty lists when something should start with an item)
-     * Math that produces unexpected values (e.g., integer division by increasing index makes NEWER items darker)
-STEP 3: If you find ANY issue, fix it NOW using edit_file. Then re-read the file to confirm the fix.
-STEP 4: If you used build/test commands earlier (e.g., dotnet build, dotnet test, npm run build, pytest, cargo build),
-   re-run them NOW to confirm the code still compiles and all tests pass. Edits made after the initial build
-   may have introduced new errors (duplicate definitions, missing imports, syntax errors).
-STEP 5: After all fixes, respond with \"Verified.\" and nothing else.
-
-IMPORTANT: Using the think tool alone is NOT sufficient. You MUST use read_file.
-Do NOT run GUI/interactive programs with bash \u{2014} they will time out.
-Do NOT launch or relaunch GUI apps (games, windows) to verify them \u{2014} they produce no
-readable output. Verify with compile/syntax checks and code reading; ask the user to test visuals.";
-
-/// `PromptConstants.VerificationRetryMessage`: the verification reply used no tools.
-pub const VERIFICATION_RETRY_MESSAGE: &str =
-    "You said \"Verified\" but you did NOT actually use read_file to check the code.
-Saying \"Verified\" without reading the files is NOT acceptable \u{2014} you could be missing bugs.
-
-You MUST call read_file NOW on every file you created or modified, then check each requirement.
-If you find issues, fix them with edit_file. Do NOT skip this step.";
-
-/// Asked when a summary was cut off at the output limit.
-pub const SUMMARY_CONTINUE_MESSAGE: &str = "Your response was cut off. Continue exactly where you stopped \u{2014} do NOT repeat anything you already wrote.";
-
-/// `CliConstants.MaxSummaryContinuations`.
-pub const MAX_SUMMARY_CONTINUATIONS: u32 = 3;
-
-const BASE_PROMPT: &str = "You are OpenOrca, an autonomous AI coding agent running in a CLI terminal.
-You DO NOT just explain how to do things \u{2014} you DO them directly using your tools.
-You are resourceful, persistent, and solve problems independently.
-
-RULES:
-- Use the tools to read, create and change files and to run commands; never claim you did something you did not do.
-- Read a file before you edit it, and keep edits minimal and exact.
-- After changing code, run the relevant build or tests when there are any.
-- When the task is done, reply with a short summary of what you did.
-
-ENVIRONMENT:
-- Working directory: {{CWD}}
-- Platform: {{PLATFORM}}
-
-AVAILABLE TOOLS:
-{{TOOL_LIST}}
-
-You have up to {{MAX_ITERATIONS}} iterations per task.";
-
-static EXCESS_BLANK_LINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
-
-/// The system prompt for this session.
-pub fn system_prompt(cwd: &str, registry: &ToolRegistry, max_iterations: i32) -> String {
-    let tool_list: Vec<String> = registry
-        .all()
-        .iter()
-        .map(|t| {
-            format!(
-                "- {}",
-                format_signature(t.name(), Some(t.description()), &t.parameter_schema())
-            )
-        })
-        .collect();
-    let text = BASE_PROMPT
-        .replace("{{CWD}}", cwd)
-        .replace("{{PLATFORM}}", &platform())
-        .replace("{{TOOL_LIST}}", &tool_list.join("\n"))
-        .replace("{{MAX_ITERATIONS}}", &max_iterations.max(1).to_string());
-    EXCESS_BLANK_LINES
-        .replace_all(&text, "\n\n")
-        .trim()
-        .to_string()
-}
-
-fn platform() -> String {
-    format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
-}
+pub use super::prompt_constants::{
+    MAX_SUMMARY_CONTINUATIONS, SUMMARY_CONTINUE_MESSAGE, SUMMARY_REQUEST_MESSAGE,
+    VERIFICATION_MESSAGE, VERIFICATION_RETRY_MESSAGE, platform_lines, summary_request_message,
+};
 
 /// `ToolSignatureFormatter.Format`: `name(params) — first sentence of the description`.
 pub fn format_signature(name: &str, description: Option<&str>, schema: &Value) -> String {
@@ -245,6 +132,74 @@ pub fn strip_next_prompt_tag(text: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // --- Ported from ToolSignatureFormatterTests.cs ---
+    // Format_AllRegisteredTools_ProduceNonEmptySingleLineSignatures lives in orca-cli
+    // (tests/tool_signatures.rs), which owns the tool registry.
+
+    fn schema(text: &str) -> Value {
+        serde_json::from_str(text).unwrap()
+    }
+
+    #[test]
+    fn format_required_and_optional_params_marks_optional_with_question_mark() {
+        let s = schema(
+            r#"{"type":"object","properties":{
+                "path":{"type":"string"},
+                "create_dirs":{"type":"boolean","default":true}
+            },"required":["path"]}"#,
+        );
+        assert_eq!(
+            format_signature(
+                "write_file",
+                Some("Write content to a file. More detail here."),
+                &s
+            ),
+            "write_file(path: string, create_dirs?: boolean = true) \u{2014} Write content to a file."
+        );
+    }
+
+    #[test]
+    fn format_integer_params_render_as_number() {
+        let s = schema(
+            r#"{"type":"object","properties":{
+                "line":{"type":"integer"},
+                "ratio":{"type":"number"}
+            },"required":["line"]}"#,
+        );
+        assert_eq!(format_parameters(&s), "line: number, ratio?: number");
+    }
+
+    #[test]
+    fn format_enum_param_renders_literal_union() {
+        let s = schema(
+            r#"{"type":"object","properties":{
+                "mode":{"type":"string","enum":["fast","full"]}
+            },"required":["mode"]}"#,
+        );
+        assert_eq!(format_parameters(&s), "mode: \"fast\" | \"full\"");
+    }
+
+    #[test]
+    fn format_array_param_renders_element_type() {
+        let s = schema(
+            r#"{"type":"object","properties":{
+                "files":{"type":"array","items":{"type":"string"}}
+            },"required":["files"]}"#,
+        );
+        assert_eq!(format_parameters(&s), "files: string[]");
+    }
+
+    #[test]
+    fn format_empty_schema_produces_empty_params() {
+        assert_eq!(format_parameters(&schema("{}")), "");
+        assert_eq!(
+            format_signature("noop", Some("Does nothing"), &schema("{}")),
+            "noop() \u{2014} Does nothing"
+        );
+    }
+
+    // --- Rust-only ---
 
     #[test]
     fn signature_lists_required_and_optional_params() {

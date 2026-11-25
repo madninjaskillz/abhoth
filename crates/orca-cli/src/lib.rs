@@ -129,6 +129,11 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
     };
     let mut config = load_config(None)?;
     args.apply_to(&mut config);
+    // Ensure the default prompt template exists and is current (Program.cs does it at startup).
+    if let Err(e) = orca_core::config::prompt_manager::PromptManager::new().ensure_default_prompt()
+    {
+        tracing::warn!("could not write the default prompt template: {e}");
+    }
     let result = run_single_prompt(config, cwd, &prompt, args.json_output).await?;
     if args.json_output {
         println!(

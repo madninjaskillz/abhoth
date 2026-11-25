@@ -12,8 +12,10 @@
 //! - every request body the server received (messages, sampling fields, ...),
 //! - the files in the work folder afterwards.
 //!
-//! Known, documented gaps are ignored by default: the system prompt text and the advertised
-//! tool list (phase 1 has a compact prompt and only the core tools). `--strict` compares them too.
+//! Known, documented gaps are ignored by default: the advertised tool list (the `tools` array
+//! and the tool-derived parts of the system prompt: the AVAILABLE TOOLS lines and the
+//! lead_mode tool's LEAD MODE section), since Rust has only the core tools until phase 3. The
+//! rest of the system prompt is compared. `--strict` compares everything.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -231,18 +233,68 @@ fn normalize(v: Value, paths: &[(&str, &str)]) -> Value {
     }
 }
 
-/// Remove what phase 1 knowingly does differently (see PORTING.md, "Known gaps").
+/// Remove what the port knowingly does differently (see PORTING.md, "Known gaps"): the tool
+/// list. The system prompt is compared with its tool-derived parts masked.
 fn mask_known_gaps(mut request: Value) -> Value {
     if let Some(o) = request.as_object_mut() {
         o.remove("tools");
         if let Some(Value::Array(msgs)) = o.get_mut("messages")
             && let Some(first) = msgs.first_mut()
             && first["role"] == "system"
+            && let Some(text) = first["content"].as_str()
         {
-            first["content"] = json!("<system prompt>");
+            first["content"] = json!(mask_tool_derived_prompt(text));
         }
     }
     request
+}
+
+/// The system prompt with the AVAILABLE TOOLS lines replaced by `<tool list>` and the LEAD MODE
+/// section (present only when a `lead_mode` tool is advertised) removed.
+fn mask_tool_derived_prompt(text: &str) -> String {
+    let mut out = text.to_string();
+    const LIST: &str = "AVAILABLE TOOLS:
+";
+    if let Some(start) = out.find(LIST).map(|i| i + LIST.len()) {
+        // Tool descriptions can hold blank lines: the list ends at the next section header.
+        let end = out[start..]
+            .find(
+                "
+
+AGENT DELEGATION",
+            )
+            .or_else(|| {
+                out[start..].find(
+                    "
+
+PROGRESS:",
+                )
+            })
+            .or_else(|| {
+                out[start..].find(
+                    "
+
+",
+                )
+            })
+            .map_or(out.len(), |e| start + e);
+        out.replace_range(start..end, "<tool list>");
+    }
+    const LEAD: &str = "
+
+LEAD MODE (auto):
+";
+    if let Some(start) = out.find(LEAD) {
+        let end = out[start + LEAD.len()..]
+            .find(
+                "
+
+",
+            )
+            .map_or(out.len(), |e| start + LEAD.len() + e);
+        out.replace_range(start..end, "");
+    }
+    out
 }
 
 fn diff(path: &str, a: &Value, b: &Value, out: &mut Vec<String>) {

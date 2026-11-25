@@ -1,0 +1,19 @@
+{
+  "prompt": "What does hello.txt say?",
+  "files": {
+    "hello.txt": "hi there\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "raw": ""
+        }
+      ]
+    },
+    {
+      "text": "I cannot read files right now, but the file is called hello.txt and sits in the working folder."
+    }
+  ]
+}

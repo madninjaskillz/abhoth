@@ -2,7 +2,10 @@
 
 pub mod dotnet_json;
 pub mod manager;
+pub mod memory_manager;
 pub mod model;
+pub mod project_instructions;
+pub mod prompt_manager;
 
 pub use manager::{
     ConfigError, ConfigManager, default_config_dir, serialize_config, serialize_config_with_newline,
