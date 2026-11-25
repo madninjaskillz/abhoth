@@ -264,7 +264,8 @@ async fn screenshot_rejects_unknown_keys_and_reports_a_job_without_a_window() {
     let bash = PiBashTool::new(Some(shell), None, 0, Vec::new(), jobs.clone());
     let started = run(
         &bash,
-        json!({"command": "echo no window here; sleep 1", "background": true}),
+        // Long enough to outlive the 1 s start-up wait on a busy runner; killed at the end.
+        json!({"command": "echo no window here; sleep 30", "background": true}),
         &ctx,
     )
     .await;
