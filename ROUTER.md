@@ -5,7 +5,8 @@ against fake engines and a local LiteLLM 1.106.6 shadow replay; see section 10 f
 implementation decisions and section 11 for the replay results. Nothing on DeepThought uses it
 yet. Survey date: 2026-11-25, read-only, against the live layout `merged-inkling-x2` (ninfer
 `inkling-2-mini` on both cards, 4 lanes each). Keys and tokens are left out of this document on
-purpose.
+purpose. Host-specific values are placeholders: `gpu-host` (the GPU server), `$AI_ROOT` (its
+AI tree), `$LITELLM_CONFIG_DIR`, `$TRUENAS_APP_CONFIGS`, `$HA_BRIDGE_DIR`.
 
 ## TL;DR
 
@@ -36,12 +37,12 @@ purpose.
 ### 1.1 LiteLLM itself
 
 How it runs: as the TrueNAS app `litellm`, from the rendered compose at
-`/mnt/.ix-apps/app_configs/litellm/versions/1.0.0/templates/rendered/docker-compose.yaml`.
+`$TRUENAS_APP_CONFIGS/litellm/versions/1.0.0/templates/rendered/docker-compose.yaml`.
 
 - **Image:** `ghcr.io/berriai/litellm:main-stable`. This is a floating tag, so a redeploy can
   pull new code.
 - **Ports and mounts:** `8010:4000`, on its own bridge `ix-litellm_default` (172.16.3.0/24).
-  Two read-only bind mounts: `/home/admin/litellm/config.yaml` to `/app/config.yaml`, and
+  Two read-only bind mounts: `$LITELLM_CONFIG_DIR/config.yaml` to `/app/config.yaml`, and
   `effort_hook.py` to `/app/effort_hook.py`.
 - **Environment:** no DB or master-key variables.
 
@@ -119,7 +120,7 @@ replaces LiteLLM. Rules that follow:
 | **Bench kit** (`bench/` in `openorca-rust`) | `run.py` drives OpenOrca (above) and waits on the registry (`--wait-registry http://…:8099`); `pigrun.py` / `pig_vs_orca.py` use `:8099` and `:8010` | `pigrun.py` still names **`qwen-flash`**, an alias that no longer exists (stale) | `reasoning_effort`, `chat_template_kwargs` through PiG's `samplingParams` | none |
 | **Dash** (`$AI_ROOT/dash/app/server.py`) | `:8010/health/liveliness`, `:8092/health`, `:8099/health` and `/list`, `:8098/live` and `/cards`; engines directly for `/v1/models`, `/props`, `/metrics` and ninfer request logs | n/a | GETs only | engine key for direct probes |
 | **layoutctl.py** (root cron runner) | writes `config.yaml` and nginx.conf; `GET /health/liveliness`, `GET /v1/model/info` (`gateway_rev`); `gateway_test` POSTs one chat to `:8010` with the first alias | first alias | non-streaming, `max_tokens` 64 | none |
-| **HA ha-bridge** (`/home/admin/ha-bridge/ha_bridge.py`), **Jarvis** `deepthought.py` | `:8098` profiles API only (switch buttons, live view) | n/a | n/a | none (LAN) |
+| **HA ha-bridge** (`$HA_BRIDGE_DIR/ha_bridge.py`), **Jarvis** `deepthought.py` | `:8098` profiles API only (switch buttons, live view) | n/a | n/a | none (LAN) |
 | **music** `chk.sh` | `:8092/health` | n/a | n/a | n/a |
 | **ComfyUI / image-api shim / SA3 / ha-bridge GPU** | none of 8010, 8092, 8098 or 8099 | | | |
 | **Cloud providers** | none in any LiteLLM config | | | |
@@ -702,3 +703,40 @@ LiteLLM routes to the card pool (no relay names were configured; on-demand is of
   headers while a bench was running on it. With placement off, the router balances only on its
   own in-flight count; it cannot see bench traffic that reaches the cards directly. Turning on
   lease-aware placement (or busy polling) before switch-over addresses that.
+
+### 11.2 Shadow trial with placement on (from 2026-11-25 18:52 UTC, about 3 days)
+
+Clients stay on LiteLLM, and qfn-lb logs nothing, so the trial is **decision-only**
+(`observe` in router.json, `src/observe.rs`):
+
+- **What is mirrored.** Not the requests: their record. The router follows each card's own
+  ninfer request log (`$AI_ROOT/ninfer/logs/req-layout-{a,b}.jsonl`, mounted read-only),
+  merging both in time order. Every real request (LiteLLM's pool, the pinned `-a`/`-b`
+  aliases, benches and slot clients) shows up as `request_start` / `request_done` on the card
+  that served it. pig-slots `/list` (GET, every 5 s) gives where the Lead holds a lease.
+- **How placement decides.** At each arrival it rebuilds every card's true in-flight count and
+  applies the router's policy: cache affinity (a request that reused at least 1024 cached
+  tokens on its card stays there: the stand-in for session affinity, since the logs carry no
+  session key), else least load per lane (a tie keeps the actual card), then admission with
+  the Lead reserve (one of the Lead card's 4 lanes kept back). It scores that choice against
+  the actual card. Where they differ, the predicted gain is the engine queue wait avoided (if
+  the other card had a free lane) plus the batching slowdown (tokens out times the difference
+  in per-row decode time at the two batch sizes, learned from the logs' 5 s throughput
+  events), minus the cached prompt that would be recomputed on the other card.
+- **Limits of the score.** Pinned traffic (`-a`/`-b` aliases, slot clients) could not have
+  moved, but shows up as a disagreement whenever the other card was idler. The logs do not say
+  which requests were pinned, so the agreement figure is a lower bound for pool traffic.
+- **Load sent.** None from the scoring. A canary measures added latency: one tiny chat pair
+  (LiteLLM, then the router, alternating; 8 tokens, thinking off, `qwen3.8-27b`) every 15 min,
+  only while every card has 2 or more free lanes, never 06:45-07:30 UK.
+- **Live placement.** The router's own placement is on too (admission, affinity, lease-aware)
+  and sees the engines' true load (`feedPlacement`), but only the canary goes through it.
+- **Where it is logged.** `$AI_ROOT/router/observe/decisions-YYYY-MM-DD.jsonl` (UK
+  dates; one line per scored request, canary pair and error), `summary-YYYY-MM-DD.{json,md}`
+  written at UK midnight; `GET :8020/observe[?date=]` and
+  `docker exec abhoth-router-router-1 /app/abhoth-router observe-summary --dir /state/observe`
+  on demand.
+- **How to stop it.** Set `"observe": {"enabled": false}` in `$AI_ROOT/router/base.json`
+  (the importer and router pick it up within 10 s), or stop the shadow altogether with
+  `sudo docker compose -p abhoth-router -f $AI_ROOT/router/compose.yaml down`.
+  The previous config is kept as `base.json.bak-20261125-1852` and `compose.yaml.bak-...`.
