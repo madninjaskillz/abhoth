@@ -84,12 +84,12 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 ### Tests
 
-- Rust: 1784+ tests (`cargo test --workspace --no-fail-fast`), clippy `-D warnings` and fmt
+- Rust: 1909 tests (`cargo test --workspace --no-fail-fast`), clippy `-D warnings` and fmt
   clean.
 - Cross-check: 105 scenarios, all identical between the C# and Rust builds, two runs (phase 1
   and 2 sets, stream guards 30-39, tools 40-45, git/web 50-55, Pi 60-69 strict, MCP/LSP/image
   70-76, profiles/slots/engines 80-84, agents 85-94d (slots spawn, Pi subagent strict), interactive PTY 95-107, tool images
-  108-109, usage lines 110-114). Bench API: 42 calls identical against both hosts (one-off
+  108-109, usage lines 110-114, tool-argument digits 119). 110/110 on 2026-11-25 (`rust-port/ghapp`). Bench API: 42 calls identical against both hosts (one-off
   script).
 - Live smoke 2026-11-25 (qwen3.8-27b via LiteLLM, `--print`): task_list, edit_file, git_diff,
   git_commit on a temp repo; bug fixed and committed.
