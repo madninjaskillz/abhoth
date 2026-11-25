@@ -721,3 +721,55 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     (C# parity).
   - **Limit, documented in the README.** Users are not separated from the OS: agents and the
     terminal run as the server's user.
+- **D141** The agent loop's log lines match C#'s: category, wording and level, so
+  `bench/run.py report` and the parity analysis read Rust logs with no special cases (the
+  2026-11-25 parity bench counted 0 requests for Rust: `requests` counts a C#-only line).
+  `agent::log_lines` holds the C# categories as `tracing` targets: `AgentLoopRunner` (with
+  the `StreamingResponseProcessor` and `ToolCallDispatcher` lines, which C# writes under the
+  loop's logger), `ToolCallExecutor`, and `Program` for the tool pipeline (C# builds
+  `ToolExecutionPipeline`'s logger from `Program`'s). Counts are .NET's (UTF-16 lengths,
+  `True`/`False`, `F1` seconds, 200/500/300-character previews).
+  - **Inventory** (50 C# runs of the parity bench; C# log calls in `AgentLoopRunner`,
+    `ToolCallExecutor`, `ToolExecutionPipeline`, `ToolCallDispatcher`,
+    `StreamingResponseProcessor`, `ConversationCompactor`, `ToolCallParser`,
+    `ErrorRecoveryHandler`, `MaxTokensNegotiator`, `AgentOrchestrator`):
+
+    | C# line kind (real logs: 54 kinds) | Rust before | now |
+    |---|---|---|
+    | `=== Agent loop iteration i/n ===`, `Injecting task reminder`, `Conversation has N messages`, `Native tool calling: True, tool count: N`, `Starting streaming request to LLM...`, `First token received`, `Native FunctionCallContent received: name (id: ...)`, `Streaming complete: N tokens, ...`, `Native function calls: N`, `Executing N native / text-parsed tool call(s)` | missing | added |
+    | `Parsed function calls from text`, `No tool calls found ...`, `Last N chars`, `Skipping code-block nudge`, `Skipping forced verification`, `Final message already contains a wrap-up`, `Verification complete — requesting final summary`, `No tool calls — ending agent loop`, `Captured next-prompt suggestion` | missing | added |
+    | `Program: ExecuteToolAsync called`, `Tool resolved`, `Tool X completed: isError=`, `[WRN] Tool X error:`, `Pi profile: registered ...` | missing | added |
+    | `ToolCallExecutor: Preparing tool`, `Tool X returned N chars in Ns`, `Added tool result message` | missing | added |
+    | `ReplLoop: Single-prompt JSON mode`, `LmStudioClientFactory: Creating LM Studio client` | missing | added |
+    | `MaxTokens already set to N — skipping negotiation` | reworded | C# wording |
+    | context and compaction lines, usage lines, slot lease / Strata notes, Lead mode, Pi bash, prompt template, probe failures, nudge triggers, early runs (16 kinds) | present | C# categories now (`AgentLoopRunner`, `Program`, `PromptManager`, `Slots`, `ToolCallExecutor`) |
+    | plugin / tool / command registration (7 kinds) | n/a | not ported: Rust links its tools in; no plugins or command registry to log |
+    | `  [role] contents: TextContent, ...` (one line per message per request) | missing | not ported: it names .NET content types Rust does not have; the count line stays |
+
+    So 54 kinds, 37 missing; 29 added, 8 left out (above), 1 reworded. From the source only
+    (paths the bench never hit), also added or brought to C#'s wording: `requesting
+    verification before finishing`, `Verification response had no tool calls`, `Nudging model
+    (attempt n)`, `Truncated tool call detected`, `Summary truncated`, `Delegated work ...`,
+    the doom-loop pair (`ToolCallExecutor: Doom loop detected: ...` and `Doom loop detected for
+    tool '...'`), `Tool X has failed N times with same error — warning appended / forcing stop`,
+    `Force-breaking agent loop`, `Injecting user message to redirect model`, `Blocked tool`,
+    `Injected tool results as user message`, `Attached N image(s)`, the `<think>` tag lines,
+    `Text-parsed tool call`, `Stuck probing:`, `Extending iteration budget`, `Iteration budget N
+    reached without progress`, `No tokens received from LLM — empty response`, `Native tool
+    call(s) have empty args`, `Conversation ended on N tool call(s) without results`,
+    `Reasoning cap:`, `Thinking runaway:`, `Stream died mid-response`, `Streaming idle timeout`,
+    the native-tools retry pair, `Iteration-exhaustion summary request failed`, `Unknown tool
+    requested`, `argument validation failed`, `Permission denied for tool`, `Tool X timed out
+    after Ns`, `Adaptive reasoning: no thinking`, and `Sub-agent #n type iteration i/n`
+    (analyze.py's sub-agent turns).
+  - **Not added** (the behaviour itself is not ported, or differs): the non-streaming fallback
+    and raw error-probe lines, parameter alias / inference, checkpoint failures, sequential
+    dependency and same-file queueing (Rust runs a round's calls in order), streaming-tool
+    lines, `Generation cancelled by user`, `HTTP error communicating with LLM server` / `Error
+    in agent loop iteration` (Rust returns the error to the caller), the `<next-prompt` capture
+    warning, and the pipeline's missing-argument and directory-restriction warnings.
+  - Rust-only lines and the compactor's keep their module categories (`compactor`,
+    `orchestrator`, ...); the bench patterns for those match on wording only. A fizzbuzz run
+    of each build now differs only in C#'s plugin-loading lines. Tests: `crates/orca-cli/tests/event_log.rs`
+    runs turns against the fake server with the file log layer and counts each kind with the
+    bench's own patterns.

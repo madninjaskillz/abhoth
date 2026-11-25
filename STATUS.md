@@ -182,7 +182,9 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 ## Next
 
-1. Bench parity run (user-scheduled; the gate for the cutover, CUTOVER.md step 0).
+1. Bench parity run: done 2026-11-25, 49/50 passes each, wall clock and tokens level
+   ([`docs/bench/BENCH-PARITY-2026-11-25.md`](docs/bench/BENCH-PARITY-2026-11-25.md)). The C#
+   log lines it found missing are ported (D141).
 2. Fresh install: the desktop app must start without a configured model and show why; an icon
    in the `.exe` files.
 3. Phase 7 follow-ups: code signing for the Setup.exe (CUTOVER.md).
@@ -201,6 +203,10 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   the `--desktop` window. Screenshots are in the scratchpad (`shots/abhoth-*.png`).
 
 ## Bench parity run (to be scheduled with the user; not run by agents)
+
+Run on 2026-11-25: results in [`docs/bench/BENCH-PARITY-2026-11-25.md`](docs/bench/BENCH-PARITY-2026-11-25.md).
+Rust now writes C#'s agent-loop log lines (D141), so `run.py report` counts its requests and
+events the same way.
 
 What it must show: on the same model, slots and tasks, `abhoth` is no slower per task and no
 worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
