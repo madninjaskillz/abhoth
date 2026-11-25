@@ -18,6 +18,7 @@ use orca_tools_common::keep_head_and_tail;
 use super::permissions;
 use super::prompts;
 use super::registry::ToolRegistry;
+use super::system_prompt::{PromptTool, SystemPromptBuilder};
 use crate::client::{
     ChatError, ChatMessage, ChatOptions, OpenAiClient, ToolCall, request_parameters,
 };
@@ -80,7 +81,7 @@ pub struct AgentSession {
     pub messages: Vec<ChatMessage>,
     /// Who this agent is in served-model tracking ("lead" or a sub-agent id).
     pub actor: String,
-    /// Advertise tools via native function calling (phase 1 always does).
+    /// Advertise tools via native function calling (resolved at the start of every turn).
     pub native_tools: bool,
     /// Plan mode: only read-only tools are advertised and run.
     pub plan_mode: bool,
@@ -88,6 +89,9 @@ pub struct AgentSession {
     pub prompter: Option<Box<dyn permissions::PermissionPrompter>>,
     /// Scopes approved with "yes to all" this session (lowercase keys).
     pub approved_scopes: std::collections::HashSet<String>,
+    /// Builds the system prompt (`SystemPromptBuilder`); also remembers which prompts it built
+    /// for which tool-calling mode.
+    pub prompt_builder: Arc<SystemPromptBuilder>,
 
     pub tool_call_history: Vec<ToolCallRecord>,
     /// Paths changed by successful file-modifying calls, as the model passed them
@@ -129,11 +133,13 @@ impl AgentSession {
         registry: ToolRegistry,
         ctx: ToolContext,
     ) -> Self {
+        let prompt_builder = Arc::new(SystemPromptBuilder::with_defaults(&config, &ctx.cwd));
         Self {
             config,
             client,
             registry,
             ctx,
+            prompt_builder,
             messages: Vec::new(),
             actor: "lead".into(),
             native_tools: true,
@@ -167,13 +173,38 @@ impl AgentSession {
         }
     }
 
-    /// The built-in system prompt for this session's tools and directory.
+    /// The system prompt for this session's tools, directory and config
+    /// (`SystemPromptBuilder.GetSystemPromptAsync`); `native_tools` decides the tool-calling
+    /// protocol section (text when no tools are registered).
     pub fn default_system_prompt(&self) -> String {
-        prompts::system_prompt(
-            &self.ctx.cwd.display().to_string(),
-            &self.registry,
-            self.config.agent.main_loop_max_iterations,
+        let tools = PromptTool::from_registry(&self.registry);
+        let native = self.native_tools && !tools.is_empty();
+        self.prompt_builder.get_system_prompt_for_mode(
+            &self.config,
+            Some(&tools),
+            self.plan_mode,
+            native,
         )
+    }
+
+    /// `SyncSystemPromptToolModeAsync`: rebuild the system prompt when it was built by this
+    /// session's builder for the other tool-calling mode (custom prompts are left alone).
+    pub fn sync_system_prompt_tool_mode(&mut self) {
+        let current = self
+            .messages
+            .first()
+            .filter(|m| m.role == crate::client::Role::System)
+            .and_then(|m| m.content.as_deref());
+        let built_for = self.prompt_builder.get_prompt_tool_mode(current);
+        if built_for.is_none_or(|b| b == self.native_tools) {
+            return;
+        }
+        tracing::info!(
+            "Rebuilding system prompt for {} tool calling",
+            if self.native_tools { "native" } else { "text" }
+        );
+        let prompt = self.default_system_prompt();
+        self.set_system_prompt(prompt);
     }
 
     /// The model requests go to: the failover position in `lmStudio.models`, else the

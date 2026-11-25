@@ -84,6 +84,7 @@ pub async fn run_single_prompt(
     let client = client_from_config(&config, served)?;
     let registry = build_registry(&config);
     let mut session = AgentSession::new(config, client, registry, ToolContext::new(cwd));
+    session.native_tools = session.resolve_native_tools();
     let system = session.default_system_prompt();
     session.set_system_prompt(system);
 
@@ -127,6 +128,11 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
     };
     let mut config = load_config(None)?;
     args.apply_to(&mut config);
+    // Ensure the default prompt template exists and is current (Program.cs does it at startup).
+    if let Err(e) = orca_core::config::prompt_manager::PromptManager::new().ensure_default_prompt()
+    {
+        tracing::warn!("could not write the default prompt template: {e}");
+    }
     let result = run_single_prompt(config, cwd, &prompt, args.json_output).await?;
     if args.json_output {
         println!(

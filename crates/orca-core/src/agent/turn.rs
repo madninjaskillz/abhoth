@@ -45,6 +45,10 @@ pub(super) struct LoopState {
     pub exhaust_reason: Option<String>,
     /// History length at the start of each iteration (progress windows).
     pub history_marks: Vec<usize>,
+    pub stuck_strikes: i32,
+    pub stuck_anchor: Option<usize>,
+    pub stuck_fires_in_streak: i32,
+    pub stuck_last_fire_count: Option<usize>,
     pub pre_verification_wrap_up: Option<String>,
     pub pre_verification_epoch: u64,
 }
@@ -84,6 +88,7 @@ impl AgentSession {
         // A previous turn's failover must not pin the session on a backup model.
         self.model_index = 0;
         self.native_tools = self.resolve_native_tools();
+        self.sync_system_prompt_tool_mode();
 
         let mut iteration: i32 = 0;
         let mut budget_exhausted = false;
@@ -192,6 +197,7 @@ impl AgentSession {
                 if s.verification_requested {
                     s.verification_tools_used = true;
                 }
+                self.check_stuck_probing(&mut s, observer);
             } else if let parsed @ [_, ..] =
                 tool_call_parser::parse_tool_calls_from_text(&response.text).as_slice()
             {
@@ -212,6 +218,7 @@ impl AgentSession {
                 if s.verification_requested {
                     s.verification_tools_used = true;
                 }
+                self.check_stuck_probing(&mut s, observer);
             } else {
                 self.messages.push(response.to_message());
 
@@ -290,10 +297,15 @@ impl AgentSession {
         }
     }
 
+    /// Remember (sticky) whether the active model can do native calls, and keep the system
+    /// prompt's tool protocol in step with the mode now in use.
     fn remember_native_tools_support(&mut self, supported: bool) {
         if let Some(m) = self.active_model() {
+            self.prompt_builder
+                .remember_native_tools_support(&m, supported);
             self.native_tools_support.insert(m, supported);
         }
+        self.sync_system_prompt_tool_mode();
     }
 
     /// Context size estimate for the reminder threshold (chars / `context.charsPerToken`,
@@ -502,6 +514,7 @@ impl AgentSession {
         self.recent_tool_errors.clear();
         self.recent_call_history.clear();
         self.native_tools = self.resolve_native_tools();
+        self.sync_system_prompt_tool_mode();
         tokio::time::sleep(self.failover_delay).await;
         true
     }
@@ -856,6 +869,55 @@ impl AgentSession {
         };
         self.messages.push(ChatMessage::assistant(text.clone()));
         self.last_assistant_response = Some(text);
+    }
+
+    /// `CheckStuckProbing`: the model keeps probing (no file change) while the latest test run
+    /// keeps failing the same way. Steer once per `agent.stuckProbeThreshold` calls, at most
+    /// twice per streak; it only steers (the budget ends the turn).
+    fn check_stuck_probing(&mut self, s: &mut LoopState, observer: &mut dyn AgentObserver) {
+        let threshold = self.config.agent.stuck_probe_threshold;
+        if threshold <= 0 || s.summary_requested {
+            return;
+        }
+        let Some(streak) = self
+            .long_task_monitor()
+            .current_stuck_streak(&self.tool_call_history)
+        else {
+            return;
+        };
+        if s.stuck_anchor != Some(streak.anchor_index) {
+            s.stuck_anchor = Some(streak.anchor_index);
+            s.stuck_fires_in_streak = 0;
+            s.stuck_last_fire_count = None;
+        }
+        if s.stuck_fires_in_streak >= 2 {
+            return;
+        }
+        let count = self.tool_call_history.len();
+        let since = match s.stuck_last_fire_count {
+            Some(last) => count.saturating_sub(last),
+            None => streak.calls,
+        };
+        if (since as i64) < threshold as i64 {
+            return;
+        }
+        s.stuck_strikes += 1;
+        s.stuck_fires_in_streak += 1;
+        s.stuck_last_fire_count = Some(count);
+        let failure = streak.failure.describe();
+        observer.on_notice(&format!(
+            "Probing in circles ({} calls, no file change, same failing tests) \u{2014} steering toward a decisive fix (strike {}).",
+            streak.calls, s.stuck_strikes
+        ));
+        let note = super::prompt_constants::get_stuck_probe_message(
+            s.stuck_strikes.min(2),
+            streak.calls as i32,
+            &streak.failure.key,
+            &failure,
+            &streak.recent_probes,
+            false,
+        );
+        self.add_harness_note(&note);
     }
 
     /// A long-task monitor over this turn's tool history.
