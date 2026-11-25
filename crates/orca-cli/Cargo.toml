@@ -11,6 +11,12 @@ publish.workspace = true
 name = "abhoth"
 path = "src/main.rs"
 
+# The desktop app without a console window (Start-menu shortcut); same as `abhoth --desktop`.
+[[bin]]
+name = "abhoth-desktop"
+path = "src/bin/abhoth_desktop.rs"
+required-features = ["desktop"]
+
 [lib]
 path = "src/lib.rs"
 
@@ -43,6 +49,12 @@ chrono.workspace = true
 unicode-width.workspace = true
 regex.workspace = true
 reqwest.workspace = true
+wry = { workspace = true, optional = true }
+tao = { workspace = true, optional = true }
+tray-icon = { workspace = true, optional = true }
+rfd = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 
 [features]
 # Optional tool groups (PORTING.md "Plugins"): on by default, like the C# plugin folder.
@@ -52,6 +64,8 @@ network = ["dep:orca-tools-network"]
 mcp = ["dep:orca-tools-mcp"]
 lsp = ["dep:orca-tools-lsp"]
 image = ["dep:orca-tools-image"]
+# `abhoth --desktop`: the web UI in a native window (WebView2 / WKWebView / WebKitGTK).
+desktop = ["dep:wry", "dep:tao", "dep:tray-icon", "dep:rfd", "dep:image", "dep:futures-util"]
 
 [dev-dependencies]
 reqwest.workspace = true

@@ -978,3 +978,84 @@ async fn raw_serves_a_generated_image_from_the_image_folder_by_its_absolute_path
     let out = get(elsewhere.to_string_lossy().to_string()).await.unwrap();
     assert_eq!(out.status(), StatusCode::FORBIDDEN);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_desktop_folder_dialog_is_only_there_for_the_desktop_window() {
+    let work = tempfile::tempdir().unwrap();
+    // A plain host: no desktop flag, no endpoint.
+    let host = Host::start(FakeSession::new(work.path())).await;
+    let info: Value = host
+        .api(Method::GET, "/api/info")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(info.get("desktop").is_none());
+    let r = host
+        .api(Method::POST, "/api/desktop/pick-folder")
+        .header("Origin", host.url(""))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::NOT_FOUND);
+
+    // The desktop window's host: the hook answers (here a fake dialog), cancel gives null.
+    let picked = work.path().join("picked");
+    let answer = Arc::new(std::sync::Mutex::new(Some(picked.clone())));
+    let seen_start = Arc::new(std::sync::Mutex::new(None));
+    let (a, s) = (answer.clone(), seen_start.clone());
+    let host = Host::start_with(FakeSession::new(work.path()), move |o| {
+        o.desktop = Some(orca_webui::server::DesktopHooks {
+            pick_folder: Arc::new(move |start| {
+                *s.lock().unwrap() = start;
+                let r = a.lock().unwrap().take();
+                Box::pin(async move { r })
+            }),
+        });
+    })
+    .await;
+    let info: Value = host
+        .api(Method::GET, "/api/info")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(info["desktop"], true);
+    let start = work.path().to_string_lossy().to_string();
+    let r: Value = host
+        .api(Method::POST, "/api/desktop/pick-folder")
+        .header("Origin", host.url(""))
+        .json(&json!({"start": start}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["path"], picked.to_string_lossy().as_ref());
+    assert_eq!(seen_start.lock().unwrap().as_deref(), Some(work.path()));
+    let r: Value = host
+        .api(Method::POST, "/api/desktop/pick-folder")
+        .header("Origin", host.url(""))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(r["path"].is_null());
+    // Without the token: refused like any other API call.
+    let r = host
+        .http()
+        .post(host.url("/api/desktop/pick-folder"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+}

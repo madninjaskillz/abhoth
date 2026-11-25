@@ -12,7 +12,7 @@ use axum::body::Body;
 use axum::extract::{ConnectInfo, Query, State, WebSocketUpgrade};
 use axum::http::{Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -61,6 +61,22 @@ pub struct WebUiOptions {
     pub github_api: String,
     /// The bench runner (Benchmarks page); `None` = off.
     pub bench: Option<crate::bench::BenchOptions>,
+    /// Set when the server backs the desktop window (`abhoth --desktop`, D110).
+    pub desktop: Option<DesktopHooks>,
+}
+
+/// Picks a folder with the system dialog, starting in the given one; `None` when cancelled.
+pub type PickFolderFn = Arc<
+    dyn Fn(Option<PathBuf>) -> futures_util::future::BoxFuture<'static, Option<PathBuf>>
+        + Send
+        + Sync,
+>;
+
+/// What the desktop app adds to the web host (only for its own window: the listener is
+/// loopback-only and the token never leaves the process).
+#[derive(Clone)]
+pub struct DesktopHooks {
+    pub pick_folder: PickFolderFn,
 }
 
 impl WebUiOptions {
@@ -87,6 +103,7 @@ impl WebUiOptions {
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "https://api.github.com".into()),
             bench: None,
+            desktop: None,
         }
     }
 }
@@ -327,6 +344,9 @@ fn router(state: Arc<AppState>) -> Router {
         .merge(crate::files::attachments::routes())
         .merge(crate::files::preview::routes())
         .merge(crate::pty::routes());
+    if state.options.desktop.is_some() {
+        api = api.route("/api/desktop/pick-folder", post(pick_folder));
+    }
     if state.options.profiles_url.is_some() {
         api = api.merge(crate::profiles::routes());
     }
@@ -351,12 +371,27 @@ fn router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
+/// `POST /api/desktop/pick-folder` `{start}`: the system folder dialog (desktop window only).
+async fn pick_folder(
+    State(state): State<Arc<AppState>>,
+    body: Option<axum::Json<serde_json::Value>>,
+) -> Response {
+    let Some(hooks) = state.options.desktop.clone() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let start = body
+        .and_then(|b| b.0["start"].as_str().map(PathBuf::from))
+        .filter(|p| p.is_dir());
+    let picked = (hooks.pick_folder)(start).await;
+    axum::Json(json!({"path": picked.map(|p| p.to_string_lossy().into_owned())})).into_response()
+}
+
 async fn info(State(state): State<Arc<AppState>>) -> Response {
     let primary = state.projects.get(&state.projects.primary.id);
     let (wd, mode) = primary
         .map(|p| (p.session.working_directory(), p.session.mode()))
         .unwrap_or_default();
-    axum::Json(json!({
+    let mut info = json!({
         "workingDirectory": wd,
         "mode": mode,
         "primary": state.projects.primary.id,
@@ -369,8 +404,11 @@ async fn info(State(state): State<Arc<AppState>>) -> Response {
         "profiles": state.options.profiles_url.is_some(),
         // The React client picks its hub transport from this (absent: the C# SignalR hub).
         "hub": "ws",
-    }))
-    .into_response()
+    });
+    if state.options.desktop.is_some() {
+        info["desktop"] = json!(true);
+    }
+    axum::Json(info).into_response()
 }
 
 #[derive(Deserialize)]

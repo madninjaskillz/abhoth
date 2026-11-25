@@ -5,6 +5,8 @@ pub mod agent_host;
 pub mod args;
 pub mod commands;
 pub mod custom_commands;
+#[cfg(feature = "desktop")]
+pub mod desktop;
 pub mod file_log;
 pub mod hostui;
 pub mod hostui_password;
@@ -589,6 +591,13 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
     // --hostui-set-password / --hostui-reset-2fa: manage the web UI's sign-in account, then exit.
     if let Some(code) = hostui_password::try_run(&raw) {
         return Ok(code);
+    }
+    if raw.iter().any(|a| a == "--desktop") {
+        // The desktop app starts in main() (it needs the main thread); here only without it.
+        eprintln!(
+            "abhoth: this build has no desktop app (build with --features desktop); use --hostui."
+        );
+        return Ok(2);
     }
     if raw.iter().any(|a| a == "--help" || a == "-h") {
         print!("{}", help_text());

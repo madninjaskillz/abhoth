@@ -68,6 +68,12 @@ percent-encoding = "=2.3.2"
 # PTY: the web UI terminal panel and the cross-check's interactive scenarios (ConPTY on Windows).
 portable-pty = "=0.9.0"
 rust-embed = "=8.14.0"
+# Desktop app (orca-cli feature "desktop", PORTING.md phase 7): the Tauri project's webview,
+# windowing and tray crates, used directly; rfd for the native folder dialog.
+wry = "=0.57.4"
+tao = "=0.37.0"
+tray-icon = { version = "=0.26.1", default-features = false, features = ["ksni"] }
+rfd = "=0.18.0"
 indexmap = { version = "=2.14.2", features = ["serde"] }
 regex = "=1.13.2"
 reqwest = { version = "=0.13.5", default-features = false, features = ["json", "stream", "rustls"] }

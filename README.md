@@ -10,10 +10,12 @@ binary. The C# build (`openorca`) stays the parity reference until it is retired
 ```sh
 cd rust
 cargo build --release                # target/release/abhoth(.exe)
+cargo build --release --features desktop   # + abhoth-desktop.exe (no console) and --desktop
 abhoth                               # interactive session in the current folder
 abhoth -p "fix the failing test"     # one prompt, then exit
 abhoth --hostui                      # the web UI (prints a URL with a token)
-abhoth --desktop                     # the web UI in its own window (feature "desktop")
+abhoth --desktop                     # the web UI in its own window (feature "desktop";
+                                     # one instance, tray Show/Quit, native folder dialog)
 abhoth --help                        # the common options
 ```
 

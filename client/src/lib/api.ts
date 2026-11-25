@@ -221,6 +221,8 @@ export interface ServerInfo {
   bench?: boolean;
   /** The inference server's profiles API is configured (profile pickers, server layout). */
   profiles?: boolean;
+  /** Served to the desktop window (`abhoth --desktop`): native folder dialog available. */
+  desktop?: boolean;
 }
 
 /** One card of a server layout: which engine, how many slots, which model file. */
@@ -728,6 +730,8 @@ export const api = {
   },
   browse: (path?: string) => request<FolderListing>("GET", `/api/fs/browse${q({ path })}`),
   makeFolder: (parent: string, name: string) => request<{ path: string }>("POST", "/api/fs/mkdir", { parent, name }),
+  /** The desktop app's native folder dialog; `path` is null when it was cancelled. */
+  pickFolder: (start?: string) => request<{ path: string | null }>("POST", "/api/desktop/pick-folder", { start: start ?? null }),
   clone: (url: string, parent: string, name?: string, token?: string) =>
     request<CloneStatus>("POST", "/api/projects/clone", { url, parent, name, token: token || undefined }),
   githubApp: () => request<GitHubAppStatus>("GET", "/api/github/app"),

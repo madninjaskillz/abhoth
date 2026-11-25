@@ -104,13 +104,51 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   `~/.openorca`), `ABHOTH_*` env vars first. See [`README.md`](README.md) and
   [`CUTOVER.md`](CUTOVER.md).
 
+### Phase 7: desktop app (2026-11-25, D110)
+
+- `abhoth --desktop` / `abhoth-desktop.exe` (feature `desktop`): in-process host on loopback with
+  a per-launch token, WebView2 window titled Abhoth with the mascot icon, single instance (a
+  second launch focuses the first), tray Show/Quit, native folder dialog in the folder picker,
+  external links in the system browser. Built, launched and screenshotted on Windows 11.
+
 ## Next
 
 1. GitHub App device flow; Anthropic/Ollama clients; tool-argument number formatting.
 2. Bridge engines under `--hostui` and in the REPL; sub-agent approval prompter; `lead_mode` for
    `leadMode: auto`.
 3. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).
-4. Phase 7: `abhoth --desktop`.
+4. Phase 7 follow-ups: close-to-tray setting, Linux/macOS desktop builds in CI, installer.
+
+## Bench parity run (to be scheduled with the user; not run by agents)
+
+What it must show: on the same model, slots and tasks, `abhoth` is no slower per task and no
+worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
+
+- **Binaries:** `dotnet publish src/OpenOrca.Cli -c Release -o bench/.bin/csharp` and
+  `cargo build --release -p orca-cli` copied to `bench/.bin/rust/abhoth.exe`, both built from
+  the same `feature/rust-port` commit.
+- **Homes:** one template, `bench/.homes/parity` (the user's usual config: slots, leadMode,
+  prompt). Both variants use the same template. The runner sets `OPENORCA_HOME` per run, and
+  Abhoth reads it as the fallback for `ABHOTH_HOME`.
+- **Runs:** interleave variants so slot load and time of day hit both alike. Use
+  `python bench/run.py run --variant csharp --orca-exe bench/.bin/csharp/openorca.exe --home
+  bench/.homes/parity --tier easy,hard,multi --reps 3 --resume --wait-registry <registry>`,
+  then the same with `--variant rust --orca-exe bench/.bin/rust/abhoth.exe`. Do it in two halves
+  (C# then Rust, then Rust then C#). That is about 1 h per variant at the "Bench sizing" scale.
+  Add `--tier t3 --tasks t3-long-horizon,t3-multi-file --reps 3` for compaction and long-context
+  parity.
+- **Web host and bench page:** one queue item per host
+  (`--hostui-bench`, same kit, `realtasks` suite, 3 reps). This checks the in-process Rust bench
+  runner against the C# worker-process runner (D74). It also checks results.jsonl compatibility
+  on real runs.
+- **Compare:** `python bench/run.py report --variant csharp,rust --by-mode`.
+  - Pass rate per tier: equal or better.
+  - Median wall-clock per task: Rust no more than 5% slower.
+  - Median requests and total tokens per task: within about 10%.
+  - Loop events and failovers: no new kinds.
+  - Rerun only gaps that the noise does not explain ("Bench sizing").
+- **What it can't show:** the bridges (Claude Code / Codex) and the desktop window. Those are
+  covered by the cross-check and the smoke tests.
 
 ## Known gaps
 

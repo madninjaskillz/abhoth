@@ -168,12 +168,50 @@ pub fn activity_line(ev: &LiveEvent) -> Option<String> {
     }
 }
 
+/// The desktop window's side of the host (`abhoth --desktop`, D110): where the URL goes once the
+/// server listens, the signal to stop, and the window's extras.
+pub struct DesktopLink {
+    /// The URL with the token (or why the server did not start).
+    pub ready: std::sync::mpsc::Sender<Result<String, String>>,
+    /// Quit from the window or the tray.
+    pub stop: tokio::sync::oneshot::Receiver<()>,
+    pub hooks: orca_webui::server::DesktopHooks,
+}
+
+static DESKTOP_LINK: Mutex<Option<DesktopLink>> = Mutex::new(None);
+
+/// Set by the desktop app before it runs the host: the next [`run`] serves its window.
+pub fn set_desktop_link(link: DesktopLink) {
+    *DESKTOP_LINK.lock().unwrap() = Some(link);
+}
+
 pub async fn run(
     args: HostUiArgs,
     config: OrcaConfig,
     cwd: PathBuf,
     overlay: Option<ProfileOverlay>,
 ) -> Result<i32> {
+    let desktop = DESKTOP_LINK.lock().unwrap().take();
+    run_with(args, config, cwd, overlay, desktop).await
+}
+
+/// [`run`], or the host of the desktop window when `desktop` is set.
+pub async fn run_with(
+    args: HostUiArgs,
+    config: OrcaConfig,
+    cwd: PathBuf,
+    overlay: Option<ProfileOverlay>,
+    desktop: Option<DesktopLink>,
+) -> Result<i32> {
+    let (ready, mut stop, hooks) = match desktop {
+        Some(d) => (Some(d.ready), Some(d.stop), Some(d.hooks)),
+        None => (None, None, None),
+    };
+    let fail = |text: String| {
+        if let Some(r) = &ready {
+            let _ = r.send(Err(text));
+        }
+    };
     if args.tui {
         eprintln!("abhoth: --tui needs the interactive mode, which is not ported to Rust yet.");
         return Ok(2);
@@ -306,9 +344,11 @@ pub async fn run(
     if let Some(dir) = &args.bench_dir {
         options.bench = Some(bench_options(dir, &args, &config, others.clone()));
     }
+    options.desktop = hooks;
     let mut server = match WebUiServer::start(options, primary.clone()).await {
         Ok(s) => s,
         Err(e) => {
+            fail(e.to_string());
             eprintln!("abhoth: could not start the web UI: {e}");
             primary.shutdown().await;
             return Ok(1);
@@ -326,7 +366,12 @@ pub async fn run(
     } else {
         server.url_with_token()
     };
-    println!("● Web UI {url}");
+    if ready.is_some() {
+        // The desktop window: the token never leaves this process.
+        println!("● Desktop window on {}", server.base_url());
+    } else {
+        println!("● Web UI {url}");
+    }
     if args.login {
         if args.trusted_proxies.is_empty() {
             println!("  Sign-in mode; plain HTTP only from this machine.");
@@ -347,17 +392,35 @@ pub async fn run(
             println!("{line}");
         }
     });
-    if args.open && !open_browser(&url) {
+    if let Some(r) = &ready {
+        // The desktop window opens the URL itself (the token stays in this process).
+        let _ = r.send(Ok(server.url_with_token()));
+    } else if args.open && !open_browser(&url) {
         eprintln!("abhoth: could not open a browser; open the URL yourself.");
     }
 
-    // Ctrl+C: cancel a running turn, else stop.
+    // Ctrl+C: cancel a running turn, else stop. The desktop window's Quit stops at once.
     loop {
-        if tokio::signal::ctrl_c().await.is_err() {
-            break;
-        }
-        if !primary.cancel().await {
-            break;
+        let ctrl_c = tokio::signal::ctrl_c();
+        match stop.as_mut() {
+            Some(quit) => {
+                tokio::select! {
+                    _ = quit => {
+                        primary.cancel().await;
+                        break;
+                    }
+                    r = ctrl_c => {
+                        if r.is_err() || !primary.cancel().await {
+                            break;
+                        }
+                    }
+                }
+            }
+            None => {
+                if ctrl_c.await.is_err() || !primary.cancel().await {
+                    break;
+                }
+            }
         }
     }
     primary.permissions().deny_all();
@@ -507,7 +570,7 @@ impl LiveSession for FailedSession {
     }
 }
 
-fn open_browser(url: &str) -> bool {
+pub(crate) fn open_browser(url: &str) -> bool {
     let mut cmd = if cfg!(windows) {
         let mut c = std::process::Command::new("cmd");
         c.args(["/C", "start", "", url]);

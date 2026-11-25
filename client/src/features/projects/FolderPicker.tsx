@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, Folder, FolderGit2, FolderPlus, HardDrive, Loader2 } from "lucide-react";
+import { ArrowUp, Folder, FolderGit2, FolderOpen, FolderPlus, HardDrive, Loader2 } from "lucide-react";
 import { folderNameError } from "./folderName";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,18 @@ export function FolderPicker({ path, setPath, pickLabel }: { path: string; setPa
   const [typed, setTyped] = useState(path);
   useEffect(() => setTyped(path), [path]);
   const listing = useQuery({ queryKey: ["browse", path], queryFn: () => api.browse(path || undefined), retry: false });
+  // The desktop app (abhoth --desktop) also offers the system's folder dialog.
+  const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: 60_000 });
+  const [picking, setPicking] = useState(false);
+  const pickNative = async () => {
+    setPicking(true);
+    try {
+      const picked = await api.pickFolder(path || undefined);
+      if (picked.path) setPath(picked.path);
+    } finally {
+      setPicking(false);
+    }
+  };
   useEffect(() => {
     if (!path && listing.data) setPath(listing.data.path);
   }, [path, listing.data, setPath]);
@@ -60,6 +72,11 @@ export function FolderPicker({ path, setPath, pickLabel }: { path: string; setPa
           data-testid="folder-path"
         />
         <Button size="sm" variant="outline" onClick={() => setPath(typed.trim())}>Go</Button>
+        {info.data?.desktop && (
+          <Button size="sm" variant="ghost" disabled={picking} onClick={() => void pickNative()} title="Choose a folder with the system dialog" data-testid="pick-folder-native">
+            {picking ? <Loader2 className="animate-spin" /> : <FolderOpen />}
+          </Button>
+        )}
         <Button size="sm" variant="ghost" disabled={!data?.parent} onClick={() => data?.parent && setPath(data.parent)} title="Up a folder">
           <ArrowUp />
         </Button>

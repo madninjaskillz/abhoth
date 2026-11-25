@@ -107,8 +107,8 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
    projects, profiles, settings, serving the built React client. XL.
 6. **Parity sweep**: run the whole cross-check set and the ported test suites, bench runs
    side by side, then a decision on replacing the C# build (not part of this port). M.
-7. **Desktop app** (user request 2026-11-26; after everything else is ported):
-   `openorca --desktop` runs the web UI as a native desktop app. M-L.
+7. **Desktop app** (user request 2026-11-26; done 2026-11-25, D110):
+   `abhoth --desktop` runs the web UI as a native desktop app. M-L.
    - **Shape:** start the Rust web host (`orca-webui`) in-process on a loopback port
      (`127.0.0.1:0`) with a random per-launch token, then open the existing React client in a
      native window pointed at it. No second UI codebase: the window is just another client.
@@ -123,8 +123,8 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
      query-token redirect sets the cookie), so the login page never shows. The token never
      leaves the process; the listener binds loopback only.
    - **Window and tray:** single instance (a second `--desktop` focuses the running window,
-     via a named lock/pipe in the config home); title "OpenOrca"; the orca icon from the
-     client's `brand/` assets; tray menu Show / Quit; closing the window either quits or hides
+     via a named lock/pipe in the config home); title "Abhoth"; the Abhoth icon from
+     `assets/abhoth`; tray menu Show / Quit; closing the window either quits or hides
      to tray (config `ui.desktopCloseToTray`, default quit). Quit cancels running turns, stops
      the host and releases slot leases like Ctrl+C does under `--hostui`.
    - **Desktop extras:** "Open a folder" uses a native dialog (`rfd`) through a small host
@@ -417,3 +417,16 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D90** The cross-check reads the Rust build's "Abhoth"/"abhoth" as "OpenOrca"/"openorca" in
   every compared string (outputs, requests, files, screens), so the rebrand is not a difference.
   Both builds still get the same `OPENORCA_HOME`.
+- **D110** `abhoth --desktop` (feature `desktop`, phase 7): wry 0.57.4 + tao 0.37.0 (0.38 needs
+  gtk 0.19 while wry's webkit2gtk needs 0.18) + tray-icon 0.26.1 without its GTK default
+  (`ksni` on Linux) + rfd 0.18.0. `main()` hands the main thread to the window's event loop; the
+  host runs `main_with_args` with `--hostui=127.0.0.1:0` on its own thread and runtime and hands
+  back the URL through `hostui::set_desktop_link` (the token is never printed). Single instance:
+  `desktop.lock` (`File::try_lock`) in the state home plus a loopback focus listener whose port
+  and key are in `desktop.json`. Tray: Show / Quit (double-click shows). Closing the window quits
+  (close-to-tray would need a config.json key the C# build doesn't know; later). The folder
+  dialog is `POST /api/desktop/pick-folder`, routed only when `WebUiOptions::desktop` is set
+  (`/api/info` then says `desktop: true` and the folder picker shows a button). Links leaving the
+  app open in the system browser. WebView2 data lives in `<home>/webview`. A second binary,
+  `abhoth-desktop` (Windows GUI subsystem, no console), is the shortcut target. CI builds and
+  unit-tests the feature on Windows only.

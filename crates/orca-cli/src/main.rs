@@ -20,6 +20,11 @@ fn main() {
         .with(orca_cli::file_log::FileLogLayer::new(log))
         .with(stderr)
         .init();
+    // The desktop app owns the main thread (its window's event loop) and runs the host itself.
+    #[cfg(feature = "desktop")]
+    if std::env::args().any(|a| a == "--desktop") {
+        std::process::exit(orca_cli::desktop::run(std::env::args().skip(1).collect()));
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
