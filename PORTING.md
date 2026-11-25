@@ -285,3 +285,25 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D71** Extra projects run as in-process sessions (C# uses worker processes).
 - **D72** The native session runs on its own thread and sends approvals to the browser; only
   headless mode is supported (`--tui`, `--hostui-login` are refused).
+- **D57** The REPL uses crossterm only (no ratatui): the C# UI is a scrolling transcript with a
+  bottom status panel, not a full-screen app.
+- **D58** Slash commands are compiled in behind an async `Command` trait with a
+  `CommandContext` and C#'s sentinels (`__clear__`, `__ask_toggle__`, `__plan_toggle__`).
+- **D59** `/review` and `/workflow` go through an `AgentHost` trait (wired with
+  orchestration); `/engine` switches only to native in interactive mode.
+- **D60** Custom markdown commands send the rendered template and run a turn for both `/name`
+  and `/customcommand name` (C# drops the template for `/name` and never runs a turn for
+  `/customcommand`): a deliberate fix of a C# bug, so no cross-check scenario.
+- **D61** Cancel drops the turn future when the console Ctrl+C signal or the raw-mode key
+  watcher fires; open tool calls are closed afterwards. The unfinished markdown block streams
+  as plain text and is replaced by the rendered block when complete.
+- **D62** Images live in `ChatMessage.parts`; the image rewrite is in `OpenAiClient`, keyed on
+  `lmStudio.vision`, with a vision probe and a resend without images. The Windows clipboard is
+  read through PowerShell (no `unsafe`).
+- **D63** `orca-crosscheck` (test tooling only) uses `unsafe_code = "deny"` with one audited
+  `SetConsoleCtrlHandler(NULL, FALSE)` call so Ctrl+C reaches child processes in PTY
+  scenarios. Shipped crates keep `forbid`. Interactive scenarios (95-107) run in a PTY
+  (`portable-pty` + `vt100`) and compare screens, requests and session files.
+- **D64** `/config` saves from a fresh load plus the profile overlay (profile values are not
+  written into config.json); `/profile switch` saves `profiles.active` and restarts with
+  `--profile` and `--resume`.
