@@ -69,7 +69,7 @@ impl Command for MemoryCommand {
                         if !p.exists() {
                             let _ = std::fs::write(
                                 &p,
-                                "# Project Instructions\n\n<!-- Add project-specific instructions for OpenOrca here -->\n",
+                                "# Project Instructions\n\n<!-- Add project-specific instructions for Abhoth here -->\n",
                             );
                         }
                         p

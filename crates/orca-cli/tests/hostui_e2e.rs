@@ -19,7 +19,7 @@ async fn hostui_prints_the_url_and_serves_the_api() {
             .to_string(),
     )
     .unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_openorca"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_abhoth"))
         .args(["--hostui=127.0.0.1:0", "--hostui-token=e2e-token-123"])
         .current_dir(work.path())
         .env("OPENORCA_HOME", home.path())
@@ -87,7 +87,7 @@ fn bad_hostui_flags_exit_2() {
         (vec!["--hostui=notahost:1"], "Not an IP address: notahost."),
     ] {
         let home = tempfile::tempdir().unwrap();
-        let out = Command::new(env!("CARGO_BIN_EXE_openorca"))
+        let out = Command::new(env!("CARGO_BIN_EXE_abhoth"))
             .args(&args)
             .env("OPENORCA_HOME", home.path())
             .output()
@@ -171,7 +171,7 @@ async fn hostui_bench_runs_a_suite_in_its_own_home_and_records_the_row_with_toke
         .to_string(),
     )
     .unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_openorca"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_abhoth"))
         .args([
             "--hostui=127.0.0.1:0",
             "--hostui-token=e2e-token-123",

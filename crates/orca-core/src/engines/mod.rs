@@ -140,7 +140,7 @@ pub trait AgentEventSink: Send {
 
     /// Run one of OpenOrca's host tools for the CLI, e.g. ask_user.
     async fn run_host_tool(&mut self, name: &str, _args_json: &str) -> HostToolResult {
-        HostToolResult::error(format!("OpenOrca tool '{name}' is not available here."))
+        HostToolResult::error(format!("Abhoth tool '{name}' is not available here."))
     }
 }
 

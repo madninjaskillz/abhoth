@@ -37,7 +37,7 @@ pub fn try_run(args: &[String]) -> Option<i32> {
         }
         let first = read_hidden("New password: ");
         if read_hidden("Again: ") != first {
-            eprintln!("openorca: the passwords differ; nothing changed.");
+            eprintln!("abhoth: the passwords differ; nothing changed.");
             return None;
         }
         Some(first)
@@ -56,14 +56,14 @@ pub fn run(
     let store = AccountStore::new(state_dir);
     if reset {
         let Some(mut account) = store.load() else {
-            eprintln!("openorca: no web UI account yet.");
+            eprintln!("abhoth: no web UI account yet.");
             return 1;
         };
         account.totp_secret = None;
         account.totp_confirmed = false;
         account.totp_last_step = 0;
         if let Err(e) = store.save(&account) {
-            eprintln!("openorca: {e}");
+            eprintln!("abhoth: {e}");
             return 1;
         }
         println!(
@@ -94,7 +94,7 @@ pub fn run(
                 account.totp_confirmed = true;
                 account.totp_last_step = prev.totp_last_step;
                 if let Err(e) = store.save(&account) {
-                    eprintln!("openorca: {e}");
+                    eprintln!("abhoth: {e}");
                     return 1;
                 }
             }
@@ -111,7 +111,7 @@ pub fn run(
             0
         }
         Err(e) => {
-            eprintln!("openorca: {e}");
+            eprintln!("abhoth: {e}");
             1
         }
     }

@@ -175,12 +175,12 @@ pub async fn run(
     overlay: Option<ProfileOverlay>,
 ) -> Result<i32> {
     if args.tui {
-        eprintln!("openorca: --tui needs the interactive mode, which is not ported to Rust yet.");
+        eprintln!("abhoth: --tui needs the interactive mode, which is not ported to Rust yet.");
         return Ok(2);
     }
     if orca_core::engines::selected_bridge(&config).is_some() {
         eprintln!(
-            "openorca: the Rust web UI runs the native engine only (agent.engine is {}).",
+            "abhoth: the Rust web UI runs the native engine only (agent.engine is {}).",
             config.agent.engine
         );
         return Ok(2);
@@ -309,13 +309,17 @@ pub async fn run(
     let mut server = match WebUiServer::start(options, primary.clone()).await {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("openorca: could not start the web UI: {e}");
+            eprintln!("abhoth: could not start the web UI: {e}");
             primary.shutdown().await;
             return Ok(1);
         }
     };
 
-    println!("OpenOrca {} — web UI (headless)", crate::version());
+    println!(
+        "{} {} — web UI (headless)",
+        orca_core::brand::PRODUCT_NAME,
+        crate::version()
+    );
     // Sign-in mode: no token in the URL.
     let url = if args.login {
         server.base_url().to_string()
@@ -344,7 +348,7 @@ pub async fn run(
         }
     });
     if args.open && !open_browser(&url) {
-        eprintln!("openorca: could not open a browser; open the URL yourself.");
+        eprintln!("abhoth: could not open a browser; open the URL yourself.");
     }
 
     // Ctrl+C: cancel a running turn, else stop.
@@ -380,7 +384,8 @@ fn bench_options(
 ) -> orca_webui::bench::BenchOptions {
     let full = |p: &Path| std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
     let home = orca_core::config::default_config_dir();
-    let script = std::env::var("OPENORCA_BENCHKIT")
+    let script = orca_core::brand::env_var("BENCHKIT")
+        .ok_or(std::env::VarError::NotPresent)
         .ok()
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)

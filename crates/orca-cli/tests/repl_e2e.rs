@@ -19,7 +19,7 @@ fn write_config(home: &Path, base_url: &str) {
 }
 
 async fn run_repl(home: &Path, work: &Path, input: &str) -> Output {
-    let exe = env!("CARGO_BIN_EXE_openorca").to_string();
+    let exe = env!("CARGO_BIN_EXE_abhoth").to_string();
     let (home, work, input) = (home.to_path_buf(), work.to_path_buf(), input.to_string());
     tokio::task::spawn_blocking(move || {
         let mut child = Command::new(exe)

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { brandName } from "@/lib/brand";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, GitBranch, Github, Globe, Loader2, Lock, LogOut, RefreshCw, Search,
@@ -34,7 +35,7 @@ export function GitHubCloneStep({ onAdded }: { onAdded: (p: { id: string }) => v
         <div className="flex items-center gap-2 font-medium"><Github className="size-4" /> GitHub sign-in isn't configured on this server</div>
         <p className="text-muted-foreground">
           It needs a GitHub App with device flow enabled. Register one (GitHub → Settings → Developer settings → GitHub Apps), tick
-          "Enable Device Flow", give it Contents read &amp; write, then give OpenOrca its client ID and slug:
+          "Enable Device Flow", give it Contents read &amp; write, then give {brandName()} its client ID and slug:
         </p>
         <pre className="whitespace-pre-wrap rounded border bg-background p-2 font-mono text-[11px]">{s.setup}</pre>
         <p className="text-muted-foreground">Until then, use "Clone a repository" with a URL (and a token if it's private).</p>
@@ -272,7 +273,7 @@ function RepoList({ installUrl, onPick, onSignedOut }: { installUrl?: string | n
       </div>
       {noInstall ? (
         <div className="flex flex-col items-center gap-2 rounded-md border p-4 text-center" data-testid="github-install">
-          <p className="text-muted-foreground">The OpenOrca GitHub App isn't installed on your account or any organization yet, so it can't see any repositories.</p>
+          <p className="text-muted-foreground">The {brandName()} GitHub App isn't installed on your account or any organization yet, so it can't see any repositories.</p>
           {installUrl && (
             <a href={installUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 font-medium text-primary hover:underline">
               Install the app on your account or organization <ExternalLink className="size-3" />
@@ -394,7 +395,7 @@ function ClonePlace({ repo, onBack, onSignedOut, onStarted, error, setError }: {
       </label>
       {branches.data?.truncated && <div className="text-[11px] text-muted-foreground">Only the first 500 branches are listed.</div>}
       {branches.error && !signedOut(branches.error) && <div className="text-[11px] text-destructive">{errorText(branches.error)}</div>}
-      <span className="text-muted-foreground">Clone into (on the machine OpenOrca runs on)</span>
+      <span className="text-muted-foreground">Clone into (on the machine {brandName()} runs on)</span>
       <FolderPicker path={parent} setPath={setParent} pickLabel="Parent folder" />
       <label className="flex items-center gap-2">
         <span className="shrink-0 text-muted-foreground">Folder name</span>

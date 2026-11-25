@@ -360,7 +360,7 @@ async fn serve_inner(
     let Some(grant) = s.previews.verify(token, &client_ip(addr.ip()), now()) else {
         return message(
             StatusCode::FORBIDDEN,
-            "This preview link has expired or is not valid here. Reload the preview in OpenOrca.",
+            "This preview link has expired or is not valid here. Reload the preview in Abhoth.",
         );
     };
     let Some(rt) = s.projects.get(&grant.pid) else {

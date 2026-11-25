@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { brandName } from "@/lib/brand";
 import { authState, signOut, startEnroll } from "@/lib/auth";
 import { Check, LogOut, Menu, ShieldCheck, UserRound } from "lucide-react";
 import { SettingsButton } from "@/features/settings/SettingsDialog";
@@ -454,7 +455,7 @@ function Header({
         body={
           <div className="space-y-2">
             <p>
-              This removes the tab from OpenOrca's project list. The folder <span className="break-all font-mono text-foreground">{closing?.path}</span> is
+              This removes the tab from {brandName()}'s project list. The folder <span className="break-all font-mono text-foreground">{closing?.path}</span> is
               not touched; nothing is deleted. Its session is saved and comes back if you add the folder again.
             </p>
             {closeError && <p className="text-destructive">{closeError}</p>}
@@ -566,7 +567,7 @@ function Unauthorized() {
         <Mascot size={128} className="mb-5" />
         <h1 className="mb-2 text-lg font-semibold">Token required</h1>
         <p className="text-sm text-muted-foreground">
-          Open the URL OpenOrca printed (it ends in <code>?token=…</code>). In the TUI, <code>/hostui status</code> shows it again.
+          Open the URL {brandName()} printed (it ends in <code>?token=…</code>). In the TUI, <code>/hostui status</code> shows it again.
         </p>
       </div>
     </div>

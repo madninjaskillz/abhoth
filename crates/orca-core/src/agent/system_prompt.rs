@@ -214,11 +214,12 @@ impl SystemPromptBuilder {
             ),
         ];
 
-        let mut result = self.prompt_manager.load_system_prompt(
+        // The Rust build introduces itself as Abhoth (D88); the files keep the C# text.
+        let mut result = crate::brand::self_named(&self.prompt_manager.load_system_prompt(
             config.lm_studio.prompt_profile.as_deref(),
             model_id,
             &variables,
-        );
+        ));
 
         // Append project instructions unless the template placed them itself
         if let Some(pi) = project_instructions.as_deref()

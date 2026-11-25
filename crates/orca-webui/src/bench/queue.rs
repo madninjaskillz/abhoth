@@ -128,7 +128,7 @@ impl BenchQueue {
         for i in q.items.iter_mut().filter(|i| i.status == "started") {
             i.status = "queued".into();
             i.batch = None;
-            i.note = Some("restarted after an OpenOrca restart".into());
+            i.note = Some("restarted after an Abhoth restart".into());
         }
         q.current = None;
         if q.restore_scheduled

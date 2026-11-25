@@ -1,9 +1,8 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The OpenOrca mascot. Served from /brand (public, no token needed, so the token page can show
- * it too). The orca is navy, so on dark surfaces it sits on a soft light glow (large) or a light
- * disc (the small badge in the top bar).
+ * The Abhoth mascot (a purple hooded creature). Served from /brand (public, no token needed, so
+ * the token page can show it too). On dark surfaces it sits on a soft lavender glow (large).
  */
 export function Mascot({ size = 128, className, glow = true }: { size?: 64 | 96 | 128 | 160; className?: string; glow?: boolean }) {
   const src = size <= 64 ? "/brand/mascot-128.webp" : "/brand/mascot-256.webp";

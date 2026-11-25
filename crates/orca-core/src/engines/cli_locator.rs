@@ -135,7 +135,7 @@ pub fn check_version(
     };
     if version < minimum {
         return Err(EngineError::Unavailable(format!(
-            "{display_name} {version} is too old for the OpenOrca bridge (needs {minimum} or newer). {update_hint}"
+            "{display_name} {version} is too old for the Abhoth bridge (needs {minimum} or newer). {update_hint}"
         )));
     }
     Ok(version)
@@ -181,7 +181,7 @@ mod tests {
             check_version("1.0.3", "Claude Code", Version::new(2, 0, 0), "Update it.")
                 .unwrap_err()
                 .to_string(),
-            "Claude Code 1.0.3 is too old for the OpenOrca bridge (needs 2.0.0 or newer). Update it."
+            "Claude Code 1.0.3 is too old for the Abhoth bridge (needs 2.0.0 or newer). Update it."
         );
         assert_eq!(
             check_version(" nope \n", "Codex", Version::new(0, 100, 0), "")

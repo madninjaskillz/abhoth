@@ -3,6 +3,7 @@
 
 pub mod agent;
 pub mod attachments;
+pub mod brand;
 pub mod chat;
 pub mod client;
 pub mod config;

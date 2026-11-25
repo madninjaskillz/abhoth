@@ -1,4 +1,4 @@
-# Rust port status
+# Rust port status (Abhoth)
 
 Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
@@ -94,13 +94,23 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 - Live smoke 2026-11-25 (qwen3.8-27b via LiteLLM, `--print`): task_list, edit_file, git_diff,
   git_commit on a temp repo; bug fixed and committed.
 
+### Merged 2026-11-25 (third run)
+
+- `rust-port/rest`: `/benchmark`, UncensoredGate and provider clients, web UI settings schema,
+  browser ask_user, project profile/mode switching, generated images, TOTP sign-in, session
+  `engine` fields (D81-D87).
+- **Rebrand to Abhoth** (D88-D90): binary `abhoth`, `--help`, TUI/web/desktop names and mascot
+  (`assets/abhoth/`), the React client is Abhoth, state in `~/.abhoth` (one-time copy of
+  `~/.openorca`), `ABHOTH_*` env vars first. See [`README.md`](README.md) and
+  [`CUTOVER.md`](CUTOVER.md).
+
 ## Next
 
-1. In progress (`rust-port/rest`): `/benchmark` runner, `UncensoredGate`, WebUi settings
-   schema, profile/mode switching, ask_user in the browser, tool-result images in chat, TOTP
-   sign-in, GitHub App device flow, bridge engines under `--hostui`, session `engine` fields.
-2. Phase 6: parity sweep, side-by-side benches (3 runs each), live smoke on agents and the REPL.
-3. Phase 7: `openorca --desktop` (PORTING.md).
+1. GitHub App device flow; Anthropic/Ollama clients; tool-argument number formatting.
+2. Bridge engines under `--hostui` and in the REPL; sub-agent approval prompter; `lead_mode` for
+   `leadMode: auto`.
+3. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).
+4. Phase 7: `abhoth --desktop`.
 
 ## Known gaps
 

@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! cargo run -p orca-crosscheck -- --csharp ..\src\OpenOrca.Cli\bin\Release\net10.0\openorca.exe \
-//!     --rust target\debug\openorca.exe [--scenarios crosscheck\scenarios] [--only name] [--out dir]
+//!     --rust target\debug\abhoth.exe [--scenarios crosscheck\scenarios] [--only name] [--out dir]
 //! ```
 //!
 //! For each scenario (`crosscheck/scenarios/*.json`) both binaries run `--print <prompt>` in a
@@ -852,6 +852,12 @@ fn mask_benchmark_stamps(text: &str) -> String {
     out
 }
 
+/// The Rust build is called Abhoth (D88): its product name reads as the C# build's.
+fn mask_product_name(text: &str) -> String {
+    text.replace("Abhoth", "OpenOrca")
+        .replace("abhoth", "openorca")
+}
+
 /// Replace temp paths (in both slash styles and JSON-escaped forms) and zero the timings.
 fn normalize(v: Value, paths: &[(&str, &str)]) -> Value {
     match v {
@@ -865,7 +871,7 @@ fn normalize(v: Value, paths: &[(&str, &str)]) -> Value {
                     s = s.replace(&variant, to);
                 }
             }
-            Value::String(mask_benchmark_stamps(&s))
+            Value::String(mask_benchmark_stamps(&mask_product_name(&s)))
         }
         Value::Array(a) => Value::Array(a.into_iter().map(|x| normalize(x, paths)).collect()),
         Value::Object(o) => Value::Object(
@@ -1127,7 +1133,7 @@ async fn main() -> Result<()> {
     ctrl_c::stop_ignoring();
     let csharp =
         PathBuf::from(arg_value(&args, "--csharp").context("--csharp <openorca.exe> is required")?);
-    let rust = PathBuf::from(arg_value(&args, "--rust").context("--rust <openorca> is required")?);
+    let rust = PathBuf::from(arg_value(&args, "--rust").context("--rust <abhoth> is required")?);
     let dir = PathBuf::from(
         arg_value(&args, "--scenarios").unwrap_or_else(|| "crosscheck/scenarios".into()),
     );

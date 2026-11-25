@@ -255,7 +255,7 @@ impl ProjectManager {
         }
         if let Some(problem) = paths::read_write_problem(&full) {
             return Err(format!(
-                "{problem} OpenOrca needs to read and write the project folder."
+                "{problem} Abhoth needs to read and write the project folder."
             ));
         }
         let info = self.store.add(&full.to_string_lossy(), name);

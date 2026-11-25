@@ -66,7 +66,7 @@ impl AttachmentStore {
         if !ignore.exists() {
             std::fs::write(
                 ignore,
-                "# Pasted prompt attachments (OpenOrca); not project files.\n*\n",
+                "# Pasted prompt attachments (Abhoth); not project files.\n*\n",
             )?;
         }
         Ok(())

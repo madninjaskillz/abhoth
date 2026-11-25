@@ -337,7 +337,7 @@ async fn totp_when_required_is_set_up_at_first_sign_in_then_asked_every_time_and
         enroll["uri"]
             .as_str()
             .unwrap()
-            .starts_with("otpauth://totp/OpenOrca:orca-admin?secret=")
+            .starts_with("otpauth://totp/Abhoth:orca-admin?secret=")
     );
     let csrf = first["csrf"].as_str().unwrap().to_string();
     let wrong = b

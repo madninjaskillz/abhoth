@@ -153,7 +153,8 @@ pub fn create_folder(parent: Option<&str>, name: Option<&str>) -> Result<String,
 /// else OPENORCA_PROJECTS_ROOT, else (Linux/macOS) /projects. Only folders that exist.
 pub fn project_roots() -> Vec<FolderPlace> {
     let mut list = Vec::new();
-    if let Ok(spec) = std::env::var("OPENORCA_PROJECT_ROOTS")
+    if let Ok(spec) =
+        orca_core::brand::env_var("PROJECT_ROOTS").ok_or(std::env::VarError::NotPresent)
         && !spec.is_empty()
     {
         for item in spec.split(';').map(str::trim).filter(|s| !s.is_empty()) {
@@ -176,11 +177,12 @@ pub fn project_roots() -> Vec<FolderPlace> {
         }
         return list;
     }
-    let root = match std::env::var("OPENORCA_PROJECTS_ROOT") {
-        Ok(r) if !r.is_empty() => Some(r),
-        _ if cfg!(windows) => None,
-        _ => Some("/projects".to_string()),
-    };
+    let root =
+        match orca_core::brand::env_var("PROJECTS_ROOT").ok_or(std::env::VarError::NotPresent) {
+            Ok(r) if !r.is_empty() => Some(r),
+            _ if cfg!(windows) => None,
+            _ => Some("/projects".to_string()),
+        };
     if let Some(r) = root.filter(|r| Path::new(r).is_dir()) {
         list.push(FolderPlace {
             label: "Projects".into(),

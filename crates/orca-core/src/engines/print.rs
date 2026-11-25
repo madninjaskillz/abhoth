@@ -389,7 +389,7 @@ impl AgentEventSink for PrintSink<'_> {
 
     async fn run_host_tool(&mut self, name: &str, args_json: &str) -> HostToolResult {
         let Some(tool) = self.registry.and_then(|r| r.resolve(name)) else {
-            return HostToolResult::error(format!("OpenOrca tool '{name}' is not available."));
+            return HostToolResult::error(format!("Abhoth tool '{name}' is not available."));
         };
         let args: Value = match serde_json::from_str(args_json) {
             Ok(v) => v,

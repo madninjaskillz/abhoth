@@ -17,8 +17,8 @@ const TOOL_CALL_READ_FILE: &str = "Let me start by reading the README to underst
 const TOOL_CALL_LIST_DIR: &str = "Good, I can see the README. Let me also check the project structure.\n\n<tool_call>{\"name\":\"list_directory\",\"arguments\":{\"path\":\".\"}}</tool_call>";
 
 const FINAL_SUMMARY: &str = concat!(
-    "Here's a summary of the **OpenOrca** project:\n\n",
-    "**OpenOrca** is an autonomous AI coding agent that runs in your terminal. ",
+    "Here's a summary of the **Abhoth** project:\n\n",
+    "**Abhoth** is an autonomous AI coding agent that runs in your terminal. ",
     "It connects to local LLM servers like LM Studio or Ollama via an OpenAI-compatible API ",
     "and uses **31 built-in tools** to read, write, and execute code autonomously.\n\n",
     "**Key highlights:**\n\n",

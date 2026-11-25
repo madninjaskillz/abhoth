@@ -78,7 +78,7 @@
 
 @keyframes caret-blink { 50% { opacity: 0; } }
 /* A soft light halo so the navy mascot reads on dark surfaces. */
-.mascot-glow { background: radial-gradient(closest-side, hsl(190 70% 92% / 0.22), hsl(188 86% 53% / 0.08) 60%, transparent 100%); }
+.mascot-glow { background: var(--mascot-glow, radial-gradient(closest-side, hsl(280 80% 88% / 0.22), hsl(286 60% 56% / 0.10) 60%, transparent 100%)); }
 /* Thinking: a slow fade only (no movement); off for reduced motion. */
 @keyframes mascot-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 .mascot-thinking { animation: mascot-breathe 2.4s ease-in-out infinite; }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { brandName } from "@/lib/brand";
 import { useQueryClient } from "@tanstack/react-query";
 import { Folder, GitBranch, Github, Link2, Loader2 } from "lucide-react";
 import { FolderPicker } from "./FolderPicker";
@@ -38,7 +39,7 @@ export function AddProjectDialog({ open, onOpenChange, onAdded }: {
           <Mascot size={64} glow={false} className="mx-0 shrink-0" />
           <div className="min-w-0">
             <DialogTitle>Add a project</DialogTitle>
-            <DialogDescription>Folders are on the machine OpenOrca runs on, not the one this browser is on.</DialogDescription>
+            <DialogDescription>Folders are on the machine {brandName()} runs on, not the one this browser is on.</DialogDescription>
           </div>
         </div>
         <Tabs value={mode} onValueChange={setMode} className="flex min-h-0 min-w-0 flex-col gap-3">
@@ -150,7 +151,7 @@ function CloneStep({ onAdded }: { onAdded: (p: { id: string }) => void }) {
           data-testid="clone-url"
         />
       </label>
-      <span className="text-muted-foreground">Clone into (on the machine OpenOrca runs on)</span>
+      <span className="text-muted-foreground">Clone into (on the machine {brandName()} runs on)</span>
       <FolderPicker path={parent} setPath={setParent} pickLabel="Parent folder" />
       <label className="flex items-center gap-2">
         <span className="shrink-0 text-muted-foreground">Folder name</span>

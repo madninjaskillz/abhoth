@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { brandName } from "@/lib/brand";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowDown, ArrowUp, Eye, ListPlus, Loader2, Pause, Play, RotateCcw, Square, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -352,7 +353,7 @@ function StartDialog({ plan, items, onClose, onStart }: { plan: BenchQueuePlan |
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                   <span>
                     {plan.switches} server switch{plan.switches === 1 ? "" : "es"} (≈{minutes(plan.switchSeconds)} in all, including the switch back): each restarts the model servers, and
-                    everything using the models (Jarvis, PiG, other OpenOrca sessions) waits while it happens.
+                    everything using the models (Jarvis, PiG, other {brandName()} sessions) waits while it happens.
                   </span>
                 </p>
               )}

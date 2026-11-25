@@ -356,7 +356,7 @@ impl CodexBridgeEngine {
         self.call(
             "initialize",
             json!({
-                "clientInfo": {"name": "openorca", "title": "OpenOrca", "version": "1"},
+                "clientInfo": {"name": "openorca", "title": "Abhoth", "version": "1"},
                 // Dynamic tools and collaboration modes are experimental API.
                 "capabilities": {"experimentalApi": true, "requestAttestation": false},
             }),
@@ -573,11 +573,11 @@ impl CodexBridgeEngine {
                         }
                         result = Some(json!({"answers": answers}));
                     }
-                    _ => error = Some("OpenOrca has no ask_user here".into()),
+                    _ => error = Some("Abhoth has no ask_user here".into()),
                 }
             }
             // Permission-profile grants, MCP elicitations, legacy v1 approvals: not offered.
-            _ => error = Some(format!("OpenOrca's bridge does not handle '{method}'")),
+            _ => error = Some(format!("Abhoth's bridge does not handle '{method}'")),
         }
 
         let mut response = Map::new();

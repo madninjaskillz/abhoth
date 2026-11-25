@@ -52,7 +52,7 @@ impl Command for ExitCommand {
         "exit"
     }
     fn description(&self) -> &'static str {
-        "Exit OpenOrca"
+        "Exit Abhoth"
     }
     fn aliases(&self) -> &'static [&'static str] {
         &["quit", "q"]
@@ -80,7 +80,7 @@ impl Command for DoctorCommand {
         let config = ctx.session.config.clone();
         let mut table = Table::new()
             .expand()
-            .title("[bold]OpenOrca Doctor[/]")
+            .title("[bold]Abhoth Doctor[/]")
             .column("[bold]Check[/]")
             .column("[bold]Status[/]");
         let models = crate::model_discovery::available_models(&config).await;

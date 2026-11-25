@@ -33,7 +33,7 @@ fn plant_session(home: &Path, id: &str, content: &str) {
 }
 
 async fn run(home: &Path, work: &Path, args: &[&str]) -> Output {
-    let exe = env!("CARGO_BIN_EXE_openorca").to_string();
+    let exe = env!("CARGO_BIN_EXE_abhoth").to_string();
     let (home, work) = (home.to_path_buf(), work.to_path_buf());
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {

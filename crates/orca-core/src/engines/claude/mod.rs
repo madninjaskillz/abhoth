@@ -542,7 +542,7 @@ impl ClaudeBridgeEngine {
             }
             response = json!({
                 "behavior": "deny",
-                "message": "The plan was handed to the user in OpenOrca for review. Stop here; do not start implementing.",
+                "message": "The plan was handed to the user in Abhoth for review. Stop here; do not start implementing.",
             });
         } else if subtype == Some("can_use_tool")
             && let Some(sink) = sink
@@ -574,7 +574,7 @@ impl ClaudeBridgeEngine {
                     "updatedInput": input.filter(|i| i.is_object()).cloned().unwrap_or_else(|| json!({})),
                 })
             } else {
-                json!({"behavior": "deny", "message": "The user denied this tool call in OpenOrca."})
+                json!({"behavior": "deny", "message": "The user denied this tool call in Abhoth."})
             };
         } else {
             // hook callbacks, other SDK MCP servers: none are registered by the bridge.
@@ -584,7 +584,7 @@ impl ClaudeBridgeEngine {
                     "response": {
                         "subtype": "error",
                         "request_id": request_id,
-                        "error": format!("OpenOrca's bridge does not handle '{}'", subtype.unwrap_or("")),
+                        "error": format!("Abhoth's bridge does not handle '{}'", subtype.unwrap_or("")),
                     },
                 }))
                 .await;

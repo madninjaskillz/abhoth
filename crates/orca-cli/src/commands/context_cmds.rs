@@ -186,7 +186,7 @@ pub fn export_markdown(
     now: &str,
 ) -> String {
     let mut lines: Vec<String> = vec![
-        "# OpenOrca Conversation Export".into(),
+        "# Abhoth Conversation Export".into(),
         format!("Exported: {now}"),
         String::new(),
     ];
@@ -263,7 +263,7 @@ impl Command for ExportCommand {
         let path = args
             .first()
             .cloned()
-            .unwrap_or_else(|| format!("openorca-export-{}.md", now.format("%Y%m%d-%H%M%S")));
+            .unwrap_or_else(|| format!("abhoth-export-{}.md", now.format("%Y%m%d-%H%M%S")));
         let conversation = ctx.session.conversation();
         let text = export_markdown(
             conversation.system_prompt(),
@@ -382,7 +382,7 @@ mod tests {
             ],
             "2026-11-25 10:00:00",
         );
-        assert!(text.starts_with("# OpenOrca Conversation Export\nExported: 2026-11-25 10:00:00\n\n## System Prompt\n```\nsys\n```\n"));
+        assert!(text.starts_with("# Abhoth Conversation Export\nExported: 2026-11-25 10:00:00\n\n## System Prompt\n```\nsys\n```\n"));
         assert!(text.contains("## User\nhi\n"));
         assert!(text.contains("**Tool call:** `read_file`\n```json\n{"));
         assert!(text.contains("## Tool\n**Tool result:**\n```\n1: a\n```"));

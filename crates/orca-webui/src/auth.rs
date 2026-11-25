@@ -24,17 +24,24 @@ pub fn cookie_name(port: u16) -> String {
     format!("openorca_token_{port}")
 }
 
-const TOKEN_PAGE: &str = concat!(
-    "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">",
-    "<title>OpenOrca</title><link rel=icon type=image/png href=/brand/favicon-32.png>",
-    "<body style=\"background:#0e1019;color:#d9dfec;font:15px system-ui;margin:0;padding:48px 16px;text-align:center\">",
-    "<div style=\"width:128px;height:128px;margin:0 auto 20px;border-radius:50%;",
-    "background:radial-gradient(closest-side,rgba(219,244,250,.22),rgba(34,211,238,.08) 60%,transparent)\">",
-    "<img src=/brand/mascot-256.webp width=128 height=128 alt=\"\"></div>",
-    "<h2 style=\"margin:0 0 8px\">Token required</h2><p style=\"max-width:28rem;margin:0 auto;color:#98a0b3\">",
-    "Open the URL OpenOrca printed (it ends in <code>?token=…</code>). ",
-    "In the TUI, <code>/hostui status</code> shows it again.</p></body>"
-);
+/// The page shown without a token (the product name is the build's, D88).
+fn token_page() -> String {
+    let name = orca_core::brand::PRODUCT_NAME;
+    format!(
+        concat!(
+            "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">",
+            "<title>{name}</title><link rel=icon type=image/png href=/brand/favicon-32.png>",
+            "<body style=\"background:#0e1019;color:#d9dfec;font:15px system-ui;margin:0;padding:48px 16px;text-align:center\">",
+            "<div style=\"width:128px;height:128px;margin:0 auto 20px;border-radius:50%;",
+            "background:radial-gradient(closest-side,rgba(236,214,250,.22),rgba(168,85,247,.10) 60%,transparent)\">",
+            "<img src=/brand/mascot-256.webp width=128 height=128 alt=\"\"></div>",
+            "<h2 style=\"margin:0 0 8px\">Token required</h2><p style=\"max-width:28rem;margin:0 auto;color:#98a0b3\">",
+            "Open the URL {name} printed (it ends in <code>?token=…</code>). ",
+            "In the TUI, <code>/hostui status</code> shows it again.</p></body>"
+        ),
+        name = name
+    )
+}
 
 /// Constant-time comparison.
 fn matches(candidate: Option<&str>, token: &str) -> bool {
@@ -174,7 +181,7 @@ pub async fn token_auth(
             (
                 StatusCode::UNAUTHORIZED,
                 [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                TOKEN_PAGE,
+                token_page(),
             )
                 .into_response()
         } else {

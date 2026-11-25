@@ -36,12 +36,9 @@ pub struct ProjectStore {
     lock: Mutex<()>,
 }
 
-/// `<OPENORCA_HOME or ~/.openorca>`.
+/// The state home: `ABHOTH_HOME` / `OPENORCA_HOME`, else `~/.abhoth`.
 pub fn openorca_home() -> PathBuf {
-    match std::env::var("OPENORCA_HOME") {
-        Ok(h) if !h.is_empty() => PathBuf::from(h),
-        _ => orca_core::config::default_config_dir(),
-    }
+    orca_core::config::default_config_dir()
 }
 
 impl ProjectStore {

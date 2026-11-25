@@ -289,7 +289,7 @@ impl PiJobTool {
         }
         let _ = get_bool(args, "kill");
         fail(format!(
-            "Could not capture job {}'s window: window capture is not available in this build of OpenOrca.",
+            "Could not capture job {}'s window: window capture is not available in this build of Abhoth.",
             job.id
         ))
     }

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/misc";
 import { startHub } from "@/lib/hub";
 import { loadAuth } from "@/lib/auth";
+import { loadBranding } from "@/lib/brand";
 import { SignIn } from "@/features/auth/SignIn";
 import App from "./App";
 import "./index.css";
@@ -15,7 +16,7 @@ const queryClient = new QueryClient({
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 
 // Sign-in mode: the sign-in page until there is a session; then the app (reloaded, so it starts clean).
-void loadAuth().then((auth) => {
+void Promise.all([loadAuth(), loadBranding()]).then(([auth]) => {
   if (auth.mode === "login" && auth.stage !== "ok") {
     root.render(
       <React.StrictMode>

@@ -38,9 +38,9 @@ pub fn register(r: &mut ToolRegistry, config: &OrcaConfig) {
         }
         Err(e) => {
             // Fall back to OpenOrca's own shell tool rather than failing every call.
-            tracing::warn!("Pi profile: no bash found, keeping OpenOrca's bash tool. {e}");
+            tracing::warn!("Pi profile: no bash found, keeping Abhoth's bash tool. {e}");
             eprintln!(
-                "\u{26A0} Pi profile: no bash shell found \u{2014} falling back to OpenOrca's shell tool. Install Git for Windows or set pi.shellPath in config.json."
+                "\u{26A0} Pi profile: no bash shell found \u{2014} falling back to Abhoth's shell tool. Install Git for Windows or set pi.shellPath in config.json."
             );
             None
         }

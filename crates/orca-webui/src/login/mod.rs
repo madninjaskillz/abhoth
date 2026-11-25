@@ -29,7 +29,7 @@ use accounts::AccountStore;
 use store::{Clock, LoginThrottle, SessionStore, WebSession};
 
 pub const CSRF_HEADER: &str = "X-OpenOrca-CSRF";
-pub const ISSUER: &str = "OpenOrca";
+pub const ISSUER: &str = orca_core::brand::PRODUCT_NAME;
 
 /// Sign-in mode settings (`--hostui-login`).
 #[derive(Clone)]

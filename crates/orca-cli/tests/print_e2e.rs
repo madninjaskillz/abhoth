@@ -24,7 +24,7 @@ async fn run_print(
     work: &std::path::Path,
     prompt: &str,
 ) -> (Value, String) {
-    let exe = env!("CARGO_BIN_EXE_openorca").to_string();
+    let exe = env!("CARGO_BIN_EXE_abhoth").to_string();
     let (home, work, prompt) = (home.to_path_buf(), work.to_path_buf(), prompt.to_string());
     let out = tokio::task::spawn_blocking(move || {
         Command::new(exe)
@@ -181,9 +181,9 @@ async fn print_write_then_denied_bash_reports_files_and_failure() {
 
 #[test]
 fn version_flag() {
-    let out = Command::new(env!("CARGO_BIN_EXE_openorca"))
+    let out = Command::new(env!("CARGO_BIN_EXE_abhoth"))
         .arg("--version")
         .output()
         .unwrap();
-    assert!(String::from_utf8_lossy(&out.stdout).starts_with("OpenOrca v"));
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("Abhoth v"));
 }

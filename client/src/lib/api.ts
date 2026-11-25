@@ -1,6 +1,7 @@
 // REST calls to the server. Auth is an HttpOnly cookie: the token's (opened with ?token=) or, in
 // sign-in mode, the session's, plus its CSRF header on state-changing requests.
 import { authState, csrfHeaders, sessionEnded } from "@/lib/auth";
+import { brandName } from "@/lib/brand";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -57,7 +58,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     if (res.status === 401) sessionEnded();
     const e = new ApiError(
       res.status === 401
-        ? authState().mode === "login" ? "Signed out." : "Not signed in: open the URL OpenOrca printed (with ?token=)."
+        ? authState().mode === "login" ? "Signed out." : `Not signed in: open the URL ${brandName()} printed (with ?token=).`
         : err,
       res.status,
     );

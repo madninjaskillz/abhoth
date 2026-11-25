@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "OpenOrca web UI (served by openorca --hostui). Built by the OpenOrca.WebUi project; dist/ is checked in for builds without node.",
+  "description": "Abhoth web UI (served by abhoth --hostui, and by the C# openorca --hostui until it is retired). dist/ is checked in for builds without node.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

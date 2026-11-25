@@ -81,7 +81,8 @@ impl WebUiOptions {
             settings: None,
             client_dir: None,
             resume_grace: Duration::from_secs(30),
-            github_api: std::env::var("OPENORCA_GITHUB_API_URL")
+            github_api: orca_core::brand::env_var("GITHUB_API_URL")
+                .ok_or(std::env::VarError::NotPresent)
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "https://api.github.com".into()),
@@ -426,7 +427,8 @@ async fn static_or_index(State(state): State<Arc<AppState>>, method: Method, uri
         }
         if let Some(bytes) = client_file(&state, &rel) {
             let mime = mime_guess::from_path(&rel).first_or_octet_stream();
-            let cache = if rel.ends_with("index.html") {
+            // index.html and the brand files (same names across rebrands) are never cached.
+            let cache = if rel.ends_with("index.html") || rel.starts_with("brand/") {
                 "no-cache"
             } else {
                 "public, max-age=31536000, immutable"

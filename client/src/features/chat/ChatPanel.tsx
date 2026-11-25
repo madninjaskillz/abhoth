@@ -1,4 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { brandName } from "@/lib/brand";
 import { Mascot, MascotThinking } from "@/components/Mascot";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -142,7 +143,7 @@ function EmptyState() {
   return (
     <div className="mx-auto mt-12 max-w-md text-center text-muted-foreground" data-testid="chat-empty">
       <Mascot size={128} className="mb-5" />
-      <div className="mb-2 text-lg font-semibold text-foreground">OpenOrca</div>
+      <div className="mb-2 text-lg font-semibold text-foreground">{brandName()}</div>
       <p className="text-sm">
         {mode === "tui"
           ? "This is the same session as the terminal. Prompts typed here or there run in order."
@@ -426,7 +427,7 @@ function Composer() {
             rows={1}
             value={text}
             data-testid="composer"
-            placeholder={busy ? "Queue a prompt — it runs after the current turn…" : "Ask OpenOrca…  (Enter to send, Shift+Enter for a new line)"}
+            placeholder={busy ? "Queue a prompt — it runs after the current turn…" : `Ask ${brandName()}…  (Enter to send, Shift+Enter for a new line)`}
             className="min-h-[36px] resize-none border-0 bg-transparent px-1 py-1.5 shadow-none focus-visible:ring-0"
             onChange={(e) => setText(e.target.value)}
             onPaste={(e) => {

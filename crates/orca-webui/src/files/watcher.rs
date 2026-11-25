@@ -210,7 +210,10 @@ impl Drop for FolderWatcher {
 /// True when `path` is on a network file system (NFS, SMB/CIFS, sshfs);
 /// OPENORCA_POLL_FOLDERS=1 forces it, =0 turns it off.
 pub fn is_network_path(path: &str) -> bool {
-    match std::env::var("OPENORCA_POLL_FOLDERS").as_deref() {
+    match orca_core::brand::env_var("POLL_FOLDERS")
+        .ok_or(std::env::VarError::NotPresent)
+        .as_deref()
+    {
         Ok("1") => return true,
         Ok("0") => return false,
         _ => {}

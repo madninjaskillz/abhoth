@@ -16,14 +16,40 @@ pub enum ConfigError {
     Json(#[from] serde_json::Error),
 }
 
-/// The config directory: `OPENORCA_HOME`, else `~/.openorca`.
+/// The config directory: `ABHOTH_HOME` (or `OPENORCA_HOME`), else `~/.abhoth` (D89; copied once
+/// from the C# build's `~/.openorca` by [`migrate_default_home`]).
 pub fn default_config_dir() -> PathBuf {
-    if let Ok(home) = std::env::var("OPENORCA_HOME")
+    if let Some(home) = crate::brand::env_var("HOME")
         && !home.is_empty()
     {
         return PathBuf::from(home);
     }
-    user_profile().join(".openorca")
+    user_profile().join(crate::brand::HOME_DIR_NAME)
+}
+
+/// The one-time copy of `~/.openorca` into `~/.abhoth` at startup; nothing when a home is set
+/// in the environment. Returns a line to show when it copied something or failed.
+pub fn migrate_default_home() -> Option<String> {
+    if crate::brand::env_var("HOME").is_some_and(|h| !h.is_empty()) {
+        return None;
+    }
+    let profile = user_profile();
+    let legacy = profile.join(crate::brand::LEGACY_HOME_DIR_NAME);
+    let home = profile.join(crate::brand::HOME_DIR_NAME);
+    let name = crate::brand::PRODUCT_NAME;
+    match crate::brand::migrate_home(&legacy, &home) {
+        Ok(crate::brand::Migration::Copied(n)) => Some(format!(
+            "{name}: copied {n} files of settings and sessions from {} to {} (the old folder is unchanged).",
+            legacy.display(),
+            home.display()
+        )),
+        Ok(crate::brand::Migration::NotNeeded) => None,
+        Err(e) => Some(format!(
+            "{name}: could not copy {} to {}: {e}",
+            legacy.display(),
+            home.display()
+        )),
+    }
 }
 
 /// `Environment.SpecialFolder.UserProfile`.

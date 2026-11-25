@@ -224,7 +224,7 @@ impl CodexStreamMapper {
                 let failed_exit = exit.is_some_and(|e| e != 0);
                 let is_error = matches!(status, Some("failed" | "declined")) || failed_exit;
                 let text = if status == Some("declined") {
-                    "Declined in OpenOrca.".to_string()
+                    "Declined in Abhoth.".to_string()
                 } else if failed_exit {
                     format!(
                         "{}(exit code {})",
@@ -247,7 +247,7 @@ impl CodexStreamMapper {
                 let text = if ok {
                     self.diff_summary(item)
                 } else if status == Some("declined") {
-                    "Declined in OpenOrca.".to_string()
+                    "Declined in Abhoth.".to_string()
                 } else {
                     "The patch failed to apply.".to_string()
                 };

@@ -204,7 +204,8 @@ impl SlotHealthProbe for HttpSlotHealthProbe {
             return false;
         };
         // Test hook, as PiG's PIG_SLOTS_FAIL: OPENORCA_SLOTS_FAIL=B simulates copy B being down.
-        if std::env::var("OPENORCA_SLOTS_FAIL")
+        if crate::brand::env_var("SLOTS_FAIL")
+            .ok_or(std::env::VarError::NotPresent)
             .unwrap_or_default()
             .to_lowercase()
             .contains(&copy.to_lowercase())

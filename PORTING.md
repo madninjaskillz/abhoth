@@ -1,4 +1,4 @@
-# Porting OpenOrca to Rust
+# Porting OpenOrca to Rust (Abhoth)
 
 The C# code (`src/`, `tests/`) stays the reference implementation and keeps working. The
 Rust port lives in `rust/`, is a separate Cargo workspace, and is invisible to .NET: the
@@ -9,7 +9,7 @@ Progress and gaps are tracked in [`STATUS.md`](STATUS.md).
 
 ```sh
 cd rust
-cargo build                         # debug build; target/debug/openorca(.exe)
+cargo build                         # debug build; target/debug/abhoth(.exe)
 cargo test --workspace              # unit, ported C# tests, end-to-end --print tests
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
@@ -24,7 +24,7 @@ Cross-check against the C# build (needs a Release build of the C# CLI):
 dotnet build ../OpenOrca.sln -c Release
 cargo build -p orca-cli -p orca-crosscheck
 target/debug/orca-crosscheck --csharp ../src/OpenOrca.Cli/bin/Release/net10.0/openorca.exe \
-    --rust target/debug/openorca.exe [--only <scenario>] [--out <dir>] [--strict]
+    --rust target/debug/abhoth.exe [--only <scenario>] [--out <dir>] [--strict]
 ```
 
 ## Crate map
@@ -401,3 +401,19 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D87** (merge) `NativeOptions` carries the sub-agent host; a project session rebuilt for
   another profile/mode gets the agent tools again, while its agent tabs keep showing the first
   session's orchestrator (C# restarts the worker process, so its tabs restart empty).
+- **D88** (user request 2026-11-25) The Rust build is **Abhoth**: binary `abhoth`, product name
+  in `orca_core::brand::PRODUCT_NAME` (TUI header, `--version`, a new `--help`, /doctor, /export,
+  token and sign-in pages, TOTP issuer, user-facing messages). The system prompt's opening "You
+  are OpenOrca," becomes "You are Abhoth," at build time (`brand::self_named`); prompt files on
+  disk keep the C# text and hashes. Wire names stay (`X-OpenOrca-*` headers, the bridges' MCP
+  server `openorca`, log categories, slot owner labels, User-Agent). The React client is Abhoth
+  outright (the C# build is being retired): `public/brand/` holds the Abhoth images under the old
+  file names plus `branding.json` (name, optional glow) read by `lib/brand.ts` before the first
+  render; brand files and index.html are served `no-cache`.
+- **D89** State moves to `~/.abhoth`; `ABHOTH_*` env vars win over `OPENORCA_*`. At startup, with
+  no home in the environment, `~/.openorca` is copied once (staged then renamed; logs,
+  checkpoints and config backups skipped; a `.migrated-from-openorca` marker) and left as is for
+  the C# build. Moving the old folder is left to the cutover (CUTOVER.md).
+- **D90** The cross-check reads the Rust build's "Abhoth"/"abhoth" as "OpenOrca"/"openorca" in
+  every compared string (outputs, requests, files, screens), so the rebrand is not a difference.
+  Both builds still get the same `OPENORCA_HOME`.

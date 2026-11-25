@@ -543,6 +543,46 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// `abhoth --version`.
+pub fn version_line() -> String {
+    format!(
+        "{} v{} (the Rust successor of OpenOrca)",
+        orca_core::brand::PRODUCT_NAME,
+        version()
+    )
+}
+
+/// `abhoth --help`: the common options (the C# build has no help page; D88).
+pub fn help_text() -> String {
+    let bin = orca_core::brand::BINARY_NAME;
+    format!(
+        "{name} v{ver}: an autonomous AI coding agent for local models.
+
+Usage:
+  {bin}                          interactive session in the current folder
+  {bin} -p \"<prompt>\"            one prompt, then exit (--print; --output json)
+  {bin} --hostui[=host:port]     the web UI (--hostui-open, --hostui-login, --hostui-token <t>)
+  {bin} --desktop                the web UI in its own window (desktop builds)
+
+Common options:
+  -c, --continue                 continue the last session
+  -r, --resume <id>              resume a session
+  --profile <name>               use a profile from the profile server
+  --mode <name>                  agent mode for this run
+  --engine <native|claude|codex> the agent engine
+  --sandbox                      read-only tools, no shell
+  --allow <tools>                pre-approve tools (comma-separated)
+  --allow-dir <dir>              keep file tools inside a folder
+  --demo                         demo mode (no model server)
+  -v, --version                  print the version
+
+Settings and sessions live in ~/.abhoth (ABHOTH_HOME; OPENORCA_HOME is read too).
+",
+        name = orca_core::brand::PRODUCT_NAME,
+        ver = version(),
+    )
+}
+
 /// The whole program; returns the process exit code.
 pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
     let cwd = std::env::current_dir().context("reading the current directory")?;
@@ -550,10 +590,18 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
     if let Some(code) = hostui_password::try_run(&raw) {
         return Ok(code);
     }
+    if raw.iter().any(|a| a == "--help" || a == "-h") {
+        print!("{}", help_text());
+        return Ok(0);
+    }
     let args = CliArgs::parse(&raw, &cwd);
     if args.show_version {
-        println!("OpenOrca v{} (Rust port)", version());
+        println!("{}", version_line());
         return Ok(0);
+    }
+    // The one-time copy of ~/.openorca into ~/.abhoth (D89).
+    if let Some(line) = orca_core::config::manager::migrate_default_home() {
+        eprintln!("{line}");
     }
     // --hostui: the web UI, headless (src/OpenOrca.Cli/HostUi). Ignored with --print.
     let hostui_args = if args.single_prompt.is_none() {
@@ -562,7 +610,7 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         None
     };
     if let Some(e) = hostui_args.as_ref().and_then(|h| h.error.clone()) {
-        eprintln!("openorca: {e}");
+        eprintln!("abhoth: {e}");
         return Ok(2);
     }
     let mut manager = ConfigManager::new(None);

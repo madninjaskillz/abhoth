@@ -47,7 +47,7 @@ pub async fn show_banner(console: &Console, config: &OrcaConfig) {
 
 /// `ShowMinimal`.
 pub fn show_minimal(console: &Console) {
-    console.markup_line("[cyan bold]OpenOrca[/] [grey]— Type /help for commands[/]\n");
+    console.markup_line("[magenta bold]Abhoth[/] [grey]— Type /help for commands[/]\n");
 }
 
 /// The art centred in `width` columns, the sides filled in the art's colours.
@@ -80,10 +80,10 @@ fn version_line(width: usize) -> String {
     let version = format!("v{}", crate::version());
     if width > 84 {
         format!(
-            "[cyan bold]OpenOrca[/] [grey]{version} · /help · Tab completes /commands and @files · !cmd runs a shell[/]"
+            "[magenta bold]Abhoth[/] [grey]{version} · /help · Tab completes /commands and @files · !cmd runs a shell[/]"
         )
     } else {
-        format!("[cyan bold]OpenOrca[/] [grey]{version} · /help for commands[/]")
+        format!("[magenta bold]Abhoth[/] [grey]{version} · /help for commands[/]")
     }
 }
 
@@ -229,7 +229,7 @@ mod tests {
         show_minimal(&console);
         assert_eq!(
             Console::buffer_text(&buf),
-            "OpenOrca — Type /help for commands\n\n"
+            "Abhoth — Type /help for commands\n\n"
         );
         assert!(version_line(100).contains("Tab completes"));
         assert!(version_line(80).contains("/help for commands"));
