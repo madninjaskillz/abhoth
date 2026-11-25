@@ -17,7 +17,12 @@
 //!
 //! A scenario can plant files in the config home first (`home_files`, e.g. a saved session;
 //! `<WORK_JSON>` in them becomes the work folder as a JSON string body) and pass extra
-//! arguments (`args`, e.g. `["-r", "s1"]`).
+//! arguments (`args`, e.g. `["-r", "s1"]`). The fake server can answer other endpoints
+//! (`server_routes`: `{"GET /health": [200, "{...}"]}`); every such request (`probes`, e.g. the
+//! startup context-window probes) is compared too. A reply can stream its reasoning in small
+//! chunks (`reasoning_chunk_chars`), open with a null-content role chunk
+//! (`null_role_content`), break off after some events (`die_after_events`) or be an HTTP error
+//! (`error`: `[status, body]`).
 //!
 //! For the git tools a scenario can run `setup` commands in the work folder after its files
 //! are written (e.g. `["git", "init"]`) with extra environment variables (`env`, also given to
@@ -39,7 +44,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
-use orca_testkit::{FakeOpenAi, Page, Reply, StaticServer};
+use orca_testkit::{FakeOpenAi, Page, Reply, ServerOptions, StaticServer};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -68,6 +73,9 @@ struct Scenario {
     /// Pages served at `<WEB>` (path -> page).
     #[serde(default)]
     web: BTreeMap<String, WebPage>,
+    /// Answers for other endpoints: `"METHOD /path"` -> `[status, body]`.
+    #[serde(default)]
+    server_routes: BTreeMap<String, (u16, String)>,
     replies: Vec<ScriptReply>,
 }
 
@@ -103,6 +111,18 @@ struct ScriptReply {
     /// The prompt size the usage reports (default 100): drives the context estimate.
     #[serde(default)]
     prompt_tokens: Option<i64>,
+    /// Usage off: no usage chunk (with no text either, the stream is empty).
+    #[serde(default)]
+    no_usage: bool,
+    #[serde(default)]
+    reasoning_chunk_chars: usize,
+    #[serde(default)]
+    null_role_content: bool,
+    #[serde(default)]
+    die_after_events: Option<usize>,
+    /// `[status, body]`: answer with an HTTP error instead.
+    #[serde(default)]
+    error: Option<(u16, String)>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,8 +151,20 @@ impl ScriptReply {
                 })
                 .collect(),
             finish_reason: self.finish_reason.clone(),
-            prompt_tokens: self.prompt_tokens.unwrap_or(100),
-            completion_tokens: if self.tools.is_empty() { 10 } else { 20 },
+            prompt_tokens: if self.no_usage {
+                0
+            } else {
+                self.prompt_tokens.unwrap_or(100)
+            },
+            completion_tokens: match (self.no_usage, self.tools.is_empty()) {
+                (true, _) => 0,
+                (false, true) => 10,
+                (false, false) => 20,
+            },
+            reasoning_chunk_chars: self.reasoning_chunk_chars,
+            null_role_content: self.null_role_content,
+            die_after_events: self.die_after_events,
+            error: self.error.clone(),
             ..Reply::default()
         }
     }
@@ -145,6 +177,7 @@ struct RunResult {
     home_files: BTreeMap<String, Value>,
     exit_code: Option<i32>,
     notices: Vec<String>,
+    probes: Vec<String>,
     stderr: String,
 }
 
@@ -186,12 +219,17 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         format!("127.0.0.1:{}", l.local_addr()?.port())
     };
     let subst = |s: &str| s.replace("<WEB>", &web_url).replace("<CLOSED>", &closed);
-    let server = FakeOpenAi::start(
+    let mut options = ServerOptions::default();
+    for (key, (status, body)) in &scenario.server_routes {
+        options = options.route(key, *status, body.clone());
+    }
+    let server = FakeOpenAi::start_with(
         scenario
             .replies
             .iter()
             .map(|r| r.to_reply(&subst))
             .collect(),
+        options,
     )
     .await;
     let home = tempfile::tempdir()?;
@@ -372,6 +410,7 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         home_files,
         exit_code: out.status.code(),
         notices,
+        probes: server.probes(),
         requests: server
             .requests()
             .into_iter()
@@ -584,6 +623,7 @@ fn compare(cs: &RunResult, rs: &RunResult, strict: bool) -> Vec<String> {
         ));
     }
     diff("notices", &json!(cs.notices), &json!(rs.notices), &mut out);
+    diff("probes", &json!(cs.probes), &json!(rs.probes), &mut out);
     out
 }
 
@@ -632,7 +672,7 @@ async fn main() -> Result<()> {
         if let Some(out) = &out_dir {
             std::fs::create_dir_all(out)?;
             for (tag, r) in [("csharp", &cs), ("rust", &rs)] {
-                let dump = json!({"output": r.output, "requests": r.requests, "files": r.files, "home_files": r.home_files, "exit_code": r.exit_code, "notices": r.notices, "stderr": r.stderr});
+                let dump = json!({"output": r.output, "requests": r.requests, "files": r.files, "home_files": r.home_files, "exit_code": r.exit_code, "notices": r.notices, "probes": r.probes, "stderr": r.stderr});
                 std::fs::write(
                     out.join(format!("{}.{tag}.json", scenario.name)),
                     serde_json::to_string_pretty(&dump)?,

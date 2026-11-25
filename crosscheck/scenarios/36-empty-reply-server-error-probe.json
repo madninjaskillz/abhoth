@@ -1,0 +1,23 @@
+{
+  "prompt": "Say hello.",
+  "config": {
+    "lmStudio": {
+      "nativeToolCalling": false
+    }
+  },
+  "replies": [
+    {
+      "null_role_content": true,
+      "no_usage": true
+    },
+    {
+      "error": [
+        500,
+        "{\"error\":{\"message\":\"model crashed\"}}"
+      ]
+    },
+    {
+      "text": "Hello! How can I help you with your project today?"
+    }
+  ]
+}

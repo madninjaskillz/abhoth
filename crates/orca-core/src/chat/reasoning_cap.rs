@@ -169,7 +169,7 @@ impl ReasoningCap {
             StreamEvent::Text(t) => self.observe_update(None, Some(t), false),
             StreamEvent::Reasoning(r) => self.observe_update(Some(r), None, false),
             StreamEvent::ToolCallStarted { .. } => self.observe_update(None, None, true),
-            StreamEvent::Usage(_) => self.fired,
+            StreamEvent::Usage(_) | StreamEvent::UpdateEnd { .. } => self.fired,
         }
     }
 

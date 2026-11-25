@@ -1,0 +1,15 @@
+{
+  "prompt": "What does x.txt say?",
+  "files": {
+    "x.txt": "alpha\n"
+  },
+  "replies": [
+    {
+      "text": "I am about to look at the files and then answer you properly.",
+      "die_after_events": 3
+    },
+    {
+      "text": "never asked"
+    }
+  ]
+}

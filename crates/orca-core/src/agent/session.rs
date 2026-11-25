@@ -28,6 +28,8 @@ use crate::config::OrcaConfig;
 pub const TOOL_RESULT_MAX_CHARS: usize = 30_000;
 /// `CliConstants.ToolResultHistoryMaxChars`: cap for the recorded history copy.
 pub const TOOL_RESULT_HISTORY_MAX_CHARS: usize = 10_000;
+/// `CliConstants.HttpProbeTimeoutSeconds`.
+pub const HTTP_PROBE_TIMEOUT_SECONDS: u64 = 15;
 /// `CliConstants.ToolExecutionTimeoutSeconds`.
 pub const TOOL_EXECUTION_TIMEOUT_SECONDS: u64 = 120;
 
@@ -135,6 +137,15 @@ pub struct AgentSession {
     /// What compaction told the user (console lines in C#); a UI drains it.
     pub compaction_notices: Vec<String>,
     // ---- end context management ----
+    /// Run the startup probes (`MaxTokensNegotiator`, context-window detection) before the
+    /// first turn. Off by default for library use; the CLI turns it on, as C# always runs them.
+    pub startup_probes: bool,
+    /// The startup probes already ran this session.
+    pub max_tokens_negotiated: bool,
+    /// Identifies servers for the context-window probe (the process-wide one by default).
+    pub server_identity: crate::client::ServerIdentity,
+    /// HTTP client for the startup probes and the server error probe (15 s timeout).
+    pub probe_http: reqwest::Client,
 }
 
 impl AgentSession {
@@ -177,6 +188,13 @@ impl AgentSession {
             context_usage: Default::default(),
             overflow_recovery_used: false,
             compaction_notices: Vec::new(),
+            startup_probes: false,
+            max_tokens_negotiated: false,
+            server_identity: crate::client::ServerIdentity::shared(),
+            probe_http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(HTTP_PROBE_TIMEOUT_SECONDS))
+                .build()
+                .expect("reqwest client builds with static settings"),
         }
     }
 
@@ -234,16 +252,39 @@ impl AgentSession {
     }
 
     pub(super) fn build_options(&self) -> ChatOptions {
+        self.build_options_for(false, false)
+    }
+
+    /// `BuildChatOptions(useNativeTools, runawayRecovery, skipThinking)`: the cold
+    /// (temperature 0.2) recovery attempt after runaway thinking keeps its temperature, and a
+    /// step adaptive reasoning skips sends thinking off.
+    pub(super) fn build_options_for(
+        &self,
+        runaway_recovery: bool,
+        skip_thinking: bool,
+    ) -> ChatOptions {
         let mut options = ChatOptions::default();
         let model = self.active_model();
         if self.model_index > 0 {
             options.model = model.clone();
         }
-        request_parameters::apply(&mut options, &self.config, model.as_deref(), false);
+        if runaway_recovery {
+            options.temperature = Some(0.2);
+        }
+        request_parameters::apply(
+            &mut options,
+            &self.config,
+            model.as_deref(),
+            runaway_recovery,
+        );
         request_parameters::apply_effort(
             &mut options,
             self.config.agent.reasoning.effort_for(true).as_deref(),
         );
+        if skip_thinking {
+            request_parameters::skip_thinking(&mut options);
+            tracing::debug!("adaptive reasoning: no thinking for this step");
+        }
         options.max_output_tokens = self.config.lm_studio.max_tokens;
         if self.native_tools {
             options.tools = self.tools_for_mode();

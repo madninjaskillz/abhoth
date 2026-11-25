@@ -3,9 +3,14 @@
 //! failing-test gate, same-model retries and model failover, the verification / summary
 //! wind-down and the iteration-limit handoff.
 //!
-//! Not ported yet (see STATUS.md): pair voting, the thinking-runaway and per-step reasoning
-//! caps, adaptive reasoning, early read-only runs, mid-stream salvage of partial output,
-//! the server error probe, background helper collection and the delegated-check request.
+//! Also the stream guards (`streaming.rs`: the thinking-runaway cancel and the per-step
+//! reasoning cap stop a stream; partial output survives a stream that dies mid-response and
+//! its complete text tool call runs), adaptive reasoning, the server error probe after an
+//! empty reply, and the startup probes (`MaxTokensNegotiator`, the context-window detection).
+//!
+//! Not ported yet (see STATUS.md): pair voting, early read-only runs, background helper
+//! collection, the delegated-check request, the parameter auto-correction and the
+//! non-streaming fallback of the loop's catch-all error handler.
 
 use std::time::Duration;
 
@@ -19,7 +24,12 @@ use super::prompts::{self, MAX_SUMMARY_CONTINUATIONS, SUMMARY_CONTINUE_MESSAGE};
 use super::run_evidence;
 use super::session::{AgentError, AgentObserver, AgentSession, TurnEnd};
 use super::tool_call_parser::{self, ParsedToolCall};
-use crate::client::{ChatError, ChatMessage, ChatResponse, Role, StreamEvent, ToolCall};
+use crate::chat::ReasoningCap;
+use crate::chat::adaptive_reasoning::AdaptiveReasoning;
+use crate::client::{ChatError, ChatMessage, ChatResponse, Role, ToolCall};
+
+/// What the model is told after the runaway guard cut a reply that was all reasoning.
+pub const RUNAWAY_REDIRECT_MESSAGE: &str = "Your last response was cut off because it was entirely internal reasoning with no action. Do NOT deliberate further. Immediately output the tool call (or the final answer) for your next step.";
 
 /// `ToolCallExecutor.DoomLoopThreshold`.
 const DOOM_LOOP_THRESHOLD: usize = 3;
@@ -51,6 +61,12 @@ pub(super) struct LoopState {
     pub stuck_last_fire_count: Option<usize>,
     pub pre_verification_wrap_up: Option<String>,
     pub pre_verification_epoch: u64,
+    /// Runaway-thinking cancels this turn.
+    pub runaway_trips: i32,
+    /// The cold (temperature 0.2) recovery attempt after the third runaway.
+    pub runaway_recovery_active: bool,
+    /// The runaway cap for this turn's next requests (halved per trip); None = configured.
+    pub runaway_cap_override: Option<i32>,
 }
 
 impl LoopState {
@@ -86,8 +102,15 @@ impl AgentSession {
             task_brief: self.snapshot_task_brief(),
             ..Default::default()
         };
+        // Per-step reasoning cap (agent.reasoning.maxStepTokens) and adaptive reasoning, fresh
+        // every turn; None = off.
+        let mut reasoning_cap = ReasoningCap::for_config(&self.config, true);
+        let mut adaptive = AdaptiveReasoning::for_config(&self.config.agent.reasoning, true);
+        // Set when the cap stops a request: the re-ask sends that request's thinking setting.
+        let mut cap_reask_skips_thinking: Option<bool> = None;
         // A previous turn's failover must not pin the session on a backup model.
         self.model_index = 0;
+        self.prepare_for_generation(observer).await;
         self.native_tools = self.resolve_native_tools();
         self.sync_system_prompt_tool_mode();
 
@@ -114,14 +137,33 @@ impl AgentSession {
             }
 
             let context_mark = self.context_mark();
-            let response = match self.stream_request(observer).await {
-                Ok(r) => r,
+            // A reasoning-cap re-ask is the same step asked again: it keeps the thinking
+            // setting of the request it replaces and is not a new adaptive decision.
+            let skip_thinking = match cap_reask_skips_thinking.take() {
+                Some(skip) => skip,
+                None => adaptive
+                    .as_mut()
+                    .is_some_and(|a| a.should_skip(&self.messages)),
+            };
+            let options = self.build_options_for(s.runaway_recovery_active, skip_thinking);
+            // The cap watches this request only (not the wind-down requests made elsewhere).
+            if let Some(cap) = reasoning_cap.as_mut() {
+                cap.begin_request();
+            }
+            let runaway_cap = s
+                .runaway_cap_override
+                .unwrap_or(self.config.thinking.runaway_cap_chunks);
+            let outcome = match self
+                .process_stream(&options, observer, reasoning_cap.as_mut(), runaway_cap)
+                .await
+            {
+                Ok(o) => o,
                 Err(ChatError::IdleTimeout(d)) => {
                     observer.on_notice(&format!(
                         "Streaming timeout: no tokens received for {}s",
                         d.as_secs()
                     ));
-                    match self.retry_or_failover(&mut s, observer).await {
+                    match self.retry_or_failover(&mut s, None, observer).await {
                         Recovery::Continue => {
                             iteration += 1;
                             continue;
@@ -138,13 +180,76 @@ impl AgentSession {
                     return Err(e.into());
                 }
             };
-            // The server's real prompt size becomes the base for the next estimate.
-            self.record_prompt_usage(context_mark, &response.usage);
 
-            if is_empty_response(&response) {
+            if outcome.reasoning_capped
+                && let Some(cap) = reasoning_cap.as_mut()
+            {
+                // Ask again, appending only (the prompt cache holds).
+                tracing::info!(
+                    "reasoning cap: lead step {} cut at {} reasoning tokens (limit {}, fire {}/{})",
+                    iteration + 1,
+                    cap.reasoning_tokens(),
+                    cap.max_step_tokens(),
+                    cap.fires_this_step(),
+                    cap.retries()
+                );
+                observer.on_notice(&format!("Lead {}.", cap.describe()));
+                self.total_output_tokens += i64::from(cap.reasoning_tokens());
+                cap.reask(&mut self.messages);
+                cap_reask_skips_thinking = Some(skip_thinking);
+                iteration += 1;
+                continue;
+            }
+
+            if outcome.thinking_runaway {
+                // Escalate: shrink the cap each trip; after the third, one cold recovery
+                // attempt, and a spiral during recovery ends the turn.
+                s.runaway_trips += 1;
+                let base = self.config.thinking.runaway_cap_chunks;
+                s.runaway_cap_override = Some(base.min(500).max(base >> (s.runaway_trips & 31)));
+                observer.on_notice(&format!(
+                    "Thinking runaway cancelled after {} reasoning chunks with no action (strike {}).",
+                    crate::chat::n0(outcome.thinking_token_count),
+                    s.runaway_trips
+                ));
+                if s.runaway_trips >= 3 && s.runaway_recovery_active {
+                    observer.on_notice("Model keeps disappearing into reasoning spirals \u{2014} ending this turn. A fresh prompt (or a smaller step) usually breaks the pattern.");
+                    break;
+                }
+                if s.runaway_trips >= 3 {
+                    s.runaway_recovery_active = true;
+                    observer.on_notice(
+                        "Third strike \u{2014} one recovery attempt at low temperature.",
+                    );
+                }
+                self.messages
+                    .push(ChatMessage::user(RUNAWAY_REDIRECT_MESSAGE));
+                iteration += 1;
+                continue;
+            }
+
+            if outcome.empty {
                 tracing::warn!("no tokens received from the LLM: empty response");
+                let server_error = crate::client::max_tokens_negotiator::probe_for_server_error(
+                    &self.probe_http,
+                    &self.config,
+                    &self.messages,
+                    &options,
+                )
+                .await;
+                if let Some(e) = &server_error {
+                    observer.on_notice(&format!("LLM server error: {e}"));
+                }
+                let recovered = match server_error {
+                    Some(e) => self.recover_from_overflow(&ChatError::Server(e)).await,
+                    None => false,
+                };
+                if recovered {
+                    iteration += 1;
+                    continue;
+                }
                 observer.on_notice("LLM returned an empty response.");
-                match self.retry_or_failover(&mut s, observer).await {
+                match self.retry_or_failover(&mut s, None, observer).await {
                     Recovery::Continue => {
                         iteration += 1;
                         continue;
@@ -152,8 +257,42 @@ impl AgentSession {
                     Recovery::Break => break,
                 }
             }
-            // A healthy stream proves the connection is good again.
-            s.same_model_retry_attempts = 0;
+
+            let outcome_note = (
+                outcome.budget_exceeded,
+                outcome.thinking_token_count,
+                self.config.thinking.budget_tokens,
+            );
+            let response = outcome.response;
+            if let Some(err) = &outcome.stream_error {
+                // Partial output survived a mid-stream death: run it if it holds a complete
+                // tool call (the generation wasn't wasted); otherwise retry.
+                let salvageable = !response.tool_calls.is_empty()
+                    || !tool_call_parser::parse_tool_calls_from_text(&response.text).is_empty();
+                if !salvageable {
+                    observer.on_notice(&format!(
+                        "Stream interrupted: {err} \u{2014} partial text had no complete tool call."
+                    ));
+                    match self.retry_or_failover(&mut s, Some(err), observer).await {
+                        Recovery::Continue => {
+                            iteration += 1;
+                            continue;
+                        }
+                        Recovery::Break => break,
+                    }
+                }
+                observer.on_notice(
+                    "Stream interrupted mid-response \u{2014} executing the completed tool call from partial output.",
+                );
+            } else {
+                // A healthy stream proves the connection is good again.
+                s.same_model_retry_attempts = 0;
+            }
+
+            // The server's real prompt size becomes the base for the next estimate.
+            self.record_prompt_usage(context_mark, &outcome.usage);
+
+            self.last_assistant_response = Some(prompts::strip_next_prompt_tag(&response.text));
 
             // Quality-based failover (refusals, too-short replies) when backups exist.
             if self.model_index + 1 < self.config.lm_studio.models.len() {
@@ -171,11 +310,10 @@ impl AgentSession {
             }
 
             // Prefer the server's real output count over stream-chunk counting.
-            self.total_output_tokens += response
+            self.total_output_tokens += outcome
                 .usage
                 .completion_tokens
-                .unwrap_or(self.last_chunk_count);
-            self.last_assistant_response = Some(prompts::strip_next_prompt_tag(&response.text));
+                .unwrap_or(outcome.token_count);
 
             if !response.tool_calls.is_empty() {
                 // A native call without arguments for a tool that needs some: the server lost
@@ -204,8 +342,15 @@ impl AgentSession {
                     continue;
                 }
                 self.messages.push(assistant);
+                self.inject_thinking_budget_note(&outcome_note);
+                let history_before = self.tool_call_history.len();
                 self.execute_native_calls(&response.tool_calls, observer)
                     .await;
+                self.note_round_for_reasoning(
+                    adaptive.as_mut(),
+                    history_before,
+                    response.tool_calls.len(),
+                );
                 s.tools_executed = true;
                 if s.verification_requested {
                     s.verification_tools_used = true;
@@ -226,6 +371,7 @@ impl AgentSession {
                     continue;
                 }
                 self.messages.push(assistant);
+                self.inject_thinking_budget_note(&outcome_note);
                 self.execute_text_calls(&calls, observer).await;
                 s.tools_executed = true;
                 if s.verification_requested {
@@ -312,7 +458,7 @@ impl AgentSession {
 
     /// Remember (sticky) whether the active model can do native calls, and keep the system
     /// prompt's tool protocol in step with the mode now in use.
-    fn remember_native_tools_support(&mut self, supported: bool) {
+    pub(super) fn remember_native_tools_support(&mut self, supported: bool) {
         if let Some(m) = self.active_model() {
             self.prompt_builder
                 .remember_native_tools_support(&m, supported);
@@ -416,53 +562,18 @@ impl AgentSession {
         ids.len()
     }
 
-    /// One streaming request with this turn's options. An empty reply with native tools on is
-    /// retried once without tools (the server could not stream a call), which switches the
-    /// session to text tool calling.
-    async fn stream_request(
-        &mut self,
-        observer: &mut dyn AgentObserver,
-    ) -> Result<ChatResponse, ChatError> {
-        let response = self.stream_once(observer).await?;
-        if self.native_tools && is_empty_response(&response) {
-            tracing::debug!("empty reply with native tools; retrying without native tools");
-            self.native_tools = false;
-            self.remember_native_tools_support(false);
-            return self.stream_once(observer).await;
-        }
-        Ok(response)
-    }
-
-    async fn stream_once(
-        &mut self,
-        observer: &mut dyn AgentObserver,
-    ) -> Result<ChatResponse, ChatError> {
-        let options = self.build_options();
-        let mut chunks = 0i64;
-        let mut on_event = |e: StreamEvent| match e {
-            StreamEvent::Text(t) => {
-                chunks += 1;
-                observer.on_text(&t);
-            }
-            StreamEvent::Reasoning(r) => observer.on_reasoning(&r),
-            _ => {}
-        };
-        let result = self
-            .client
-            .stream(&self.actor, &self.messages, &options, &mut on_event)
-            .await;
-        self.last_chunk_count = chunks;
-        result
-    }
-
     /// `TryRetrySameModelAsync`, then `TrySwitchModelAsync`: two delayed retries (at most 60 s
     /// of waiting per turn), then the next model in `lmStudio.models`.
     async fn retry_or_failover(
         &mut self,
         s: &mut LoopState,
+        err: Option<&ChatError>,
         observer: &mut dyn AgentObserver,
     ) -> Recovery {
-        if s.same_model_retry_attempts < 2 && s.total_retry_delay < Duration::from_secs(60) {
+        if s.same_model_retry_attempts < 2
+            && s.total_retry_delay < Duration::from_secs(60)
+            && err.is_none_or(is_retryable_error)
+        {
             let delay = self.retry_base_delay * 2u32.pow(s.same_model_retry_attempts);
             let delay = delay.min(Duration::from_secs(30));
             s.same_model_retry_attempts += 1;
@@ -913,6 +1024,102 @@ impl AgentSession {
         self.add_harness_note(&note);
     }
 
+    /// `ToolCallDispatcher.InjectBudgetAdvisory`: the reply's thinking passed
+    /// `thinking.budgetTokens`.
+    fn inject_thinking_budget_note(&mut self, note: &(bool, i64, i32)) {
+        let (exceeded, used, budget) = *note;
+        if exceeded {
+            self.messages.push(ChatMessage::user(format!(
+                "Note: Your thinking exceeded the budget of {budget} tokens ({used} used). Keep reasoning concise for simple tasks."
+            )));
+        }
+    }
+
+    /// `NoteRoundForReasoning`: record the round just run for adaptive reasoning. A round the
+    /// history does not fully cover (a call refused before it ran) counts as not obvious.
+    fn note_round_for_reasoning(
+        &self,
+        adaptive: Option<&mut AdaptiveReasoning>,
+        history_before: usize,
+        call_count: usize,
+    ) {
+        let Some(adaptive) = adaptive else {
+            return;
+        };
+        let history = &self.tool_call_history;
+        let calls: Vec<(String, bool)> = if history.len() - history_before == call_count {
+            history[history_before..]
+                .iter()
+                .map(|r| (r.name.clone(), r.is_error))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        adaptive.note_round(&calls, &self.messages);
+    }
+
+    /// `PrepareForGenerationAsync`: once per session, negotiate `max_tokens` (when not
+    /// configured) and detect the context window (LM Studio / Ollama report it; Strata, ninfer
+    /// and vLLM-style servers only lower it). Skipped in demo mode, for Anthropic, and when
+    /// [`AgentSession::startup_probes`] is off.
+    async fn prepare_for_generation(&mut self, observer: &mut dyn AgentObserver) {
+        if !self.startup_probes
+            || self.max_tokens_negotiated
+            || self.config.demo_mode
+            || self.config.lm_studio.is_anthropic()
+        {
+            return;
+        }
+        self.max_tokens_negotiated = true;
+        if let Some(n) =
+            crate::client::max_tokens_negotiator::negotiate(&self.config, &self.probe_http).await
+        {
+            self.config.lm_studio.max_tokens = Some(n);
+            observer.on_notice(&format!("Negotiated max output tokens: {n}"));
+        }
+        if !self.config.context.auto_detect_context_window {
+            return;
+        }
+        let detected = crate::client::context_window_detector::detect(
+            &self.config.lm_studio.base_url,
+            self.config.lm_studio.primary_model(),
+            &self.probe_http,
+        )
+        .await;
+        // slots.lead.contextWindow wins: the probe asks the balancer, not the Lead's endpoint.
+        let lead_window = self
+            .config
+            .slots
+            .as_ref()
+            .and_then(|s| s.compute_lead_context_window());
+        if lead_window.is_none()
+            && let Some(d) = detected.filter(|d| *d > 0)
+            && d != self.config.context.context_window_size
+        {
+            self.config.context.context_window_size = d;
+            observer.on_notice(&format!(
+                "Detected context window: {} tokens",
+                crate::chat::n0(i64::from(d))
+            ));
+        }
+        // Strata (/health max_context) and vLLM-style servers (/v1/models max_model_len) say
+        // their window too; it only lowers the configured one.
+        if let Some(served) = crate::client::server_identity::smallest_context_window(
+            &self.config,
+            &self.server_identity,
+        )
+        .await
+            && served < self.config.context.context_window_size
+        {
+            observer.on_notice(&format!(
+                "Server context window is {} tokens (configured {}) \u{2014} using the server's.",
+                crate::chat::n0(i64::from(served)),
+                crate::chat::n0(i64::from(self.config.context.context_window_size))
+            ));
+            self.config.context.context_window_size = served;
+        }
+    }
+
     /// A long-task monitor over this turn's tool history.
     pub(super) fn long_task_monitor(&self) -> LongTaskMonitor<'_> {
         let mutating: std::collections::HashSet<String> = self
@@ -987,12 +1194,20 @@ impl AgentSession {
     }
 }
 
-/// No text, reasoning, tool calls or usage: the stream produced nothing.
-fn is_empty_response(r: &ChatResponse) -> bool {
-    r.text.is_empty()
-        && r.reasoning.is_empty()
-        && r.tool_calls.is_empty()
-        && r.usage == Default::default()
+/// `ErrorRecoveryHandler.IsRetryableError`: rate limits, overload and timeouts are worth a
+/// delayed retry of the same model; anything else is not.
+pub fn is_retryable_error(err: &ChatError) -> bool {
+    let msg = err.to_string().to_lowercase();
+    if msg.contains("rate limit") || msg.contains("429") || msg.contains("too many requests") {
+        return true;
+    }
+    if msg.contains("503") || msg.contains("overloaded") || msg.contains("service unavailable") {
+        return true;
+    }
+    if msg.contains("timeout") || msg.contains("timed out") {
+        return true;
+    }
+    matches!(err.status(), Some(429 | 503 | 504))
 }
 
 fn parsed_to_call(p: &ParsedToolCall) -> ToolCall {
