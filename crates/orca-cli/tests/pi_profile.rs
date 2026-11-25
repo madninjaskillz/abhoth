@@ -73,9 +73,18 @@ fn pi_prompt_matches_upstream_layout() {
 
 #[test]
 fn pi_prompt_project_context_addendum_and_extras() {
-    let names: Vec<String> = ["read", "bash", "edit", "write", "grep", "find", "ls", "mcp_thing"]
-        .map(str::to_string)
-        .to_vec();
+    let names: Vec<String> = [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "grep",
+        "find",
+        "ls",
+        "mcp_thing",
+    ]
+    .map(str::to_string)
+    .to_vec();
     let got = system_prompt::build(
         &names,
         &orca_tools_pi::prompt_snippets(),
@@ -351,7 +360,11 @@ async fn pipeline_pi_edit_is_content_modifying_read_before_edit_applies() {
 
     let blocked = s.execute_tool_call(&edit, &mut NullObserver).await;
     assert!(blocked.is_error);
-    assert!(blocked.content.contains("Use read first"), "{}", blocked.content);
+    assert!(
+        blocked.content.contains("Use read first"),
+        "{}",
+        blocked.content
+    );
 
     let read = s
         .execute_tool_call(&call("read", json!({ "path": file_s })), &mut NullObserver)
@@ -516,12 +529,8 @@ fn evidence_pi_bash_failing_run_command_exited_with_code_is_failure() {
 fn evidence_pi_write_scratch_then_deleted_keeps_evidence() {
     let work = tempfile::tempdir().unwrap();
     let mut s = pi_session(pi_config(), work.path());
-    s.tool_call_history.push(record(
-        "edit",
-        json!({"path": "ledger.py"}),
-        "ok",
-        false,
-    ));
+    s.tool_call_history
+        .push(record("edit", json!({"path": "ledger.py"}), "ok", false));
     s.tool_call_history.push(record(
         "write",
         json!({"path": "check.py", "content": "x"}),
@@ -584,7 +593,10 @@ fn pi_profile_messages_name_no_open_orca_only_tools() {
 
 #[test]
 fn default_profile_messages_unchanged() {
-    assert_eq!(pc::get_verification_message(false), pc::VERIFICATION_MESSAGE);
+    assert_eq!(
+        pc::get_verification_message(false),
+        pc::VERIFICATION_MESSAGE
+    );
     assert_eq!(pc::get_nudge_message(true, false), pc::NATIVE_NUDGE_MESSAGE);
     assert_eq!(pc::get_nudge_message(false, false), pc::NUDGE_MESSAGE);
     assert_eq!(
@@ -664,7 +676,9 @@ async fn dispatcher_pi_profile_nudge_uses_pi_tool_names() {
     ])
     .await;
     let mut s = served_session(&server, work.path());
-    s.run_turn("Write main.py", &mut NullObserver).await.unwrap();
+    s.run_turn("Write main.py", &mut NullObserver)
+        .await
+        .unwrap();
     let requests = server.requests();
     assert_eq!(
         last_user_text(&requests[1].body),
