@@ -39,7 +39,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --no-fail-fast
 
   # The desktop app (feature `desktop`), built and unit-tested on each desktop OS (D114).
   desktop:

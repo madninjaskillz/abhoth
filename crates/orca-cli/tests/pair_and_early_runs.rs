@@ -305,7 +305,9 @@ async fn read_only_calls_start_while_the_response_streams() {
     assert!(names[0].contains("a.txt") && names[1].contains("b.txt"));
     // C# records the early-started first call's arguments as the model sent them.
     assert_eq!(names[0], r#"{"path":"a.txt"}"#);
-    assert_eq!(names[1], "{\r\n  \"path\": \"b.txt\"\r\n}");
+    // Re-serialized like C#'s WriteIndented, with the platform's newline.
+    let nl = orca_core::config::dotnet_json::NEWLINE;
+    assert_eq!(names[1], format!("{{{nl}  \"path\": \"b.txt\"{nl}}}"));
     let reqs = server.requests();
     let msgs = reqs[1].body["messages"].as_array().unwrap();
     let tool_results: Vec<&str> = msgs
@@ -374,10 +376,9 @@ async fn early_runs_off_runs_everything_normally() {
     assert_eq!(s.tool_call_history.len(), 2);
     // Nothing started early, so every record shows the re-serialized arguments (cross-check
     // 219).
+    let nl = orca_core::config::dotnet_json::NEWLINE;
+    let expected = format!("{{{nl}  \"path\": \"a.txt\"{nl}}}");
     for r in &s.tool_call_history {
-        assert_eq!(
-            r.arguments.as_deref(),
-            Some("{\r\n  \"path\": \"a.txt\"\r\n}")
-        );
+        assert_eq!(r.arguments.as_deref(), Some(expected.as_str()));
     }
 }
