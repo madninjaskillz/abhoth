@@ -259,3 +259,14 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   (Pi tools, agent tools with `pi.agentTools`, mcp_*, extraTools). Cross-check scenarios can set
   `"strict": true` to compare tools and the whole system prompt (all Pi scenarios do).
 - **D39** New pinned dep: `unicode-normalization =0.1.23` (Pi edit fuzzy matching).
+- **D45** A `ChatBackend` trait plus an optional router on `OpenAiClient`: the slot runtime
+  (`slots::SlotRuntime`, lazy Lead lease, Strata prefix pin, idle release) sits behind the
+  existing client, so `AgentSession` is unchanged.
+- **D46** A tokio task-local replaces C#'s AsyncLocal ambient client
+  (`SlotRuntime::with_ambient`), so an agent's compaction call stays on its own copy.
+- **D47** A monotonic clock replaces `DateTimeOffset` in the allocator and idle release; tests
+  inject a clock.
+- **D48** Engines (Claude Code / Codex bridges) use a small `CancelToken` and `EngineError`
+  (Unavailable, Failed, Cancelled) instead of adding `tokio-util`.
+- **D49** Cross-check config placeholders `<SERVER>`, `<SERVER_ROOT>`, `<HOME_JSON>`,
+  `<WORK_JSON>` (no fixed ports or paths); profile/mode/engine errors on stderr are compared.
