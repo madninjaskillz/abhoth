@@ -15,7 +15,9 @@ use orca_core::agent::sub_agent_tools::{ClientFactory, SessionToolExecutor, Shar
 use orca_core::agent::{AgentObserver, AgentSession, ToolCallRecord, ToolRegistry};
 use orca_core::client::{ServedModels, ToolCall, client_from_config};
 use orca_core::config::{ConfigManager, OrcaConfig};
+use orca_core::orchestration::CancelToken;
 use orca_core::orchestration::custom_agents::CustomAgentLoader;
+use orca_core::orchestration::planner_phase::{PlannerPhase, planner_enabled};
 use orca_core::orchestration::types::AgentTypeRegistry;
 use orca_core::orchestration::{
     AgentChatClient, AgentManager, AgentOrchestrator, DefaultClientProvider,
@@ -200,7 +202,17 @@ pub async fn run_single_prompt_in_session(
         session.tool_hooks.session_id = Some(r.id);
     }
     wire_agents(&mut session, &agent_tools, served, config_dir, quiet)?;
-    let result = run_prepared(&mut session, prompt, quiet).await;
+    // agent.planner: a read-only planner writes the plan before the Lead's first turn.
+    let prompt = match session.orchestrator.clone() {
+        Some(o) if planner_enabled(&session.config) => {
+            let mut planner = PlannerPhase::new(session.config.clone(), o, session.ctx.cwd.clone());
+            planner
+                .prepare_first_message(prompt, &CancelToken::new())
+                .await
+        }
+        _ => prompt.to_string(),
+    };
+    let result = run_prepared(&mut session, &prompt, quiet).await;
     // Post-hooks run in the background; give them a moment before the process exits.
     session
         .tool_hooks

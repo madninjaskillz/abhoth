@@ -891,8 +891,8 @@ fn loader_discovers_built_ins_then_global_then_project() {
     );
 }
 
-// Runner_TwoStages_ChainsOutputsIntoLaterTemplates runs agents through the orchestrator:
-// ported with the workflow runner.
+// Runner_TwoStages_ChainsOutputsIntoLaterTemplates runs agents through the orchestrator: see
+// tests/workflow_runner.rs.
 
 // ── AgentSupportTests: activity + progress parsing ──────────────────────────
 

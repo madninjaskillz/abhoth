@@ -67,9 +67,9 @@ pub async fn run_workflow(
                 ));
             }
             let body = match status {
-                AgentStatus::Completed | AgentStatus::CompletedPartial => context
-                    .result()
-                    .unwrap_or_else(|| "(no result)".into()),
+                AgentStatus::Completed | AgentStatus::CompletedPartial => {
+                    context.result().unwrap_or_else(|| "(no result)".into())
+                }
                 _ => format!("[agent failed: {}]", context.error().unwrap_or_default()),
             };
             sb.push_str(&body);
