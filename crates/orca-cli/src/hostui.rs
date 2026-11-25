@@ -6,6 +6,23 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+/// `println!` that ignores a closed stdout: the host keeps serving when whoever started it stops
+/// reading (a test harness, a closed terminal, a pipe), where `println!` would panic (D135).
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stdout(), $($arg)*);
+    }};
+}
+
+/// `eprintln!` that ignores a closed stderr (see `say!`).
+macro_rules! say_err {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+
 use anyhow::Result;
 use orca_abstractions::ToolContext;
 use orca_core::agent::AgentSession;
@@ -218,7 +235,7 @@ pub async fn run_with(
         }
     };
     if args.tui {
-        eprintln!("abhoth: --tui needs the interactive mode, which is not ported to Rust yet.");
+        say_err!("abhoth: --tui needs the interactive mode, which is not ported to Rust yet.");
         return Ok(2);
     }
     let bus = Arc::new(LiveEventBus::new());
@@ -347,13 +364,13 @@ pub async fn run_with(
         Ok(s) => s,
         Err(e) => {
             fail(e.to_string());
-            eprintln!("abhoth: could not start the web UI: {e}");
+            say_err!("abhoth: could not start the web UI: {e}");
             primary.shutdown().await;
             return Ok(1);
         }
     };
 
-    println!(
+    say!(
         "{} {} — web UI (headless)",
         orca_core::brand::PRODUCT_NAME,
         crate::version()
@@ -366,35 +383,35 @@ pub async fn run_with(
     };
     if ready.is_some() {
         // The desktop window: the token never leaves this process.
-        println!("● Desktop window on {}", server.base_url());
+        say!("● Desktop window on {}", server.base_url());
     } else {
-        println!("● Web UI {url}");
+        say!("● Web UI {url}");
     }
     if args.login {
         if args.trusted_proxies.is_empty() {
-            println!("  Sign-in mode; plain HTTP only from this machine.");
+            say!("  Sign-in mode; plain HTTP only from this machine.");
         } else {
             let proxies: Vec<String> = args.trusted_proxies.iter().map(|p| p.to_string()).collect();
-            println!(
+            say!(
                 "  Sign-in mode; HTTPS through {} (plain HTTP only from this machine).",
                 proxies.join(", ")
             );
         }
     } else if args.endpoint.is_lan() {
-        println!("  Open to the network: anyone with the token can drive this session.");
+        say!("  Open to the network: anyone with the token can drive this session.");
     }
-    println!("Working folder: {}", cwd.display());
-    println!("Ctrl+C stops it.");
+    say!("Working folder: {}", cwd.display());
+    say!("Ctrl+C stops it.");
     let _log = bus.subscribe(|ev| {
         if let Some(line) = activity_line(ev) {
-            println!("{line}");
+            say!("{line}");
         }
     });
     if let Some(r) = &ready {
         // The desktop window opens the URL itself (the token stays in this process).
         let _ = r.send(Ok(server.url_with_token()));
     } else if args.open && !open_browser(&url) {
-        eprintln!("abhoth: could not open a browser; open the URL yourself.");
+        say_err!("abhoth: could not open a browser; open the URL yourself.");
     }
 
     // Ctrl+C: cancel a running turn, else stop. The desktop window's Quit stops at once.
