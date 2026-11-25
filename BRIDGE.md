@@ -1,7 +1,9 @@
 # Bridge mode: run server sessions against your own machines (design)
 
 Status: **design only**, 2026-11-25. Build after the multi-user auth system lands (SQLite users,
-per-user API keys, TOTP, audit log). Decision entry: PORTING.md **D136**.
+per-user API keys, TOTP, audit log) and the user's go-ahead. Decision entry: PORTING.md **D136**.
+The user's answers to the design questions (2026-11-25) are in
+[section 0](#0-resolved-decisions-2026-11-25) and are reflected throughout.
 
 A *bridge* links one of a user's machines (a laptop, a workstation with a GPU) to that user's
 Abhoth server. In the server's web UI the user starts a new session and picks the machine it
@@ -18,6 +20,20 @@ and the machine is a remote pair of hands.
 > two never share an identifier.
 
 ---
+
+## 0. Resolved decisions (2026-11-25)
+
+Fixed by the user; the rest of this document is written to them.
+
+| # | Topic | Decision | Where |
+|---|---|---|---|
+| R1 | Bridge credential | Pairing code in the web UI → a **dedicated per-machine bridge key** (`abk_...`). User API keys are refused on `/bridge/ws`; the bridge key works nowhere else | 5.1, 5.2 |
+| R2 | Allowed folders | The machine's `bridge.json` is the **source of truth**. The web UI may **request** a folder; it is added only after the user **confirms on the machine** (tray popup or CLI prompt). A compromised server can ask, never add | 5.7, 12.3, 13.6 |
+| R3 | Shell | **On by default** for allowed folders, with a per-folder switch to turn it off and the plain warning that commands can reach outside the allowed folders | 5.5, 12.4 |
+| R4 | Port forwarding | **Same hostname, sandboxed preview** (CSP `sandbox`, opaque origin). Known breakage documented; a separate forward hostname is an optional later upgrade | 9.2 |
+| R5 | Git credentials | The **machine's own**. The server's GitHub App / PAT tokens are **never** sent to a machine | 6.6, 12.3 |
+| R6 | Local models | **Direct first** (phase 7), **then the router** with per-user upstreams (phase 8) | 10.2, 10.3 |
+| R7 | Admins | Can see that a machine **exists** (name, owner, status, last seen) and **disable** it. No access to its files, sessions or calls; the **owner is notified** of a disable | 12.2, 13.2 |
 
 ## Contents
 
@@ -37,7 +53,7 @@ and the machine is a remote pair of hands.
 14. [Data model](#14-data-model)
 15. [Failure modes and testing](#15-failure-modes-and-testing)
 16. [Phased build plan](#16-phased-build-plan)
-17. [Open questions](#17-open-questions)
+17. [Questions: resolved and open](#17-questions-resolved-and-open)
 
 ---
 
@@ -55,11 +71,12 @@ and the machine is a remote pair of hands.
   shows "machine offline". Chat still works, without tools. Reconnecting resumes. No tool call is
   run twice, and a result that arrives after a reconnect is not lost.
 - **Owner only.** A machine is visible and usable only by the user whose credentials registered
-  it. Admins do **not** get access to other users' machines (they can disable one, not use it;
-  section 12.3).
+  it. Admins do **not** get access to other users' machines (they can see that one exists and
+  disable it, not use it; R7, section 12.2).
 - **The machine decides what it exposes.** A client-side config lists the allowed roots and the
   capabilities (shell, forwarding, models). The bridge refuses everything else itself, so a
-  compromised server cannot read or write outside those roots through the file tools.
+  compromised server cannot read or write outside those roots through the file tools. The web UI
+  can *request* another folder, but only a confirmation on the machine adds it (R2).
 - **Two client forms:** a desktop tray toggle "Bridge to server" (`abhoth-desktop`) and a CLI,
   `abhoth bridge --server <url>`.
 - **Handoff-ready.** v1 binds a session to one machine at creation, but the schema and the
@@ -117,7 +134,7 @@ same `Tool` there, send the `ToolResult` back", not a reimplementation.
 | Orchestration files | `orchestration::{brief_files, workflow, custom_agents, prompt_loader}` | `std::fs::read` of project files | Through the `Workspace` file API (6.2) |
 | Process registries | `orca-tools-shell::process::PROCESSES`, `orca-tools-pi::jobs::SHARED`, `orca-tools-common::task_store::SHARED` | Process-wide statics | Shell/jobs registries live on the machine, keyed by session. `TaskStore` stays on the server (but see 12.6: it is a cross-user leak once there are several users) |
 | LSP | `orca-tools-lsp::LspClientManager` | Spawns language servers locally | On the machine; counts as `exec` (language servers run project code) |
-| Git tools | `orca-tools-git` | `git` / `gh` on the server's PATH | On the machine, with its own credentials (Q6) |
+| Git tools | `orca-tools-git` | `git` / `gh` on the server's PATH | On the machine, with its own credentials (R5) |
 | Image tools | `generate_image` / `edit_image` (`orca-tools-image::generate`) | Model call **and** `std::fs::write` of the result | Split: HTTP on the server, bytes written through `Workspace` |
 | Sub-agents | `orchestration`, `seed_sub_agents` | In-process copies of the Lead session sharing its registry and ctx | Inherit the Lead's executor; machine-wide concurrency cap |
 | Engines (Claude Code / Codex) | `engines::*` | Run a CLI in a local folder | Not supported on bridged sessions in v1 |
@@ -346,7 +363,9 @@ RPC methods (server to bridge unless noted):
 | `model.list` | the machine's advertised local models (also in `hello`) |
 | `checkpoint.*` | `list`, `diff`, `restore` for the undo UI |
 | `session.end` | end-of-session cleanup (8.4) |
-| `policy.get` (bridge to server: none) | the server can read, never set, the machine's policy |
+| `policy.get` | the server can read, never set, the machine's policy |
+| `policy.requestRoot` | ask the machine to allow a folder; answered only after a local confirmation (5.7) |
+| `policy.removeRoot` | narrow the policy (no confirmation needed) |
 
 ### 4.3 Versioning
 
@@ -490,6 +509,7 @@ machine is the authority.
   {"id": "r1", "path": "C:\\Users\\<you>\\src", "label": "src", "write": true, "exec": true},
   {"id": "r2", "path": "D:\\datasets", "label": "datasets", "write": false, "exec": false}
 ],
+"pendingRootRequests": 0,
 "models": [
   {"id": "local/qwen3-coder-30b", "endpoint": "http://127.0.0.1:8080/v1", "ctx": 65536, "lanes": 1}
 ]
@@ -505,11 +525,12 @@ settings page or by hand; `abhoth bridge init` creates a commented example):
   "server": "https://abhoth.example.com",
   "name": "workstation",
   "roots": [
-    {"path": "C:\\Users\\<you>\\src", "write": true, "exec": true},
-    {"path": "D:\\datasets", "write": false}
+    {"path": "C:\\Users\\<you>\\src"},                      // write and exec default to true
+    {"path": "D:\\datasets", "write": false, "exec": false}   // read-only, no shell
   ],
-  "exec": "on",                    // "off" | "on"
+  "exec": true,                    // machine-wide master switch; default true (R3)
   "pty": true,
+  "rootRequests": "prompt",        // "prompt" (default) | "off": refuse folder requests
   "forward": {"ports": ["5173", "3000-3999"]},   // empty = no forwarding
   "models": [{"id": "local/qwen3-coder-30b", "endpoint": "http://127.0.0.1:8080/v1"}],
   "processes": {"orphanGraceMinutes": 30, "maxOutputMiB": 64},
@@ -517,9 +538,13 @@ settings page or by hand; `abhoth bridge init` creates a commented example):
 }
 ```
 
-Defaults: **no roots** (the bridge refuses to start without at least one), `exec` off,
-`pty` off, no forwarding, no models. The CLI can add a root for one run:
-`abhoth bridge --root . --exec` (shown in the status line, not saved unless `--save`).
+Defaults: **no roots** (the bridge refuses to start without at least one; the desktop app's
+first run asks for one), per root `write: true` and **`exec: true`** (R3), `pty` on, no
+forwarding, no models, folder requests prompt. Turning a root's `exec` off (or the master switch)
+removes the shell, process, hook, formatter and LSP tools for sessions in that root. The first
+run and the pairing page show the warning from 12.4 once, in plain words. The CLI can add a root
+for one run: `abhoth bridge --root .` (`--no-exec` for a read/write root without shell; shown in
+the status line, not saved unless `--save`).
 Changes to the file take effect on the next connect; the bridge sends a fresh `hello` with
 `{"t":"policy","caps":...}` when the file changes while connected.
 
@@ -530,6 +555,44 @@ so a service wrapper is thin: a Windows service / per-user scheduled task, a sys
 unit, a launchd agent. A service would (a) let processes outlive the desktop app, (b) move the
 credential to the OS store, and (c) need a local control socket for the tray toggle to talk to
 it. The protocol, data model and policy file do not change.
+
+### 5.7 Folder requests (R2)
+
+The web UI may ask the machine to allow another folder; only the person at the machine can
+grant it.
+
+```
+browser ── "Request folder" (path, write, exec, reason) ──▶ server
+server  ── rpc policy.requestRoot {requestId, path, write, exec, requestedBy, reason} ──▶ bridge
+bridge: canonicalise the path; refuse outright if it is a system root, a drive or filesystem
+        root, the user's home folder itself, inside the bridge's own state folder, or matches
+        denyGlobs; otherwise show a LOCAL prompt (tray dialog / CLI prompt)
+user at the machine: Allow (optionally untick write / shell) | Deny | ignore (expires in 5 min)
+bridge: on Allow, append the root to bridge.json (atomic write), then send
+        {"t":"policy", ...} and answer {requestId, outcome: allowed|denied|expired|refused, root}
+server: updates the machine's policy; the web UI shows the outcome
+```
+
+Rules:
+
+- **Only a local action adds a root.** There is no RPC that writes `bridge.json` without the
+  prompt, and the prompt cannot be answered from the server: it is a native dialog or a TTY
+  prompt, not a web page. The machine's grant is what is enforced.
+- **What is shown locally is what the machine resolved**: the canonical path (symlinks and
+  junctions followed), the requested rights (write, shell), the requesting user and server, and
+  the reason text (marked as coming from the server, length-capped, control characters
+  stripped). The user can narrow the grant (untick write or shell), never widen it beyond the
+  request.
+- **Only the owner's web session can request**, from the UI. The model has no tool for it, so a
+  prompt-injected agent cannot ask for folders (it can only suggest that the user does).
+- **Noise limits** against a compromised server spamming prompts: one pending request per
+  machine, 5 per hour, a 5-minute expiry, and after 3 denials in a row requests are muted until
+  the user turns them on again (tray, or `abhoth bridge requests on`).
+- **Nobody to ask** (CLI without a TTY, `--quiet`, `rootRequests: "off"`): refused with "can't
+  confirm on this machine".
+- **Removing** a root from the web UI needs no confirmation (it only narrows access). The bridge
+  applies it to `bridge.json`, kills processes started in it, and it is audited.
+- Every request and its outcome goes to the server's audit log and the bridge's local log.
 
 ---
 
@@ -700,8 +763,9 @@ existing signed-token route. The service code itself (`FolderAccess`, file servi
 git service) moves from `orca-webui` into **`orca-workspace`** so the bridge runs the same code
 the server runs for local projects.
 
-GitHub tokens held by the server (`git::tokens`) are **not** sent to the machine by default:
-fetch/pull/push on a bridged project use the machine's own git credentials (Q6).
+GitHub tokens held by the server (`git::tokens`) are **never** sent to a machine: fetch, pull,
+push, clone and `gh` on a bridged project use the machine's own git credentials and credential
+helper (R5). The git panel shows the machine's credential errors as they come.
 
 ### 6.7 Which tools need changes
 
@@ -840,13 +904,35 @@ Goal: a dev server on the machine (`localhost:5173`) shows in the web UI's previ
 A dev server's page runs arbitrary JavaScript. Served on the web UI's own origin it could read the
 user's session (cookies are HttpOnly, but it could call the API with the browser's credentials
 and the CSRF value from the page). The HTML preview solves this with a CSP `sandbox` (an opaque
-origin), but many dev apps break without storage and same-origin requests. Recommendation:
+origin).
 
-- **Preferred:** a separate origin for forwards, e.g. `https://fwd.abhoth.example.com` (one
-  extra hostname on the reverse proxy and certificate), with no cookies of the web UI. Q4.
-- **Fallback without DNS changes:** the same origin with `Content-Security-Policy: sandbox
-  allow-scripts allow-forms allow-popups allow-modals` as today; documented as "some apps need the
-  separate origin".
+**Decision (R4): forwards are served on the web UI's own hostname, sandboxed.** Every response
+from `/fwd/<token>/...` carries `Content-Security-Policy: sandbox allow-scripts allow-forms
+allow-popups allow-modals; frame-ancestors 'self'` (the HTML preview's policy), no referrer and
+no sniffing. The proxy strips the web UI's cookies and auth headers from requests and drops any
+`Set-Cookie` for the web UI's cookie names from responses. The page runs in an opaque origin, so
+it cannot call the web UI's API with the user's credentials.
+
+What may break in an opaque origin (listed in the preview tab's help):
+
+| Breaks or degrades | Why | Typical apps |
+|---|---|---|
+| `localStorage`, `sessionStorage`, IndexedDB, the app's own cookies | opaque origins throw on storage access | apps keeping login tokens or state in storage; many SPA starters with sign-in |
+| Service workers, PWA install, the `Cache` API | need a real origin | PWAs, Workbox setups |
+| Credentialed or CORS-checked requests to the app's API | the page's origin is `null`; dev APIs that allow only `http://localhost:5173` refuse it | apps whose API checks `Origin` |
+| OAuth / OIDC redirects and popups back to the app | redirect URIs and `postMessage` origin checks fail | "Sign in with ..." flows |
+| Hot reload (Vite / webpack HMR websocket) | the proxy passes the websocket, but the client must connect under the forward path (`server.hmr.path` / `clientPort`); otherwise the page loads but does not hot-reload | Vite, Next.js dev |
+| Root-absolute URLs (`/assets/x.js`) built in JS | they resolve to the web UI's root, not under `/fwd/<token>/`; the proxy rewrites `Location` headers and HTML `src`/`href`, not URLs built at run time | apps without a configured base path (Vite `base`, Next `basePath`) |
+| `window.opener`, clipboard and some permission APIs | sandbox restrictions | rare in development |
+
+Static sites, most server-rendered pages, documentation sites, Storybook and simple Vite/React
+apps work.
+
+**Optional later upgrade:** a separate forward hostname (e.g. `fwd.<your domain>`, one extra
+reverse-proxy entry and certificate, no web UI cookies on it), served without the sandbox, each
+forward on its own subdomain. That removes every row above. The token, owner checks and proxy
+stay the same, so it is a configuration option (`bridge.forwardOrigin`), not a redesign; about
+one agent-day.
 
 ### 9.3 Limits
 
@@ -981,11 +1067,12 @@ memory); the terminal panel closes; forwarded previews show an offline page.
   in one place (`machines::authorize(caller, machine_id)`), returning **404**, not 403, so ids
   don't leak. The hub's `GetSnapshot`/`SendPrompt` etc. already pass the project id; with the
   auth work each project/session row has an owner and the check covers bridged projects for free.
-- Admins: **no access to other users' machines, sessions bound to them, their files or
-  forwards — not even read-only.** An admin can *disable* a machine (kills the link, refuses
-  reconnects) and see its existence in the audit log (name, owner, last seen) for incident
-  handling; disabling is audited and shown to the owner. "Admin can view" is deliberately not
-  offered; adding it later would be an explicit setting with a visible indicator to the owner.
+- Admins (R7): **no access to other users' machines, sessions bound to them, their files,
+  calls or forwards, not even read-only.** An admin can see that a machine exists (name,
+  owner, OS, status, last seen) and can *disable* it (kills the link, refuses reconnects). A
+  disable is audited and the **owner is notified**: a banner on their next page load and on the
+  machines page, and the tray/CLI shows "disabled by an administrator". Only an admin can
+  re-enable it. "Admin can view" is deliberately not offered.
 - The bridge key works only on `/bridge/ws`. User API keys and web sessions do not work on
   `/bridge/ws` (a stolen browser session cannot impersonate a machine).
 - Sessions are bound to a machine at creation by the owner; the binding cannot be changed by
@@ -999,12 +1086,13 @@ The bridge assumes the server may be compromised. Independently of the server it
    cwd; process working dirs; forward/model targets) passes `FolderAccess` against the policy's
    roots after canonicalisation, symlink/junction resolution and the Windows checks (streams,
    reserved names, drive-relative paths). Writes need `write: true`, process starts need
-   `exec: true` on the root that contains the cwd. `denyGlobs` (`.env`, keys) are refused even
+   `exec: true` (the default) on the root that contains the cwd. `denyGlobs` (`.env`, keys) are refused even
    inside roots. The tool code's own `cwd` handling is wrapped: the tools get a `ToolContext` the
    bridge built, and `affected_file_paths` of every call is checked **before** execution.
-2. **Capabilities.** `exec`, `pty`, `forward`, `models` are off unless the local config turns
-   them on. The server's copy is display only.
-3. **Git hardening when `exec` is off.** Git runs anyway for status/diff, so the bridge runs it
+2. **Capabilities.** `forward` and `models` are off unless the local config turns them on;
+   `exec` and `pty` are on by default (R3) and can be turned off per root or machine-wide. The
+   server's copy is display only.
+3. **Git hardening in roots with `exec` off.** Git runs anyway for status/diff, so the bridge runs it
    with `-c core.hooksPath=<empty dir> -c core.fsmonitor=false -c protocol.ext.allow=never`
    and refuses writes under `.git/` (hooks, config) — otherwise writing `.git/hooks/pre-commit`
    or `core.fsmonitor` in `.git/config` would turn file write access into code execution.
@@ -1013,21 +1101,41 @@ The bridge assumes the server may be compromised. Independently of the server it
    machine is never a pivot into the user's LAN.
 5. **Resource limits:** max file size per read/write (64 MiB), max processes (16), max output,
    max concurrent calls, max channels.
-6. **No server-pushed policy.** The server can read the policy, never change it. There is no
-   RPC that edits `bridge.json`, and the roots list cannot be extended remotely.
+6. **No server-pushed policy.** The server can read the policy and narrow it (remove a root),
+   never widen it. A new root needs the local confirmation of 5.7; nothing enables `exec`, a
+   port or a model endpoint remotely.
 7. **Local visibility and kill switch:** the tray/CLI shows "Bridged to <server> — N sessions,
    M processes"; toggling off (or Ctrl+C) drops the link and kills the processes.
+8. **No server credentials on the machine, and the reverse.** The server's git tokens and API
+   keys are never sent (R5). The machine's git credentials stay local; the bridge scrubs
+   credential-looking text from outputs with `scrub_text`.
 
 ### 12.4 What `exec` really means
 
-With `exec` on, the server (and therefore a compromised server, a stolen owner session, or a
-prompt-injected model that gets an approval) can run any command as the user, and **a command
-can reach outside the roots** (`cd ..`, absolute paths, network). The roots then limit the file
-tools and where commands *start*, not what they can do. The docs, the pairing page and the
-policy file say so in plain words. Mitigations: `exec` off by default; per-root `exec`; risky
-command approvals in the browser (12.5); optional OS sandboxes later (Linux landlock or bwrap,
-macOS `sandbox-exec`, Windows AppContainer / a restricted token) as a policy option
-`"exec": "sandboxed"` — Q5.
+`exec` is **on by default** for allowed folders (R3). With it on, the server (and therefore a
+compromised server, a stolen owner session, or a prompt-injected model that gets an approval)
+can run any command as the user, and **a command can reach outside the allowed folders**
+(`cd ..`, absolute paths, the network, the user's other files and credentials). The allowed
+folders then limit the file tools and where commands *start*, not what commands can do.
+
+So pairing a machine with the default policy means trusting the server with your user account on
+that machine. The plain warning, shown on the pairing page, at the bridge's first run (CLI and
+desktop), in the tray's bridge settings and as a comment in the generated `bridge.json`:
+
+> **Shell is on.** Commands the agent runs start in your allowed folders but can read, change or
+> delete anything your account can, anywhere on this machine and your network. Turn shell off
+> for a folder (or for the whole machine) if you only want file access.
+
+Mitigations, given the default:
+
+- per-root `"exec": false` and the machine-wide `"exec": false` switch (one click in the tray
+  settings, `--no-exec` on the CLI);
+- risky-command approvals in the browser (the existing `Dangerous` risk and patterns, 12.5);
+- `denyGlobs` still protect files from the *file tools* (not from commands);
+- the bridge's local log of every command run (12.8) and the tray's live counts;
+- step-up authentication for pairing, TOTP for the web session, owner-only checks;
+- later: optional OS sandboxes (Linux landlock or bwrap, macOS `sandbox-exec`, Windows
+  AppContainer or a restricted token) as `"exec": "sandboxed"` (Q5).
 
 ### 12.5 Approvals
 
@@ -1071,8 +1179,9 @@ need it on the machine too (6.7).
 Into the auth work's audit log, with `user_id`, `machine_id`, `session_id`, web session / key
 id, IP:
 
-- pair, rename, revoke, disable, key rotate; link connect, resume, disconnect (reason); policy
-  changes reported by the machine;
+- pair, rename, revoke, disable (and the owner notification), key rotate; link connect, resume,
+  disconnect (reason); policy changes reported by the machine; folder requests (who, path,
+  rights, reason) and their outcome; root removals;
 - **every remote tool call**: call id, tool, the permission arg (path or command, truncated to
   512 chars, secrets scrubbed with the existing `scrub_text`), approval reference, outcome
   (ok/error/denied/lost/late), duration, bytes in/out. Never file contents or full outputs;
@@ -1090,6 +1199,7 @@ check what a server did on their machine without trusting the server.
   keys: 10 / minute per IP, then exponential lockout (the existing `LoginThrottle` pattern).
 - Per machine: 64 RPCs in flight, `maxConcurrentCalls` executing, 256 channels, 16 forwards.
 - Per user: 10 machines (configurable by an admin).
+- Folder requests: one pending per machine, 5 per hour, muted after 3 denials (5.7).
 
 ### 12.10 What a malicious web user could or couldn't do
 
@@ -1099,11 +1209,12 @@ check what a server did on their machine without trusting the server.
 | Another user opens `/fwd/<token>/` of a leaked token | refused: the token is bound to the owner's web session |
 | Another user connects to `/bridge/ws` as a machine | needs that machine's key |
 | An admin tries to use a user's machine | no UI or API path; disable only (audited, owner notified) |
-| A stolen **owner** web session | can do what the owner can, within the machine's policy (TOTP and step-up for pairing reduce this). The machine's roots and `exec: off` still bound the damage |
+| A stolen **owner** web session | can do what the owner can, within the machine's policy (TOTP and step-up for pairing reduce this). With shell on (the default) that includes running commands as the owner; roots with `exec: false` limit it to file access inside them. It can request folders but not add one without someone at the machine confirming |
 | A stolen **bridge key** | can impersonate the machine: feed fake tool results to the owner's sessions, see the tool calls sent to it (which include file paths and commands, and file contents being written). It cannot read the owner's history or start sessions. Revoke on the machines page |
-| A compromised server | can use the machine within its policy: read/write inside the roots, run commands if `exec` is on, forward allowed loopback ports. It cannot change the policy, widen the roots, reach the LAN, or read outside the roots through the file tools |
-| Prompt injection in a repo file | the agent's usual threat; approvals in the browser for risky commands and outside-project writes; `exec` off for untrusted repos |
-| A dev server page attacks the web UI | separate forward origin (9.2) or the sandbox CSP |
+| A compromised server | can use the machine within its policy: read/write inside the roots, run commands where `exec` is on (by default in every root, and commands can reach beyond the roots), forward allowed loopback ports. It cannot widen the policy (only request a folder, which needs a local confirmation and is rate-limited), reach the LAN through forwards or model endpoints, or read outside the roots through the file tools |
+| A compromised server spams folder requests | one pending at a time, 5 per hour, muted after 3 denials; refused where nobody can confirm |
+| Prompt injection in a repo file | the agent's usual threat; approvals in the browser for risky commands and outside-project writes; turn `exec` off for roots holding untrusted repos; the model cannot request folders |
+| A dev server page attacks the web UI | the sandbox CSP puts it in an opaque origin, with the web UI's cookies stripped (9.2, R4) |
 
 ---
 
@@ -1120,7 +1231,8 @@ Folder: [ C:\Users\<you>\src\app                  ] [Browse]
 ```
 
 - Offline machines are listed but disabled (with last seen). The folder browser browses the
-  machine's roots only (`ws.fs.browse`), starting at the root list. Clone works too (`git clone`
+  machine's roots only (`ws.fs.browse`), starting at the root list. Below the list: **"Need
+  another folder? Request access…"** (13.6). Clone works too (`git clone`
   on the machine, needs `exec`).
 - The project tab shows a machine chip (name + dot) next to its title.
 - The session's model picker lists the owner's machine models (10.2).
@@ -1130,9 +1242,12 @@ Folder: [ C:\Users\<you>\src\app                  ] [Browse]
 A table: name (editable), status (online / reconnecting / offline, last seen, RTT), OS and
 version, roots (with write/exec badges), capabilities (exec, pty, forward ports, models), active
 sessions and processes, data in/out today. Actions: **Pair a machine** (shows the code entry),
-**Add manually** (one-time key), **Rename**, **Revoke**, **Rotate key**. A machine's detail view
-shows recent remote calls (from the audit log, owner's own only). Admins see an extra column on
-the users page ("machines: 2") and a **Disable** action, nothing more.
+**Add manually** (one-time key), **Rename**, **Revoke**, **Rotate key**, and per root **Remove**
+plus **Request folder…** (13.6). Roots show `read-only` / `shell off` badges. A machine's detail
+view shows recent remote calls (from the audit log, the owner's own only) and recent folder
+requests. Admins get an admin-only list of all machines (name, owner, OS, status, last seen) with
+**Disable** / **Enable**, nothing more: no roots, sessions or calls. A disabled machine shows its
+owner "Disabled by an administrator on <date>" here and as a one-time banner.
 
 ### 13.3 Offline banner
 
@@ -1153,6 +1268,7 @@ The existing tray menu (Show, Quit) gets:
   ✓ Bridge to server            ← checkable; opens pairing on first use
     Bridged to abhoth.example.com — 2 sessions, 1 process
     Bridge settings…            ← the bridge.json editor page (roots, exec, ports, models)
+    Folder requests: on         ← mute / unmute (5.7)
   Quit
 ```
 
@@ -1171,12 +1287,67 @@ abhoth bridge status                                 # paired? server, machine i
 abhoth bridge init                                   # write an example bridge.json
 abhoth bridge unpair                                 # delete the credential (and revoke if online)
 abhoth bridge rotate-key
+abhoth bridge requests on|off                        # unmute / refuse folder requests
+abhoth bridge --no-exec                              # shell off for this run
 ```
 
 While running it prints a compact status line and one line per remote call
 (`12:03:41 edit_file  src/main.rs  ok  38 ms  [session 'app']`), `--quiet` for none, and exits
 cleanly on Ctrl+C (killing its processes, after a confirm if any are running and a TTY is
 attached).
+
+### 13.6 Folder request and its confirmation (R2)
+
+**In the web UI** ("Request folder…" on the machines page, or "Request access…" in New Session):
+
+```
+Request a folder on workstation
+  Path:    [ D:\work\client-app                    ]
+  Allow:   [x] write   [x] shell
+  Reason:  [ new client project                   ]   (shown on the machine)
+  [Send request]
+
+  Waiting for confirmation on workstation… (expires in 4:52)   [Cancel]
+  → Allowed (write, shell off)  |  Denied  |  Expired  |
+    Refused by the machine: "a drive root can't be allowed"
+```
+
+The pending request also shows on the machine's row; once allowed, New Session's folder browser
+refreshes with the new root.
+
+**On a desktop machine** (tray): a notification "Abhoth server wants access to a folder" that
+opens a small **native** dialog (rfd / the OS dialog, not the web view, so a page the server
+serves cannot draw or click it):
+
+```
++- Allow folder access? -------------------------------------+
+| abhoth.example.com (user <you>) asks to add:               |
+|                                                            |
+|   D:\work\client-app                                       |
+|   (resolved path; no links followed)                       |
+|                                                            |
+|   [x] Read and write files                                 |
+|   [x] Run commands (shell) - commands can reach outside    |
+|       this folder                                          |
+| Reason from the server: "new client project"               |
+|                                                            |
+|        [ Deny ]                          [ Allow ]         |
++------------------------------------------------------------+
+```
+
+Allow is not the default button (Enter does nothing), the dialog answers one request once, and
+the user may untick rights but never add rights that were not requested.
+
+**On the CLI** (`abhoth bridge` with a TTY), printed above the status line:
+
+```
+  Folder request from abhoth.example.com (user <you>):
+    D:\work\client-app   rights: write, shell
+    reason (from the server): new client project
+  Allow? [y]es / [n]o / [r]ead-only / [w]rite without shell  (expires in 5 min): _
+```
+
+Without a TTY the request is refused ("can't confirm on this machine").
 
 ---
 
@@ -1269,7 +1440,22 @@ rebuild the executor and prompt context. Every `ExecRequest` carries `epoch`; a 
 epoch is not current is stored as late and never applied. Checkpoints stay with the machine they
 were taken on (handoff would offer "restore needs <old machine>").
 
-### 14.5 Port forwards
+### 14.5 Folder requests
+
+```sql
+CREATE TABLE root_requests (
+  id TEXT PRIMARY KEY, machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+  owner_user_id TEXT NOT NULL, requested_path TEXT NOT NULL,
+  want_write INTEGER NOT NULL, want_exec INTEGER NOT NULL, reason TEXT,
+  created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+  outcome TEXT,                 -- allowed | denied | expired | refused | cancelled
+  granted_path TEXT, granted_write INTEGER, granted_exec INTEGER, decided_at INTEGER
+);
+```
+
+The machine's own record of grants is `bridge.json`; this table is history and UI state.
+
+### 14.6 Port forwards
 
 ```sql
 CREATE TABLE port_forwards (
@@ -1324,6 +1510,9 @@ Tokens are HMAC-derived from the row id (not stored).
   home and the real `abhoth bridge` with a temp root; drive the hub (`SendPrompt`) with
   `orca-testkit`'s fake model scripting tool calls; assert files on the bridge side, events in
   the hub, audit lines, and owner-only refusals (a second user gets 404s).
+- **Folder-request tests:** never applied without the local answer (the fake bridge's prompt
+  hook); narrowing honoured, widening refused; system, drive and home roots refused; rate limit
+  and mute; refusal without a TTY; no tool exposes requests to the model.
 - **Security tests:** every RPC with paths outside roots, symlink/junction escapes, `.git/hooks`
   writes with `exec` off, forwards to non-loopback, model endpoints not in the policy, a bridge key
   on `/api/*`, a user API key on `/bridge/ws`, another user's ids.
@@ -1344,55 +1533,58 @@ auth work landing first. Every phase is shippable on its own and behind a server
 |---|---|---|---|
 | **0. Prereqs** (done by / with the auth work) | users, per-user projects/sessions, audit log in SQLite, API keys; per-session scoping of `TaskStore`, shell `PROCESSES`, Pi jobs (12.6) | multi-user server | (auth work) + 1 day for the scoping if not covered |
 | **1. Executor seam** | `Placement`, `ToolExecutor`, `LocalExecutor`, workspace steps extracted from `AgentSession`, `Workspace` file API used by prompt context / brief files / workflows / image tools, `PathFlavor` resolver; `orca-workspace` crate split out of `orca-webui` | nothing visible; the cross-check and the test suite prove parity | 4-5 |
-| **2. Link, pairing, machines** | `orca-remote` framing/mux/resume/heartbeats, `/bridge/ws`, `abhoth bridge` (CLI) with `bridge.json`, pairing flow, keys, machines table + machines page (status, revoke), audit of link events, `fake-bridge` + chaos proxy | users pair machines and see them online/offline | 5-6 |
-| **3. Remote sessions (files + git)** | `RemoteExecutor` for fs/search/git/archive/image tools, manifest, prompt context, `ProjectBackend::Remote` (tree, file view/edit, changes, markers, watcher, git panel, raw, attachments, HTML preview), machine picker in New Session, offline pause / offline chat / late results, call journals both sides, checkpoints on the machine, owner checks, approvals for outside-project writes, audit of calls | a session on a machine without shell: read, edit, search, commit | 8-10 |
-| **4. Shell and processes** | `exec` capability, bash/background processes/Pi jobs remotely, streaming output, cancel/kill trees, ring buffers and re-attach, lifetime rules, hooks/formatter/LSP on the machine, terminal panel over `proc.pty` | full coding sessions incl. builds and tests | 5-6 |
-| **5. Desktop tray** | "Bridge to server" toggle, status, settings page for `bridge.json`, pairing window, badge | the desktop form | 2 |
-| **6. Port forwarding** | `fwd.open`, `tcp` channels, `/fwd/<token>/` proxy with WebSocket upgrade and Host rewrite, preview tab "machine port", origin isolation (separate origin or sandbox fallback) | dev servers in the preview tab | 3-4 |
+| **2. Link, pairing, machines** | `orca-remote` framing/mux/resume/heartbeats, `/bridge/ws`, `abhoth bridge` (CLI) with `bridge.json`, pairing flow, keys, machines table + machines page (status, revoke; admin list with disable and owner notification), audit of link events, `fake-bridge` + chaos proxy | users pair machines and see them online/offline | 5-6 |
+| **3. Remote sessions (files + git)** | `RemoteExecutor` for fs/search/git/archive/image tools, manifest, prompt context, `ProjectBackend::Remote` (tree, file view/edit, changes, markers, watcher, git panel, raw, attachments, HTML preview), machine picker in New Session, offline pause / offline chat / late results, call journals both sides, checkpoints on the machine, owner checks, approvals for outside-project writes, audit of calls; **folder requests** with the CLI prompt (5.7, 13.6) | a session on a machine: read, edit, search, commit; folder requests from the CLI bridge | 9-11 |
+| **4. Shell and processes** | `exec` capability (on by default, per-root off switch, the warning texts), bash/background processes/Pi jobs remotely, streaming output, cancel/kill trees, ring buffers and re-attach, lifetime rules, hooks/formatter/LSP on the machine, terminal panel over `proc.pty` | full coding sessions incl. builds and tests | 5-6 |
+| **5. Desktop tray** | "Bridge to server" toggle, status, settings page for `bridge.json`, pairing window, badge, the native folder-request dialog and mute toggle | the desktop form | 2.5-3 |
+| **6. Port forwarding** | `fwd.open`, `tcp` channels, `/fwd/<token>/` proxy with WebSocket upgrade and Host rewrite, preview tab "machine port", sandbox CSP and cookie stripping on the same hostname, the "what may break" help | dev servers in the preview tab | 2.5-3 |
 | **7. Local models (direct)** | model probing/advertising, `model` channels, bridge model proxy / `BridgeBackend`, model picker entries, lanes | sessions use a machine's GPU | 2-3 |
 | **8. Router private upstreams** | per-user client keys and private upstreams in `orca-router`, dynamic registration, `@machine/model` names | the machine appears in the router | 3 |
 | **9. Hardening** | rate limits, security test sweep, chaos soak (hours), docs, cross-OS smoke, optional key rotation UX, keychain storage | v1 done | 3 |
 
-Total: about **35-43 agent-days** (phases 1-7 and 9: about 32-39; the router phase 3).
+Total: about **36-43 agent-days** (phases 1-7 and 9: about 33-40; the router phase 3).
+Changes from the first estimate after the user's decisions: folder requests add about 1 day to
+phase 3 (CLI prompt, table, limits) and 0.5-1 to phase 5 (native dialog); same-hostname sandboxed
+forwarding saves 0.5-1 in phase 6; shell-on-default and the other decisions don't change the
+work. The optional separate forward hostname, later, is about 1 day.
 Phases 5, 6 and 7 are independent of each other after phase 4 (7 only needs phase 2) and can run
 in parallel.
 
 ---
 
-## 17. Open questions
+## 17. Questions: resolved and open
 
-Each with a recommendation; the ones marked **(user)** need a decision before the phase that
-uses them.
+Numbering kept from the first draft so the references above stay valid. Resolved ones carry the
+user's decision (section 0).
 
-1. **Bridge key vs user API key. (user)** Recommendation: a dedicated per-machine bridge key
-   from a device-code pairing (5.1, 5.2); user API keys are refused on `/bridge/ws`.
-2. **Who decides the roots — machine only, or machine and server? (user)** Recommendation: the
-   machine's `bridge.json` is the only source; the server can't add roots (12.3.6). The web UI
-   shows them and links to "edit on the machine".
-3. **`exec` default. (user)** Recommendation: off by default, per root, with the plain-words
-   warning on the pairing page and in the tray settings (12.4).
-4. **Forward origin. (user)** Recommendation: a separate hostname (`fwd.<your domain>`, one extra
-   proxy entry + certificate). Fallback: same origin with the sandbox CSP (9.2).
-5. **OS sandboxing for `exec`.** Recommendation: not in v1; design the policy value
-   `"exec": "sandboxed"` now, implement Linux landlock first if wanted.
-6. **Git credentials for push/pull on a machine. (user)** Recommendation: the machine's own git
-   credentials; never ship the server's GitHub App / PAT tokens to a machine unless a per-project
-   opt-in says so.
-7. **Process grace while offline.** Recommendation: 30 minutes, per machine in `bridge.json`;
-   dev servers started from the web UI's "keep running" can opt out (run until the session ends).
-8. **Credential storage.** Recommendation: file with a user-only ACL in v1; OS keychain when the
-   background service arrives (one new pinned crate then).
-9. **Engine bridges (Claude Code / Codex) on a machine.** Recommendation: not in v1; later they
-   could run on the machine as a long-running process with their MCP tool server (the
-   `openorca` MCP bridge) pointing back over a channel.
-10. **Local models: direct first or router first? (user)** Recommendation: direct first (10.2),
-    then router private upstreams (10.3) once the router has user-bound keys.
-11. **Admin visibility. (user)** Recommendation: admins can disable a machine and see that it
-    exists (name, owner, last seen) — no access to its files, sessions or calls; the owner is
-    notified of a disable.
-12. **Per-user machine limit.** Recommendation: 10, admin-configurable.
-13. **Code name.** Recommendation: UI and CLI say "bridge"; code says `machines` / `orca-remote`,
-    so the engine bridges keep their names (header note).
-14. **Terminal panel over the bridge** (not in the original capability list). Recommendation:
-    yes, in phase 4 under the `pty` capability; it is cheap once processes stream, and the web
-    UI already has the panel.
+1. **Bridge key vs user API key.** **Resolved (R1):** pairing code → dedicated per-machine bridge
+   key; user API keys are refused on `/bridge/ws`.
+2. **Who decides the roots.** **Resolved (R2):** the machine's `bridge.json` is the source of
+   truth; the web UI may request a folder, added only after a local confirmation (5.7, 13.6).
+3. **`exec` default.** **Resolved (R3):** on by default for allowed folders, per-folder off
+   switch, the plain warning (12.4).
+4. **Forward origin.** **Resolved (R4):** same hostname, sandboxed; a separate hostname is an
+   optional later upgrade (9.2).
+5. **OS sandboxing for `exec`.** Open. Recommendation: not in v1; keep `"exec": "sandboxed"`
+   reserved and implement Linux landlock first if wanted. With shell on by default this is the
+   most useful later hardening.
+6. **Git credentials.** **Resolved (R5):** the machine's own; server tokens are never sent.
+7. **Process grace while offline.** Open. Recommendation: 30 minutes, per machine in
+   `bridge.json`; dev servers started from the web UI's "keep running" can opt out (run until the
+   session ends).
+8. **Credential storage.** Open. Recommendation: a file with a user-only ACL in v1; the OS
+   keychain when the background service arrives (one new pinned crate then).
+9. **Engine bridges (Claude Code / Codex) on a machine.** Open. Recommendation: not in v1; later
+   they could run on the machine with their MCP tool server (the `openorca` MCP bridge) pointing
+   back over a channel.
+10. **Local models: direct or router first.** **Resolved (R6):** direct first (phase 7), then the
+    router's per-user upstreams (phase 8).
+11. **Admin visibility.** **Resolved (R7):** existence and disable only, no access to files,
+    sessions or calls; the owner is notified.
+12. **Per-user machine limit.** Open. Recommendation: 10, admin-configurable.
+13. **Code name.** Open (low stakes). Recommendation: UI and CLI say "bridge"; code says
+    `machines` / `orca-remote`, so the engine bridges keep their names.
+14. **Terminal panel over the bridge.** Open. Recommendation: yes, in phase 4 under `pty` (on by
+    default with shell); it is cheap once processes stream.
+15. **Folder requests from the model.** New, follows from R2. Recommendation: no tool for it in
+    v1; the model can only suggest that the user requests a folder.

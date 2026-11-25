@@ -656,3 +656,6 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   work: [`BRIDGE.md`](BRIDGE.md) (protocol, the `ToolExecutor` seam, paths across OSes, processes,
   port forwarding, local models via the router, security model, data model, phases). In code the
   new parts are called machines / `orca-remote`, so the engine bridges (D100-D103) keep their name.
+  User decisions (R1-R7: per-machine bridge key, folders added only after a confirmation on the
+  machine, shell on by default, sandboxed same-host forwarding, the machine's own git credentials,
+  local models direct then via the router, admins see/disable only) are in BRIDGE.md section 0.
