@@ -61,7 +61,7 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   ImageGeneration, Lsp and Mcp plugins (`orca-tools-*`); `ToolExposure` (advertised subset)
   and the C# wire schema shape.
 - Pi profile (`orca-tools-pi`): all Pi tools, the Pi system prompt, Pi loop wording; subagent /
-  lead_mode answer "not available" until orchestration is wired.
+  progress / lead_mode run through the orchestrator.
 - `orca-core::{slots, engines, profiles, live}`: slot registries, `SlotAllocator` balanced
   placement, copy models / served models, the slotted client with the Lead's Strata pin, lazy
   Lead lease; Claude Code / Codex bridges; profiles v3, agent modes; `--profile`, `--mode`,
