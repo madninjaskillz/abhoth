@@ -935,3 +935,46 @@ async fn settings_page_reads_and_changes_the_config() {
         .unwrap();
     assert!(proj.status() == StatusCode::OK || proj.status() == StatusCode::CONFLICT);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn raw_serves_a_generated_image_from_the_image_folder_by_its_absolute_path() {
+    let work = tempfile::tempdir().unwrap();
+    let images = tempfile::tempdir().unwrap();
+    let png = images.path().join("gen-1.png");
+    let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    bytes.extend_from_slice(&[0; 8]);
+    std::fs::write(&png, &bytes).unwrap();
+    std::fs::write(images.path().join("notes.txt"), "x").unwrap();
+    let dir = images.path().to_path_buf();
+    let host = Host::start_with(FakeSession::new(work.path()), move |o| {
+        o.image_directory = Some(Arc::new(move || Some(dir.clone())));
+    })
+    .await;
+    let pid = host.primary();
+    let get = |p: String| {
+        let mut url = reqwest::Url::parse(&host.url(&format!("/api/projects/{pid}/raw"))).unwrap();
+        url.query_pairs_mut().append_pair("path", &p);
+        host.http()
+            .get(url)
+            .header("X-OpenOrca-Token", TOKEN)
+            .send()
+    };
+    let ok = get(png.to_string_lossy().to_string()).await.unwrap();
+    assert_eq!(ok.status(), StatusCode::OK);
+    assert_eq!(ok.headers()["content-type"], "image/png");
+    assert_eq!(ok.bytes().await.unwrap().as_ref(), bytes.as_slice());
+    // Only images, and only inside the folder.
+    let txt = get(images
+        .path()
+        .join("notes.txt")
+        .to_string_lossy()
+        .to_string())
+    .await
+    .unwrap();
+    assert_eq!(txt.status(), StatusCode::FORBIDDEN);
+    let other = tempfile::tempdir().unwrap();
+    let elsewhere = other.path().join("x.png");
+    std::fs::write(&elsewhere, &bytes).unwrap();
+    let out = get(elsewhere.to_string_lossy().to_string()).await.unwrap();
+    assert_eq!(out.status(), StatusCode::FORBIDDEN);
+}

@@ -424,6 +424,11 @@ impl AgentLiveSession {
     pub fn permissions(&self) -> &Arc<PermissionBroker> {
         &self.shared.permissions
     }
+
+    /// The session's config as it is now (settings page changes included).
+    pub fn config(&self) -> OrcaConfig {
+        self.shared.config.lock().unwrap().clone()
+    }
 }
 
 fn worker_loop(mut session: AgentSession, shared: Arc<Shared>) {

@@ -246,10 +246,10 @@ pub async fn run(
     // applies.
     #[cfg(feature = "image")]
     {
-        let image_gen = config.image_gen.clone();
+        let live = primary.clone();
         options.image_directory = Some(Arc::new(move || {
             Some(orca_tools_image::generate::resolve_output_directory(
-                &image_gen,
+                &live.config().image_gen,
             ))
         }));
     }
