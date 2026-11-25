@@ -1,0 +1,136 @@
+{
+  "_comment": "Interactive: /benchmark argument errors, model discovery (one model listed, matched case-insensitively; an unknown one skipped; pair mode needs two), and one full run whose model writes nothing: no entry point, N/A in the table. TEMP points into the config home so the run folder's path is normalised. (An unknown argument is left out: C# crashes printing its usage line, the unescaped [count=N] markup; Rust prints it.)",
+  "home_files": {
+    "tmp/keep.txt": "x"
+  },
+  "env": {
+    "TEMP": "<HOME>/tmp",
+    "TMP": "<HOME>/tmp"
+  },
+  "replies": [
+    {
+      "text": "I would write main.py now. BENCH-ONE"
+    },
+    {
+      "text": "And update it. BENCH-TWO"
+    },
+    {
+      "text": "Done updating. BENCH-THREE"
+    }
+  ],
+  "interactive": {
+    "cols": 110,
+    "rows": 40,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "/benchmark count=0"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "Invalid count",
+        "timeoutMs": 20000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/benchmark models=zzz,FAKE-MODEL count=1"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "Benchmark Results",
+        "timeoutMs": 20000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/benchmark models=zzz"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "Available: fake-model",
+        "timeoutMs": 20000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/benchmark mode=pair"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "Requires at least 2 models",
+        "timeoutMs": 20000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Invalid count",
+      "Starting model benchmark",
+      "Model not found",
+      "Benchmarking 1 model",
+      "fake-model — Run 1/1",
+      "Prompt 1/3",
+      "Prompt 2/3",
+      "Prompt 3/3",
+      "No Python entry point found.",
+      "None of the requested",
+      "Available:",
+      "Starting pair benchmark",
+      "Requires at least",
+      "Goodbye!"
+    ]
+  }
+}

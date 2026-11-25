@@ -817,6 +817,41 @@ fn normalize_backup_name(name: &str, path: Option<&str>) -> String {
     format!("<STAMP>_{hash}.bak")
 }
 
+/// `/benchmark` run folders are named `orca-benchmark-<model>-run<N>-<yyyyMMdd-HHmmss>`: the
+/// time stamp becomes `<TS>`.
+fn mask_benchmark_stamps(text: &str) -> String {
+    const MARK: &str = "orca-benchmark-";
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find(MARK) {
+        let (head, tail) = rest.split_at(i + MARK.len());
+        out.push_str(head);
+        rest = tail;
+        // The stamp: "-run<digits>-" then 8 digits, '-', 6 digits.
+        let Some(run) = rest.find("-run") else {
+            continue;
+        };
+        let after_run = &rest[run + 4..];
+        let digits = after_run.bytes().take_while(u8::is_ascii_digit).count();
+        let stamp = &after_run[digits..];
+        let b = stamp.as_bytes();
+        let is_stamp = digits > 0
+            && b.len() >= 16
+            && b[0] == b'-'
+            && b[1..9].iter().all(u8::is_ascii_digit)
+            && b[9] == b'-'
+            && b[10..16].iter().all(u8::is_ascii_digit);
+        if is_stamp {
+            let keep = run + 4 + digits;
+            out.push_str(&rest[..keep]);
+            out.push_str("-<TS>");
+            rest = &rest[keep + 16..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Replace temp paths (in both slash styles and JSON-escaped forms) and zero the timings.
 fn normalize(v: Value, paths: &[(&str, &str)]) -> Value {
     match v {
@@ -830,7 +865,7 @@ fn normalize(v: Value, paths: &[(&str, &str)]) -> Value {
                     s = s.replace(&variant, to);
                 }
             }
-            Value::String(s)
+            Value::String(mask_benchmark_stamps(&s))
         }
         Value::Array(a) => Value::Array(a.into_iter().map(|x| normalize(x, paths)).collect()),
         Value::Object(o) => Value::Object(

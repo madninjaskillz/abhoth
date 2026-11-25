@@ -469,16 +469,11 @@ impl Repl {
     }
 
     fn render_loop_error(&self, error: &orca_core::agent::AgentError) {
-        let (message, hint) = crate::render::friendly_errors::describe(
+        render_loop_error(
+            &self.console,
             error,
             &self.session.config.lm_studio.base_url,
         );
-        self.console
-            .markup_line(&format!("\n[red]✗ {}[/]", escape(&message)));
-        if let Some(h) = hint {
-            self.console
-                .markup_line(&format!("  [dim]{}[/]", escape(&h)));
-        }
     }
 
     /// `HandlePlanApprovalAsync`.
@@ -907,6 +902,19 @@ enum Handled {
     Restart(ReplExit),
     /// Run an agent turn with this user message.
     RunTurn(String),
+}
+
+/// How a failed turn is shown (`AgentLoopRunner`'s error rendering).
+pub(crate) fn render_loop_error(
+    console: &Console,
+    error: &orca_core::agent::AgentError,
+    base_url: &str,
+) {
+    let (message, hint) = crate::render::friendly_errors::describe(error, base_url);
+    console.markup_line(&format!("\n[red]✗ {}[/]", escape(&message)));
+    if let Some(h) = hint {
+        console.markup_line(&format!("  [dim]{}[/]", escape(&h)));
+    }
 }
 
 /// `FormatUserEcho`: the submitted prompt, bold after a blue chevron.
