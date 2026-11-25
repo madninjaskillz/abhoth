@@ -31,7 +31,8 @@ abhoth --help                        # the common options
 
 Closing the desktop window hides it to the tray and agents keep running; tray Quit exits. Set
 `desktop.closeToTray` to false (settings, Desktop tab) to quit on close instead. On Windows the
-window draws its own title bar (drag to move, double-click to maximise, the usual minimise,
+window has one title row, Chrome-style: the project tabs, the buttons and the window buttons share it
+(drag the empty space to move, double-click to maximise, the usual minimise,
 maximise and close buttons, Aero Snap); "Use system title bar" (`desktop.systemTitleBar`,
 Desktop tab) switches back to the OS one at once. Linux and macOS use the OS title bar.
 

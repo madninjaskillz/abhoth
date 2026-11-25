@@ -4,7 +4,9 @@ import { authState, isAdmin, signOut } from "@/lib/auth";
 import { Check, LogOut, Menu, UserRound, Users } from "lucide-react";
 import { SettingsButton, SettingsHost } from "@/features/settings/SettingsDialog";
 import { openSettings } from "@/features/settings/settingsNav";
-import { setWindowSubtitle, useDesktopState } from "@/lib/desktop";
+import { setWindowTitle, useClaimTitleRow, useDesktopState } from "@/lib/desktop";
+import { DRAG_MIN } from "@/lib/titleRow";
+import { ResizeStrip, WindowControls, onTitleRowPress } from "@/components/TitleBar";
 import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { FlaskConical, FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
@@ -70,12 +72,9 @@ export default function App() {
     }
   }, [list, active, ensure, setActive]);
 
-  // The desktop title bar (and the tab's title) name the open project.
+  // The window's title (taskbar, Alt+Tab, the browser tab) names the open project.
   const activeName = list.find((p) => p.id === active)?.name ?? "";
-  useEffect(() => {
-    setWindowSubtitle(activeName);
-    document.title = activeName ? `${activeName} · ${brandName()}` : brandName();
-  }, [activeName]);
+  useEffect(() => setWindowTitle(activeName, brandName()), [activeName]);
 
   useEffect(() => {
     if (!active) return;
@@ -225,7 +224,12 @@ function Header({
   profilesOn: boolean;
 }) {
   const qc = useQueryClient();
-  const framed = !!useDesktopState()?.frameless;
+  // The desktop app's frameless window (D144): this header is the title row, Chrome-style: the
+  // empty gaps move the window, the window buttons sit at its end.
+  const desktop = useDesktopState();
+  const framed = !!desktop?.frameless;
+  useClaimTitleRow(framed);
+  const controlsRef = useRef<HTMLDivElement>(null);
   const connection = useConnection((s) => s.connection);
   const active = useWorkspace((s) => s.active);
   const setActive = useWorkspace((s) => s.setActive);
@@ -262,9 +266,11 @@ function Header({
     const gap = parseFloat(style.columnGap) || 0;
     const room =
       header.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) -
-      (brandRef.current?.offsetWidth ?? 0) - (statusRef.current?.offsetWidth ?? 0) - 3 * gap;
+      (brandRef.current?.offsetWidth ?? 0) - (statusRef.current?.offsetWidth ?? 0) - 3 * gap -
+      // The title row keeps the window buttons and a drag space whatever the tabs need.
+      (framed ? (controlsRef.current?.offsetWidth ?? 138) + DRAG_MIN + 2 * gap : 0);
     setCollapsed(shouldCollapse({ viewport: window.innerWidth, room, tabs, actions: barWidth.current[mode], collapsed: shownCollapsed.current }));
-  }, [narrow]);
+  }, [narrow, framed]);
 
   // After every render (before paint): what is on screen now, then whether it should change.
   useLayoutEffect(() => {
@@ -334,13 +340,27 @@ function Header({
   };
 
   return (
-    <header ref={headerRef} className="relative flex h-10 shrink-0 items-stretch gap-2 border-b bg-panel pl-3 pr-2" data-collapsed={collapsed}>
+    <header
+      ref={headerRef}
+      className={cn("relative flex h-10 shrink-0 select-none items-stretch gap-2 border-b bg-panel pl-3", framed ? "pr-0" : "pr-2")}
+      data-collapsed={collapsed}
+      data-title-row={framed || undefined}
+      data-drag-region={framed || undefined}
+      onMouseDown={framed ? onTitleRowPress : undefined}
+      data-testid="app-header"
+    >
       <div ref={brandRef} className="flex shrink-0 items-center gap-2 font-semibold">
-        {/* The desktop's own title bar shows the mascot and name already. */}
-        {!framed && <MascotBadge />}
+        <MascotBadge />
+        {/* In the title row the tabs name the project; the product name is the window's title. */}
         {!narrow && !framed && <span className="tracking-tight text-primary">{brandName()}</span>}
       </div>
-      <nav ref={navRef} className="flex min-w-0 flex-1 items-end gap-px overflow-x-auto pt-1.5" role="tablist" data-testid="project-tabs">
+      <nav
+        ref={navRef}
+        className={cn("flex min-w-0 items-end gap-px overflow-x-auto pt-1.5", framed ? "flex-initial" : "flex-1")}
+        role="tablist"
+        data-drag-region={framed || undefined}
+        data-testid="project-tabs"
+      >
         {projects.map((p) => (
           <ProjectTab key={p.id} project={p} active={p.id === active} onSelect={() => setActive(p.id)} onClose={() => setClosing(p)} />
         ))}
@@ -357,7 +377,8 @@ function Header({
           </Tip>
         )}
       </nav>
-      <span ref={statusRef} className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" data-testid="connection" title={connection}>
+      {framed && <div className="flex-1" style={{ minWidth: DRAG_MIN }} data-drag-region data-testid="title-row-drag" />}
+      <span ref={statusRef} className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" data-no-drag data-testid="connection" title={connection}>
         <span className={cn("size-2 rounded-full", dot)} />
         {!narrow && <span>{connection}</span>}
       </span>
@@ -454,6 +475,12 @@ function Header({
         <SettingsButton narrow={narrow} menu={collapsed} />
         <AccountMenu narrow={narrow} menu={collapsed} />
       </div>
+      {framed && (
+        <div ref={controlsRef} className="flex shrink-0 items-stretch">
+          <WindowControls maximized={!!desktop?.maximized} />
+        </div>
+      )}
+      {framed && !desktop?.maximized && <ResizeStrip />}
       <SettingsHost project={projects.find((p) => p.id === active)} />
       <AddProjectDialog
         open={adding}

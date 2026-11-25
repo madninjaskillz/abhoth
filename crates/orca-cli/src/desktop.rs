@@ -606,6 +606,7 @@ pub fn run(raw: Vec<String>) -> i32 {
                             window.set_decorations(!frameless);
                         }
                     }
+                    WindowCommand::Title(title) => window.set_title(&title),
                     WindowCommand::Close => {}
                 }
                 push_state(webview.as_ref(), &window, frameless, &mut last_state);

@@ -1,19 +1,22 @@
 import type { ReactNode, MouseEvent as ReactMouseEvent } from "react";
 import { MascotBadge } from "@/components/Mascot";
 import { brandName } from "@/lib/brand";
-import { useDesktopState, useWindowSubtitle, windowCommands, type ResizeDir } from "@/lib/desktop";
+import { useDesktopState, useTitleRowClaimed, windowCommands, type ResizeDir } from "@/lib/desktop";
+import { isDragHit, makeDoubleClick, type HitNode } from "@/lib/titleRow";
 import { cn } from "@/lib/utils";
 
 /**
- * The page and, in the desktop app's frameless window (D143), its title bar above it: the mascot,
- * the app and project name, a drag area (double-click maximises), and minimise, maximise/restore
- * and close (to the tray, as the OS button). The window keeps its DWM frame, so the left, right
- * and bottom edges resize natively; the top edge and corners resize from a thin strip here.
- * The frame wrapper is always there so switching the title bar doesn't remount the app.
+ * The page, and in the desktop app's frameless window (D143) a title bar for it. The app's own
+ * header is the title row there (D144: tabs, status and buttons share it with the window
+ * buttons); this separate bar is only for pages without that header (sign-in, setup, signed out).
+ * The window keeps its DWM frame, so the left, right and bottom edges resize natively; the top
+ * edge and corners resize from a thin strip in the row. The wrapper is always there so switching
+ * the title bar doesn't remount the app.
  */
 export function WindowFrame({ children }: { children: ReactNode }) {
   const state = useDesktopState();
-  const bar = !!state?.frameless;
+  const claimed = useTitleRowClaimed();
+  const bar = !!state?.frameless && !claimed;
   return (
     <div className="flex h-full flex-col">
       {bar && <TitleBar maximized={state.maximized} focused={state.focused} />}
@@ -23,30 +26,54 @@ export function WindowFrame({ children }: { children: ReactNode }) {
 }
 
 function TitleBar({ maximized, focused }: { maximized: boolean; focused: boolean }) {
-  const subtitle = useWindowSubtitle();
-  const onDragArea = (e: ReactMouseEvent) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    // The window's move loop takes the first press's release, so the browser's click count
-    // (dblclick, e.detail) isn't reliable here: count the second press ourselves.
-    if (isSecondPress(e.screenX, e.screenY, e.timeStamp)) windowCommands.toggleMaximize();
-    else windowCommands.drag();
-  };
   return (
     <div
-      // Above dialogs' overlays (z-50) and clickable while one is open, as an OS title bar is.
-      className={cn("pointer-events-auto relative z-[60] flex h-8 shrink-0 select-none items-stretch border-b bg-panel text-xs", !focused && "text-muted-foreground")}
+      className={cn("relative flex h-8 shrink-0 select-none items-stretch border-b bg-panel text-xs", !focused && "text-muted-foreground")}
+      onMouseDown={onTitleRowPress}
       data-testid="title-bar"
-      data-window-chrome
+      data-drag-region
       data-maximized={maximized}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-2 pl-2.5" onMouseDown={onDragArea} data-testid="title-bar-drag">
+      <div className="flex min-w-0 flex-1 items-center gap-2 pl-2.5" data-testid="title-bar-drag">
         <MascotBadge className={cn("size-[18px]", !focused && "opacity-70")} />
-        <span className="truncate">
-          <span className={cn("font-semibold", focused && "text-primary")}>{brandName()}</span>
-          {subtitle && <span className="text-muted-foreground"> · {subtitle}</span>}
-        </span>
+        <span className={cn("truncate font-semibold", focused && "text-primary")}>{brandName()}</span>
       </div>
+      <WindowControls maximized={maximized} />
+      {!maximized && <ResizeStrip />}
+    </div>
+  );
+}
+
+const secondPress = makeDoubleClick();
+
+/** The elements from `target` up to `row`, for the drag hit test; null when `target` is outside the row (a portal). */
+function hitChain(target: EventTarget | null, row: Element): HitNode[] | null {
+  const chain: HitNode[] = [];
+  for (let el = target instanceof Element ? target : null; el; el = el.parentElement) {
+    chain.push({ tag: el.tagName, role: el.getAttribute("role"), noDrag: el.hasAttribute("data-no-drag"), dragRegion: el.hasAttribute("data-drag-region") });
+    if (el === row) return chain;
+  }
+  return null;
+}
+
+/**
+ * A press on a title row: on its empty space (a `data-drag-region` with nothing clickable under
+ * the pointer) it moves the window, and a second press maximises or restores. Anything else
+ * (tabs, buttons, menus, dialogs in portals) is left alone.
+ */
+export function onTitleRowPress(e: ReactMouseEvent) {
+  if (e.button !== 0) return;
+  const chain = hitChain(e.target, e.currentTarget);
+  if (!chain || !isDragHit(chain)) return;
+  e.preventDefault();
+  if (secondPress(e.screenX, e.screenY, e.timeStamp)) windowCommands.toggleMaximize();
+  else windowCommands.drag();
+}
+
+/** Minimise, maximise/restore and close (to the tray, as the OS button). Above dialogs' overlays, as an OS title bar is. */
+export function WindowControls({ maximized }: { maximized: boolean }) {
+  return (
+    <div className="pointer-events-auto relative z-[60] flex shrink-0 items-stretch self-stretch" data-window-chrome data-no-drag data-testid="window-controls">
       <CaptionButton label="Minimize" onClick={windowCommands.minimize} testId="title-bar-minimize">
         <path d="M0 5.5h10" />
       </CaptionButton>
@@ -63,18 +90,8 @@ function TitleBar({ maximized, focused }: { maximized: boolean; focused: boolean
       <CaptionButton label="Close" onClick={windowCommands.close} testId="title-bar-close" close>
         <path d="M0.5 0.5l9 9M9.5 0.5l-9 9" />
       </CaptionButton>
-      {!maximized && <ResizeStrip />}
     </div>
   );
-}
-
-let lastPress: { x: number; y: number; t: number } | null = null;
-
-/** A press within the double-click time (Windows' default, 500 ms) and a few pixels of the last one. */
-function isSecondPress(x: number, y: number, t: number): boolean {
-  const second = !!lastPress && t - lastPress.t < 500 && Math.abs(x - lastPress.x) <= 4 && Math.abs(y - lastPress.y) <= 4;
-  lastPress = second ? null : { x, y, t };
-  return second;
 }
 
 function CaptionButton({ label, onClick, children, close, testId }: { label: string; onClick: () => void; children: ReactNode; close?: boolean; testId: string }) {
@@ -84,8 +101,6 @@ function CaptionButton({ label, onClick, children, close, testId }: { label: str
       title={label}
       aria-label={label}
       onClick={onClick}
-      // Not a drag: a press on a button is a press.
-      onMouseDown={(e) => e.stopPropagation()}
       className={cn(
         "flex w-[46px] shrink-0 items-center justify-center text-foreground/80 outline-none transition-colors focus-visible:bg-accent",
         close ? "hover:bg-[#c42b1c] hover:text-white active:bg-[#c42b1c]/80" : "hover:bg-accent active:bg-accent/70",
@@ -100,7 +115,7 @@ function CaptionButton({ label, onClick, children, close, testId }: { label: str
 }
 
 /** The top edge and the top corners: the webview covers the frame there, so the page starts the resize. */
-function ResizeStrip() {
+export function ResizeStrip() {
   const start = (dir: ResizeDir) => (e: ReactMouseEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -109,9 +124,9 @@ function ResizeStrip() {
   };
   return (
     <>
-      <div className="absolute inset-x-2 top-0 h-[4px] cursor-ns-resize" onMouseDown={start("n")} aria-hidden />
-      <div className="absolute left-0 top-0 size-2 cursor-nwse-resize" onMouseDown={start("nw")} aria-hidden />
-      <div className="absolute right-0 top-0 size-2 cursor-nesw-resize" onMouseDown={start("ne")} aria-hidden />
+      <div className="absolute inset-x-2 top-0 z-[61] h-[4px] cursor-ns-resize" onMouseDown={start("n")} data-no-drag aria-hidden data-testid="resize-top" />
+      <div className="absolute left-0 top-0 z-[61] size-2 cursor-nwse-resize" onMouseDown={start("nw")} data-no-drag aria-hidden />
+      <div className="absolute right-0 top-0 z-[61] size-2 cursor-nesw-resize" onMouseDown={start("ne")} data-no-drag aria-hidden />
     </>
   );
 }

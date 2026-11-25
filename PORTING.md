@@ -836,3 +836,15 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     native overlay window over the button, or faking Win+Z) are fragile; Win+Z and edge snapping
     work. Linux and macOS keep the OS title bar (frameless there is untested); the bridge is
     still there and the setting has no effect.
+- **D144** (user request 2026-11-25) One title row in the desktop app, Chrome/VS Code style. In
+  the frameless window the app's header is the title row: mascot, project tabs, "+", a drag
+  space, connection, settings, account, then minimise / maximise / close. Presses on empty space
+  move the window like CSS `app-region: drag` (`client/src/lib/titleRow.ts`: the hit test walks
+  from the pressed element up to the row and refuses anything clickable, `data-no-drag`, or a
+  dialog in a portal); a second press there maximises or restores. The row always keeps a drag
+  space (`DRAG_MIN`, 48 px) and the window buttons: the tabs scroll and the other buttons fold into
+  the menu first. The top-edge resize strip stays. The "Abhoth · project" text is gone (the
+  active tab names the project); the window's own title (taskbar, Alt+Tab) is set over IPC
+  (`title`, control characters dropped, 200 characters at most). The separate bar remains for
+  pages without the header (sign-in, setup); with the system title bar, and in a browser, the
+  header is as before.

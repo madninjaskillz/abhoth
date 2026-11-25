@@ -14,7 +14,7 @@ use std::path::Path;
 use tao::window::ResizeDirection;
 
 /// What the page asks the window to do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WindowCommand {
     /// Send the window state back (on page load); also re-reads `desktop.systemTitleBar`.
     State,
@@ -29,7 +29,12 @@ pub enum WindowCommand {
     Resize(ResizeDirection),
     /// The OS title bar on (true) or the app's own (false).
     SystemTitleBar(bool),
+    /// The window's title (taskbar, Alt+Tab): the open project and the product (D144).
+    Title(String),
 }
+
+/// The longest window title the page may set (characters).
+pub const MAX_TITLE: usize = 200;
 
 /// Whether the window is frameless (the page draws the title bar): Windows only, unless the user
 /// asked for the OS title bar.
@@ -90,6 +95,16 @@ pub fn parse_command(body: &str, nonce: &str) -> Option<WindowCommand> {
             _ => return None,
         }),
         "systemTitleBar" => WindowCommand::SystemTitleBar(v.get("value")?.as_bool()?),
+        "title" => {
+            let t: String = v
+                .get("value")?
+                .as_str()?
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(MAX_TITLE)
+                .collect();
+            WindowCommand::Title(t)
+        }
         _ => return None,
     })
 }
@@ -199,6 +214,21 @@ mod tests {
             p(r#"{"nonce":"k1","cmd":"systemTitleBar","value":true}"#),
             Some(WindowCommand::SystemTitleBar(true))
         );
+        assert_eq!(
+            p(r#"{"nonce":"k1","cmd":"title","value":"orca · Abhoth"}"#),
+            Some(WindowCommand::Title("orca · Abhoth".into()))
+        );
+        // Control characters go, and a title is capped.
+        assert_eq!(
+            p(r#"{"nonce":"k1","cmd":"title","value":"a\nb\u0007"}"#),
+            Some(WindowCommand::Title("ab".into()))
+        );
+        let long = format!(
+            r#"{{"nonce":"k1","cmd":"title","value":"{}"}}"#,
+            "x".repeat(500)
+        );
+        assert_eq!(p(&long), Some(WindowCommand::Title("x".repeat(MAX_TITLE))));
+        assert_eq!(p(r#"{"nonce":"k1","cmd":"title","value":3}"#), None);
         assert_eq!(p(r#"{"nonce":"k2","cmd":"close"}"#), None);
         assert_eq!(p(r#"{"cmd":"close"}"#), None);
         assert_eq!(p(r#"{"nonce":"k1","cmd":"resize","dir":"up"}"#), None);

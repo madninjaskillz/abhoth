@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { windowTitle } from "./titleRow";
 
 /**
  * The desktop app's window bridge (D143): `window.abhothDesktop`, injected by abhoth-desktop
@@ -58,22 +59,41 @@ export function useDesktopState(): DesktopState | null {
   return state;
 }
 
-// The second part of the title bar's text (the open project), set by the app.
-let subtitle = "";
-const subtitleSubs = new Set<() => void>();
+/** The window's title (taskbar, Alt+Tab) and the page's: the open project, then the product. */
+export function setWindowTitle(project: string, product: string) {
+  const title = windowTitle(product, project);
+  if (document.title !== title) document.title = title;
+  if (title !== lastTitle) {
+    lastTitle = title;
+    desktopBridge()?.send("title", { value: title });
+  }
+}
+let lastTitle = "";
 
-export function setWindowSubtitle(text: string) {
-  if (text === subtitle) return;
-  subtitle = text;
-  subtitleSubs.forEach((f) => f());
+// Whether a page draws its own title row (the app's header, D144); the separate bar is for the rest.
+let claims = 0;
+const claimSubs = new Set<() => void>();
+const notifyClaims = () => claimSubs.forEach((f) => f());
+
+/** Called by a header that is the title row while it is: the separate title bar steps aside. */
+export function useClaimTitleRow(on: boolean) {
+  useEffect(() => {
+    if (!on) return;
+    claims++;
+    notifyClaims();
+    return () => {
+      claims--;
+      notifyClaims();
+    };
+  }, [on]);
 }
 
-export function useWindowSubtitle(): string {
+export function useTitleRowClaimed(): boolean {
   return useSyncExternalStore(
     (fn) => {
-      subtitleSubs.add(fn);
-      return () => subtitleSubs.delete(fn);
+      claimSubs.add(fn);
+      return () => claimSubs.delete(fn);
     },
-    () => subtitle,
+    () => claims > 0,
   );
 }
