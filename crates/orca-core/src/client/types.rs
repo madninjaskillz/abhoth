@@ -142,9 +142,40 @@ impl ToolDefinition {
     pub fn to_wire(&self) -> Value {
         json!({
             "type": "function",
-            "function": {"description": self.description, "name": self.name, "parameters": self.parameters}
+            "function": {"description": self.description, "name": self.name, "parameters": wire_parameters(&self.parameters)}
         })
     }
+}
+
+/// The parameter schema as the Microsoft.Extensions.AI OpenAI adapter sends it: re-read into
+/// its `ToolJson` shape, so the top level is exactly `type` (default "object"), `required`
+/// (default `[]`), `properties` (default `{}`) and `additionalProperties` (default false), in
+/// that order; other top-level keys are dropped and nested schemas pass through unchanged.
+pub fn wire_parameters(schema: &Value) -> Value {
+    let type_ = schema
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("object");
+    let required = schema
+        .get("required")
+        .filter(|r| r.is_array())
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let properties = schema
+        .get("properties")
+        .filter(|p| p.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let additional = schema
+        .get("additionalProperties")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    json!({
+        "type": type_,
+        "required": required,
+        "properties": properties,
+        "additionalProperties": additional
+    })
 }
 
 /// Per-request options (`ChatOptions`). Non-standard fields go into `additional`, in order,

@@ -37,12 +37,7 @@ pub async fn throttle(url: &str) {
         return;
     };
     let domain = parsed.host_str().unwrap_or("").to_lowercase();
-    let slot = DOMAINS
-        .lock()
-        .unwrap()
-        .entry(domain)
-        .or_insert_with(Default::default)
-        .clone();
+    let slot = DOMAINS.lock().unwrap().entry(domain).or_default().clone();
     let mut last = slot.lock().await;
     if let Some(t) = *last {
         let elapsed = t.elapsed();

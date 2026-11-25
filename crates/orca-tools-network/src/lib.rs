@@ -115,7 +115,7 @@ async fn resolve(host: &str) -> std::io::Result<Vec<IpAddr>> {
 }
 
 /// One echo request through the system `ping`: Ok(Some((time ms, ttl))) for a reply,
-/// Ok(None) with a status name otherwise.
+/// Ok(Err(status name)) otherwise.
 async fn ping_once(
     addr: IpAddr,
     timeout_seconds: u64,
@@ -141,12 +141,17 @@ fn parse_ping_output(text: &str) -> Result<(u64, String), String> {
             continue;
         };
         let after = &lower[t + 4..];
-        let after = after.trim_start_matches(['=', '<']);
-        let num: String = after
-            .chars()
-            .take_while(|c| c.is_ascii_digit() || *c == '.')
-            .collect();
-        let ms = num.parse::<f64>().map(|v| v as u64).unwrap_or(0);
+        // Windows prints "time<1ms" for a sub-millisecond reply (.NET reports 0).
+        let ms = match after.strip_prefix('=') {
+            Some(v) => {
+                let num: String = v
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+                num.parse::<f64>().map(|v| v as u64).unwrap_or(0)
+            }
+            None => 0,
+        };
         let ttl: String = lower[ttl + 4..]
             .chars()
             .take_while(char::is_ascii_digit)
@@ -193,8 +198,8 @@ async fn ping(target: &str, timeout_seconds: u64) -> ToolResult {
     }
     append_line(&mut sb, "");
     append_line(&mut sb, &format!("Result: {successes}/4 packets received"));
-    if successes > 0 {
-        append_line(&mut sb, &format!("Average: {}ms", total_ms / successes));
+    if let Some(avg) = total_ms.checked_div(successes) {
+        append_line(&mut sb, &format!("Average: {avg}ms"));
     }
     ToolResult::success(sb)
 }
