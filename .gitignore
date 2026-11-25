@@ -2,3 +2,4 @@
 **/*.rs.bk
 # Cargo binary sources (the root .gitignore drops every bin/ folder for .NET output).
 !**/src/bin/
+__pycache__/

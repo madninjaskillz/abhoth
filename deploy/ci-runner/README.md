@@ -20,7 +20,8 @@ downloads them on first use into `XWIN_CACHE_DIR` (~1.5 GB per runner, kept).
 
 ## Where things live on deepthought
 
-All of it is in the dataset **`Storage/abhoth-ci`** (quota 40 GB), not on the Apps pool,
+All of it is under `$ABHOTH_CI_ROOT`, a dataset of its own on the Storage pool (quota 40 GB;
+the host path is in `$ABHOTH_CI_ROOT/image/.env`, which compose reads), not on the Apps pool,
 which is fragile (its NVMe failed on 2026-11-21). Only the image itself is in Docker's
 storage on Apps.
 

@@ -1,7 +1,8 @@
 # abhoth-ci on deepthought: two GitHub Actions runners for madninjaskillz/abhoth, labels
 # `self-hosted, linux, x64, deepthought, abhoth` (deploy/ci-runner/README.md).
 #
-# Everything lives in the Storage/abhoth-ci dataset (quota 40 GB), NOT on the Apps pool:
+# Everything lives under $ABHOTH_CI_ROOT (set in a .env beside this file on the host): a
+# dataset of its own (quota 40 GB) on the Storage pool, NOT on the Apps pool:
 #   image/            a copy of this directory, the build context
 #   runners/<n>/      each runner's install, registration and _work
 #   cache/<n>/        each runner's CARGO_HOME, target dir, xwin SDK, npm cache and TMPDIR,
@@ -17,14 +18,15 @@
 # middleware's Docker status reads FAILED since the Apps pool incident of 2026-11-21, so
 # app.create is not trusted to work; see the README).
 x-runner: &runner
-  build: { context: $ABHOTH_CI_ROOT/image }
+  build:
+    context: ${ABHOTH_CI_ROOT:?}/image
   image: abhoth-ci-runner:2.338.0
   restart: unless-stopped
   mem_limit: 24g
   volumes:
-    - $ABHOTH_CI_ROOT:$ABHOTH_CI_ROOT
+    - "${ABHOTH_CI_ROOT:?}:${ABHOTH_CI_ROOT:?}"
 x-env: &env
-  CI_ROOT: $ABHOTH_CI_ROOT
+  CI_ROOT: ${ABHOTH_CI_ROOT:?}
   RUNNER_URL: https://github.com/madninjaskillz/abhoth
   RUNNER_LABELS: deepthought,abhoth
   CARGO_INCREMENTAL: "0"
@@ -43,23 +45,23 @@ services:
     environment:
       <<: *env
       RUNNER_NAME: abhoth-dt-1
-      RUNNER_DIR: $ABHOTH_CI_ROOT/runners/1
-      RUNNER_CACHE: $ABHOTH_CI_ROOT/cache/1
-      CARGO_HOME: $ABHOTH_CI_ROOT/cache/1/cargo
-      CARGO_TARGET_DIR: $ABHOTH_CI_ROOT/cache/1/target
-      XWIN_CACHE_DIR: $ABHOTH_CI_ROOT/cache/1/xwin
-      npm_config_cache: $ABHOTH_CI_ROOT/cache/1/npm
-      TMPDIR: $ABHOTH_CI_ROOT/cache/1/tmp
+      RUNNER_DIR: ${ABHOTH_CI_ROOT:?}/runners/1
+      RUNNER_CACHE: ${ABHOTH_CI_ROOT:?}/cache/1
+      CARGO_HOME: ${ABHOTH_CI_ROOT:?}/cache/1/cargo
+      CARGO_TARGET_DIR: ${ABHOTH_CI_ROOT:?}/cache/1/target
+      XWIN_CACHE_DIR: ${ABHOTH_CI_ROOT:?}/cache/1/xwin
+      npm_config_cache: ${ABHOTH_CI_ROOT:?}/cache/1/npm
+      TMPDIR: ${ABHOTH_CI_ROOT:?}/cache/1/tmp
   runner-2:
     <<: *runner
     cpuset: "80-87,176-183"
     environment:
       <<: *env
       RUNNER_NAME: abhoth-dt-2
-      RUNNER_DIR: $ABHOTH_CI_ROOT/runners/2
-      RUNNER_CACHE: $ABHOTH_CI_ROOT/cache/2
-      CARGO_HOME: $ABHOTH_CI_ROOT/cache/2/cargo
-      CARGO_TARGET_DIR: $ABHOTH_CI_ROOT/cache/2/target
-      XWIN_CACHE_DIR: $ABHOTH_CI_ROOT/cache/2/xwin
-      npm_config_cache: $ABHOTH_CI_ROOT/cache/2/npm
-      TMPDIR: $ABHOTH_CI_ROOT/cache/2/tmp
+      RUNNER_DIR: ${ABHOTH_CI_ROOT:?}/runners/2
+      RUNNER_CACHE: ${ABHOTH_CI_ROOT:?}/cache/2
+      CARGO_HOME: ${ABHOTH_CI_ROOT:?}/cache/2/cargo
+      CARGO_TARGET_DIR: ${ABHOTH_CI_ROOT:?}/cache/2/target
+      XWIN_CACHE_DIR: ${ABHOTH_CI_ROOT:?}/cache/2/xwin
+      npm_config_cache: ${ABHOTH_CI_ROOT:?}/cache/2/npm
+      TMPDIR: ${ABHOTH_CI_ROOT:?}/cache/2/tmp

@@ -1,3 +1,4 @@
+# AI_ROOT is the host folder of the AI services (from the environment or a .env beside this file).
 # abhoth router on DeepThought, SHADOW mode (nothing points at it). TrueNAS custom app / compose.
 #   State and config:  $AI_ROOT/router/          (router.json, base.json, requests.jsonl)
 #   Engine key:        $AI_ROOT/router/secrets/ninfer-key  (568:568, mode 0600; never printed)

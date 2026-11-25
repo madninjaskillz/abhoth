@@ -1,4 +1,6 @@
 # TrueNAS custom app "openorca-web" (now runs Abhoth) (Apps > Discover > Custom App > YAML), or plain docker compose.
+# Host paths and the NFS share come from the environment (or a .env beside this file):
+#   AI_ROOT (its orca/ holds projects/, state/ and secrets/), NFS_HOST, NFS_EXPORT.
 # Hardened: non-root, read-only root filesystem, no capabilities, no new privileges, limits.
 # No docker socket, nothing of the model servers' app folders; writable: /projects and /state only.
 services:
@@ -26,13 +28,13 @@ services:
       OPENORCA_PROJECT_ROOTS: "Projects share=/projects-share;local (fast)=/projects"
     volumes:
       - projects-share:/projects-share    # nas-host Projects share (P:) over NFS (polled for changes)
-      - $AI_ROOT/orca/projects:/projects
-      - $AI_ROOT/orca/state:/state
-      - $AI_ROOT/orca/secrets/strata-api-key:/run/secrets/strata-api-key:ro
-      - $AI_ROOT/orca/secrets/ha.env:/run/secrets/ha.env:ro   # HA_URL/HA_TOKEN: bench power readings
+      - ${AI_ROOT:?}/orca/projects:/projects
+      - ${AI_ROOT:?}/orca/state:/state
+      - ${AI_ROOT:?}/orca/secrets/strata-api-key:/run/secrets/strata-api-key:ro
+      - ${AI_ROOT:?}/orca/secrets/ha.env:/run/secrets/ha.env:ro   # HA_URL/HA_TOKEN: bench power readings
       # Git credentials (pick one, both optional):
-      # - $AI_ROOT/orca/secrets/git-deploy-key:/run/secrets/git-deploy-key:ro
-      # - $AI_ROOT/orca/secrets/git-credentials:/run/secrets/git-credentials:ro
+      # - ${AI_ROOT:?}/orca/secrets/git-deploy-key:/run/secrets/git-deploy-key:ro
+      # - ${AI_ROOT:?}/orca/secrets/git-credentials:/run/secrets/git-credentials:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8093/api/auth/state"]
       interval: 30s
@@ -45,5 +47,5 @@ volumes:
     driver: local
     driver_opts:
       type: nfs
-      o: addr=nas-host,nfsvers=4.1,rw,hard,noatime,actimeo=1   # 1 s attribute cache: edits from P: show up quickly
-      device: ":/export/projects"
+      o: addr=${NFS_HOST:-nas-host},nfsvers=4.1,rw,hard,noatime,actimeo=1   # 1 s attribute cache: edits from P: show up quickly
+      device: ":${NFS_EXPORT:-/export/projects}"
