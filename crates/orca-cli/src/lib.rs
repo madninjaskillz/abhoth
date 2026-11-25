@@ -8,6 +8,7 @@ pub mod file_log;
 pub mod hostui;
 pub mod input_preprocessor;
 pub mod model_discovery;
+pub mod pi_agents;
 pub mod pi_profile;
 pub mod prompter;
 pub mod render;
@@ -207,6 +208,10 @@ pub fn wire_agents(
     // Sub-agents send through the session's client (its usage logging and routing).
     let client: Arc<dyn AgentChatClient> = Arc::new(session.client.clone());
     let mut types = AgentTypeRegistry::new();
+    // Pi profile with pi.agentTools: Pi's agent types (scout, planner, reviewer, worker).
+    if orca_tools_pi::is_pi_profile(&config.tool_profile) && config.pi.agent_tools {
+        types.use_pi_profile(config.pi.extra_tools);
+    }
     if let Some(dir) = config_dir {
         let names: Vec<String> = session
             .registry
@@ -227,6 +232,9 @@ pub fn wire_agents(
         provider = Arc::new(SlotClientProvider::new(provider, rt.clone()));
     }
     let orchestrator = AgentOrchestrator::new(provider, config.clone(), types, cwd);
+    let manager = AgentManager::new(orchestrator.clone());
+    // The Pi agent tools (subagent, progress, lead_mode) go through the manager.
+    pi_agents::wire_pi_agent_tools(&mut session.registry, &manager, &config, slots);
     // Sub-agents never choose a Lead mode.
     orchestrator.set_tools(
         session
@@ -237,6 +245,10 @@ pub fn wire_agents(
             .collect(),
     );
     orchestrator.set_use_streaming(true);
+    orchestrator.set_system_prompt_factory(Some(pi_agents::pi_prompt_factory(
+        &session.config,
+        session.ctx.cwd.clone(),
+    )));
     let shared = SharedPipeline::new();
     let factory_client = session.client.clone();
     let factory: ClientFactory = Arc::new(move || factory_client.clone());
@@ -249,7 +261,6 @@ pub fn wire_agents(
         shared.clone(),
         &orchestrator,
     ))));
-    let manager = AgentManager::new(orchestrator.clone());
     if !quiet {
         manager.set_line_sink(Some(Arc::new(|line: &str| eprintln!("{line}"))));
     }

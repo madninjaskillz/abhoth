@@ -1,5 +1,6 @@
 //! Configuration: the `config.json` schema, loading/saving, sampler presets and thinking levels.
 
+pub mod delegate_gate;
 pub mod dotnet_json;
 pub mod manager;
 pub mod memory_manager;
