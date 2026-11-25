@@ -248,9 +248,16 @@ pub fn model_info(snap: &Snapshot) -> Value {
             max_output(d).map_or(Value::Null, |n| json!(n)),
         );
         mi.insert("gateway_rev".into(), json!(snap.config.rev));
+        let mut lp = Map::new();
+        lp.insert("model".into(), json!(format!("openai/{}", d.served_id)));
+        lp.insert("api_base".into(), json!(base));
+        // shown as LiteLLM shows it (the drop itself happens in rewrite)
+        if !d.drop_params.is_empty() {
+            lp.insert("additional_drop_params".into(), json!(d.drop_params));
+        }
         data.push(json!({
             "model_name": d.name,
-            "litellm_params": {"model": format!("openai/{}", d.served_id), "api_base": base},
+            "litellm_params": lp,
             "model_info": mi,
         }));
     }

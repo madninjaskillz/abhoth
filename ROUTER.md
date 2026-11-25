@@ -676,3 +676,29 @@ responses were diffed per client shape (`shapes.py`).
 - Live comparison so far is GET-only (`/v1/models`, `/v1/model/info`,
   `/health/liveliness`). Chat traffic against DeepThought waits for the go-ahead, and only on
   live aliases.
+
+### 11.1 Live shadow on DeepThought (2026-11-25 16:15-16:26 UTC)
+
+The router runs in shadow on `:8020` (`deploy/router/compose.yaml`, image `local/abhoth-router:1`),
+with the importer following LiteLLM's live config (it picked up rev `789bfdb0f66c`,
+`merged-inkling-x2`). Nothing points at it. `replay.py live --chat` sent each client shape to
+LiteLLM and to the router: 19 shapes, about 4 requests a minute, only on allowlisted names that
+LiteLLM routes to the card pool (no relay names were configured; on-demand is off).
+
+- GETs: `/v1/models`, `/v1/model/info` (model_info) and `/health/liveliness` are identical.
+  `litellm_params` differs only where intended: `api_base` lists the cards instead of qfn-lb.
+  LiteLLM's 90+ cost/capability keys in `model_info` are not reproduced; no client reads them.
+- Chat: 18 of 19 shapes matched. The one difference, `extra-body-nested`
+  (`extra_body: {chat_template_kwargs: {enable_thinking: false}, reasoning_effort: high}`),
+  is the D-R6 fix: LiteLLM forwards both and ninfer answers 400 "reasoning effort conflicts
+  with enable_thinking"; the router resolves it and answers 200.
+- Fixed during the run: `litellm_params.additional_drop_params` now shows in model_info
+  (the drop itself already matched).
+- Latency: `GET /v1/models` median 15 ms on the router against 30 ms on LiteLLM. For chats, the
+  router-minus-LiteLLM median was +22 ms to the first byte and -10 ms in total (n=19, model
+  time dominates). The router's own log puts upstream time within about 20 ms (the network
+  round trip from the test client) of the client's total, so its overhead is a few ms.
+- One slow request (13.3 s on card B against 1.7 s via LiteLLM) was card B's own time to
+  headers while a bench was running on it. With placement off, the router balances only on its
+  own in-flight count; it cannot see bench traffic that reaches the cards directly. Turning on
+  lease-aware placement (or busy polling) before switch-over addresses that.

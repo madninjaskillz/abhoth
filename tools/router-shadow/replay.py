@@ -121,14 +121,23 @@ def wait_up(url, timeout=120):
     return False
 
 
-def call(base, body, headers):
+def call(base, body, headers, timing=None):
+    """POST a chat; `timing` (a dict) gets ttfb (first body byte) and total seconds."""
     req = urllib.request.Request(base + "/v1/chat/completions", json.dumps(body).encode(),
                                  {"Content-Type": "application/json", **headers})
+    t0 = time.perf_counter()
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            return r.status, dict(r.headers), r.read().decode("utf-8", "replace")
+            first = r.read(1)
+            t1 = time.perf_counter()
+            rest = r.read()
+            out = r.status, dict(r.headers), (first + rest).decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
-        return e.code, dict(e.headers), e.read().decode("utf-8", "replace")
+        t1 = time.perf_counter()
+        out = e.code, dict(e.headers), e.read().decode("utf-8", "replace")
+    if timing is not None:
+        timing["ttfb"], timing["total"] = t1 - t0, time.perf_counter() - t0
+    return out
 
 
 def diff(a, b, path=""):
@@ -274,18 +283,57 @@ def live(args):
         bad += bool(d)
         print(f"{'SAME' if not d else 'DIFF'}  GET {p} " + "; ".join(d[:10]))
     if args.chat:
-        models = json.load(urllib.request.urlopen(args.b + "/v1/model/info", timeout=10))["data"]
-        relay = {m["model_name"] for m in models if m["model_info"].get("live") is False}
-        for name, client, body, headers in SHAPES:
-            if body["model"] in relay or not re.match(r"^(qwen3\.[0-9].*|jarvis-brain|inkling-2-mini)$", body["model"]):
-                print(f"SKIP  {name} ({body['model']} is not a live alias)")
-                continue
-            sa, _, ta = call(args.a, body, headers)
-            sb, hb, tb = call(args.b, body, headers)
+        # Only names on the allowlist, and only while LiteLLM routes them to the card pool
+        # (qfn-lb :8092) rather than the on-demand relay: a relay name would switch a GPU.
+        allow = set(args.allow.split(","))
+        info = json.load(urllib.request.urlopen(args.a + "/v1/model/info", timeout=10))["data"]
+        live = {m["model_name"] for m in info
+                if ":8092/" in (m.get("litellm_params", {}).get("api_base") or "")}
+        ok = allow & live
+        print(f"live allowlisted names: {sorted(ok)}")
+        lat = []
+        for i, (name, client, body, headers) in enumerate(SHAPES):
+            body = dict(body)
+            if body["model"] not in ok:
+                if args.remap not in ok:
+                    print(f"SKIP  {name} ({body['model']} not allowed/live)")
+                    continue
+                body["model"] = args.remap
+            ta, tb = {}, {}
+            # alternate the order so neither side always gets a warm cache
+            if i % 2:
+                sb, hb, _ = call(args.b, body, headers, tb)
+                time.sleep(args.gap)
+                sa, _, _ = call(args.a, body, headers, ta)
+            else:
+                sa, _, _ = call(args.a, body, headers, ta)
+                time.sleep(args.gap)
+                sb, hb, _ = call(args.b, body, headers, tb)
             note = "" if sa == sb else f"status {sa} vs {sb}"
-            print(f"{'SAME' if not note else 'DIFF'}  {name:24s} {note} router served by "
-                  f"{hb.get('x-abhoth-card') or hb.get('X-Abhoth-Card')}")
+            bad += bool(note)
+            lat.append((name, ta, tb))
+            print(f"{'SAME' if not note else 'DIFF'}  {name:26s} {body['model']:22s} {note}"
+                  f" ttfb {ta['ttfb']*1000:7.0f} / {tb['ttfb']*1000:7.0f} ms"
+                  f"  total {ta['total']*1000:7.0f} / {tb['total']*1000:7.0f} ms"
+                  f"  card {hb.get('x-abhoth-card') or hb.get('X-Abhoth-Card')}", flush=True)
             time.sleep(args.pause)
+        if lat:
+            import statistics as st
+            d1 = [b["ttfb"] - a["ttfb"] for _, a, b in lat]
+            d2 = [b["total"] - a["total"] for _, a, b in lat]
+            print(f"router minus LiteLLM: ttfb median {st.median(d1)*1000:.0f} ms,"
+                  f" total median {st.median(d2)*1000:.0f} ms (n={len(lat)}; model time dominates)")
+    if args.probe:
+        # gateway-only overhead: GET /v1/models is answered by the gateway itself (no upstream)
+        for base, label in ((args.a, "LiteLLM"), (args.b, "router")):
+            ts = []
+            for _ in range(args.probe):
+                t0 = time.perf_counter()
+                urllib.request.urlopen(base + "/v1/models", timeout=10).read()
+                ts.append((time.perf_counter() - t0) * 1000)
+            ts.sort()
+            print(f"probe {label:8s} GET /v1/models: median {ts[len(ts)//2]:.1f} ms,"
+                  f" p90 {ts[int(len(ts)*.9)]:.1f} ms")
     return bad
 
 
@@ -302,6 +350,11 @@ def main():
     ap.add_argument("--b", help="live: router base URL")
     ap.add_argument("--chat", action="store_true")
     ap.add_argument("--pause", type=float, default=2.0)
+    ap.add_argument("--gap", type=float, default=1.0, help="live: seconds between the two sides")
+    ap.add_argument("--allow", default="inkling-2-mini,qwen3.8-27b,qwen3.8-27b-coder,"
+                    "qwen3.8-flash-next-a,qwen3.8-flash-next-b")
+    ap.add_argument("--remap", default="qwen3.8-27b", help="live: model for shapes naming others")
+    ap.add_argument("--probe", type=int, default=0, help="live: N unknown-model requests per side")
     args = ap.parse_args()
     if args.mode == "local":
         local(args)
