@@ -219,3 +219,31 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D33** New pinned deps: `hyper =1.13.0` (already in the tree; reason phrases in HTTP
   errors) and reqwest's `charset` feature (`encoding_rs` pinned at 0.8.34).
 - **D34** Connection errors are worded like .NET (OS message plus `(host:port)`).
+- **D25** Utility and Interactive tools share `orca-tools-utility`; Archive and Network are
+  separate crates. Optional tool groups are CLI Cargo features, all on by default (`archive`,
+  `network`, `mcp`, `lsp`, `image`). The registry keeps the C# order: plugin assemblies by file
+  name, tool classes by name within each.
+- **D26** `cd` changes the session's working directory (not the process's): its result carries
+  the new directory (`ToolResult::with_cwd_change`) and the session applies it. Tools that wait
+  on the user (ask_user) get no timeout. ask_user goes through a `UserPrompter` trait; without a
+  terminal it fails with the C# `--print` message.
+- **D27** `TaskStore` is one shared store per process (like the C# static class); the tool holds
+  an `Arc` so tests can use their own.
+- **D28** Archive uses `zip =9.8.2` (deflate only). Network runs the system `ping` and the OS
+  resolver (raw ICMP needs `unsafe`, which the workspace forbids).
+- **D29** `agent::tool_exposure` ports `ToolExposure.FilterAdvertised` (core list, extraTools,
+  extendedTools, mcp_* always, lsp_* with `lsp.enabled`, image tools with `imageGen.enabled`);
+  every tool stays executable. Tool schemas are rewritten on the wire as the C# OpenAI adapter
+  does (fixed key order, `additionalProperties: false`).
+- **D40** MCP uses the official SDK `rmcp =3.11.0` (protocol 2025-11-25); on Windows server
+  commands are wrapped in `cmd.exe /c` as in C#.
+- **D41** Image tools use `image =0.25.10` (PNG, JPEG, WebP, GIF, BMP only); format detected
+  from content; resize uses Catmull-Rom.
+- **D42** The C# LSP client sends PascalCase field names (`TextDocument`), so against a real
+  server hover/definition/diagnostics never work (a C# bug, left unchanged). Rust speaks
+  correct LSP; the cross-check compares only the LSP error paths.
+- **D43** MCP image content is base64-decoded in Rust (C# keeps the base64 text as bytes, a C#
+  bug).
+- **D44** Cross-check extensions: fake MCP/LSP server placeholders, binary input files,
+  pixel-hash image comparison, recorded images-API requests. The recorded-arguments rule for
+  the first of several calls applies only to calls C# starts early (read-only tools).
