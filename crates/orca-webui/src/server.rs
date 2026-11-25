@@ -99,6 +99,7 @@ pub struct AppState {
     pub previews: crate::files::preview::PreviewKeys,
     pub profiles: Option<Arc<orca_core::profiles::ProfileService>>,
     pub bench: Option<Arc<crate::bench::BenchRunner>>,
+    pub bench_queue: Option<Arc<crate::bench::BenchQueue>>,
     pub http: reqwest::Client,
     pub clones: crate::projects::clone::CloneService,
 }
@@ -181,6 +182,9 @@ impl WebUiServer {
         let bench = options.bench.clone().map(|b| {
             crate::bench::BenchRunner::new(b, projects.clone(), audit.clone(), profiles.clone())
         });
+        let bench_queue = bench.as_ref().map(|b| {
+            crate::bench::BenchQueue::new(b.clone(), b.options.dir.clone(), profiles.clone(), true)
+        });
         let clones = crate::projects::clone::CloneService::new(projects.clone());
         let state = Arc::new(AppState {
             options: options.clone(),
@@ -193,6 +197,7 @@ impl WebUiServer {
             previews: crate::files::preview::PreviewKeys::new(),
             profiles,
             bench,
+            bench_queue,
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(30))
                 .build()
@@ -270,6 +275,9 @@ impl WebUiServer {
             {
                 abort.abort();
             }
+        }
+        if let Some(q) = &self.state.bench_queue {
+            q.stop().await;
         }
         if let Some(b) = &self.state.bench {
             b.stop_all().await;
