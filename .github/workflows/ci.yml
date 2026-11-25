@@ -1,0 +1,81 @@
+# CI of the abhoth repo. This file sits in rust/.github in the openorca repo, where GitHub
+# ignores it; tools/split-abhoth-repo.sh moves it to the root of the abhoth repo (CUTOVER.md).
+# The jobs match openorca's `rust` / `rust-desktop` jobs, with the workspace at the root.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+  # The desktop app (feature `desktop`), built and unit-tested on each desktop OS (D114).
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libdbus-1-dev libwayland-dev
+
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Clippy
+        run: cargo clippy -p orca-cli --all-targets --features desktop --locked -- -D warnings
+
+      - name: Test
+        run: cargo test -p orca-cli --features desktop --locked --lib desktop
+
+  # The React client: typecheck, tests, and the checked-in dist must match a fresh build
+  # (the binaries embed client/dist).
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: dist is up to date
+        run: git diff --exit-code --stat -- dist

@@ -475,9 +475,18 @@ pub const IMAGE_GENERATION: &str = "Image Generation";
 pub const PERMISSIONS: &str = "Permissions";
 pub const SESSION: &str = "Session";
 pub const CONTEXT: &str = "Context";
+/// Rust-only (D113): the desktop app's window.
+pub const DESKTOP: &str = "Desktop";
 
 /// The sections, in order.
-pub const SECTIONS: [&str; 5] = [LLM_SERVER, IMAGE_GENERATION, PERMISSIONS, SESSION, CONTEXT];
+pub const SECTIONS: [&str; 6] = [
+    LLM_SERVER,
+    IMAGE_GENERATION,
+    PERMISSIONS,
+    SESSION,
+    CONTEXT,
+    DESKTOP,
+];
 
 /// The default-profile setting (the web shows it as a profile picker).
 pub const PROFILES_ACTIVE_KEY: &str = "profiles.active";
@@ -822,6 +831,16 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
         )
         .range(Some(0.0), None, false, "Must be >= 0")
         .blank("auto", Some(0.0)),
+        // ---- Desktop ----
+        SettingDef::new(
+            DESKTOP,
+            "desktop.closeToTray",
+            "Close to tray",
+            T::Bool,
+            "Desktop app: closing the window hides it to the tray and agents keep running (tray Quit exits). Off: closing quits.",
+            |c| V::Bool(c.desktop.close_to_tray),
+            |c, v| c.desktop.close_to_tray = v.as_bool(),
+        ),
     ]
 });
 
@@ -1043,6 +1062,8 @@ mod tests {
         config.lm_studio.temperature = 1.25;
         config.lm_studio.models = vec!["a".into(), "b".into()];
         config.context.reserve_tokens = 512;
+        // `desktop` is written only when it differs from the default.
+        config.desktop.close_to_tray = false;
         let json: Value = serde_json::from_str(&serialize_config(&config).unwrap()).unwrap();
         for s in all() {
             let node = s
@@ -1068,6 +1089,28 @@ mod tests {
         keys.dedup();
         assert_eq!(keys.len(), all().len());
         assert!(all().iter().all(|s| SECTIONS.contains(&s.section)));
+    }
+
+    #[test]
+    fn desktop_close_to_tray_reaches_config_json_only_when_turned_off() {
+        let mut config = OrcaConfig::default();
+        let text = crate::config::manager::serialize_config(&config).unwrap();
+        assert!(!text.contains("\"desktop\""), "{text}");
+        assert!(config.desktop.close_to_tray);
+        assert!(
+            apply(
+                &mut config,
+                "desktop.closeToTray",
+                Some(&json!(false)),
+                false,
+                None
+            )
+            .ok
+        );
+        let text = crate::config::manager::serialize_config(&config).unwrap();
+        let back: OrcaConfig = serde_json::from_str(&text).unwrap();
+        assert!(!back.desktop.close_to_tray);
+        assert!(back.extra.is_empty());
     }
 
     #[test]

@@ -50,7 +50,7 @@ git gc --quiet --prune=now
 
 echo "== checks"
 fail=0
-[ -f Cargo.toml ] && [ -d crates ] && [ -f client/dist/index.html ] || { echo "layout: unexpected tree"; fail=1; }
+[ -f Cargo.toml ] && [ -d crates ] && [ -f client/dist/index.html ] && [ -f .github/workflows/ci.yml ] || { echo "layout: unexpected tree"; fail=1; }
 commits=$(git rev-list --count HEAD)
 echo "commits: $commits"
 # No Anthropic key anywhere in the split history (every commit's diff, all refs).

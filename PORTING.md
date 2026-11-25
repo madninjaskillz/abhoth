@@ -543,6 +543,36 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   has no lookbehind) with the same rule: `Agent [A-KM-Z]` not inside a word. `/agents` with no
   single running agent opens the arrow-key picker (`AgentCommands.Pick`: running first, newest
   first, "← back"); its rows carry progress, activity and elapsed time as in C#.
+- **D113** Desktop close-to-tray (user decision 2026-11-25): closing the window hides it to the
+  tray by default; the host, sessions and agents keep running. Tray Show, a tray double-click, a
+  second launch, or (macOS) the Dock icon bring it back; tray Quit exits. `desktop.closeToTray`
+  (bool, default true; Rust-only `DesktopConfig`, written to config.json only when it differs
+  from the default, so a C# config stays byte-identical after a Rust save; a C# save drops it)
+  switches back to quit-on-close. It is read from config.json at each close, so the settings
+  page's change applies at once. Without a tray icon (none built, e.g. no StatusNotifier host on
+  Linux) closing quits. The settings schema has a "Desktop" section with it, so `/config` and the
+  web settings show it. No first-hide balloon: tray-icon 0.26 has no notification API and
+  `Shell_NotifyIcon` directly would need `unsafe`.
+- **D114** The desktop feature builds and unit-tests in CI on ubuntu-latest, macos-latest and
+  windows-latest (job `rust-desktop`). Ubuntu packages: `libwebkit2gtk-4.1-dev` (wry),
+  `libgtk-3-dev` and `libdbus-1-dev` (tao, which has its `dbus` default), `libwayland-dev` (rfd's
+  Wayland backend), `pkg-config`. No appindicator (the tray is ksni over zbus) and no `libxdo`
+  (muda without default features). On Linux the web view is built into tao's default GTK box
+  (`build_gtk`), so it works on Wayland and follows the window's size; `build` on a raw handle is
+  X11-only. Checked locally only by a Linux `cargo check` of a scratch crate with the same
+  wry/tao/tray-icon code and a stub pkg-config; orca-cli itself needs a Linux C toolchain
+  (aws-lc-sys), and macOS needs the Apple SDK (objc2-exception-helper).
+- **D115** Windows installer: a per-user MSI from WiX v5 (`dotnet tool install --global wix
+  --version 5.0.2`, no admin), `installer/abhoth.wxs` + `installer/build.ps1`. It installs
+  `abhoth.exe` and `abhoth-desktop.exe` to `%LOCALAPPDATA%\Programs\Abhoth`, a Start-menu
+  shortcut "Abhoth" to `abhoth-desktop.exe` with the mascot icon, and adds the folder to the
+  user PATH unless `ADDTOPATH=0`. Uninstall from Settings > Apps or `msiexec /x`; upgrades
+  replace older versions (MajorUpgrade, fixed UpgradeCode); the state home is not touched. No
+  dialogs (msiexec's progress only). Chosen over Inno Setup because WiX installs as a .NET tool
+  without admin and builds the same way in CI; pinned to 5.0.2 (newer majors add the Open
+  Source Maintenance Fee terms, which need checking before an upgrade). The
+  workflow `abhoth-installer.yml` (tag `abhoth-v*` or by hand) builds it and uploads the MSI
+  and its SHA-256 as an artifact. Not signed.
 - **D130** Abhoth no longer reads files outside `rust/` at build time, so the same tree builds
   in openorca and in the split abhoth repo. `orca-webui/build.rs` finds the client's `dist`
   (`../../client/dist` in the abhoth layout, then `../../../src/OpenOrca.WebUi/client/dist`;

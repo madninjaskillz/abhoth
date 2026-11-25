@@ -1,0 +1,47 @@
+# Copy for the abhoth repo (see ci.yml next to it); the workspace is at the root there.
+# The Abhoth Windows installer (installer/, PORTING.md D115): a per-user MSI with
+# abhoth.exe and abhoth-desktop.exe, built on a tag `abhoth-v*` or by hand, and uploaded as an
+# artifact. Signing and publishing a GitHub Release are not done here yet (CUTOVER.md).
+name: Abhoth installer
+
+on:
+  push:
+    tags:
+      - 'abhoth-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-msi:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 5.0.2
+
+      - name: Build the binaries and the MSI
+        shell: pwsh
+        run: ./installer/build.ps1
+
+      - name: SHA-256
+        shell: pwsh
+        run: |
+          Get-ChildItem target/installer/*.msi | ForEach-Object {
+            "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)" |
+              Out-File -Encoding ascii "$($_.FullName).sha256"
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: abhoth-windows-x64-msi
+          path: |
+            target/installer/*.msi
+            target/installer/*.sha256
+          if-no-files-found: error

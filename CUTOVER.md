@@ -71,7 +71,7 @@ rust/tools/split-abhoth-repo.sh <openorca clone> <empty dir> feature/rust-port -
   its CI, with paths relative to the root:
   - test, clippy and fmt on Linux and Windows;
   - the desktop feature on Windows, Linux and macOS;
-  - the installer job.
+  - the installer workflow `abhoth-installer.yml` (D115).
   `rust/.github/` holds the file so that the split carries it; it is inert in openorca.
 - **Client:** `npm ci && npm run build && npm test` in `client/`, failing when `client/dist`
   differs from what is checked in.
@@ -79,26 +79,35 @@ rust/tools/split-abhoth-repo.sh <openorca clone> <empty dir> feature/rust-port -
   weeks, a job (or a local run) checks out `openorca` at its last commit, builds the C#
   Release CLI and runs `orca-crosscheck --csharp <that exe>`. When openorca is archived, the
   scenarios are frozen as golden files from the last C# outputs, or the crate is dropped.
-- **Release workflow** (tag `v*`):
+- **Release workflow** (tag `abhoth-v*`):
   - builds `abhoth.exe` and `abhoth-desktop.exe` (with `desktop`) for
     x86_64-pc-windows-msvc, and `abhoth` (headless) for x86_64-unknown-linux-gnu;
-  - builds the Windows installer;
+  - builds the Windows MSI (today `abhoth-installer.yml` uploads it as a workflow
+    artifact only);
   - attaches everything to a GitHub Release with SHA-256 sums.
 - openorca's CI stays as it is until the repo is archived.
 
 ## 3. Release and install on Windows (user triggers the install)
 
-- **Artifacts:**
-  - `abhoth.exe` (console) and `abhoth-desktop.exe` (GUI, the shortcut target). Both embed
-    the web client and the icon.
-  - WebView2 is part of Windows 11, and `--desktop` says so clearly if it is missing.
-- **Installer:** see `rust/installer/` and the README. It is per-user (no admin), with a
-  Start-menu shortcut, the user PATH, and an uninstaller.
+- **Artifact:** `abhoth-<version>-x64.msi` (D115, `rust/installer/`), a per-user MSI built
+  with WiX v5 (`rust/installer/build.ps1`; CI: `abhoth-installer.yml`). It holds `abhoth.exe`
+  (console; embeds the web client) and `abhoth-desktop.exe` (no console, the shortcut target).
+  WebView2 is part of Windows 11, and `--desktop` says so clearly if it is missing.
+- **Install:** double-click the MSI, or `msiexec /i abhoth-<version>-x64.msi [ADDTOPATH=0]`.
+  - Files go to `%LOCALAPPDATA%\Programs\Abhoth`; the folder is added to the user PATH unless
+    `ADDTOPATH=0`; a Start-menu shortcut "Abhoth" runs `abhoth-desktop.exe` with the mascot icon.
+  - No admin rights are needed. A newer MSI replaces the older version in place.
+  - **Uninstall:** Settings > Apps, or `msiexec /x`. It removes the files, the shortcut and the
+    PATH entry, and leaves `~/.abhoth` alone.
+  - `winget`/Scoop manifests later.
+- **Not yet:** code signing (SmartScreen warns on an unsigned MSI) and attaching the MSI to a
+  GitHub Release.
 - **First run:** the exe copies `~/.openorca` to `~/.abhoth` once (D89). The C# install keeps
-  working side by side, because the binaries have different names and homes, so rolling back
-  is just running `openorca` again.
-- **Desktop:** closing the window hides it to the tray by default (agents keep running). Quit
-  is in the tray menu. A setting switches to quit-on-close.
+  working side by side because the binaries have different names and homes.
+- **Desktop:** closing the window hides it to the tray by default (agents keep running);
+  Quit is in the tray menu, and `desktop.closeToTray: false` switches to quit-on-close
+  (D113).
+- **Later:** signing, MSIX, and auto-update, only if they're wanted.
 
 ## 4. DeepThought web container (user triggers)
 

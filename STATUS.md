@@ -135,6 +135,17 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   a per-launch token, WebView2 window titled Abhoth with the mascot icon, single instance (a
   second launch focuses the first), tray Show/Quit, native folder dialog in the folder picker,
   external links in the system browser. Built, launched and screenshotted on Windows 11.
+- Close-to-tray (D113, user decision): closing hides the window to the tray by default and
+  agents keep running; `desktop.closeToTray: false` (settings, Desktop section) quits on close.
+  Checked on Windows 11: close hides, a second launch shows it again, with the setting off close
+  quits.
+- CI builds and unit-tests the desktop feature on Linux, macOS and Windows (job `rust-desktop`,
+  D114); on Linux the web view goes into tao's GTK box (Wayland and X11).
+- Windows installer (D115): a per-user MSI (WiX v5, `installer/build.ps1`), no admin: both
+  binaries, a Start-menu shortcut, optional user PATH, uninstall. Workflow
+  `abhoth-installer.yml` on `abhoth-v*` tags or by hand. Built locally (abhoth-0.15.0-x64.msi,
+  25 MB); a silent per-user install and uninstall on Windows 11 put in and took out the files,
+  shortcut (with icon), PATH entry and HKCU keys.
 
 ### Phase 6: parity sweep, coverage (2026-11-25, D120-D128)
 
@@ -156,7 +167,7 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 1. Phase 6: parity sweep (cross-check coverage, `rust-port/sweep`); bench parity run
    (user-scheduled).
 2. An agent footer in the REPL.
-3. Phase 7 follow-ups: close-to-tray setting, Linux/macOS desktop builds in CI, installer.
+3. Phase 7 follow-ups: code signing for the MSI; a GitHub Release with the MSI (CUTOVER.md).
 
 ### Live smoke 2026-11-25 (third run)
 
@@ -208,7 +219,10 @@ worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
 - Anthropic: a turn with several signed thinking blocks keeps no signature (its reasoning is not
   sent back, D92).
 - Bench runs: kit timeouts kill only the process.
-- Desktop: closing the window quits (no close-to-tray yet); CI builds it on Windows only.
+- Desktop: the Linux and macOS builds are CI-only (never run with a window); no first-hide
+  tray notification (D113); the MSI is unsigned, so SmartScreen warns.
+- Desktop with no model configured (fresh install): the host refuses to start ("no model
+  configured") and `abhoth-desktop.exe`, having no console, shows nothing.
 - grep: files in sorted order; regex error texts differ from .NET (lookaround/backreferences work, D112).
 - C# REPL bugs kept out of the cross-check (D127): custom markdown commands ("Unknown command" in
   C#), `/memory <unknown>` (crashes C#), `/retry` on a second model (C# drops the prompt).
