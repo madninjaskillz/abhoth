@@ -197,3 +197,25 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   nothing. Usage reported for a history changed in place since the request is discarded.
 - **D19** Session files keep the C# JSON shape (read and written both ways); `--print` does not
   auto-save, as in C#.
+- **D20** The client's stop hook is a per-chunk `UpdateEnd` event with a Stop return
+  (`stream_with_control`); `agent::streaming` ports `StreamingResponseProcessor` (runaway cancel,
+  per-step reasoning cap, `ThinkTagFilter`, tool-less retry of a content-free stream).
+- **D21** A stream that dies mid-response returns `ChatError::Interrupted` carrying the partial
+  reply; tool calls from an unfinished stream are dropped, as in C#.
+- **D22** "Empty reply" means no content items at all (usage included), matching C#; the
+  tool-less retry ignores the retry's usage, as C# does.
+- **D23** The fake server records non-chat requests (compared by the cross-check) and can stream
+  reasoning in chunks, open with a null-content role chunk, and die mid-stream. Runaway scenarios
+  use the null role chunk (C# counts the usual empty first chunk as text).
+- **D24** `ServerIdentity` keeps one cache entry per server with a single in-flight probe; the
+  startup probes (`AgentSession.startup_probes`) are off for library use and on in the CLI.
+- **D30** Git and GitHub tools share `orca-tools-git`; `github` has a `program` field (default
+  `gh`) so tests can point it at a missing program.
+- **D31** Child command lines are built as C# builds them: on Windows the argument string is
+  passed through unchanged, elsewhere it is split with .NET's rules
+  (`orca_tools_common::process`).
+- **D32** HTML-to-text is a direct port of the C# regex code; the script/style stripper (a
+  backreference in C#) is hand-written; `HtmlDecode` uses the 253-entity table.
+- **D33** New pinned deps: `hyper =1.13.0` (already in the tree; reason phrases in HTTP
+  errors) and reqwest's `charset` feature (`encoding_rs` pinned at 0.8.34).
+- **D34** Connection errors are worded like .NET (OS message plus `(host:port)`).
