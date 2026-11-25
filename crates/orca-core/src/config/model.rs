@@ -43,6 +43,10 @@ pub struct OrcaConfig {
     pub pi: PiProfileConfig,
     pub bridges: BridgesConfig,
     pub profiles: ProfilesConfig,
+    /// Rust-only (`abhoth --desktop`, D113): written only when it differs from the default, so a
+    /// config.json the C# build wrote stays byte-identical after a Rust save.
+    #[serde(skip_serializing_if = "DesktopConfig::is_default")]
+    pub desktop: DesktopConfig,
 
     /// Rust-only: top-level keys this port doesn't know, kept as they were.
     #[serde(flatten)]
@@ -86,6 +90,7 @@ impl Default for OrcaConfig {
             pi: PiProfileConfig::default(),
             bridges: BridgesConfig::default(),
             profiles: ProfilesConfig::default(),
+            desktop: DesktopConfig::default(),
             extra: Map::new(),
             active_profile: None,
             demo_mode: false,
@@ -850,6 +855,29 @@ impl AgentReasoningConfig {
             Some(e) if !e.trim().is_empty() && !e.trim().eq_ignore_ascii_case("off") => Some(e),
             _ => Some(Self::CACHE_STABLE_EFFORT.into()),
         }
+    }
+}
+
+/// The desktop app's settings (`desktop` in config.json; Rust-only, D113).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DesktopConfig {
+    /// Closing the window hides it to the tray instead of quitting; agents keep running and the
+    /// tray's Quit exits. On by default (user decision, D113); off: closing quits.
+    pub close_to_tray: bool,
+}
+
+impl Default for DesktopConfig {
+    fn default() -> Self {
+        Self {
+            close_to_tray: true,
+        }
+    }
+}
+
+impl DesktopConfig {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
     }
 }
 

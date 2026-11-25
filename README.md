@@ -19,6 +19,28 @@ abhoth --desktop                     # the web UI in its own window (feature "de
 abhoth --help                        # the common options
 ```
 
+Closing the desktop window hides it to the tray and agents keep running; tray Quit exits. Set
+`desktop.closeToTray` to false (settings, Desktop section) to quit on close instead.
+
+## Windows installer
+
+A per-user MSI (no admin rights): it installs `abhoth.exe` and `abhoth-desktop.exe` to
+`%LOCALAPPDATA%\Programs\Abhoth`, adds an "Abhoth" Start-menu shortcut to the desktop app, and
+puts the folder on the user PATH.
+
+```powershell
+dotnet tool install --global wix --version 5.0.2   # once; per-user
+pwsh rust/installer/build.ps1                     # -> rust/target/installer/abhoth-<version>-x64.msi
+msiexec /i rust\target\installer\abhoth-0.15.0-x64.msi              # or double-click it
+msiexec /i rust\target\installer\abhoth-0.15.0-x64.msi ADDTOPATH=0  # without the PATH entry
+msiexec /x rust\target\installer\abhoth-0.15.0-x64.msi              # uninstall (or Settings > Apps)
+```
+
+`build.ps1 -NoCargo` packages the binaries already in `target\release`. The workflow
+`.github/workflows/abhoth-installer.yml` builds the MSI on a tag `abhoth-v*` or when run by hand
+and uploads it as an artifact. The state home (`~/.abhoth`) is never touched by install or
+uninstall. The MSI is not signed yet, so SmartScreen may warn.
+
 ## Name, state and compatibility
 
 - **Binary and product name:** `abhoth` / "Abhoth" (`orca_core::brand`). The TUI header,

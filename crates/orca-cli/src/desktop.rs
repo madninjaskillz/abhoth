@@ -3,6 +3,8 @@
 //! main thread owns the window's event loop (tao) and the webview (wry: WebView2 on Windows). The
 //! window is just another client of the same HTTP/websocket API. One instance per state home: a
 //! second launch asks the first to show its window and exits. A tray icon offers Show and Quit.
+//! Closing the window hides it to the tray (agents keep running; tray Quit exits), or quits with
+//! `desktop.closeToTray` off (D113).
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
@@ -31,6 +33,39 @@ enum UserEvent {
     Focus,
     Menu(MenuId),
     TrayClick,
+}
+
+/// What closing the window does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloseAction {
+    /// Hide the window; the tray's Show (or a second launch) brings it back.
+    Hide,
+    /// Quit the app.
+    Quit,
+}
+
+/// Closing the window: hide it to the tray when `desktop.closeToTray` is on (the default) and
+/// there is a tray icon to bring it back from; otherwise quit.
+pub fn on_close_requested(close_to_tray: bool, has_tray: bool) -> CloseAction {
+    if close_to_tray && has_tray {
+        CloseAction::Hide
+    } else {
+        CloseAction::Quit
+    }
+}
+
+/// `desktop.closeToTray` from `<home>/config.json`, read when the window is closed so a change in
+/// the settings applies at once. A missing or unreadable file means the default (on); the file
+/// is never written here.
+pub fn close_to_tray(home: &Path) -> bool {
+    let default = orca_core::config::DesktopConfig::default().close_to_tray;
+    let Ok(bytes) = std::fs::read(home.join("config.json")) else {
+        return default;
+    };
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
+    serde_json::from_slice::<orca_core::config::OrcaConfig>(bytes)
+        .map(|c| c.desktop.close_to_tray)
+        .unwrap_or(default)
 }
 
 /// The arguments for the in-process host: `--desktop` becomes a loopback `--hostui` on a free
@@ -310,7 +345,7 @@ pub fn run(raw: Vec<String>) -> i32 {
             }
             Event::UserEvent(UserEvent::Ready(url)) => {
                 let origin = url.split("/?").next().unwrap_or(&url).to_string();
-                let built = wry::WebViewBuilder::new_with_web_context(&mut web_context)
+                let builder = wry::WebViewBuilder::new_with_web_context(&mut web_context)
                     .with_url(&url)
                     .with_navigation_handler(move |to: String| {
                         // Links out of the app open in the system browser.
@@ -320,8 +355,20 @@ pub fn run(raw: Vec<String>) -> i32 {
                             let _ = crate::hostui::open_browser(&to);
                             false
                         }
-                    })
-                    .build(&window);
+                    });
+                // Linux: into tao's GTK box, so it works on Wayland as well as X11 and follows
+                // the window's size (`build` on a raw handle is X11-only and doesn't resize).
+                #[cfg(target_os = "linux")]
+                let built = {
+                    use tao::platform::unix::WindowExtUnix;
+                    use wry::WebViewBuilderExtUnix;
+                    match window.default_vbox() {
+                        Some(vbox) => builder.build_gtk(vbox),
+                        None => builder.build(&window),
+                    }
+                };
+                #[cfg(not(target_os = "linux"))]
+                let built = builder.build(&window);
                 match built {
                     Ok(v) => webview = Some(v),
                     Err(e) => {
@@ -338,7 +385,13 @@ pub fn run(raw: Vec<String>) -> i32 {
                 let code = quit(&mut stop, &mut host, &mut lock);
                 std::process::exit(if code == 0 { 1 } else { code });
             }
-            Event::UserEvent(UserEvent::Focus) | Event::UserEvent(UserEvent::TrayClick) => {
+            // macOS: clicking the Dock icon while the window is hidden in the tray.
+            Event::Reopen {
+                has_visible_windows: false,
+                ..
+            }
+            | Event::UserEvent(UserEvent::Focus)
+            | Event::UserEvent(UserEvent::TrayClick) => {
                 window.set_visible(true);
                 window.set_minimized(false);
                 window.set_focus();
@@ -359,14 +412,16 @@ pub fn run(raw: Vec<String>) -> i32 {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
-            } => {
-                // Closing the window quits (PORTING.md: close-to-tray is not configurable yet).
-                drop(webview.take());
-                drop(tray.take());
-                let code = quit(&mut stop, &mut host, &mut lock);
-                *control_flow = ControlFlow::Exit;
-                finish(code);
-            }
+            } => match on_close_requested(close_to_tray(&home), tray.is_some()) {
+                CloseAction::Hide => window.set_visible(false),
+                CloseAction::Quit => {
+                    drop(webview.take());
+                    drop(tray.take());
+                    let code = quit(&mut stop, &mut host, &mut lock);
+                    *control_flow = ControlFlow::Exit;
+                    finish(code);
+                }
+            },
             _ => {}
         }
     })
@@ -427,6 +482,34 @@ mod tests {
         )
         .unwrap();
         assert!(!signal_running(home.path()));
+    }
+
+    #[test]
+    fn closing_hides_to_the_tray_only_when_asked_and_a_tray_exists() {
+        assert_eq!(on_close_requested(false, true), CloseAction::Quit);
+        assert_eq!(on_close_requested(false, false), CloseAction::Quit);
+        assert_eq!(on_close_requested(true, true), CloseAction::Hide);
+        // No tray icon (e.g. no StatusNotifier host on Linux): hiding would strand the window.
+        assert_eq!(on_close_requested(true, false), CloseAction::Quit);
+    }
+
+    #[test]
+    fn close_to_tray_is_read_from_config_json_and_defaults_to_on() {
+        let home = tempfile::tempdir().unwrap();
+        assert!(close_to_tray(home.path()));
+        let path = home.path().join("config.json");
+        std::fs::write(&path, r#"{"lmStudio":{}}"#).unwrap();
+        assert!(close_to_tray(home.path()));
+        std::fs::write(&path, r#"{"desktop":{"closeToTray":false}}"#).unwrap();
+        assert!(!close_to_tray(home.path()));
+        std::fs::write(&path, b"\xEF\xBB\xBF{\"desktop\":{\"closeToTray\":false}}").unwrap();
+        assert!(!close_to_tray(home.path()));
+        std::fs::write(&path, r#"{"desktop":{"closeToTray":true}}"#).unwrap();
+        assert!(close_to_tray(home.path()));
+        std::fs::write(&path, "not json").unwrap();
+        assert!(close_to_tray(home.path()));
+        // Reading never creates or rewrites the file.
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "not json");
     }
 
     #[test]

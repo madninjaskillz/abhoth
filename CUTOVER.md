@@ -39,29 +39,37 @@ Before anything else:
 - **Add on merge:**
   - **Cross-check:** a job on `windows-latest` that builds the C# Release CLI and runs
     `orca-crosscheck`. It needs no network: the scenarios use fake servers.
-  - **Desktop:** `cargo build -p orca-cli --features desktop` on Windows, and on Linux with the
-    WebKitGTK dev packages installed. Build only, no window.
+  - **Desktop:** done (D114): the `rust-desktop` job runs clippy and the desktop unit tests
+    with `--features desktop` on Windows, Linux (WebKitGTK/GTK/dbus dev packages) and macOS.
+    No window is opened.
   - **Client:** `npm ci && npm run build && npm test`, failing when `client/dist` differs from
     what is checked in.
 - **Release workflow** (tag `abhoth-v*`):
-  - builds `abhoth.exe` (with `desktop`) for x86_64-pc-windows-msvc, and `abhoth` (headless)
-    for x86_64-unknown-linux-gnu;
+  - Windows: done in part (D115). `abhoth-installer.yml` builds `abhoth.exe` and
+    `abhoth-desktop.exe` (`--release --features desktop`) and the MSI, and uploads the MSI and
+    its SHA-256 as a workflow artifact. Still to add: attaching it to a GitHub Release.
+  - builds `abhoth` (headless) for x86_64-unknown-linux-gnu;
   - attaches them to a GitHub Release with SHA-256 sums.
 - **Retire** the .NET jobs in step 6, not before.
 
 ## 3. Release and install on Windows
 
-- **Artifact:** a single `abhoth.exe`. It embeds the web client and the icon. WebView2 is
-  part of Windows 11, and `--desktop` says so clearly if it is missing.
-- **Install:** `winget`/Scoop manifests later. First:
-  - a zip of the exe, plus `install.ps1`;
-  - the script copies the exe to `%LOCALAPPDATA%\Programs\Abhoth`, adds that folder to the
-    user PATH, and creates a Start-menu shortcut that runs `abhoth.exe --desktop`.
-  - No admin rights are needed.
+- **Artifact:** `abhoth-<version>-x64.msi` (D115, `rust/installer/`), a per-user MSI built
+  with WiX v5 (`rust/installer/build.ps1`; CI: `abhoth-installer.yml`). It holds `abhoth.exe`
+  (console; embeds the web client) and `abhoth-desktop.exe` (no console, the shortcut target).
+  WebView2 is part of Windows 11, and `--desktop` says so clearly if it is missing.
+- **Install:** double-click the MSI, or `msiexec /i abhoth-<version>-x64.msi [ADDTOPATH=0]`.
+  - Files go to `%LOCALAPPDATA%\Programs\Abhoth`; the folder is added to the user PATH unless
+    `ADDTOPATH=0`; a Start-menu shortcut "Abhoth" runs `abhoth-desktop.exe` with the mascot icon.
+  - No admin rights are needed. A newer MSI replaces the older version in place.
+  - **Uninstall:** Settings > Apps, or `msiexec /x`. It removes the files, the shortcut and the
+    PATH entry, and leaves `~/.abhoth` alone.
+  - `winget`/Scoop manifests later.
+- **Not yet:** code signing (SmartScreen warns on an unsigned MSI) and attaching the MSI to a
+  GitHub Release.
 - **First run:** the exe copies `~/.openorca` to `~/.abhoth` once (D89). The C# install keeps
   working side by side because the binaries have different names and homes.
-- **Later:** an MSI or MSIX with signing, and auto-update, only if they're wanted. That's
-  where Tauri's bundler would earn its place.
+- **Later:** signing, MSIX, and auto-update, only if they're wanted.
 
 ## 4. DeepThought web container (OK needed)
 
