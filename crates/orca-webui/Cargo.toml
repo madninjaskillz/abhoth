@@ -1,0 +1,39 @@
+[package]
+name = "orca-webui"
+description = "The web UI host (port of OpenOrca.WebUi): axum server, the websocket hub, projects, files, git, terminal, bench."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+orca-abstractions.workspace = true
+orca-core.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+axum = { workspace = true, features = ["ws", "query", "multipart"] }
+futures-util.workspace = true
+getrandom.workspace = true
+mime_guess.workspace = true
+percent-encoding.workspace = true
+portable-pty.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+rust-embed.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+orca-testkit.workspace = true
+orca-tools-fs.workspace = true
+tokio-tungstenite.workspace = true
+
+[lints]
+workspace = true
