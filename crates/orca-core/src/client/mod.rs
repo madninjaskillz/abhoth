@@ -2,13 +2,16 @@
 
 pub mod context_overflow;
 pub mod context_window_detector;
+pub mod max_tokens_negotiator;
 pub mod openai;
 pub mod request_parameters;
 pub mod served_models;
+pub mod server_identity;
 pub mod types;
 
 pub use openai::{ChatError, ClientSettings, OpenAiClient, SseParser};
 pub use served_models::{ServedModel, ServedModels};
+pub use server_identity::{ServerIdentity, ServerInfo, ServerKind};
 pub use types::*;
 
 use serde_json::Value;

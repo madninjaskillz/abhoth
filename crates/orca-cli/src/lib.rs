@@ -99,6 +99,9 @@ pub async fn run_single_prompt_in_session(
     let registry = build_registry(&config);
     let tool_hooks = config_dir.map(|d| orca_core::agent::ToolHooks::from_config(&config, d));
     let mut session = AgentSession::new(config, client, registry, ToolContext::new(cwd));
+    // C# runs the startup probes (max_tokens negotiation, context-window detection) before
+    // the first turn.
+    session.startup_probes = true;
     if let Some(hooks) = tool_hooks {
         session.tool_hooks = hooks;
     }

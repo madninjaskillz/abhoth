@@ -10,7 +10,9 @@ use serde_json::{Value, json};
 
 use super::f32_json;
 use super::served_models::{self, ServedModels};
-use super::types::{ChatMessage, ChatOptions, ChatResponse, StreamEvent, ToolCall, Usage};
+use super::types::{
+    ChatMessage, ChatOptions, ChatResponse, StreamControl, StreamEvent, ToolCall, Usage,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChatError {
@@ -30,6 +32,27 @@ pub enum ChatError {
     Protocol(String),
     #[error("no model configured: set lmStudio.models or pass a model")]
     NoModel,
+    /// An error message the server gave some other way (the server error probe).
+    #[error("{0}")]
+    Server(String),
+    /// The stream broke after it had started (the connection dropped, a chunk could not be
+    /// read). `partial` holds what arrived before, without tool calls: the C# client only
+    /// surfaces those once the stream has ended.
+    #[error("{message}")]
+    Interrupted {
+        message: String,
+        partial: Box<ChatResponse>,
+    },
+}
+
+impl ChatError {
+    /// The HTTP status of a rejected request, if that is what this is.
+    pub fn status(&self) -> Option<u16> {
+        match self {
+            ChatError::Http { status, .. } => Some(*status),
+            _ => None,
+        }
+    }
 }
 
 /// Settings for one OpenAI-compatible endpoint.
@@ -237,33 +260,71 @@ impl OpenAiClient {
         options: &ChatOptions,
         on_event: &mut (dyn FnMut(StreamEvent) + Send),
     ) -> Result<ChatResponse, ChatError> {
+        let mut control = |e: StreamEvent| {
+            on_event(e);
+            StreamControl::Continue
+        };
+        self.stream_with_control(actor, messages, options, &mut control)
+            .await
+    }
+
+    /// [`Self::stream`] with a stop hook: when `on_event` returns [`StreamControl::Stop`] the
+    /// stream is dropped (ending the request) and the response so far comes back with
+    /// `stopped` set. An error after the stream started is [`ChatError::Interrupted`] with the
+    /// partial response; an idle gap stays [`ChatError::IdleTimeout`].
+    pub async fn stream_with_control(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+    ) -> Result<ChatResponse, ChatError> {
         let body = self.build_body(messages, options, true)?;
         let requested = body["model"].as_str().map(str::to_string);
         self.served.begin(actor);
         let response = self.send(&body).await?;
         self.note_header(actor, &response);
 
-        let url = self.endpoint();
         let idle = self.settings.idle_timeout;
         let mut bytes = response.bytes_stream();
         let mut parser = SseParser::default();
         let mut acc = Accumulator::default();
         let mut served_done = false;
+        let mut stopped = false;
+        let mut failure: Option<String> = None;
 
         'outer: loop {
             let next = tokio::time::timeout(idle, bytes.next())
                 .await
                 .map_err(|_| ChatError::IdleTimeout(idle))?;
             let Some(chunk) = next else { break };
-            let chunk = chunk.map_err(|source| ChatError::Transport {
-                url: url.clone(),
-                source,
-            })?;
+            let chunk = match chunk {
+                Ok(c) => c,
+                Err(e) => {
+                    // No URL in the message: C# shows the transport's own words, and a port
+                    // number must not look like a status code to the retry classifier.
+                    failure = Some(format!(
+                        "The response ended prematurely: {}",
+                        error_chain(&e.without_url())
+                    ));
+                    break;
+                }
+            };
             for data in parser.push(&chunk) {
                 if data.trim() == "[DONE]" {
                     break 'outer;
                 }
-                acc.apply(&data, on_event)?;
+                match acc.apply(&data, on_event) {
+                    Ok(StreamControl::Continue) => {}
+                    Ok(StreamControl::Stop) => {
+                        stopped = true;
+                        break 'outer;
+                    }
+                    Err(e) => {
+                        failure = Some(e.to_string());
+                        break 'outer;
+                    }
+                }
                 if !served_done && acc.model.is_some() {
                     served_done = true;
                     self.served.complete(
@@ -275,11 +336,26 @@ impl OpenAiClient {
                 }
             }
         }
-        for data in parser.finish() {
-            if data.trim() != "[DONE]" {
-                acc.apply(&data, on_event)?;
+        if !stopped && failure.is_none() {
+            for data in parser.finish() {
+                if data.trim() == "[DONE]" {
+                    continue;
+                }
+                match acc.apply(&data, on_event) {
+                    Ok(StreamControl::Continue) => {}
+                    Ok(StreamControl::Stop) => {
+                        stopped = true;
+                        break;
+                    }
+                    Err(e) => {
+                        failure = Some(e.to_string());
+                        break;
+                    }
+                }
             }
         }
+        // Dropping the byte stream closes the connection, which ends a stopped request.
+        drop(bytes);
         let served = if served_done {
             self.served.for_actor(actor).and_then(|s| s.served)
         } else {
@@ -287,7 +363,17 @@ impl OpenAiClient {
                 .complete(actor, requested.as_deref(), None, self.settings.direct)
                 .served
         };
-        let mut out = acc.finish();
+        if let Some(message) = failure {
+            let mut partial = acc.finish(false);
+            partial.served_model = served;
+            return Err(ChatError::Interrupted {
+                message,
+                partial: Box::new(partial),
+            });
+        }
+        // A stopped stream never ended: like the C# client, its tool calls are not surfaced.
+        let mut out = acc.finish(!stopped);
+        out.stopped = stopped;
         out.served_model = served;
         Ok(out)
     }
@@ -328,6 +414,21 @@ impl OpenAiClient {
             }
         }
     }
+}
+
+/// An error with its sources, ": "-joined.
+fn error_chain(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut out = e.to_string();
+    let mut cur = e.source();
+    while let Some(s) = cur {
+        let text = s.to_string();
+        if !out.contains(&text) {
+            out.push_str(": ");
+            out.push_str(&text);
+        }
+        cur = s.source();
+    }
+    out
 }
 
 fn parse_usage(u: &Value) -> Usage {
@@ -406,32 +507,57 @@ struct Accumulator {
     usage: Usage,
     model: Option<String>,
     leading_empty_part: bool,
+    content_items: usize,
+    text_parts: usize,
+    updates: usize,
 }
 
 impl Accumulator {
+    /// Apply one SSE data chunk; the events go to `on_event`, ending with
+    /// [`StreamEvent::UpdateEnd`]. Stops early when `on_event` says so.
     fn apply(
         &mut self,
         data: &str,
-        on_event: &mut (dyn FnMut(StreamEvent) + Send),
-    ) -> Result<(), ChatError> {
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+    ) -> Result<StreamControl, ChatError> {
         let v: Value =
             serde_json::from_str(data).map_err(|e| ChatError::Protocol(format!("{e}: {data}")))?;
         if let Some(err) = v.get("error") {
             return Err(ChatError::Protocol(format!("error in stream: {err}")));
         }
+        self.updates += 1;
+        let mut stop = false;
+        let mut emit = |e: StreamEvent| {
+            if on_event(e) == StreamControl::Stop {
+                stop = true;
+            }
+        };
         if self.model.is_none()
             && let Some(m) = v["model"].as_str().filter(|m| !m.is_empty())
         {
             self.model = Some(m.to_string());
         }
+        // Microsoft.Extensions.AI reports an update's text and reasoning before its usage.
+        let mut tool_call_delta = false;
+        if let Some(choice) = v["choices"].as_array().and_then(|c| c.first()) {
+            tool_call_delta = self.apply_choice(choice, &mut emit);
+        }
         if v.get("usage").is_some_and(|u| u.is_object()) {
             let usage = parse_usage(&v["usage"]);
             self.usage = usage;
-            on_event(StreamEvent::Usage(usage));
+            self.content_items += 1;
+            emit(StreamEvent::Usage(usage));
         }
-        let Some(choice) = v["choices"].as_array().and_then(|c| c.first()) else {
-            return Ok(());
-        };
+        emit(StreamEvent::UpdateEnd { tool_call_delta });
+        Ok(if stop {
+            StreamControl::Stop
+        } else {
+            StreamControl::Continue
+        })
+    }
+
+    /// One choice's delta; true when it carried a tool-call fragment.
+    fn apply_choice(&mut self, choice: &Value, emit: &mut dyn FnMut(StreamEvent)) -> bool {
         if let Some(reason) = choice["finish_reason"].as_str() {
             self.finish_reason = Some(reason.to_string());
         }
@@ -441,16 +567,22 @@ impl Accumulator {
             .or(delta["reasoning"].as_str());
         if let Some(r) = reasoning.filter(|r| !r.is_empty()) {
             self.reasoning.push_str(r);
-            on_event(StreamEvent::Reasoning(r.to_string()));
+            self.content_items += 1;
+            emit(StreamEvent::Reasoning(r.to_string()));
         }
         if delta["content"].as_str() == Some("") && self.text.is_empty() {
             self.leading_empty_part = true;
         }
-        if let Some(t) = delta["content"].as_str().filter(|t| !t.is_empty()) {
+        // Every content string is a text item in the C# client, an empty one too.
+        if let Some(t) = delta["content"].as_str() {
             self.text.push_str(t);
-            on_event(StreamEvent::Text(t.to_string()));
+            self.content_items += 1;
+            self.text_parts += 1;
+            emit(StreamEvent::Text(t.to_string()));
         }
+        let mut tool_call_delta = false;
         if let Some(calls) = delta["tool_calls"].as_array() {
+            tool_call_delta = !calls.is_empty();
             for (pos, c) in calls.iter().enumerate() {
                 let index = c["index"].as_u64().map(|i| i as usize).unwrap_or(pos);
                 let entry = self.calls.entry(index).or_default();
@@ -461,7 +593,7 @@ impl Accumulator {
                     let first = entry.name.is_empty();
                     entry.name.push_str(name);
                     if first {
-                        on_event(StreamEvent::ToolCallStarted {
+                        emit(StreamEvent::ToolCallStarted {
                             index,
                             name: name.to_string(),
                         });
@@ -472,14 +604,16 @@ impl Accumulator {
                 }
             }
         }
-        Ok(())
+        tool_call_delta
     }
 
-    fn finish(self) -> ChatResponse {
-        let tool_calls = self
+    /// The assembled response. Tool calls only when the stream `completed` (the C# client
+    /// surfaces them once it has seen the end of the stream).
+    fn finish(self, completed: bool) -> ChatResponse {
+        let tool_calls: Vec<ToolCall> = self
             .calls
             .into_iter()
-            .filter(|(_, c)| !c.name.is_empty())
+            .filter(|(_, c)| completed && !c.name.is_empty())
             .map(|(i, c)| ToolCall {
                 id: if c.id.is_empty() {
                     format!("call_{i}")
@@ -493,12 +627,16 @@ impl Accumulator {
         ChatResponse {
             text: self.text,
             reasoning: self.reasoning,
+            content_items: self.content_items + tool_calls.len(),
             tool_calls,
             finish_reason: self.finish_reason,
             usage: self.usage,
             model: self.model,
             served_model: None,
             leading_empty_part: self.leading_empty_part,
+            text_parts: self.text_parts,
+            updates: self.updates,
+            stopped: false,
         }
     }
 }
@@ -522,7 +660,10 @@ mod tests {
     fn accumulator_joins_tool_call_fragments_by_index() {
         let mut acc = Accumulator::default();
         let mut events = Vec::new();
-        let mut sink = |e: StreamEvent| events.push(e);
+        let mut sink = |e: StreamEvent| {
+            events.push(e);
+            StreamControl::Continue
+        };
         for d in [
             r#"{"model":"m","choices":[{"index":0,"delta":{"reasoning_content":"think"}}]}"#,
             r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"b","function":{"name":"glob","arguments":"{\"pat"}}]}}]}"#,
@@ -533,7 +674,7 @@ mod tests {
         ] {
             acc.apply(d, &mut sink).unwrap();
         }
-        let r = acc.finish();
+        let r = acc.finish(true);
         assert_eq!(r.reasoning, "think");
         assert_eq!(r.tool_calls.len(), 2);
         assert_eq!(r.tool_calls[0].name, "read_file");

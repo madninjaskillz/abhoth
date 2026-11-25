@@ -5,6 +5,7 @@
 //!
 //! Lengths and limits count UTF-16 units, as C# `string.Length` does.
 
+pub mod adaptive_reasoning;
 pub mod compaction;
 pub mod compaction_prompts;
 pub mod compactor;
@@ -13,6 +14,7 @@ pub mod planner;
 pub mod reasoning_cap;
 pub mod repeat_call_note;
 
+pub use adaptive_reasoning::AdaptiveReasoning;
 pub use compaction::{
     CompactionCutPoint, CompactionFileOps, CompactionPreparation, CompactionSettings,
 };

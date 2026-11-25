@@ -186,6 +186,20 @@ pub enum StreamEvent {
         name: String,
     },
     Usage(Usage),
+    /// One streamed update (an SSE chunk) has been fully reported. `tool_call_delta`: the chunk
+    /// carried a tool-call fragment (the C# client only surfaces tool calls at the end of the
+    /// stream, but its reasoning cap counts the first fragment as the answer starting).
+    UpdateEnd {
+        tool_call_delta: bool,
+    },
+}
+
+/// What a streaming caller wants after an event: go on, or stop the request now (the stream
+/// is dropped, which ends the request; the response so far is returned with `stopped` set).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamControl {
+    Continue,
+    Stop,
 }
 
 /// The whole response, assembled from the stream.
@@ -202,6 +216,16 @@ pub struct ChatResponse {
     pub served_model: Option<String>,
     /// See [`ChatMessage::leading_empty_part`].
     pub leading_empty_part: bool,
+    /// Content items as Microsoft.Extensions.AI reports them: each `content` string (an empty
+    /// one too), each reasoning piece, each usage report and each finished tool call. A stream
+    /// with none is the C# client's "empty response".
+    pub content_items: usize,
+    /// Text content items (each `content` string, empty ones included).
+    pub text_parts: usize,
+    /// Streamed updates (SSE chunks with data) received.
+    pub updates: usize,
+    /// The caller stopped the stream ([`StreamControl::Stop`]).
+    pub stopped: bool,
 }
 
 impl ChatResponse {

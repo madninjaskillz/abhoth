@@ -3,15 +3,24 @@
 //! Each `POST /v1/chat/completions` gets the next scripted reply (the last one repeats once
 //! the script runs out), streamed as SSE when the request asks for it. Every request body and
 //! its headers are recorded for assertions.
+//!
+//! A reply can also stream its reasoning in many small chunks, open with a role chunk whose
+//! `content` is null (no empty text part), or break off mid-stream (the connection drops
+//! without the end of the chunked body). Every other request (`GET /v1/models`, `GET /health`,
+//! LM Studio's `/api/v0/models`, Ollama's `/api/show`, ...) is recorded as a probe and answered
+//! from [`ServerOptions::routes`] (404 when not listed; `/v1/models` has a default list).
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::State;
+use axum::extract::{Request, State};
 use axum::http::{HeaderMap, Response, StatusCode};
-use axum::routing::{get, post};
+use axum::routing::post;
+use futures_util::StreamExt;
 use serde_json::{Value, json};
 
 /// One scripted model turn.
@@ -30,6 +39,14 @@ pub struct Reply {
     pub error: Option<(u16, String)>,
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
+    /// Stream the reasoning in chunks of this many characters (0: one chunk).
+    pub reasoning_chunk_chars: usize,
+    /// The opening role chunk carries `"content": null` (as llama.cpp sends it) instead of
+    /// `""`, so the stream has no empty text part.
+    pub null_role_content: bool,
+    /// Break the stream off after this many SSE events: the connection drops without the end
+    /// of the chunked body (a server or proxy dying mid-response).
+    pub die_after_events: Option<usize>,
 }
 
 impl Reply {
@@ -72,6 +89,54 @@ impl Reply {
             ..Self::default()
         }
     }
+
+    /// A stream with no content at all: a bare role chunk, the finish chunk, no usage.
+    pub fn empty() -> Self {
+        Self {
+            null_role_content: true,
+            ..Self::default()
+        }
+    }
+
+    /// Reasoning streamed `chars` characters per chunk.
+    pub fn with_reasoning_chunks(mut self, chars: usize) -> Self {
+        self.reasoning_chunk_chars = chars;
+        self
+    }
+
+    /// The role chunk's `content` is null.
+    pub fn with_null_role_content(mut self) -> Self {
+        self.null_role_content = true;
+        self
+    }
+
+    /// Break the stream off after `events` SSE events.
+    pub fn dying_after(mut self, events: usize) -> Self {
+        self.die_after_events = Some(events);
+        self
+    }
+}
+
+/// Answers for requests other than chat completions, by `"METHOD /path"` (e.g.
+/// `"GET /health"`): `(status, body)`.
+#[derive(Debug, Clone, Default)]
+pub struct ServerOptions {
+    pub routes: BTreeMap<String, (u16, String)>,
+    /// Routes that answer only a `Bearer` with this key (401 `invalid_api_key` otherwise).
+    pub keyed: BTreeMap<String, String>,
+}
+
+impl ServerOptions {
+    pub fn route(mut self, key: &str, status: u16, body: impl Into<String>) -> Self {
+        self.routes.insert(key.to_string(), (status, body.into()));
+        self
+    }
+
+    /// `key` (e.g. `"GET /v1/models"`) answers only requests carrying `Bearer {api_key}`.
+    pub fn requiring_key(mut self, key: &str, api_key: &str) -> Self {
+        self.keyed.insert(key.to_string(), api_key.to_string());
+        self
+    }
 }
 
 /// A request the server received.
@@ -95,6 +160,13 @@ struct Inner {
     script: Vec<Reply>,
     next: usize,
     requests: Vec<Recorded>,
+    routes: BTreeMap<String, (u16, String)>,
+    keyed: BTreeMap<String, String>,
+    /// Every other endpoint answers 503 (a server that is down or still loading).
+    down: bool,
+    /// `"METHOD /path"` of every request other than a chat completion, with its
+    /// `Authorization` header.
+    probes: Vec<(String, Option<String>)>,
 }
 
 pub struct FakeOpenAi {
@@ -106,13 +178,20 @@ pub struct FakeOpenAi {
 impl FakeOpenAi {
     /// Start on an ephemeral 127.0.0.1 port.
     pub async fn start(script: Vec<Reply>) -> Self {
+        Self::start_with(script, ServerOptions::default()).await
+    }
+
+    /// Start with answers for the other endpoints.
+    pub async fn start_with(script: Vec<Reply>, options: ServerOptions) -> Self {
         let inner = Arc::new(Mutex::new(Inner {
             script,
+            routes: options.routes,
+            keyed: options.keyed,
             ..Inner::default()
         }));
         let app = Router::new()
             .route("/v1/chat/completions", post(chat))
-            .route("/v1/models", get(models))
+            .fallback(other)
             .with_state(inner.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -141,12 +220,72 @@ impl FakeOpenAi {
     pub fn requests(&self) -> Vec<Recorded> {
         self.inner.lock().unwrap().requests.clone()
     }
+
+    /// `"METHOD /path"` of every request other than a chat completion, in order.
+    pub fn probes(&self) -> Vec<String> {
+        self.inner
+            .lock()
+            .unwrap()
+            .probes
+            .iter()
+            .map(|(p, _)| p.clone())
+            .collect()
+    }
+
+    /// Answer every endpoint other than chat completions with 503 (or normally again).
+    pub fn set_down(&self, down: bool) {
+        self.inner.lock().unwrap().down = down;
+    }
+
+    /// The `Authorization` header of each probe (None when absent).
+    pub fn probe_auth(&self) -> Vec<Option<String>> {
+        self.inner
+            .lock()
+            .unwrap()
+            .probes
+            .iter()
+            .map(|(_, a)| a.clone())
+            .collect()
+    }
 }
 
-async fn models() -> axum::Json<Value> {
-    axum::Json(
-        json!({"object":"list","data":[{"id":"fake-model","object":"model","owned_by":"fake"}]}),
-    )
+/// The default `GET /v1/models` answer.
+pub const DEFAULT_MODELS: &str =
+    r#"{"object":"list","data":[{"id":"fake-model","object":"model","owned_by":"fake"}]}"#;
+
+async fn other(State(inner): State<Arc<Mutex<Inner>>>, request: Request) -> Response<Body> {
+    let key = format!("{} {}", request.method(), request.uri().path());
+    let auth = request
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let answer = {
+        let mut g = inner.lock().unwrap();
+        let refused = g
+            .keyed
+            .get(&key)
+            .is_some_and(|k| auth.as_deref() != Some(format!("Bearer {k}").as_str()));
+        let down = g.down;
+        g.probes.push((key.clone(), auth));
+        if down {
+            Some((503, String::new()))
+        } else if refused {
+            Some((401, r#"{"error":{"code":"invalid_api_key"}}"#.to_string()))
+        } else {
+            g.routes.get(&key).cloned()
+        }
+    };
+    let (status, body) = match answer {
+        Some(a) => a,
+        None if key == "GET /v1/models" => (200, DEFAULT_MODELS.to_string()),
+        None => (404, String::new()),
+    };
+    Response::builder()
+        .status(StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap()
 }
 
 async fn chat(
@@ -228,9 +367,27 @@ async fn chat(
         json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","model":model,
             "choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
     };
-    let mut events: Vec<Value> = vec![chunk(json!({"role":"assistant","content":""}), None)];
+    let role_content = if reply.null_role_content {
+        Value::Null
+    } else {
+        json!("")
+    };
+    let mut events: Vec<Value> = vec![chunk(
+        json!({"role":"assistant","content":role_content}),
+        None,
+    )];
     if !reply.reasoning.is_empty() {
-        events.push(chunk(json!({"reasoning_content": reply.reasoning}), None));
+        if reply.reasoning_chunk_chars == 0 {
+            events.push(chunk(json!({"reasoning_content": reply.reasoning}), None));
+        } else {
+            let chars: Vec<char> = reply.reasoning.chars().collect();
+            for piece in chars.chunks(reply.reasoning_chunk_chars) {
+                events.push(chunk(
+                    json!({"reasoning_content": piece.iter().collect::<String>()}),
+                    None,
+                ));
+            }
+        }
     }
     // Text in a few pieces, as a real server sends it.
     let chars: Vec<char> = reply.text.chars().collect();
@@ -262,6 +419,24 @@ async fn chat(
     if reply.prompt_tokens + reply.completion_tokens > 0 {
         events.push(json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","model":model,"choices":[],"usage":usage}));
     }
+    let builder = builder.header("content-type", "text/event-stream");
+    if let Some(n) = reply.die_after_events {
+        // Send the first n events, give the client a moment to read them, then fail the body:
+        // hyper drops the connection without the final chunk.
+        let sent: Vec<Result<String, std::io::Error>> = events
+            .iter()
+            .take(n)
+            .map(|e| Ok(format!("data: {e}\n\n")))
+            .collect();
+        let stream = futures_util::stream::iter(sent).chain(futures_util::stream::once(async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionReset,
+                "fake server: stream broken off",
+            ))
+        }));
+        return builder.body(Body::from_stream(stream)).unwrap();
+    }
     let mut sse = String::new();
     for e in events {
         sse.push_str("data: ");
@@ -269,8 +444,5 @@ async fn chat(
         sse.push_str("\n\n");
     }
     sse.push_str("data: [DONE]\n\n");
-    builder
-        .header("content-type", "text/event-stream")
-        .body(Body::from(sse))
-        .unwrap()
+    builder.body(Body::from(sse)).unwrap()
 }
