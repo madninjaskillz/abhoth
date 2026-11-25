@@ -11,7 +11,6 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use orca_core::live::types;
-use orca_core::profiles::ProfileService;
 use orca_core::profiles::agent_modes;
 use serde_json::{Map, Value, json};
 
@@ -42,10 +41,8 @@ fn caller(addr: SocketAddr) -> Caller {
     }
 }
 
-fn service(s: &AppState) -> Result<&Arc<ProfileService>, Response> {
-    s.profiles
-        .as_ref()
-        .ok_or_else(|| err(StatusCode::NOT_FOUND, "No profiles API is configured."))
+fn no_api() -> Response {
+    err(StatusCode::NOT_FOUND, "No profiles API is configured.")
 }
 
 fn to_value<T: serde::Serialize>(v: &T) -> Value {
@@ -61,9 +58,8 @@ fn iso(t: Option<std::time::SystemTime>) -> Option<String> {
 }
 
 async fn catalog(State(s): State<Arc<AppState>>) -> Response {
-    let svc = match service(&s) {
-        Ok(x) => x,
-        Err(r) => return r,
+    let Some(svc) = s.profiles.as_ref() else {
+        return no_api();
     };
     let (catalog, error) = svc.get_catalog().await;
     // A project that chose a profile by an old name shows (and keeps) its new name.
@@ -132,9 +128,8 @@ async fn catalog(State(s): State<Arc<AppState>>) -> Response {
 }
 
 async fn compose(State(s): State<Arc<AppState>>, axum::Json(body): axum::Json<Value>) -> Response {
-    let svc = match service(&s) {
-        Ok(x) => x,
-        Err(r) => return r,
+    let Some(svc) = s.profiles.as_ref() else {
+        return no_api();
     };
     let cards = &body["cards"];
     if !cards.is_object() {
@@ -151,9 +146,8 @@ async fn save(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     axum::Json(body): axum::Json<Value>,
 ) -> Response {
-    let svc = match service(&s) {
-        Ok(x) => x,
-        Err(r) => return r,
+    let Some(svc) = s.profiles.as_ref() else {
+        return no_api();
     };
     let name = body["name"].as_str().unwrap_or("");
     if !body["cards"].is_object() || name.is_empty() {
@@ -187,9 +181,8 @@ async fn delete(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     axum::Json(body): axum::Json<Value>,
 ) -> Response {
-    let svc = match service(&s) {
-        Ok(x) => x,
-        Err(r) => return r,
+    let Some(svc) = s.profiles.as_ref() else {
+        return no_api();
     };
     let Some(name) = body["profile"].as_str().filter(|n| !n.is_empty()) else {
         return err(StatusCode::BAD_REQUEST, "Which profile?");
@@ -211,9 +204,8 @@ async fn plan(
     State(s): State<Arc<AppState>>,
     Query(q): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
-    let svc = match service(&s) {
-        Ok(x) => x,
-        Err(r) => return r,
+    let Some(svc) = s.profiles.as_ref() else {
+        return no_api();
     };
     let profile = q.get("profile").cloned().unwrap_or_default();
     match svc.plan(&profile).await {
@@ -227,9 +219,8 @@ async fn switch(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     axum::Json(body): axum::Json<Value>,
 ) -> Response {
-    let svc = match service(&s) {
-        Ok(x) => x,
-        Err(r) => return r,
+    let Some(svc) = s.profiles.as_ref() else {
+        return no_api();
     };
     let Some(name) = body["profile"].as_str().filter(|n| !n.is_empty()) else {
         return err(StatusCode::BAD_REQUEST, "Which profile?");
@@ -256,9 +247,8 @@ async fn switch(
 }
 
 async fn job(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
-    let svc = match service(&s) {
-        Ok(x) => x,
-        Err(r) => return r,
+    let Some(svc) = s.profiles.as_ref() else {
+        return no_api();
     };
     match svc.get_job(&id).await {
         Ok(Some(j)) => axum::Json(j).into_response(),
@@ -273,9 +263,8 @@ async fn project_profile(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     axum::Json(body): axum::Json<Value>,
 ) -> Response {
-    let svc = match service(&s) {
-        Ok(x) => x.clone(),
-        Err(r) => return r,
+    let Some(svc) = s.profiles.clone() else {
+        return no_api();
     };
     let Some(rt) = s.projects.get(&pid) else {
         return err(StatusCode::NOT_FOUND, "No such project.");
