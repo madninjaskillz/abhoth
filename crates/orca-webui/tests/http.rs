@@ -541,3 +541,143 @@ async fn the_terminal_echoes_a_command_and_refuses_cross_origin() {
         .insert("Origin", "http://evil.example".parse().unwrap());
     assert!(tokio_tungstenite::connect_async(evil).await.is_err());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn previews_are_signed_scoped_and_sandboxed() {
+    let work = tempfile::tempdir().unwrap();
+    let site = work.path().join("site");
+    std::fs::create_dir_all(site.join("css")).unwrap();
+    std::fs::write(
+        site.join("index.html"),
+        "<!doctype html><html><head><title>t</title></head><body>hi</body></html>",
+    )
+    .unwrap();
+    std::fs::write(site.join("css").join("a.css"), "body{}").unwrap();
+    std::fs::write(site.join(".env"), "SECRET=1").unwrap();
+    std::fs::write(work.path().join("outside.txt"), "no").unwrap();
+    let host = Host::start(FakeSession::new(work.path())).await;
+    let pid = host.primary();
+
+    let bad = host
+        .api(Method::POST, &format!("/api/projects/{pid}/preview"))
+        .json(&json!({"path": "outside.txt"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
+    let minted: Value = host
+        .api(Method::POST, &format!("/api/projects/{pid}/preview"))
+        .json(&json!({"path": "site/index.html"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let url = minted["url"].as_str().unwrap();
+    let base = minted["base"].as_str().unwrap();
+    assert!(url.starts_with("/preview/") && url.ends_with("/index.html"));
+
+    // No token needed: the signed path is the grant.
+    let c = host.http();
+    let page = c.get(host.url(url)).send().await.unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    assert!(
+        page.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .starts_with("sandbox")
+    );
+    let body = page.text().await.unwrap();
+    assert!(body.starts_with("<!doctype html><html><head><script>/* openorca preview */"));
+    let css = c
+        .get(host.url(&format!("{base}css/a.css")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(css.headers()["content-type"], "text/css; charset=utf-8");
+    for (path, status) in [
+        (format!("{base}.env"), StatusCode::NOT_FOUND),
+        // ".." is a dot segment: not found, as in C#.
+        (format!("{base}..%2Foutside.txt"), StatusCode::NOT_FOUND),
+        (
+            "/preview/forged.token/index.html".to_string(),
+            StatusCode::FORBIDDEN,
+        ),
+    ] {
+        assert_eq!(
+            c.get(host.url(&path)).send().await.unwrap().status(),
+            status,
+            "{path}"
+        );
+    }
+    let dir = c.get(host.url(&format!("{base}css"))).send().await.unwrap();
+    assert_eq!(dir.status(), StatusCode::FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn attachments_upload_and_raw_files_with_ranges() {
+    let work = tempfile::tempdir().unwrap();
+    std::fs::write(work.path().join("clip.mp4"), b"0123456789").unwrap();
+    let host = Host::start(FakeSession::new(work.path())).await;
+    let pid = host.primary();
+    let boundary = "XyZ";
+    let body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"notes.md\"\r\nContent-Type: text/markdown\r\n\r\n# hi\r\n--{boundary}--\r\n"
+    );
+    let saved: Value = host
+        .api(Method::POST, &format!("/api/projects/{pid}/attachments"))
+        .header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let path = saved[0]["path"].as_str().unwrap();
+    assert!(
+        path.starts_with(".orca/attachments/web-") && path.ends_with("-notes.md"),
+        "{path}"
+    );
+    assert_eq!(saved[0]["kind"], "file");
+    assert!(work.path().join(".orca/attachments/.gitignore").exists());
+
+    let exe = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"x.exe\"\r\n\r\nMZ\r\n--{boundary}--\r\n"
+    );
+    let refused = host
+        .api(Method::POST, &format!("/api/projects/{pid}/attachments"))
+        .header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(exe)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+
+    let part = host
+        .api(
+            Method::GET,
+            &format!("/api/projects/{pid}/raw?path=clip.mp4"),
+        )
+        .header("Range", "bytes=2-4")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(part.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(part.headers()["content-range"], "bytes 2-4/10");
+    assert_eq!(part.headers()["content-type"], "video/mp4");
+    assert_eq!(part.bytes().await.unwrap().as_ref(), b"234");
+    let outside = host
+        .api(Method::GET, &format!("/api/projects/{pid}/raw?path=../x"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(outside.status(), StatusCode::FORBIDDEN);
+}
