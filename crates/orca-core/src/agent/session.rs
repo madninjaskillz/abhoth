@@ -98,6 +98,15 @@ pub struct AgentSession {
     /// The wrap-up a turn ended on when it is not the last response text (verification
     /// changed nothing and the model then answered "Verified.").
     pub final_prose: Option<String>,
+
+    // ---- context management (agent/context.rs, chat::*) ----
+    /// Usage bookkeeping for the compaction estimates (server prompt size, rewrite count).
+    pub context_usage: crate::chat::ContextUsage,
+    /// Overflow recovery already ran this turn (`AgentLoopState.OverflowRecoveryUsed`).
+    pub overflow_recovery_used: bool,
+    /// What compaction told the user (console lines in C#); a UI drains it.
+    pub compaction_notices: Vec<String>,
+    // ---- end context management ----
 }
 
 /// Per-turn wind-down state (`AgentLoopState`).
@@ -136,6 +145,9 @@ impl AgentSession {
             mutation_epoch: 0,
             turn_history_start: 0,
             final_prose: None,
+            context_usage: Default::default(),
+            overflow_recovery_used: false,
+            compaction_notices: Vec::new(),
         }
     }
 
@@ -180,10 +192,15 @@ impl AgentSession {
         self.messages.push(ChatMessage::user(user_message));
         self.turn_history_start = self.tool_call_history.len();
         self.final_prose = None;
+        self.overflow_recovery_used = false; // context management: once per turn
         let max_iterations = self.config.agent.main_loop_max_iterations.max(1);
         let mut w = WindDown::default();
 
         for _ in 0..max_iterations {
+            // ---- context management: compact before the request, mark what it covers ----
+            self.maybe_compact().await;
+            let context_mark = self.context_mark();
+            // ---- end context management ----
             let options = self.build_options();
             let mut chunks = 0i64;
             let response = {
@@ -199,6 +216,7 @@ impl AgentSession {
                     .stream(&self.actor, &self.messages, &options, &mut on_event)
                     .await?
             };
+            self.record_prompt_usage(context_mark, &response.usage); // context management
             self.total_output_tokens += response.usage.completion_tokens.unwrap_or(chunks);
             self.last_assistant_response = Some(prompts::strip_next_prompt_tag(&response.text));
 
