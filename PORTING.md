@@ -247,3 +247,15 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D44** Cross-check extensions: fake MCP/LSP server placeholders, binary input files,
   pixel-hash image comparison, recorded images-API requests. The recorded-arguments rule for
   the first of several calls applies only to calls C# starts early (read-only tools).
+- **D35** `Tool::prepare_arguments` lets a tool validate its own arguments (Pi's validation
+  texts); `affected_file_paths` takes the `ToolContext`, so tools can return absolute paths.
+- **D36** Pi's subagent, progress and lead_mode tools take their host behaviour from optional
+  hooks; without a host they answer C#'s "not available in this session" errors. The CLI wires
+  progress to the Lead's "Progress recorded: N%." text.
+- **D37** `job screenshot` is not ported (Win32 window capture needs `unsafe`); it validates its
+  arguments and returns an error. The pure helpers are ported.
+- **D38** `orca-tools-pi` depends only on `orca-abstractions`; the Pi profile registers its
+  tools over same-named ones and `tool_exposure` uses `FilterPiProfile` for the advertised set
+  (Pi tools, agent tools with `pi.agentTools`, mcp_*, extraTools). Cross-check scenarios can set
+  `"strict": true` to compare tools and the whole system prompt (all Pi scenarios do).
+- **D39** New pinned dep: `unicode-normalization =0.1.23` (Pi edit fuzzy matching).
