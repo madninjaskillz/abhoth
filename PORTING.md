@@ -605,6 +605,9 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   `abhoth --version` with the default home, so the user's `~/.abhoth` already had a `logs`
   folder and the migration would have been skipped. `abhoth-desktop` now migrates first, that
   test uses a temp home, and a logs-only home gets the copy and keeps its logs.
+- **D134** `abhoth router` (crate `orca-router`) replaces LiteLLM and qfn-lb on DeepThought,
+  reusing orca-core's slot claim types. Its own decisions are logged as D-R1.. in
+  `ROUTER.md` section 10; it ships as a separate small image (`deploy/router`).
 - **D135** The web host ignores a closed stdout/stderr: its startup lines and the per-event
   activity lines go through `say!` / `say_err!` (write, ignore the error) instead of
   `println!`, which panics on a broken pipe. A harness that read only the URL line and dropped

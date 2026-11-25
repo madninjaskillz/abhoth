@@ -1,0 +1,6 @@
+{
+  "settings": { "requestLog": "/state/requests.jsonl" },
+  "slots": { "enabled": false },
+  "placement": { "leaseAware": false, "admission": false, "affinity": false },
+  "onDemand": { "enabled": false, "dryRun": true }
+}

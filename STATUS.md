@@ -164,6 +164,17 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   REPL showing the wrap-up and the summary both, `/model` not reaching the request, `/init` line
   endings, planner tool calls missing from `--print`, provider usage log category, `/retry` model.
 
+### `abhoth router` (`rust-port/router`, 2026-11-25, D134)
+
+- New crate `orca-router`: `abhoth router` / standalone `abhoth-router`, the replacement for
+  LiteLLM (`:8010`) and qfn-lb (`:8092`). Plan, decisions and shadow results: [`ROUTER.md`](ROUTER.md).
+- Phase 1 parity gateway (LiteLLM shapes, effort rules, failover, SSE passthrough, hot reload,
+  qfn-lb paths, `import-litellm`), phase 2 slots registry and placement (off by default),
+  phase 3 on-demand (`decide()` port, dry-run default). 30+ unit and 24 integration tests;
+  local shadow replay against LiteLLM 1.106.6.
+- Phase 4 files: `deploy/router/` (image `local/abhoth-router:1`, shadow compose on `:8020`).
+  Not deployed; client switch-over needs the user's OK.
+
 ## Next
 
 1. Bench parity run (user-scheduled; the gate for the cutover, CUTOVER.md step 0).

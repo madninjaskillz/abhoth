@@ -1,0 +1,43 @@
+# abhoth router on DeepThought, SHADOW mode (nothing points at it). TrueNAS custom app / compose.
+#   State and config:  $AI_ROOT/router/          (router.json, base.json, requests.jsonl)
+#   Engine key:        $AI_ROOT/router/secrets/ninfer-key  (mode 0400, uid 568; never printed)
+#   Inputs, read-only: LiteLLM's generated config.yaml, qfn-lb's nginx.conf, layouts/gateway.json
+# `importer` regenerates router.json from LiteLLM's config every 10 s (atomic write, only when it
+# changes); `router` hot-reloads it. Placement and slots stay OFF; on-demand follows gateway.json
+# (currently off) and is dry-run regardless (base.json "onDemand": {"dryRun": true}).
+services:
+  importer:
+    image: local/abhoth-router:1
+    restart: unless-stopped
+    user: "568:568"
+    read_only: true
+    command: ["import-litellm",
+              "--litellm", "/in/litellm/config.yaml",
+              "--lb", "/in/lb/nginx.conf",
+              "--gateway", "/in/layouts/gateway.json",
+              "--key-file", "/state/secrets/ninfer-key",
+              "--base", "/state/base.json",
+              "--out", "/state/router.json",
+              "--watch", "10"]
+    volumes:
+      - /home/admin/litellm:/in/litellm:ro
+      - $AI_ROOT/qwen-flash-next/twocopy/lb:/in/lb:ro
+      - $AI_ROOT/layouts:/in/layouts:ro
+      - $AI_ROOT/router:/state
+  router:
+    image: local/abhoth-router:1
+    restart: unless-stopped
+    user: "568:568"
+    read_only: true
+    depends_on: [importer]
+    command: ["--config", "/state/router.json", "--listen", "0.0.0.0:8020"]
+    ports:
+      - "8020:8020"
+    volumes:
+      - $AI_ROOT/router:/state
+    healthcheck:
+      # /health/liveliness makes no upstream calls (and neither does the router's /health).
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8020/health/liveliness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
