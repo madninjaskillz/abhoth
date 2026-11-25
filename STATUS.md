@@ -67,32 +67,53 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   Lead lease; Claude Code / Codex bridges; profiles v3, agent modes; `--profile`, `--mode`,
   `--engine` in `--print`.
 
+### Phases 3-5 (merged 2026-11-25/26)
+
+- Orchestration (`orca-core::orchestration`, `progress`), agent tools (`orca-tools-agent`:
+  spawn_agent, spawn_agents, report_progress), planner phase, pair voting, early read-only
+  runs, delegated checks, background helper collection, auto lead mode, read-only spawns in
+  plan mode.
+- Interactive REPL (`orca-cli::repl`, crossterm): input editor, status panel, Ctrl+C cancel,
+  console permission prompter, auto-save, all slash commands and `/config` (`ConfigSchema`),
+  custom markdown commands, attachments and tool-result images.
+- WebUi host (`orca-webui`, `--hostui`): websocket hub with resume, client transport adapter,
+  git/files/projects/terminal/preview/profiles/settings endpoints, bench (queue, runner,
+  results.jsonl compatible).
+- Usage logging: `Slot usage` / `Provider usage` lines in the C# log file, `/stats` usage rows,
+  bench token metrics.
+
 ### Tests
 
-- Rust: 1114 tests (`cargo test --workspace`), clippy `-D warnings` and fmt clean.
-- Cross-check: 72 scenarios, all identical between the C# and Rust builds (phase 1 and 2 sets,
-  stream guards and probes 30-39, file/utility tools 40-45, git/web 50-55, Pi 60-69 compared
-  strictly, MCP/LSP/image 70-76, profiles/modes/slots/engines 80-84).
+- Rust: 1784 tests (`cargo test --workspace --no-fail-fast`), clippy `-D warnings` and fmt
+  clean.
+- Cross-check: 103 scenarios, all identical between the C# and Rust builds, two runs (phase 1
+  and 2 sets, stream guards 30-39, tools 40-45, git/web 50-55, Pi 60-69 strict, MCP/LSP/image
+  70-76, profiles/slots/engines 80-84, agents 85-94b, interactive PTY 95-107, tool images
+  108-109, usage lines 110-114). Bench API: 42 calls identical against both hosts (one-off
+  script).
+- Live smoke 2026-11-25 (qwen3.8-27b via LiteLLM, `--print`): task_list, edit_file, git_diff,
+  git_commit on a temp repo; bug fixed and committed.
 
 ## Next
 
-1. In progress (helper branches): orchestration and sub-agents with the agent tools, pair
-   voting, early read-only runs and plan-mode entry points (`rust-port/orch`); REPL / TUI,
-   console permission prompter, slash and custom commands, attachments (`rust-port/repl`);
-   WebUi host with the websocket hub and client adapter (`rust-port/webui`).
-2. After the orch merge: wire `SlotAllocator` leases into agent spawning, the Pi subagent /
-   lead_mode hooks, and the agent commands.
-3. Phase 6: parity sweep, side-by-side benches, live smoke on the full tool set.
+1. In progress (`rust-port/orch`, 🟪D): slots-backed `AgentClientProvider`, Pi subagent /
+   progress / lead_mode on the orchestrator, `AgentHost` for the REPL (/review, /workflow,
+   /agent) and the WebUi snapshot, planner cost line from the usage ledger, sub-agent tool
+   exposure / think / images / compaction, non-interactive scope for background agents.
+2. Remaining ports: `/benchmark` command runner, sign-in mode (TOTP) and GitHub App device flow
+   in the WebUi, bridge engines under `--hostui`, `UncensoredGate`, `job screenshot` (by design
+   not ported).
+3. Phase 6: parity sweep, side-by-side benches (3 runs each), live smoke on agents and the REPL.
 
 ## Known gaps
 
-- Orchestration is not merged yet: spawn_agent(s) / report_progress are missing from the
-  advertised list (the only `--strict` tool-list difference in the default profile); Pi
-  subagent / lead_mode answer "not available"; delegated checks, background helpers,
-  lead-mode auto choice, pair voting and read-only spawns in plan mode wait for it.
-- No interactive mode (REPL/TUI) yet: without `--print`/`--prompt` the binary exits 2; no
-  console permission prompter (calls needing approval are refused, as in C# `--print`).
-- Sessions: `engine` / `engineSessionId` are dropped on save; no auto-save outside `--print`.
+- Until the orch wiring lands: Pi subagent / lead_mode answer "not available"; /review,
+  /workflow and WebUi agent tabs say sub-agents are unavailable; sub-agents ignore slots and
+  named providers fall back to the local model; background agents can still prompt.
+- WebUi: no settings schema passed yet (settings page empty), profile/mode switching answers
+  409, ask_user questions not forwarded, generated images only via the raw-file endpoint.
+- Bench runs in the Rust host are native-engine only; kit timeouts kill only the process.
+- Sessions: check `engine` / `engineSessionId` round-trip in the parity sweep (dropped on save before the engines port).
 - Numbers inside re-serialized tool arguments use serde's shortest form (`1.0` -> `1`), C#
   keeps the model's digits.
 - grep: Rust regex syntax (no lookaround/backreferences); files in sorted order.

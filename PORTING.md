@@ -324,3 +324,23 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   (llama.cpp / Strata). Cache-write tokens are 0 (no Anthropic client).
 - **D80** The cross-check compares every scenario's usage log lines (times masked) unless the
   scenario sets `usage_log: false`.
+- **D50** Agent model/endpoint selection sits behind `AgentClientProvider` (`default_client`,
+  `client_for_model`, `provider_route`, `acquire`/`release`, `note_type`);
+  `DefaultClientProvider` has no slots. A named provider's client always sends that
+  provider's model (`PinnedModelClient`), as in C#.
+- **D51** Each sub-agent tool call runs on a short-lived copy of the Lead's session seeded from
+  a shared pipeline; files read, approved scopes, history records and modified files flow back
+  to the Lead before it records the spawn call.
+- **D52** Sub-agent requests put `model` right after `messages` (as C# does); the main loop keeps
+  it last (`model_from_client` request option). `PermissionPrompter` requires `Sync`.
+- **D53** The per-request lead mode lives in the orchestrator (`set_lead_request_mode`); the auto
+  lead policy applies only when the Lead has the `lead_mode` tool. A hand-written cancel token
+  and a task-local spawn depth replace C#'s CancellationToken / AsyncLocal.
+- **D54** Agent scenarios set `"leadMode": "hands-on"`; the cross-check masks the sub-agent
+  "TOOLS AVAILABLE:" list and numbers random sub-agent ids as `<AGENTn>` in usage lines.
+- **D55** Early read-only runs execute only the pre-hook and the tool; permission, validation,
+  recording and formatting happen when the loop reaches the call, so history order matches
+  call order. An early run whose call is never executed is not recorded (C# may, by timing).
+- **D56** Pair voting: a winning alternate's message starts with an empty text part as C# sends
+  it (`empty_first_part`); alternates and voters use their own clients. Fake-server replies can
+  carry `for_model` and scenarios can set `unordered_requests`.
