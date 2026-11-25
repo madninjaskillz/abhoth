@@ -452,7 +452,7 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   key order still go through serde_json. serde_json's `arbitrary_precision` was not used: it
   breaks `#[serde(flatten)]` (`OrcaConfig.extra`) and changes `Number` equality workspace-wide.
   The Anthropic and Ollama clients send arguments as parsed objects (digits normalized; those
-  APIs read values). Cross-check scenario 119.
+  APIs read values). Cross-check scenario 124.
 - **D100** (`rust-port/bridge`) Bridge engines run in the REPL through
   `orca_core::engines::EngineHost`, the front-end-neutral part of C# `EngineHost` (switch,
   startup check with native fallback, one CLI process per session, `--resume` of the
@@ -503,6 +503,40 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D112** grep compiles patterns with fancy-regex 0.20.2: lookahead/lookbehind and
   backreferences work as in .NET; patterns without them run on the regex crate as before. A line
   that hits the backtracking limit counts as no match.
+- **D120** (parity sweep) The cross-check compares config-home files a scenario names
+  (`compare_home`, e.g. `memory/`) and applies `file_masks` (`[regex, replacement]`) to them and
+  to the work files; work file contents are normalised like the rest (paths, D90 product name).
+  Planted work files are dated 10.5 minutes back (was 10), so "10m ago" holds however fast a
+  binary starts.
+- **D121** The agent tools register as C# does on Windows: `report_progress`, `spawn_agents`,
+  `spawn_agent` (the plugin's source files in NTFS order); it shows in the tools array and the
+  AVAILABLE TOOLS lines (strict scenarios 213-215).
+- **D122** The first of several calls in a response keeps its raw argument text in the record only
+  when C# would start it early (`agent.earlyReadOnlyTools` on, native tools, `IsEarlyEligible`).
+- **D123** write_file errors use .NET's text for a refused path ("Access to the path '...' is
+  denied.", `io_message_for`) and drop Rust's "(os error N)" suffix.
+- **D124** REPL: once a tool has run in a turn, the model's text is collected and rendered once at
+  the end (C# `SummaryBuffer` / `RenderFinalSummary`); `AgentObserver::on_wrap_up` clears it when
+  the final summary is requested or replaces it with the standing wrap-up. Before this the
+  wrap-up and the summary both streamed, on one line.
+- **D125** `/model` (and the picker) sets `AgentSession::primary_model_override`, sent as the
+  request model from the next request on (C# sends `lmStudio.models[0]` with every request).
+  `/init` writes its template with CRLF on Windows (the C# raw string keeps the CRLF of its
+  source file).
+- **D126** The planner phase and sub-agents started by slash commands (`/review`, `/workflow`,
+  `/agent`) share the Lead's files read / scopes and hand their tool calls, modified files and
+  mutations back right away (`seed_sub_agents` / `take_sub_agent_work`), so `--print` lists the
+  planner's calls as C# does. Named-provider usage lines log under the orchestrator's category
+  (`AgentOrchestrator`), as C# builds those clients with its logger.
+- **D127** C# REPL bugs not reproduced, kept out of the cross-check (unit/e2e tested in Rust):
+  custom markdown commands answer "Unknown command" in C# (`CommandHandler` has no
+  `CustomCommand` case; Rust runs them); `/memory <unknown>` crashes C# (unescaped `[...]` in the
+  usage markup; Rust prints the usage); `/retry` in C# drops the last prompt and still sends
+  `lmStudio.models[0]` without usage logging (Rust resends the prompt to the next model and names
+  it in the request).
+- **D128** `--print -r <id>` leaves the session file as it was even with `session.autoSave` on (as
+  C#); the REPL saves it back with `parentSessionId`, `engine` and `engineSessionId` kept
+  (scenarios 230, 231).
 - **D106** Agent badges (`AgentBadge.DecorateMarkup`) in markdown prose, tool-result previews
   and the attached-notes line: `render::agent_badge` with a process-wide "known letter" check
   wired to the orchestrator in `wire_agents`. The mention scan is hand-written (Rust's regex

@@ -1,0 +1,18 @@
+{
+  "_comment": "tools.extendedTools advertises every tool; compared strictly (tool list and whole prompt). leadMode hands-on: lead_mode is ported separately.",
+  "prompt": "Say hi",
+  "strict": true,
+  "config": {
+    "tools": {
+      "extendedTools": true
+    },
+    "agent": {
+      "leadMode": "hands-on"
+    }
+  },
+  "replies": [
+    {
+      "text": "Hi."
+    }
+  ]
+}

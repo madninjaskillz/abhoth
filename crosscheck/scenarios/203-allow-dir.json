@@ -1,0 +1,15 @@
+{
+  "_comment": "--allow-dir: the system prompt names the directory; file tools outside it are refused.",
+  "prompt": "Look around",
+  "args": ["--allow-dir", "sub"],
+  "files": { "sub/in.txt": "inside\n", "top.txt": "outside\n" },
+  "replies": [
+    { "tools": [ { "name": "read_file", "args": { "path": "sub/in.txt" } } ] },
+    { "tools": [ { "name": "read_file", "args": { "path": "top.txt" } } ] },
+    { "tools": [ { "name": "write_file", "args": { "path": "sub/new.txt", "content": "n\n" } } ] },
+    { "tools": [ { "name": "write_file", "args": { "path": "sub-evil/x.txt", "content": "n\n" } } ] },
+    { "tools": [ { "name": "grep", "args": { "pattern": "side", "path": "." } } ] },
+    { "tools": [ { "name": "edit_file", "args": { "path": "top.txt", "old_string": "outside", "new_string": "x" } } ] },
+    { "text": "Only sub/ is reachable." }
+  ]
+}

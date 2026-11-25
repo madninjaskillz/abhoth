@@ -1,0 +1,48 @@
+{
+  "_comment": "agent.planner: a named provider writes the plan first (read-only planner agent, PLAN.md), then the Lead starts with it.",
+  "prompt": "Add a greeting module",
+  "files": {
+    "main.py": "print('hi')\n"
+  },
+  "config": {
+    "agent": {
+      "leadMode": "hands-on",
+      "planner": {
+        "provider": "plan",
+        "maxSteps": 5,
+        "effort": null
+      }
+    },
+    "providers": {
+      "plan": {
+        "type": "openai-compat",
+        "baseUrl": "<SERVER>",
+        "apiKey": "k",
+        "models": [
+          "plan-model"
+        ]
+      }
+    }
+  },
+  "replies": [
+    {
+      "for_model": "plan-model",
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "main.py"
+          }
+        }
+      ]
+    },
+    {
+      "for_model": "plan-model",
+      "text": "# Plan\n\n1. Create greet.py with a greet() function.\n2. Call it from main.py.\n"
+    },
+    {
+      "for_model": "fake-model",
+      "text": "I will follow the plan."
+    }
+  ]
+}

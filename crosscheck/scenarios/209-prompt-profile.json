@@ -1,0 +1,7 @@
+{
+  "_comment": "lmStudio.promptProfile picks prompts/<name>.md from the config home as the system prompt.",
+  "prompt": "Say hi",
+  "home_files": { "prompts/terse.md": "You are a terse assistant. Answer in one line.\n\nWorking directory: {{CWD}}\nPlatform: {{PLATFORM}}\n" },
+  "config": { "lmStudio": { "promptProfile": "terse" } },
+  "replies": [ { "text": "Hi." } ]
+}

@@ -1,0 +1,20 @@
+{
+  "_comment": "Deny patterns win over autoApproveAll; disabled tools are refused; other calls still run.",
+  "prompt": "Clean up a.txt",
+  "files": { "a.txt": "keep me\n", "tmp/x.txt": "x\n" },
+  "config": {
+    "permissions": {
+      "autoApproveAll": true,
+      "denyPatterns": ["Bash(del *)", "write_file(secret/**)"],
+      "disabledTools": ["delete_file"]
+    }
+  },
+  "replies": [
+    { "tools": [ { "name": "bash", "args": { "command": "del a.txt" } } ] },
+    { "tools": [ { "name": "delete_file", "args": { "path": "a.txt" } } ] },
+    { "tools": [ { "name": "write_file", "args": { "path": "secret/k.txt", "content": "k" } } ] },
+    { "tools": [ { "name": "write_file", "args": { "path": "open/k.txt", "content": "k" } } ] },
+    { "tools": [ { "name": "bash", "args": { "command": "echo still here" } } ] },
+    { "text": "a.txt could not be removed: the delete was refused." }
+  ]
+}

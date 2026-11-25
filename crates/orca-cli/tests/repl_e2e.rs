@@ -92,3 +92,87 @@ async fn end_of_input_ends_the_repl() {
     assert!(stdout.contains("/session"), "{stdout}");
     assert!(server.requests().is_empty());
 }
+
+/// `/retry` runs the last prompt again on the next model of `lmStudio.models`, and the request
+/// names that model (C# drops the prompt and keeps sending the first model; D127).
+#[tokio::test(flavor = "multi_thread")]
+async fn retry_resends_the_last_prompt_to_the_backup_model() {
+    let server = FakeOpenAi::start(vec![
+        Reply::text("Fact one from the first model."),
+        Reply::text("Fact two from the backup model."),
+    ])
+    .await;
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let config = json!({
+        "lmStudio": {"baseUrl": server.base_url(), "apiKey": "test-key", "models": ["fake-model", "backup-model"], "nativeToolCalling": true, "maxTokens": 4096},
+        "permissions": {"autoApproveAll": true},
+        "session": {"autoSave": false},
+    });
+    std::fs::write(home.path().join("config.json"), config.to_string()).unwrap();
+    let out = run_repl(home.path(), work.path(), "tell me a fact\n/retry\n/exit\n").await;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("Retrying last turn with backup model: backup-model"),
+        "{stdout}"
+    );
+    let reqs = server.requests();
+    let dump: Vec<String> = reqs
+        .iter()
+        .map(|r| {
+            format!(
+                "{} {}",
+                r.body["model"],
+                r.body["messages"].as_array().unwrap().len()
+            )
+        })
+        .collect();
+    assert_eq!(
+        reqs.len(),
+        2,
+        "{dump:?}
+{stdout}"
+    );
+    assert_eq!(reqs[1].body["model"], "backup-model");
+    let users: Vec<_> = reqs[1].body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "user")
+        .collect();
+    assert_eq!(users.len(), 1);
+    assert_eq!(users[0]["content"], "tell me a fact");
+}
+
+/// Custom markdown commands run (project over global, {{ARGS}} / {{ARGn}}); the C# REPL
+/// answers "Unknown command" for them (D127), so this is not a cross-check scenario.
+#[tokio::test(flavor = "multi_thread")]
+async fn custom_commands_expand_their_template() {
+    let server = FakeOpenAi::start(vec![Reply::text("Hello to the world.")]).await;
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    write_config(home.path(), &server.base_url());
+    std::fs::create_dir_all(home.path().join("commands")).unwrap();
+    std::fs::write(home.path().join("commands/greet.md"), "Global {{ARGS}}").unwrap();
+    std::fs::write(work.path().join("app.sln"), "").unwrap();
+    std::fs::create_dir_all(work.path().join(".orca/commands")).unwrap();
+    std::fs::write(
+        work.path().join(".orca/commands/greet.md"),
+        "Say hello to {{ARGS}} (first: {{ARG1}}, second: {{ARG2}}).",
+    )
+    .unwrap();
+    let out = run_repl(home.path(), work.path(), "/greet big world\n/exit\n").await;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let reqs = server.requests();
+    assert_eq!(reqs.len(), 1, "{stdout}");
+    let last = reqs[0].body["messages"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .clone();
+    assert_eq!(
+        last["content"],
+        "Say hello to big world (first: big, second: world)."
+    );
+}

@@ -11,7 +11,7 @@ use super::client::{AgentChatClient, AgentClientProvider, AgentLease, ProviderRo
 use super::context::AgentContext;
 use super::slot_provider::{AgentClientBackend, BackendAgentClient};
 use super::types::AgentTypeDefinition;
-use crate::client::usage::{ProviderUsageLedger, USAGE_CATEGORY, UsageLoggingBackend};
+use crate::client::usage::{ORCHESTRATOR_CATEGORY, ProviderUsageLedger, UsageLoggingBackend};
 use crate::client::{ChatBackend, ClientSettings, OpenAiClient, ServedModels};
 use crate::config::{OrcaConfig, ProviderConfig};
 use crate::logging::LogSink;
@@ -149,7 +149,7 @@ impl AgentClientProvider for ProviderRoutes {
         };
         self.ledger
             .set_pricing(name, provider.as_ref().and_then(|p| p.pricing.clone()));
-        let logged = UsageLoggingBackend::new(raw, self.sink.clone(), USAGE_CATEGORY, name)
+        let logged = UsageLoggingBackend::new(raw, self.sink.clone(), ORCHESTRATOR_CATEGORY, name)
             .with_provider(Some(name), Some(&model), Some(self.ledger.clone()));
         let route = ProviderRoute {
             name: name.to_string(),

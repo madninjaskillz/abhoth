@@ -4,7 +4,8 @@ use orca_abstractions::{
     Tool, ToolCapabilities, ToolContext, ToolRenderHints, ToolResult, ToolRiskLevel,
 };
 use orca_tools_common::{
-    decode_text, get_bool_lenient, required_str, retry_io, unescape_literal_sequences, utf16_len,
+    decode_text, get_bool_lenient, io_message_for, required_str, retry_io,
+    unescape_literal_sequences, utf16_len,
 };
 use regex::Regex;
 use serde_json::Value;
@@ -98,7 +99,8 @@ impl Tool for WriteFileTool {
         if let Some(dir) = full.parent()
             && let Err(e) = tokio::fs::create_dir_all(dir).await
         {
-            return ToolResult::error(format!("Error writing file: {e}"));
+            let dir = display(dir);
+            return ToolResult::error(format!("Error writing file: {}", io_message_for(&e, &dir)));
         }
         let len = utf16_len(&content);
         if append {
@@ -115,7 +117,10 @@ impl Tool for WriteFileTool {
             .await;
             return match r {
                 Ok(()) => ToolResult::success(format!("Appended: {shown} ({len} chars added)")),
-                Err(e) => ToolResult::error(format!("Error writing file: {e}")),
+                Err(e) => ToolResult::error(format!(
+                    "Error writing file: {}",
+                    io_message_for(&e, &shown)
+                )),
             };
         }
 
@@ -124,7 +129,10 @@ impl Tool for WriteFileTool {
             Err(_) => None,
         };
         if let Err(e) = retry_io(|| tokio::fs::write(&full, content.as_bytes())).await {
-            return ToolResult::error(format!("Error writing file: {e}"));
+            return ToolResult::error(format!(
+                "Error writing file: {}",
+                io_message_for(&e, &shown)
+            ));
         }
         let mut result = match &previous {
             None => format!("Created: {shown} ({len} chars)"),

@@ -84,9 +84,9 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 ### Tests
 
-- Rust: 1909 tests (`cargo test --workspace --no-fail-fast`), clippy `-D warnings` and fmt
+- Rust: 1946 tests (`cargo test --workspace --all-features --no-fail-fast`), clippy `-D warnings` and fmt
   clean.
-- Cross-check: 105 scenarios, all identical between the C# and Rust builds, two runs (phase 1
+- Cross-check: 149 scenarios (bridges 119-123, number digits 124, parity sweep 200-234), all identical between the C# and Rust builds, two runs (phase 1
   and 2 sets, stream guards 30-39, tools 40-45, git/web 50-55, Pi 60-69 strict, MCP/LSP/image
   70-76, profiles/slots/engines 80-84, agents 85-94d (slots spawn, Pi subagent strict), interactive PTY 95-107, tool images
   108-109, usage lines 110-114, tool-argument digits 119). 110/110 on 2026-11-25 (`rust-port/ghapp`). Bench API: 42 calls identical against both hosts (one-off
@@ -135,6 +135,21 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   a per-launch token, WebView2 window titled Abhoth with the mascot icon, single instance (a
   second launch focuses the first), tray Show/Quit, native folder dialog in the folder picker,
   external links in the system browser. Built, launched and screenshotted on Windows 11.
+
+### Phase 6: parity sweep, coverage (2026-11-25, D120-D128)
+
+- 34 new cross-check scenarios (200-234): permission allow/deny patterns, disabled tools, a
+  malformed deny rule, `--allow`, `alwaysApprove`, `--allow-dir`; wildcard pre-hooks and
+  post-hooks with `ORCA_TOOL_*`; memory and ORCA.md in the prompt; `--demo`; backup model on a
+  refusal / short answer; `promptProfile` and model-slug prompts; `--mode orchestrator` / `peer`;
+  the advertised tool set compared strictly (core, `extendedTools`, `extraTools`);
+  `modelSampling`; thinking budget; `verificationMode` always / off with `repeatCallNotes` and
+  `earlyReadOnlyTools` off; file tool and bash error paths; the planner phase on a named provider;
+  `--print -r` with autoSave; REPL `/checkpoint`, `/diff`, `/undo`, `/memory`, auto memory at exit,
+  `/export`, `/init`, `/model`, `/retry` (no backup), `/context`, `/stats`, `-r` with engine fields.
+- Rust fixes found by them: spawn tool order, raw-argument records, write_file error text, the
+  REPL showing the wrap-up and the summary both, `/model` not reaching the request, `/init` line
+  endings, planner tool calls missing from `--print`, provider usage log category, `/retry` model.
 
 ## Next
 
@@ -195,6 +210,11 @@ worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
 - Bench runs: kit timeouts kill only the process.
 - Desktop: closing the window quits (no close-to-tray yet); CI builds it on Windows only.
 - grep: files in sorted order; regex error texts differ from .NET (lookaround/backreferences work, D112).
+- C# REPL bugs kept out of the cross-check (D127): custom markdown commands ("Unknown command" in
+  C#), `/memory <unknown>` (crashes C#), `/retry` on a second model (C# drops the prompt).
+- Not cross-checked (need a live service or are rendering-only): `/docs` (Context7), `/doctor`,
+  `/help` layout, `/copy` (clipboard), the `/config` editor, `/workflow` and `/review` runs,
+  tool-output spill files (temp path and time stamp in the result).
 - Console output decoding is lossy UTF-8 rather than the OEM code page; hook stdin is UTF-8.
 - list_directory ordering approximates .NET culture-aware sorting.
 - Error texts from OS / transport / JSON parser failures (web, network, MCP, slots) differ from

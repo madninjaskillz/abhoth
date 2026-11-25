@@ -437,9 +437,12 @@ pub async fn run_single_prompt_in_session(
     let prompt = match session.orchestrator.clone() {
         Some(o) if planner_enabled(&session.config) => {
             let mut planner = PlannerPhase::new(session.config.clone(), o, session.ctx.cwd.clone());
-            planner
+            session.seed_sub_agents();
+            let prompt = planner
                 .prepare_first_message(prompt, &CancelToken::new())
-                .await
+                .await;
+            session.take_sub_agent_work();
+            prompt
         }
         _ => prompt.to_string(),
     };

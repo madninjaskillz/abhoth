@@ -1,0 +1,109 @@
+{
+  "_comment": "Interactive: /context and /stats after a turn with a tool call.",
+  "files": {
+    "notes.txt": "hi\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "notes.txt"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Notes say hi. CS-DONE"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "read notes"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "CS-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/context"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "Context",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/stats"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "Session",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!",
+      "local: \\d+ requests, prompt \\d+ \\(cached \\d+, written \\d+\\), output \\d+",
+      "\\(window − reserve [\\d,]+; keeps ~[\\d,]+\\) \\(enabled\\)",
+      "[\\d.]+% of the window"
+    ]
+  }
+}

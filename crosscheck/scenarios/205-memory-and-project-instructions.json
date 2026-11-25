@@ -1,0 +1,23 @@
+{
+  "_comment": "memory.includeInPrompt: project (.orca/memory) and global memory files plus ORCA.md go into the system prompt. app.sln marks the project root.",
+  "prompt": "What do you remember?",
+  "files": {
+    "ORCA.md": "# Project rules\nAlways use tabs.\n",
+    ".orca/memory/a-first.md": "Project memory A: the build uses make.\n",
+    ".orca/memory/b-second.md": "Project memory B: tests live in t/.\n",
+    "app.sln": ""
+  },
+  "home_files": {
+    "memory/global.md": "Global memory: the user prefers short answers.\n"
+  },
+  "config": {
+    "memory": {
+      "includeInPrompt": true
+    }
+  },
+  "replies": [
+    {
+      "text": "I remember the build uses make."
+    }
+  ]
+}

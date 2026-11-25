@@ -16,6 +16,9 @@ use crate::logging::{Level, LogSink};
 
 /// The log category of the provider route (`OpenOrca.Usage`).
 pub const USAGE_CATEGORY: &str = "OpenOrca.Usage";
+/// The log category of a named provider's usage lines: C# builds those clients with the
+/// orchestrator's logger (`AgentOrchestrator.ResolveProviderRoute`).
+pub const ORCHESTRATOR_CATEGORY: &str = "OpenOrca.Core.Orchestration.AgentOrchestrator";
 /// The log category of the slot clients (`OpenOrca.Slots`).
 pub const SLOTS_CATEGORY: &str = "OpenOrca.Slots";
 

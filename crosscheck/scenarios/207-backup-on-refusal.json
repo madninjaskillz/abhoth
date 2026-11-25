@@ -1,0 +1,9 @@
+{
+  "_comment": "lmStudio.backupOnRefusal: a refusal from the primary model is retried on backupModel.",
+  "prompt": "Write a limerick",
+  "config": { "lmStudio": { "backupModel": "backup-model", "backupOnRefusal": true } },
+  "replies": [
+    { "text": "I'm sorry, but I can't help with that request." },
+    { "text": "There once was a coder named Lee, who wrote all his tests after tea." }
+  ]
+}

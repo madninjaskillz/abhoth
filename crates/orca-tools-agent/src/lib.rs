@@ -32,15 +32,18 @@ impl AgentToolsHandle {
 
 /// The three tools, wired to `handle`.
 pub fn all_tools(handle: &AgentToolsHandle) -> Vec<Arc<dyn Tool>> {
-    // C# registration order: tool classes by name.
+    // C# registration order: the plugin's source files as Windows lists them
+    // (ReportProgressTool.cs, SpawnAgentsTool.cs, SpawnAgentTool.cs: case-insensitive, so
+    // "SpawnAgents" sorts before "SpawnAgentT"). It shows in the tools array and the
+    // AVAILABLE TOOLS lines of the system prompt.
     vec![
         Arc::new(ReportProgressTool {
             handle: handle.clone(),
         }),
-        Arc::new(SpawnAgentTool {
+        Arc::new(SpawnAgentsTool {
             handle: handle.clone(),
         }),
-        Arc::new(SpawnAgentsTool {
+        Arc::new(SpawnAgentTool {
             handle: handle.clone(),
         }),
     ]
