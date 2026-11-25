@@ -11,18 +11,16 @@ use async_trait::async_trait;
 use orca_abstractions::{ToolContext, ToolRiskLevel};
 use serde_json::Value;
 
-use super::claude::{ClaudeBridgeEngine, ClaudeBridgeOptions};
-use super::codex::{CodexBridgeEngine, CodexBridgeOptions};
+use super::host::{BridgeStart, create_bridge, last_user_text, random_bucket_id};
 use super::transport::BridgeTransportFactory;
 use super::{
-    AgentEngine, AgentEngineEvent, AgentEngines, AgentEventSink, AgentTurn, CancelToken,
-    EngineError, EngineReadiness, EngineToolRequest, HostToolResult, HostToolSpec, readiness,
+    AgentEngineEvent, AgentEngines, AgentEventSink, AgentTurn, CancelToken, EngineError,
+    EngineReadiness, EngineToolRequest, HostToolResult, HostToolSpec, readiness,
 };
 use crate::agent::permissions::{PermissionVerdict, evaluate_permission};
 use crate::agent::session::TOOL_RESULT_HISTORY_MAX_CHARS;
 use crate::agent::{ToolCallRecord, ToolRegistry};
 use crate::chat::Conversation;
-use crate::client::Role;
 use crate::config::{OrcaConfig, PermissionsConfig};
 
 /// OpenOrca tools offered to bridged CLIs (`EngineHost.HostToolNames`).
@@ -145,31 +143,14 @@ pub(crate) async fn run_print_turn_with(
         .then(|| conversation.engine_session_id.clone())
         .flatten();
     let bucket = session_id.map_or_else(random_bucket_id, str::to_string);
-    let progress_session = format!("openorca-{bucket}");
-    let cwd_text = cwd.to_string_lossy().into_owned();
-    let host_tools = host_tools(registry);
-    let skip_version_check = test_factory.is_some();
-    let mut engine: Box<dyn AgentEngine> = if id == AgentEngines::CLAUDE {
-        let mut o = ClaudeBridgeOptions::from_config(
-            &config.bridges.claude,
-            &cwd_text,
-            resume.as_deref(),
-            Some(&progress_session),
-        );
-        o.host_tools = host_tools;
-        o.skip_version_check = skip_version_check;
-        Box::new(ClaudeBridgeEngine::new(o, test_factory))
-    } else {
-        let mut o = CodexBridgeOptions::from_config(
-            &config.bridges.codex,
-            &cwd_text,
-            resume.as_deref(),
-            Some(&progress_session),
-        );
-        o.host_tools = host_tools;
-        o.skip_version_check = skip_version_check;
-        Box::new(CodexBridgeEngine::new(o, test_factory))
+    let start = BridgeStart {
+        id,
+        resume,
+        progress_session: format!("openorca-{bucket}"),
+        cwd: cwd.to_string_lossy().into_owned(),
+        host_tools: host_tools(registry),
     };
+    let mut engine = create_bridge(config, &start, test_factory);
 
     let mut sink = PrintSink {
         permissions: &config.permissions,
@@ -205,26 +186,6 @@ pub(crate) async fn run_print_turn_with(
         unavailable,
         engine_session_id: conversation.engine_session_id.clone(),
     })
-}
-
-fn last_user_text(conversation: &Conversation) -> String {
-    conversation
-        .messages()
-        .iter()
-        .rev()
-        .find(|m| m.role == Role::User)
-        .and_then(|m| m.content.clone())
-        .unwrap_or_default()
-}
-
-fn random_bucket_id() -> String {
-    // C#: the first 8 hex digits of a new GUID.
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let mixed = (nanos as u64 ^ u64::from(std::process::id())).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    format!("{:08x}", mixed >> 32)
 }
 
 /// `EngineHost.HostTools()`: the host tools this OpenOrca has (from the tool registry).

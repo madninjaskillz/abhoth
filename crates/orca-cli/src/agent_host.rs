@@ -82,7 +82,12 @@ impl WebAgentHost {
     /// Publish on `bus`: the agent bars whenever an agent changes (`OnAgentEvent` +
     /// `FlushAgents`), and a notice when an agent the user continued from its tab replies
     /// (`OnUserAgentReplied`).
-    pub fn attach(self: &Arc<Self>, bus: Arc<orca_core::live::LiveEventBus>) {
+    /// `decorate`: the session's view of the list (a bridge's Lead bar), `None` as is.
+    pub fn attach(
+        self: &Arc<Self>,
+        bus: Arc<orca_core::live::LiveEventBus>,
+        decorate: Option<orca_webui::bridge::AgentsDecorator>,
+    ) {
         let me = Arc::downgrade(self);
         let b = bus.clone();
         self.orchestrator.subscribe(move |_| {
@@ -90,7 +95,10 @@ impl WebAgentHost {
             if !b.is_active() {
                 return;
             }
-            let agents = orca_webui::live::AgentHost::agents(&*me);
+            let mut agents = orca_webui::live::AgentHost::agents(&*me);
+            if let Some(d) = &decorate {
+                agents = d(agents);
+            }
             b.publish(
                 orca_core::live::types::AGENTS,
                 serde_json::json!({ "agents": agents }),

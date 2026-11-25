@@ -1,0 +1,10 @@
+{
+  "prompt": "Add a line gamma to notes.txt.",
+  "config": {"agent": {"leadMode": "auto"}},
+  "files": {"notes.txt": "alpha\nbeta\n"},
+  "replies": [
+    {"tools": [{"name": "lead_mode", "args": {"mode": "hands-on", "reason": "one small edit"}}]},
+    {"tools": [{"name": "write_file", "args": {"path": "notes.txt", "content": "alpha\nbeta\ngamma\n"}}]},
+    {"text": "Added gamma to notes.txt."}
+  ]
+}

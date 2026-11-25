@@ -10,10 +10,12 @@ pub mod claude;
 pub mod cli_locator;
 pub mod codex;
 mod event;
+pub mod host;
 pub(crate) mod json;
 pub mod paths;
 pub mod print;
 pub mod readiness;
+pub mod session_sink;
 pub mod transport;
 
 #[cfg(test)]
@@ -26,6 +28,7 @@ use crate::chat::Conversation;
 
 pub use cancel::CancelToken;
 pub use event::{AgentEngineEvent, EngineTurnCompleted};
+pub use host::{BridgeStart, BridgeTurnRequest, EngineHost, EngineSwitchResult};
 pub use print::{
     PrintTurnOutcome, PrintTurnRequest, check_readiness, prepare_engine_non_interactive,
     run_print_turn, selected_bridge,

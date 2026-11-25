@@ -28,6 +28,9 @@ pub struct StatusInfo {
     pub uncensored: bool,
 }
 
+/// Writes ANSI text to the panel's info line (any thread).
+pub type InfoLineWriter = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
 pub struct TerminalPanel {
     console: Console,
     active: bool,
@@ -168,6 +171,19 @@ impl TerminalPanel {
         let row = self.height.saturating_sub(4);
         self.console
             .raw(&format!("\x1b7\x1b[{row};1H\x1b[2K{ansi}\x1b8"));
+    }
+
+    /// Writes to the info line from any thread (the bridge's progress bars); `None` when the
+    /// panel is off.
+    pub fn info_line_writer(&self) -> Option<InfoLineWriter> {
+        if !self.active {
+            return None;
+        }
+        let console = self.console.clone();
+        let row = self.height.saturating_sub(4);
+        Some(std::sync::Arc::new(move |ansi: &str| {
+            console.raw(&format!("7[{row};1H[2K{ansi}8"));
+        }))
     }
 
     pub fn clear_info_line(&self) {

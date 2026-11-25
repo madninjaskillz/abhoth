@@ -254,6 +254,7 @@ pub fn wire_agents(
     let manager = AgentManager::new(orchestrator.clone());
     // The Pi agent tools (subagent, progress, lead_mode) go through the manager.
     pi_agents::wire_pi_agent_tools(&mut session.registry, &manager, &config, slots);
+    pi_agents::register_auto_lead_mode(&mut session.registry, &manager, &config, slots);
     // Sub-agents never choose a Lead mode.
     orchestrator.set_tools(
         session
@@ -703,11 +704,23 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         sessions::Restore::NotFound => return Ok(0),
         sessions::Restore::Unreadable => return Ok(1),
     };
+    // A bridged session resumes on its engine (and the CLI's own session) unless --engine says
+    // otherwise.
+    if args.engine.is_none()
+        && let Some(r) = &restored
+        && orca_core::engines::AgentEngines::is_bridge(r.engine.engine.as_deref())
+        && let Some(id) = orca_core::engines::AgentEngines::normalize(r.engine.engine.as_deref())
+    {
+        config.agent.engine = id.to_string();
+    }
     if args.single_prompt.is_some() {
         for notice in &profile_notices {
             eprintln!("{notice}");
         }
     }
+    let Some(prompt) = args.single_prompt.clone() else {
+        return run_interactive(config, cwd, &config_dir, restored, profile_notices).await;
+    };
     // A bridge engine must be ready (installed, logged in) before the turn.
     match orca_core::engines::prepare_engine_non_interactive(
         &config,
@@ -725,9 +738,6 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
             return Ok(2);
         }
     }
-    let Some(prompt) = args.single_prompt.clone() else {
-        return run_interactive(config, cwd, &config_dir, restored, profile_notices).await;
-    };
     // --print does not auto-save (only the interactive loop does, after each turn).
     let result = run_single_prompt_in_session(
         config,
@@ -793,6 +803,8 @@ async fn run_interactive(
     repl.state.engine = engine;
     repl.startup_notices = startup_notices;
     repl.active_profile = active_profile;
+    // A bridge engine is checked (installed, logged in) before the first turn.
+    repl.prepare_engine().await;
     let exit = repl.run().await;
     if let Some(rt) = &slots {
         rt.shutdown().await;

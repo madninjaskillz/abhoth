@@ -115,6 +115,19 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   `lmStudio.provider: "anthropic"`; prompt caching, effort, signed thinking, tool results with
   images, cache read/write usage; tested against fake local servers only.
 - Tool-call arguments keep the model's number digits in history and `--print` records (D94).
+
+### Bridge engines (`rust-port/bridge`, 2026-11-25)
+
+- Claude Code / Codex bridges in the REPL (D100-D102): `EngineHost` (switching, startup check with
+  native fallback and the login offer, `/engine`, `/clear` ends the CLI session, `--resume` of the
+  CLI session from a saved bridged session, which also selects its engine at startup),
+  `SessionBridgeSink` + the REPL view, progress.js bars on the info row, the engine on the status
+  line. Cross-check 119-122 with the fake Claude CLI.
+- Bridges under `--hostui` and in bench runs (D103): `SetEngine`, the project's preferred
+  engine, the login offer, bridge turns on the bus, the Lead bar and the CLI's bars.
+- Foreground sub-agents ask the user for approvals in the REPL and the browser (D104).
+- `lead_mode` for the OpenOrca profile in `leadMode: auto` (D105, scenario 123).
+
 ### Phase 7: desktop app (2026-11-25, D110)
 
 - `abhoth --desktop` / `abhoth-desktop.exe` (feature `desktop`): in-process host on loopback with
@@ -124,9 +137,10 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 ## Next
 
-1. Bridge engines under `--hostui` and in the REPL; sub-agent approval prompter; `lead_mode` for
-   `leadMode: auto`.
-2. Phase 6: parity sweep (cross-check coverage); bench parity run (user-scheduled).
+1. Phase 6: parity sweep (cross-check coverage, `rust-port/sweep`); bench parity run
+   (user-scheduled).
+2. Agent badge colours in note lines and the interactive `/agents` picker; an agent footer in
+   the REPL.
 3. Phase 7 follow-ups: close-to-tray setting, Linux/macOS desktop builds in CI, installer.
 
 ### Live smoke 2026-11-25 (third run)
@@ -173,14 +187,14 @@ worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
 
 ## Known gaps
 
-- Sub-agent tool calls that need approval are refused, also in foreground agents (C# asks the
-  user): the sub-agent pipeline has no prompter.
-- `lead_mode` is not registered for the OpenOrca profile with `leadMode: auto`; agent badges are
-  not coloured in note lines; `/agents` is a plain list, not the interactive picker.
-- WebUi: no settings schema passed yet (settings page empty), profile/mode switching answers
-  409, ask_user questions not forwarded, generated images only via the raw-file endpoint.
-- Bench runs in the Rust host are native-engine only; kit timeouts kill only the process.
-- Sessions: check `engine` / `engineSessionId` round-trip in the parity sweep (dropped on save before the engines port).
+- Agent badges are not coloured in note lines; `/agents` is a plain list, not the interactive
+  picker; the REPL has no agent footer (a bridge's progress.js bars show on the info row, D101).
+- No end-to-end scenario yet for bridges under `--hostui` or the foreground sub-agent approval
+  prompt in the terminal (Rust tests only).
+- Anthropic: a turn with several signed thinking blocks keeps no signature (its reasoning is not
+  sent back, D92).
+- Bench runs: kit timeouts kill only the process.
+- Desktop: closing the window quits (no close-to-tray yet); CI builds it on Windows only.
 - grep: files in sorted order; regex error texts differ from .NET (lookaround/backreferences work, D112).
 - Console output decoding is lossy UTF-8 rather than the OEM code page; hook stdin is UTF-8.
 - list_directory ordering approximates .NET culture-aware sorting.

@@ -154,6 +154,22 @@ pub trait PermissionPrompter: Send + Sync {
     fn prompt(&mut self, tool_name: &str, risk: &str) -> PermissionDecision;
 }
 
+/// One prompter shared by the Lead and its foreground sub-agents (C# hands both the same
+/// `PermissionManager`); the lock keeps their prompts one at a time.
+pub type SharedPrompter = std::sync::Arc<std::sync::Mutex<Box<dyn PermissionPrompter>>>;
+
+/// A [`PermissionPrompter`] that asks through a [`SharedPrompter`].
+pub struct ForwardingPrompter(pub SharedPrompter);
+
+impl PermissionPrompter for ForwardingPrompter {
+    fn prompt(&mut self, tool_name: &str, risk: &str) -> PermissionDecision {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .prompt(tool_name, risk)
+    }
+}
+
 /// The outcome of the configured rules.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PermissionVerdict {

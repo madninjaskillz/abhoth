@@ -89,6 +89,9 @@ pub struct AgentSession {
     pub plan_mode: bool,
     /// Asks the user about calls that need approval (none: they are refused).
     pub prompter: Option<Box<dyn permissions::PermissionPrompter>>,
+    /// The prompter [`set_prompter`](Self::set_prompter) installed, which foreground
+    /// sub-agents ask through too (background ones never prompt).
+    pub shared_prompter: Option<permissions::SharedPrompter>,
     /// Scopes approved with "yes to all" this session (lowercase keys).
     pub approved_scopes: std::collections::HashSet<String>,
     /// Builds the system prompt (`SystemPromptBuilder`); also remembers which prompts it built
@@ -188,6 +191,7 @@ impl AgentSession {
             native_tools: true,
             plan_mode: false,
             prompter: None,
+            shared_prompter: None,
             approved_scopes: Default::default(),
             tool_call_history: Vec::new(),
             files_modified: Vec::new(),
@@ -640,11 +644,36 @@ impl AgentSession {
 
     /// `PermissionManager.CheckPermissionAsync`: the configured rules, then the prompter.
     fn check_permission(&mut self, tool: &dyn Tool, args: &Value) -> bool {
-        match permissions::evaluate_permission(
-            &self.config.permissions,
+        self.check_permission_for(
             tool.name(),
             tool.risk_level(),
             tool.permission_arg_name(),
+            args,
+        )
+    }
+
+    /// Ask `prompter` for approvals, in this session and in its foreground sub-agents.
+    pub fn set_prompter(&mut self, prompter: Box<dyn permissions::PermissionPrompter>) {
+        let shared: permissions::SharedPrompter =
+            std::sync::Arc::new(std::sync::Mutex::new(prompter));
+        self.prompter = Some(Box::new(permissions::ForwardingPrompter(shared.clone())));
+        self.shared_prompter = Some(shared);
+    }
+
+    /// [`Self::check_permission`] for a tool by name and risk (a bridge CLI's tool request):
+    /// the configured rules, the session's "yes to all" scopes, then the prompter.
+    pub fn check_permission_for(
+        &mut self,
+        tool_name: &str,
+        risk: orca_abstractions::ToolRiskLevel,
+        permission_arg_name: &str,
+        args: &Value,
+    ) -> bool {
+        match permissions::evaluate_permission(
+            &self.config.permissions,
+            tool_name,
+            risk,
+            permission_arg_name,
             args,
             &self.approved_scopes,
         ) {
@@ -658,7 +687,7 @@ impl AgentSession {
                 let Some(prompter) = self.prompter.as_mut() else {
                     return false;
                 };
-                match prompter.prompt(tool.name(), permissions::risk_name(tool.risk_level())) {
+                match prompter.prompt(tool_name, permissions::risk_name(risk)) {
                     permissions::PermissionDecision::Approved => true,
                     permissions::PermissionDecision::ApproveAll => {
                         self.approved_scopes.insert(scope_key.to_lowercase());

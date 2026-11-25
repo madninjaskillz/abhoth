@@ -377,18 +377,45 @@ pub fn wire_pi_agent_tools(
     registry.replace(Arc::new(progress));
 
     if auto_lead {
-        let tool = PiLeadModeTool::default();
-        let free: Option<FreeCopiesFn> = slots.map(|rt| {
-            let allocator = rt.allocator.clone();
-            Arc::new(move || {
-                let allocator = allocator.clone();
-                Box::pin(async move { Some(allocator.free_whole_copies().await) })
-                    as BoxFuture<Option<Vec<String>>>
-            }) as FreeCopiesFn
-        });
-        tool.set_choose(Some(lead_mode_chooser(config.clone(), Some(o), free)));
-        registry.replace(Arc::new(tool));
+        registry.replace(Arc::new(wired_lead_mode(config, o, slots)));
     }
+}
+
+/// `PiLeadModeTool` with the Lead's chooser (`LeadModeChooser.Create`).
+fn wired_lead_mode(
+    config: &OrcaConfig,
+    o: Arc<AgentOrchestrator>,
+    slots: Option<&Arc<SlotRuntime>>,
+) -> PiLeadModeTool {
+    let tool = PiLeadModeTool::default();
+    let free: Option<FreeCopiesFn> = slots.map(|rt| {
+        let allocator = rt.allocator.clone();
+        Arc::new(move || {
+            let allocator = allocator.clone();
+            Box::pin(async move { Some(allocator.free_whole_copies().await) })
+                as BoxFuture<Option<Vec<String>>>
+        }) as FreeCopiesFn
+    });
+    tool.set_choose(Some(lead_mode_chooser(config.clone(), Some(o), free)));
+    tool
+}
+
+/// `ToolWiring`: the OpenOrca profile in `agent.leadMode` "auto" sizes each request with
+/// lead_mode too (the Pi profile registers it with its agent tools), when the Lead can spawn.
+pub fn register_auto_lead_mode(
+    registry: &mut ToolRegistry,
+    manager: &Arc<AgentManager>,
+    config: &OrcaConfig,
+    slots: Option<&Arc<SlotRuntime>>,
+) {
+    if !orca_core::orchestration::is_auto_lead(config)
+        || registry.resolve(lead_mode::TOOL_NAME).is_some()
+        || registry.resolve("spawn_agents").is_none()
+    {
+        return;
+    }
+    let o = manager.orchestrator().clone();
+    registry.register(Arc::new(wired_lead_mode(config, o, slots)));
 }
 
 /// `AgentWiring.PiPromptFactory`: the Pi profile's sub-agent prompt, built like Pi's subagent

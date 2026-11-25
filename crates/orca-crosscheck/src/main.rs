@@ -744,7 +744,7 @@ fn usage_lines(dir: &Path) -> Vec<String> {
     out
 }
 
-/// Scenario placeholders in the config: `<FAKE_MCP>` / `<FAKE_LSP>` (the fake servers built
+/// Scenario placeholders in the config: `<FAKE_MCP>` / `<FAKE_LSP>` / `<FAKE_CLAUDE>` (the fakes built
 /// next to this program, as JSON string bodies) and `<IMAGE_URL>` (the fake server's `/v1`,
 /// which also answers the images API).
 fn fill_placeholders(text: &str, base_url: &str) -> String {
@@ -759,6 +759,7 @@ fn fill_placeholders(text: &str, base_url: &str) -> String {
     };
     text.replace("<FAKE_MCP>", &json_path("fake-mcp-server"))
         .replace("<FAKE_LSP>", &json_path("fake-lsp-server"))
+        .replace("<FAKE_CLAUDE>", &json_path("fake-claude"))
         .replace("<IMAGE_URL>", base_url)
 }
 
@@ -906,8 +907,7 @@ fn mask_known_gaps(mut request: Value) -> Value {
     request
 }
 
-/// The system prompt with the AVAILABLE TOOLS lines replaced by `<tool list>` and the LEAD MODE
-/// section (present only when a `lead_mode` tool is advertised) removed.
+/// The system prompt with the AVAILABLE TOOLS lines replaced by `<tool list>`.
 fn mask_tool_derived_prompt(text: &str) -> String {
     let mut out = text.to_string();
     const LIST: &str = "AVAILABLE TOOLS:
@@ -947,20 +947,6 @@ PROGRESS:",
             out.replace_range(start..end, "<tool list>");
             break;
         }
-    }
-    const LEAD: &str = "
-
-LEAD MODE (auto):
-";
-    if let Some(start) = out.find(LEAD) {
-        let end = out[start + LEAD.len()..]
-            .find(
-                "
-
-",
-            )
-            .map_or(out.len(), |e| start + LEAD.len() + e);
-        out.replace_range(start..end, "");
     }
     out
 }

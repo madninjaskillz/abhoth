@@ -22,7 +22,7 @@ Cross-check against the C# build (needs a Release build of the C# CLI):
 
 ```sh
 dotnet build ../OpenOrca.sln -c Release
-cargo build -p orca-cli -p orca-crosscheck
+cargo build -p orca-cli -p orca-crosscheck -p orca-testkit   # orca-testkit: fake-claude for the bridge scenarios
 target/debug/orca-crosscheck --csharp ../src/OpenOrca.Cli/bin/Release/net10.0/openorca.exe \
     --rust target/debug/abhoth.exe [--only <scenario>] [--out <dir>] [--strict]
 ```
@@ -453,6 +453,36 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   breaks `#[serde(flatten)]` (`OrcaConfig.extra`) and changes `Number` equality workspace-wide.
   The Anthropic and Ollama clients send arguments as parsed objects (digits normalized; those
   APIs read values). Cross-check scenario 119.
+- **D100** (`rust-port/bridge`) Bridge engines run in the REPL through
+  `orca_core::engines::EngineHost`, the front-end-neutral part of C# `EngineHost` (switch,
+  startup check with native fallback, one CLI process per session, `--resume` of the
+  conversation's CLI session, the progress.js bucket, auth listeners); the native loop stays in
+  the front end. `engines::session_sink::SessionBridgeSink` is the shared half of
+  `EngineEventRenderer` (session state, approvals through the session's rules and prompter, host
+  tools); each front end supplies a `BridgeView`. A readiness check that fails outright reads as
+  an `Error` readiness with its message (C# lets the exception escape to the command loop).
+- **D101** The REPL has no agent footer yet, so a bridge's name goes on the status line after the
+  profile (C#: the Lead bar), its progress.js bars on the info row (`[D] label 37%`), and there is
+  no thinking indicator during bridge turns (the Rust native loop has none either).
+- **D102** Bridge scenarios in the cross-check run `orca-testkit`'s `fake-claude` (`<FAKE_CLAUDE>`
+  in config): `--version`, `auth status --json` (`FAKE_CLAUDE_LOGGED_OUT`) and stream-json turns
+  scripted by `FAKE_CLAUDE_SCRIPT` (`<CWD>`, `<RESUMED>` filled in). Scenarios 119-122: `--print`,
+  REPL turns with the saved engine fields and `/engine`, `-c` resuming the CLI session, the login
+  offer.
+- **D103** Bridge engines under `--hostui` (and in bench runs, whose config picks the engine):
+  the web session (`orca_webui::native`) holds an `EngineHost`; `SetEngine`, the project's
+  preferred engine, `engine` / `engineAuth` events, the engine in the snapshot and the Lead bar
+  (engine id as slot, `claude-code` as model, the CLI's progress.js bars as `bar:<key>` agents
+  of kind `progress`) follow `LiveSessionAdapter`. The agent host's own `agents` events go through
+  the same decoration. A CLI that can't run (`✗ message`) and a startup check that falls back to
+  native are also published as notices (C# shows them in its console only). A profile/mode
+  rebuild keeps the session's engine.
+- **D104** Foreground sub-agents ask the Lead's prompter (console or browser) for approvals:
+  `AgentSession::set_prompter` shares it through the sub-agent pipeline (C#: one
+  `PermissionManager`), one prompt at a time; background agents are still refused.
+- **D105** The OpenOrca profile registers `lead_mode` in `agent.leadMode` "auto" when the Lead has
+  `spawn_agents` (`ToolWiring`); the cross-check no longer masks the `LEAD MODE (auto)` prompt
+  section (scenario 123).
 - **D110** `abhoth --desktop` (feature `desktop`, phase 7): wry 0.57.4 + tao 0.37.0 (0.38 needs
   gtk 0.19 while wry's webkit2gtk needs 0.18) + tray-icon 0.26.1 without its GTK default
   (`ksni` on Linux) + rfd 0.18.0. `main()` hands the main thread to the window's event loop; the

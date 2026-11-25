@@ -1,4 +1,4 @@
-//! `--hostui` (headless): the web UI drives the native agent loop. Prints the URL and one line
+//! `--hostui` (headless): the web UI drives the agent loop (native or a bridge engine). Prints the URL and one line
 //! per prompt and finished turn; Ctrl+C cancels a running turn, else stops the server.
 //! Other projects opened in the browser get their own in-process session (C# starts a worker
 //! process per project).
@@ -95,6 +95,7 @@ fn start_live(
     mut options: NativeOptions,
 ) -> Arc<AgentLiveSession> {
     let config_dir = orca_core::config::manager::default_config_dir();
+    let mut web_host = None;
     let agents: Option<Arc<dyn orca_webui::live::AgentHost>> = match crate::wire_agents(
         &mut session,
         &services.agent_tools,
@@ -109,7 +110,7 @@ fn start_live(
                 session.config.clone(),
                 Arc::new(move || b.in_turn()),
             ));
-            host.attach(bus.clone());
+            web_host = Some(host.clone());
             Some(host)
         }
         Err(e) => {
@@ -118,7 +119,11 @@ fn start_live(
         }
     };
     options.agents = agents;
-    AgentLiveSession::start_with(session, bus, mode, options)
+    let live = AgentLiveSession::start_with(session, bus.clone(), mode, options);
+    if let Some(host) = web_host {
+        host.attach(bus, Some(live.agents_decorator()));
+    }
+    live
 }
 
 fn clock() -> String {
@@ -214,13 +219,6 @@ pub async fn run_with(
     };
     if args.tui {
         eprintln!("abhoth: --tui needs the interactive mode, which is not ported to Rust yet.");
-        return Ok(2);
-    }
-    if orca_core::engines::selected_bridge(&config).is_some() {
-        eprintln!(
-            "abhoth: the Rust web UI runs the native engine only (agent.engine is {}).",
-            config.agent.engine
-        );
         return Ok(2);
     }
     let bus = Arc::new(LiveEventBus::new());
@@ -481,12 +479,6 @@ fn bench_options(
                 Ok(c) => c,
                 Err(e) => return failed(format!("{e:#}")),
             };
-            if orca_core::engines::selected_bridge(&config).is_some() {
-                return failed(format!(
-                    "the Rust bench runs the native engine only (agent.engine is {})",
-                    config.agent.engine
-                ));
-            }
             // The run's "Slot usage" lines go to its own home's log, where the bench reads
             // them (C#: the worker process logs to its OPENORCA_HOME).
             let log = run_home.as_deref().map(|h| {
