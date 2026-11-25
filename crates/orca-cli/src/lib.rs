@@ -31,7 +31,8 @@ use orca_core::orchestration::custom_agents::CustomAgentLoader;
 use orca_core::orchestration::planner_phase::{PlannerPhase, planner_enabled};
 use orca_core::orchestration::types::AgentTypeRegistry;
 use orca_core::orchestration::{
-    AgentChatClient, AgentManager, AgentOrchestrator, DefaultClientProvider,
+    AgentChatClient, AgentClientProvider, AgentManager, AgentOrchestrator, DefaultClientProvider,
+    SlotClientProvider,
 };
 pub use orca_tools_agent::AgentToolsHandle;
 use serde::Serialize;
@@ -192,12 +193,14 @@ impl ToolServices {
 /// Sub-agents for `session` (`ToolWiring`, agent part): the orchestrator with the session's
 /// tools and custom agent types, sub-agent tool calls through a copy of the session's
 /// pipeline, and the agent tools wired to the manager. Start/finish lines go to stderr unless
-/// `quiet`.
+/// `quiet`. With `slots` (the runtime [`wire_client`] returned), every agent on the default
+/// model leases its own slot (`orchestrator.Slots = runtime`).
 pub fn wire_agents(
     session: &mut AgentSession,
     handle: &AgentToolsHandle,
     config_dir: Option<&Path>,
     quiet: bool,
+    slots: Option<&Arc<orca_core::slots::SlotRuntime>>,
 ) -> Result<Arc<AgentManager>> {
     let config = session.config.clone();
     let cwd = session.ctx.cwd.clone();
@@ -219,12 +222,11 @@ pub fn wire_agents(
         });
         types.register_custom(custom.iter());
     }
-    let orchestrator = AgentOrchestrator::new(
-        Arc::new(DefaultClientProvider::new(client)),
-        config.clone(),
-        types,
-        cwd,
-    );
+    let mut provider: Arc<dyn AgentClientProvider> = Arc::new(DefaultClientProvider::new(client));
+    if let Some(rt) = slots {
+        provider = Arc::new(SlotClientProvider::new(provider, rt.clone()));
+    }
+    let orchestrator = AgentOrchestrator::new(provider, config.clone(), types, cwd);
     // Sub-agents never choose a Lead mode.
     orchestrator.set_tools(
         session
@@ -382,7 +384,13 @@ pub async fn run_single_prompt_in_session(
         session.messages = r.messages;
         session.tool_hooks.session_id = Some(r.id);
     }
-    wire_agents(&mut session, &services.agent_tools, config_dir, quiet)?;
+    wire_agents(
+        &mut session,
+        &services.agent_tools,
+        config_dir,
+        quiet,
+        slots.as_ref(),
+    )?;
     // agent.planner: a read-only planner writes the plan before the Lead's first turn.
     let prompt = match session.orchestrator.clone() {
         Some(o) if planner_enabled(&session.config) => {

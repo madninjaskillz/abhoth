@@ -969,6 +969,11 @@ impl AgentOrchestrator {
             }));
         };
         let letters = self.reserve_letters(specs.len());
+        let heavy = order
+            .iter()
+            .copied()
+            .find(|&i| specs[i].after.as_ref().is_none_or(|a| a.is_empty()))
+            .filter(|_| specs.len() >= 2 && self.provider.uses_slots());
         let gate = Arc::new(tokio::sync::Semaphore::new(
             self.config.agent.max_concurrent.max(1) as usize,
         ));
@@ -977,7 +982,8 @@ impl AgentOrchestrator {
             .map(|_| tokio::sync::watch::channel(None).0)
             .collect();
 
-        let run = |i: usize| {
+        let run = |i: usize, placed: Option<tokio::sync::oneshot::Sender<()>>| {
+            let is_heavy = heavy == Some(i);
             let me = self.clone();
             let gate = gate.clone();
             let done_tx = done[i].clone();
@@ -995,6 +1001,8 @@ impl AgentOrchestrator {
             let position = first_position + i as i32;
             let ct = ct.clone();
             async move {
+                // Dropping the sender (however this task ends) also counts as placed.
+                let placed = std::sync::Mutex::new(placed);
                 let mut finished = Vec::new();
                 for mut rx in deps {
                     let dep = loop {
@@ -1027,6 +1035,7 @@ impl AgentOrchestrator {
                         spec.task = with_dependency_reports(&spec.task, &finished);
                     }
                     let _permit = gate.acquire().await;
+                    let on_placed = placed.lock().unwrap_or_else(|e| e.into_inner()).take();
                     me.spawn_agent_with(
                         &spec.task,
                         &spec.agent_type,
@@ -1034,6 +1043,12 @@ impl AgentOrchestrator {
                         &ct,
                         SpawnOptions {
                             label: spec.label.clone(),
+                            heavy: is_heavy,
+                            on_placed: on_placed.map(|tx| {
+                                Box::new(move || {
+                                    let _ = tx.send(());
+                                }) as Box<dyn FnOnce() + Send>
+                            }),
                             letter_slot: Some(letter),
                             schedule_position: Some(position),
                             ..SpawnOptions::default()
@@ -1041,12 +1056,31 @@ impl AgentOrchestrator {
                     )
                     .await
                 };
+                drop(placed);
                 let _ = done_tx.send(Some(result.clone()));
                 (i, result)
             }
         };
-        let futures: Vec<_> = order.iter().map(|&i| run(i)).collect();
         let mut results: Vec<Option<Arc<AgentContext>>> = vec![None; specs.len()];
+        let mut futures = Vec::new();
+        for &i in &order {
+            if heavy == Some(i) {
+                // The heavy task takes its copy before any other task asks for a slot.
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                let mut fut = Box::pin(run(i, Some(tx)));
+                tokio::select! {
+                    biased;
+                    (i, ctx) = &mut fut => {
+                        results[i] = Some(ctx);
+                        continue;
+                    }
+                    _ = rx => {}
+                }
+                futures.push(futures_util::future::Either::Left(fut));
+            } else {
+                futures.push(futures_util::future::Either::Right(Box::pin(run(i, None))));
+            }
+        }
         for (i, ctx) in futures_util::future::join_all(futures).await {
             results[i] = Some(ctx);
         }
@@ -1124,6 +1158,8 @@ impl AgentOrchestrator {
             .unwrap_or(self.config.agent.timeout_seconds);
         let mut client = self.client_for_type(type_def);
         let mut route: Option<ProviderRoute> = None;
+        // The agent's own slot or provider client: its flow's app-wide calls go there too.
+        let mut own_client: Option<Arc<dyn AgentChatClient>> = None;
         if type_def.model.is_none()
             && let Some(provider_name) = context.provider()
         {
@@ -1134,6 +1170,7 @@ impl AgentOrchestrator {
                         r.model.clone(),
                     ));
                     context.state().provider_model = Some(r.model.clone());
+                    own_client = Some(client.clone());
                     route = Some(r);
                 }
                 None => {
@@ -1200,12 +1237,13 @@ impl AgentOrchestrator {
                 });
             };
             let lease = tokio::select! {
-                l = self.provider.acquire(context, spawner.as_deref(), &waiting) => Some(l),
+                l = self.provider.acquire(context, spawner.as_ref(), &waiting) => Some(l),
                 _ = agent_ct.cancelled() => None,
             };
             match lease {
                 Some(Some(lease)) => {
                     client = lease.client;
+                    own_client = Some(client.clone());
                     let mut s = context.state();
                     if s.status == AgentStatus::Pending {
                         s.status = AgentStatus::Running;
@@ -1242,6 +1280,7 @@ impl AgentOrchestrator {
         }
         context.signal_placed();
 
+        let ambient = self.provider.ambient_backend(own_client.as_ref());
         let run = self.run_agent(
             context,
             type_def,
@@ -1250,6 +1289,12 @@ impl AgentOrchestrator {
             route.as_ref(),
             resume_message,
         );
+        let run = async move {
+            match ambient {
+                Some(backend) => crate::slots::SlotRuntime::with_ambient(backend, run).await,
+                None => run.await,
+            }
+        };
         let end = tokio::select! {
             r = run => match r {
                 Ok(()) => RunEnd::Done,

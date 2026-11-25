@@ -250,7 +250,12 @@ impl CopyModelClient {
         model
     }
 
+    /// `options` with `model` as its model id; a request that names no model is sent as it is
+    /// (the copy's client for `model` fills it in, where the .NET SDK writes a client's model).
     fn with_model(options: &ChatOptions, model: &str) -> ChatOptions {
+        if options.model.is_none() || options.model.as_deref() == Some(model) {
+            return options.clone();
+        }
         ChatOptions {
             model: Some(model.to_string()),
             ..options.clone()

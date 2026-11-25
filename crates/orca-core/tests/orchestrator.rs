@@ -1901,9 +1901,404 @@ async fn provider_limits_max_tokens_per_provider_and_no_local_sampler_fields() {
 // ProviderUsage_IsAddedUpPerProvider_AndCosted, Ledger_LongContextRate_AndLocalRowFirst and
 // UsageLog_NamesProviderAndModel: not ported. ProviderUsageLedger and RequestStats (per-provider
 // usage and cost) have no Rust port yet.
-//
-// HaikuAgents_TakeNoSlot_AndLocalAgentsReuseAFreedSlot: not ported here; slots belong to the
-// slot allocator port (🟩B does slots).
+
+/// A slot copy's backend: records each request's task.
+struct RecordingBackend {
+    name: String,
+    tasks: Mutex<Vec<String>>,
+}
+
+impl RecordingBackend {
+    fn new(name: &str) -> Arc<Self> {
+        Arc::new(Self {
+            name: name.into(),
+            tasks: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn tasks_sorted(&self) -> Vec<String> {
+        let mut t = self.tasks.lock().unwrap().clone();
+        t.sort();
+        t
+    }
+}
+
+#[async_trait::async_trait]
+impl orca_core::client::ChatBackend for RecordingBackend {
+    async fn complete(
+        &self,
+        _: &str,
+        messages: &[ChatMessage],
+        _: &ChatOptions,
+    ) -> Result<ChatResponse, ChatError> {
+        self.tasks.lock().unwrap().push(task_of(messages));
+        Ok(text(&format!("Done on {}.", self.name)))
+    }
+
+    async fn stream_with_control(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+    ) -> Result<ChatResponse, ChatError> {
+        let r = self.complete(actor, messages, options).await?;
+        on_event(StreamEvent::Text(r.text.clone()));
+        Ok(r)
+    }
+}
+
+fn slot_runtime(
+    slots: orca_core::config::SlotsConfig,
+    config: &OrcaConfig,
+    copy: Arc<RecordingBackend>,
+    fallback: Arc<RecordingBackend>,
+) -> Arc<orca_core::slots::SlotRuntime> {
+    use orca_core::slots::testing::{FakeSlotHealth, FakeSlotRegistry};
+    use orca_core::slots::{AllocatorOptions, SlotAllocator, SlotClientFactory};
+    let allocator = SlotAllocator::new(
+        slots,
+        Some(Arc::new(FakeSlotRegistry::default())),
+        Arc::new(FakeSlotRegistry::default()),
+        Arc::new(FakeSlotHealth::default()),
+        AllocatorOptions {
+            owner: Some("tester@box".into()),
+            host: Some("box".into()),
+            pid: Some(1),
+            ..AllocatorOptions::default()
+        },
+    );
+    let factory = SlotClientFactory::new(
+        config.clone(),
+        Some(Arc::new(move |_| {
+            copy.clone() as Arc<dyn orca_core::client::ChatBackend>
+        })),
+        None,
+        None,
+    );
+    orca_core::slots::SlotRuntime::new(allocator, Arc::new(factory), fallback, None)
+}
+
+fn one_slot_config() -> orca_core::config::SlotsConfig {
+    orca_core::config::SlotsConfig {
+        enabled: true,
+        registry_url: Some("http://fake-registry".into()),
+        model: Some("m".into()),
+        copies: vec![orca_core::config::SlotCopyConfig {
+            name: "A".into(),
+            base_url: "http://copy-a/v1".into(),
+            slots: 1,
+            ..orca_core::config::SlotCopyConfig::default()
+        }],
+        retry_seconds: 1,
+        ..orca_core::config::SlotsConfig::default()
+    }
+}
+
+#[tokio::test]
+async fn haiku_agents_take_no_slot_and_local_agents_reuse_a_freed_slot() {
+    let mut config = swarm_config(10, None, None);
+    config.slots = Some(one_slot_config());
+    let local = SwarmClient::new("local", 1000);
+    let haiku = SwarmClient::new("haiku", 4000);
+    let mut routes: HashMap<String, Arc<dyn AgentChatClient>> = HashMap::new();
+    routes.insert("haiku".into(), haiku.clone());
+    let inner = SwarmProvider {
+        local: local.clone(),
+        config: config.clone(),
+        routes,
+    };
+    let copy_a = RecordingBackend::new("A");
+    let fallback = RecordingBackend::new("fallback");
+    let runtime = slot_runtime(
+        config.slots.clone().unwrap(),
+        &config,
+        copy_a.clone(),
+        fallback.clone(),
+    );
+    let provider = SlotClientProvider::new(Arc::new(inner), runtime);
+    let o = AgentOrchestrator::new(
+        Arc::new(provider),
+        config,
+        AgentTypeRegistry::new(),
+        std::env::temp_dir(),
+    );
+
+    // One slot, schedule local, local, haiku: the two local agents share the slot in turn
+    // (the second waits for the first), the haiku agent runs without one.
+    let specs: Vec<ParallelAgentSpec> = (1..=3)
+        .map(|i| ParallelAgentSpec::new(format!("task {i}"), "general"))
+        .collect();
+    let results = o
+        .spawn_parallel(&specs, 0, &CancelToken::new())
+        .await
+        .unwrap();
+
+    assert!(results.iter().all(|a| a.status() == AgentStatus::Completed));
+    assert_eq!(copy_a.tasks_sorted(), ["task 1", "task 2"]);
+    assert_eq!(haiku.tasks_sorted(), ["task 3"]);
+    assert!(fallback.tasks_sorted().is_empty());
+    assert!(local.tasks_sorted().is_empty());
+    let has =
+        |a: &Arc<AgentContext>, t: &str| a.transcript.snapshot().iter().any(|e| e.text.contains(t));
+    assert!(has(&results[1], "pinned to slot A1"));
+    assert!(!has(&results[2], "slot"));
+    assert!(
+        results[0].heavy,
+        "the first ready task of a slotted batch is heavy"
+    );
+}
+
+type ReplyFn = Box<dyn Fn(&[ChatMessage]) -> ChatResponse + Send + Sync>;
+
+/// A slot copy whose replies come from a function of the request.
+struct ScriptBackend {
+    calls: Mutex<Vec<String>>,
+    f: ReplyFn,
+}
+
+#[async_trait::async_trait]
+impl orca_core::client::ChatBackend for ScriptBackend {
+    async fn complete(
+        &self,
+        _: &str,
+        messages: &[ChatMessage],
+        _: &ChatOptions,
+    ) -> Result<ChatResponse, ChatError> {
+        self.calls.lock().unwrap().push(task_of(messages));
+        Ok((self.f)(messages))
+    }
+
+    async fn stream_with_control(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+    ) -> Result<ChatResponse, ChatError> {
+        let r = self.complete(actor, messages, options).await?;
+        if !r.text.is_empty() {
+            on_event(StreamEvent::Text(r.text.clone()));
+        }
+        Ok(r)
+    }
+}
+
+/// A slot copy that holds the "first" task's request until the gate opens.
+struct GateBackend {
+    gate: Gate,
+}
+
+#[async_trait::async_trait]
+impl orca_core::client::ChatBackend for GateBackend {
+    async fn complete(
+        &self,
+        _: &str,
+        messages: &[ChatMessage],
+        _: &ChatOptions,
+    ) -> Result<ChatResponse, ChatError> {
+        if task_of(messages) == "first" {
+            self.gate.wait().await;
+        }
+        Ok(text("Done."))
+    }
+
+    async fn stream_with_control(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+    ) -> Result<ChatResponse, ChatError> {
+        let r = self.complete(actor, messages, options).await?;
+        on_event(StreamEvent::Text(r.text.clone()));
+        Ok(r)
+    }
+}
+
+#[tokio::test]
+async fn an_agent_waits_for_a_free_slot_and_gets_it_when_the_holder_finishes() {
+    use orca_core::slots::testing::{FakeSlotHealth, FakeSlotRegistry};
+    use orca_core::slots::{AllocatorOptions, SlotAllocator, SlotClientFactory};
+    let config = OrcaConfig {
+        slots: Some(one_slot_config()),
+        ..OrcaConfig::default()
+    };
+    let gate = Gate::new();
+    let backend = Arc::new(GateBackend { gate: gate.clone() });
+    let allocator = SlotAllocator::new(
+        config.slots.clone().unwrap(),
+        Some(Arc::new(FakeSlotRegistry::default())),
+        Arc::new(FakeSlotRegistry::default()),
+        Arc::new(FakeSlotHealth::default()),
+        AllocatorOptions {
+            owner: Some("tester@box".into()),
+            host: Some("box".into()),
+            pid: Some(1),
+            ..AllocatorOptions::default()
+        },
+    );
+    let b = backend.clone();
+    let factory = SlotClientFactory::new(
+        config.clone(),
+        Some(Arc::new(move |_| {
+            b.clone() as Arc<dyn orca_core::client::ChatBackend>
+        })),
+        None,
+        None,
+    );
+    let runtime = orca_core::slots::SlotRuntime::new(
+        allocator,
+        Arc::new(factory),
+        RecordingBackend::new("fallback"),
+        None,
+    );
+    let provider = SlotClientProvider::new(
+        Arc::new(DefaultClientProvider::new(FuncClient::stub("main"))),
+        runtime.clone(),
+    );
+    let o = AgentOrchestrator::new(
+        Arc::new(provider),
+        config,
+        AgentTypeRegistry::new(),
+        std::env::temp_dir(),
+    );
+
+    let o1 = o.clone();
+    let first = tokio::spawn(async move { o1.spawn_agent("first", "general").await });
+    wait_until(|| {
+        o.get_all_agents()
+            .first()
+            .is_some_and(|a| a.state().slot.as_deref() == Some("A1"))
+    })
+    .await;
+    let o2 = o.clone();
+    let second = tokio::spawn(async move { o2.spawn_agent("second", "general").await });
+    wait_until(|| {
+        o.get_all_agents().iter().any(|a| {
+            a.task == "second"
+                && a.status() == AgentStatus::Pending
+                && a.state().current_activity.as_deref() == Some(WAITING_FOR_SLOT)
+        })
+    })
+    .await;
+
+    gate.open();
+    let first = first.await.unwrap();
+    let second = second.await.unwrap();
+    assert_eq!(first.status(), AgentStatus::Completed);
+    assert_eq!(second.status(), AgentStatus::Completed);
+    let notes: Vec<String> = second
+        .transcript
+        .snapshot()
+        .into_iter()
+        .map(|e| e.text)
+        .collect();
+    assert!(
+        notes.contains(&"waiting for a free inference slot".to_string()),
+        "{notes:?}"
+    );
+    assert!(
+        notes.contains(&"pinned to slot A1".to_string()),
+        "{notes:?}"
+    );
+    // Leases are released on finish; the last slot is remembered for a follow-up.
+    assert!(second.state().slot.is_none());
+    assert_eq!(second.state().last_slot.as_deref(), Some("A1"));
+    assert!(runtime.allocator.held().iter().all(|l| l.slot().is_none()));
+}
+
+#[tokio::test]
+async fn nested_spawn_borrows_the_spawners_slot_when_none_is_free() {
+    let mut config = OrcaConfig::default();
+    config.lm_studio.native_tool_calling = true;
+    config.slots = Some(one_slot_config());
+    let copy = Arc::new(ScriptBackend {
+        calls: Mutex::new(Vec::new()),
+        f: Box::new(|m| {
+            if task_of(m) == "outer" && !has_tool_message(m) {
+                call("spawn", json!({}))
+            } else {
+                text("Done.")
+            }
+        }),
+    });
+    let fallback = RecordingBackend::new("fallback");
+    let runtime = {
+        use orca_core::slots::testing::{FakeSlotHealth, FakeSlotRegistry};
+        use orca_core::slots::{AllocatorOptions, SlotAllocator, SlotClientFactory};
+        let allocator = SlotAllocator::new(
+            config.slots.clone().unwrap(),
+            Some(Arc::new(FakeSlotRegistry::default())),
+            Arc::new(FakeSlotRegistry::default()),
+            Arc::new(FakeSlotHealth::default()),
+            AllocatorOptions {
+                owner: Some("tester@box".into()),
+                host: Some("box".into()),
+                pid: Some(1),
+                ..AllocatorOptions::default()
+            },
+        );
+        let c = copy.clone();
+        let factory = SlotClientFactory::new(
+            config.clone(),
+            Some(Arc::new(move |_| {
+                c.clone() as Arc<dyn orca_core::client::ChatBackend>
+            })),
+            None,
+            None,
+        );
+        orca_core::slots::SlotRuntime::new(allocator, Arc::new(factory), fallback.clone(), None)
+    };
+    let provider = SlotClientProvider::new(
+        Arc::new(DefaultClientProvider::new(FuncClient::stub("main"))),
+        runtime.clone(),
+    );
+    let o = AgentOrchestrator::new(
+        Arc::new(provider),
+        config,
+        AgentTypeRegistry::new(),
+        std::env::temp_dir(),
+    );
+    o.set_tools(tools(&["spawn"]));
+    let me: Arc<Mutex<Option<Weak<AgentOrchestrator>>>> = Arc::new(Mutex::new(None));
+    let inner: Arc<Mutex<Option<Arc<AgentContext>>>> = Arc::new(Mutex::new(None));
+    let (me2, inner2) = (me.clone(), inner.clone());
+    o.set_executor(executor_async(move |_, _| {
+        let o = me2.lock().unwrap().clone().unwrap().upgrade().unwrap();
+        let inner = inner2.clone();
+        Box::pin(async move {
+            let c = o.spawn_agent("inner", "general").await;
+            let r = result(&c);
+            *inner.lock().unwrap() = Some(c);
+            r
+        })
+    }));
+    *me.lock().unwrap() = Some(Arc::downgrade(&o));
+
+    let outer = o.spawn_agent("outer", "general").await;
+
+    assert_eq!(outer.status(), AgentStatus::Completed);
+    let inner = inner.lock().unwrap().clone().unwrap();
+    assert_eq!(inner.status(), AgentStatus::Completed);
+    let notes: Vec<String> = inner
+        .transcript
+        .snapshot()
+        .into_iter()
+        .map(|e| e.text)
+        .collect();
+    assert!(
+        notes
+            .iter()
+            .any(|t| t == "no free slot; sharing Agent A's slot A1"),
+        "{notes:?}"
+    );
+    assert!(copy.calls.lock().unwrap().contains(&"inner".to_string()));
+    assert!(fallback.tasks_sorted().is_empty());
+    // Every lease is back: the borrowed one was never the inner agent's own.
+    assert!(runtime.allocator.held().iter().all(|l| l.slot().is_none()));
+    assert!(outer.state().slot.is_none());
+}
 
 // ── AgentSupportTests ────────────────────────────────────────────────────────
 
