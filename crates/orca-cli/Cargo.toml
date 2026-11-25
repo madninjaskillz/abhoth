@@ -30,6 +30,8 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 orca-testkit.workspace = true
 tempfile.workspace = true
+async-trait.workspace = true
+regex.workspace = true
 
 [lints]
 workspace = true

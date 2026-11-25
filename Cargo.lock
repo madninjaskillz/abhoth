@@ -839,12 +839,14 @@ name = "orca-cli"
 version = "0.15.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "orca-abstractions",
  "orca-core",
  "orca-testkit",
  "orca-tools-fs",
  "orca-tools-pi",
  "orca-tools-shell",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",

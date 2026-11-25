@@ -315,7 +315,7 @@ impl AgentSession {
                 .is_some_and(|t| t.capabilities().contains(ToolCapabilities::MODIFIES_FILES))
     }
 
-    pub(super) fn turn_modified_files(&self) -> bool {
+    pub fn turn_modified_files(&self) -> bool {
         self.turn_history()
             .iter()
             .any(|r| self.is_successful_mutation(r))
@@ -323,7 +323,7 @@ impl AgentSession {
 
     /// The latest command run this turn passed and nothing was modified after it. (C# also
     /// keeps the pass when the turn deletes a scratch file it created; no delete tool yet.)
-    pub(super) fn has_recent_test_pass_evidence(&self) -> bool {
+    pub fn has_recent_test_pass_evidence(&self) -> bool {
         use super::run_evidence::{RunOutcome, classify};
         for r in self.turn_history().iter().rev() {
             if self.is_successful_mutation(r) {

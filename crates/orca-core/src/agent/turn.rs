@@ -712,7 +712,7 @@ impl AgentSession {
 
     /// `TryGetRecentTestFailure`: the latest test/build-style run this turn failed (and no
     /// later one passed): a head+tail excerpt of its output.
-    fn recent_test_failure(&self) -> Option<String> {
+    pub fn recent_test_failure(&self) -> Option<String> {
         for r in self.turn_history().iter().rev() {
             if !is_command_runner(&r.name) {
                 continue;
