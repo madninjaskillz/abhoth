@@ -1759,7 +1759,9 @@ impl AgentOrchestrator {
             }
             cut_offs_in_a_row = 0;
 
-            let message = response.to_message();
+            let mut message = response.to_message();
+            // `ToChatResponse` coalesces the streamed text parts into one.
+            message.leading_empty_part = false;
             context.state().conversation.add_message(message);
             let mut response_text = String::new();
             if !response.text.trim().is_empty() {

@@ -36,7 +36,8 @@
 //!
 //! Known, documented gaps are ignored by default: the advertised tool list (the `tools` array
 //! and the tool-derived parts of the system prompt: the AVAILABLE TOOLS lines and the
-//! lead_mode tool's LEAD MODE section), since Rust has only the core tools until phase 3. The
+//! lead_mode tool's LEAD MODE section; a text-mode sub-agent's TOOLS AVAILABLE list), since Rust
+//! does not have every C# tool yet. The
 //! rest of the system prompt is compared. `--strict` compares everything.
 
 use std::collections::BTreeMap;
@@ -533,6 +534,17 @@ PROGRESS:",
             })
             .map_or(out.len(), |e| start + e);
         out.replace_range(start..end, "<tool list>");
+    }
+    // A text-mode sub-agent's prompt lists its tools too ("TOOLS AVAILABLE:", platform lines).
+    for (head, gap) in [
+        ("TOOLS AVAILABLE:\r\n", "\r\n\r\n"),
+        ("TOOLS AVAILABLE:\n", "\n\n"),
+    ] {
+        if let Some(start) = out.find(head).map(|i| i + head.len()) {
+            let end = out[start..].find(gap).map_or(out.len(), |e| start + e);
+            out.replace_range(start..end, "<tool list>");
+            break;
+        }
     }
     const LEAD: &str = "
 

@@ -1,0 +1,12 @@
+{
+  "prompt": "Report your progress, then let an agent report too.",
+  "config": {"agent": {"leadMode": "hands-on"}},
+  "replies": [
+    {"tools": [{"name": "report_progress", "args": {"percent": 0.4, "label": "planning the work now please"}}]},
+    {"tools": [{"name": "report_progress", "args": {"percent": "x"}}]},
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Report 50 percent progress, then finish.", "agent_type": "general"}}]},
+    {"tools": [{"name": "report_progress", "args": {"percent": 50, "label": "halfway"}}]},
+    {"text": "Done."},
+    {"text": "All reported."}
+  ]
+}

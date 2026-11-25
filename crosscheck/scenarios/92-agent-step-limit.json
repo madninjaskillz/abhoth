@@ -1,0 +1,12 @@
+{
+  "prompt": "Run an agent that runs out of steps.",
+  "config": {"agent": {"leadMode": "hands-on", "maxIterations": 2, "iterationExtensions": 0}},
+  "files": {"a.txt": "a\n", "b.txt": "b\n"},
+  "replies": [
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Read a.txt and b.txt.", "agent_type": "explore", "label": "Read both"}}]},
+    {"tools": [{"name": "read_file", "args": {"path": "a.txt"}}]},
+    {"tools": [{"name": "read_file", "args": {"path": "b.txt"}}]},
+    {"text": "## Completed\nRead both files.\n## Remaining\nNothing.\n## Files Changed\nNone."},
+    {"text": "Agent A stopped at its step limit."}
+  ]
+}

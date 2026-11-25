@@ -1,0 +1,12 @@
+{
+  "prompt": "Create hello.txt containing hi, using a general agent.",
+  "config": {"agent": {"leadMode": "hands-on"}},
+  "replies": [
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Create hello.txt with the content hi.", "label": "Write hello"}}]},
+    {"tools": [{"name": "write_file", "args": {"path": "hello.txt", "content": "hi\n"}}]},
+    {"text": "Wrote hello.txt."},
+    {"text": "Agent A wrote hello.txt."},
+    {"tools": [{"name": "read_file", "args": {"path": "hello.txt"}}]},
+    {"text": "Checked: hello.txt contains hi."}
+  ]
+}

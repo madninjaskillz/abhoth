@@ -1,0 +1,8 @@
+{
+  "prompt": "Explore the project.",
+  "args": ["--sandbox"],
+  "replies": [
+    {"tools": [{"name": "spawn_agent", "args": {"task": "List the files.", "agent_type": "explore"}}]},
+    {"text": "Spawning is blocked in sandbox mode."}
+  ]
+}

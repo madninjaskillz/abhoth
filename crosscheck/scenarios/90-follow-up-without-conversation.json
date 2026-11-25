@@ -1,0 +1,11 @@
+{
+  "prompt": "Ask an agent, then send it a follow-up.",
+  "config": {"agent": {"leadMode": "hands-on"}},
+  "replies": [
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Say hello.", "agent_type": "explore", "label": "Say hello"}}]},
+    {"text": "Hello."},
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Say it again.", "to": "A"}}]},
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Say it again.", "to": "Z"}}]},
+    {"text": "Agent A said hello."}
+  ]
+}

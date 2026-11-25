@@ -1,0 +1,10 @@
+{
+  "prompt": "Spawn an agent that spawns another.",
+  "config": {"agent": {"leadMode": "hands-on", "maxSpawnDepth": 1}},
+  "replies": [
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Spawn a helper to say hi.", "agent_type": "general"}}]},
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Say hi."}}]},
+    {"text": "I could not spawn a helper."},
+    {"text": "The agent could not nest."}
+  ]
+}

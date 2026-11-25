@@ -937,11 +937,12 @@ impl AgentSession {
             tracing::info!(
                 "Delegated work with no check since the agents finished \u{2014} asking the Lead for the final check"
             );
-            self.messages.push(ChatMessage::user(
-                super::prompt_constants::get_delegated_check_message(
-                    self.config.tool_profile.eq_ignore_ascii_case("pi"),
-                ),
-            ));
+            self.messages
+                .push(ChatMessage::user(prompts::platform_lines(
+                    super::prompt_constants::get_delegated_check_message(
+                        self.config.tool_profile.eq_ignore_ascii_case("pi"),
+                    ),
+                )));
             return true;
         }
 
