@@ -7,7 +7,7 @@
 //! each agent's run, so a spawn tool called from inside a sub-agent's tool call sees the depth of
 //! that agent plus one, and `report_progress` knows whose bar to move.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -229,6 +229,9 @@ pub struct AgentOrchestrator {
     user_agent_replied: Mutex<Vec<UserAgentRepliedHandler>>,
     lead: Mutex<LeadState>,
     user_agent_notes: Mutex<VecDeque<String>>,
+    /// Images from tool calls not yet added to their agent's conversation, by call id
+    /// (`_toolImages`).
+    tool_images: Mutex<HashMap<String, Vec<crate::client::ImagePart>>>,
     cwd: PathBuf,
     platform: String,
     /// A follow-up after at least this pause gets the thinking-aware compaction first.
@@ -261,6 +264,7 @@ impl AgentOrchestrator {
             user_agent_replied: Mutex::new(Vec::new()),
             lead: Mutex::new(LeadState::default()),
             user_agent_notes: Mutex::new(VecDeque::new()),
+            tool_images: Mutex::new(HashMap::new()),
             cwd: cwd.into(),
             platform: crate::agent::system_prompt::os_version_string(),
             resume_compaction_idle: Mutex::new(Duration::from_secs(120)),
@@ -321,6 +325,14 @@ impl AgentOrchestrator {
         *self.compactor.write().unwrap_or_else(|e| e.into_inner()) = compactor;
     }
 
+    /// Whether sub-agents' compaction has a model summariser (else it only trims).
+    pub fn has_compactor(&self) -> bool {
+        self.compactor
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+    }
+
     /// Stream sub-agent responses (the CLI turns it on).
     pub fn set_use_streaming(&self, on: bool) {
         self.use_streaming.store(on, Ordering::SeqCst);
@@ -379,6 +391,21 @@ impl AgentOrchestrator {
     /// The sub-agent whose tool call is running in this async flow, if any.
     pub fn current_agent() -> Option<Arc<AgentContext>> {
         AMBIENT.try_with(|a| a.agent.clone()).ok().flatten()
+    }
+
+    /// `ToolResultImages.From`: keep the images of a native call's result for its tool message
+    /// (none when vision is off).
+    fn keep_tool_images(&self, call_id: &str, result: &orca_abstractions::ToolResult) {
+        if call_id.is_empty() {
+            return;
+        }
+        let images = crate::client::tool_images::tool_result_images(result, &self.config);
+        if !images.is_empty() {
+            self.tool_images
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(call_id.to_string(), images);
+        }
     }
 
     /// `UsageLedger`: where named providers' requests are added up and costed.
@@ -612,10 +639,10 @@ impl AgentOrchestrator {
         context.set_status(AgentStatus::Running);
         let me = self.clone();
         let c = context.clone();
-        tokio::spawn(async move {
+        tokio::spawn(crate::agent::permissions::non_interactive(async move {
             me.run_context(&c, &type_def, depth, None, &CancelToken::new())
                 .await;
-        });
+        }));
         context
     }
 
@@ -651,10 +678,10 @@ impl AgentOrchestrator {
         let me = self.clone();
         let c = context.clone();
         let message = message.to_string();
-        tokio::spawn(async move {
+        tokio::spawn(crate::agent::permissions::non_interactive(async move {
             me.run_context(&c, &type_def, c.depth, Some(&message), &CancelToken::new())
                 .await;
-        });
+        }));
         AgentMessageResult::Resumed
     }
 
@@ -1932,10 +1959,16 @@ impl AgentOrchestrator {
                         result.push_str(&note);
                     }
                 }
-                context
-                    .state()
-                    .conversation
-                    .add_message(ChatMessage::tool_result(call.id.clone(), result));
+                // Images the tool returned go next to its result (`AddToolResult`).
+                let images = self
+                    .tool_images
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&call.id)
+                    .unwrap_or_default();
+                context.state().conversation.add_message(
+                    ChatMessage::tool_result(call.id.clone(), result).with_images(images),
+                );
             }
             if let Some(r) = reasoning.as_mut() {
                 let s = context.state();
@@ -2240,10 +2273,14 @@ impl AgentOrchestrator {
             if activity::is_agent_tool(tool_name) {
                 // Spawn tools manage their own (per-agent) time budget.
                 let r = exec.await;
+                self.keep_tool_images(&call.id, &r);
                 (r.content, r.is_error)
             } else {
                 match tokio::time::timeout(tool_timeout, exec).await {
-                    Ok(r) => (r.content, r.is_error),
+                    Ok(r) => {
+                        self.keep_tool_images(&call.id, &r);
+                        (r.content, r.is_error)
+                    }
                     Err(_) => {
                         tracing::warn!("Tool {tool_name} timed out in agent {}", context.id);
                         (

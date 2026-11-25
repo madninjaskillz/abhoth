@@ -175,6 +175,38 @@ impl AgentSession {
     }
 }
 
+/// The session's LLM summariser as an owned compactor (`IConversationCompactor` in DI), for
+/// sub-agents' compaction: requests go through the session's client (in an agent's flow, its
+/// slot when sticky slots are on) labelled with the agent's id.
+pub struct SessionCompactor {
+    client: crate::client::OpenAiClient,
+    config: crate::config::OrcaConfig,
+}
+
+impl SessionCompactor {
+    pub fn new(client: crate::client::OpenAiClient, config: crate::config::OrcaConfig) -> Self {
+        Self { client, config }
+    }
+}
+
+#[async_trait::async_trait]
+impl ConversationCompactor for SessionCompactor {
+    async fn compact_conversation(
+        &self,
+        conversation: &mut Conversation,
+        extra_instructions: Option<&str>,
+        context: Option<&crate::config::ContextConfig>,
+    ) -> CompactionReport {
+        let actor = crate::orchestration::AgentOrchestrator::current_agent()
+            .map(|a| a.id.clone())
+            .unwrap_or_else(|| "lead".to_string());
+        LlmCompactor::new(&self.client, &self.config, &actor)
+            .with_text_tool_call_parser(&parse_text_tool_calls)
+            .compact_conversation(conversation, extra_instructions, context)
+            .await
+    }
+}
+
 /// Tool calls written as text, for the compactor's file lists (C# passes its ToolCallParser).
 fn parse_text_tool_calls(text: &str) -> Vec<crate::client::ToolCall> {
     super::tool_call_parser::parse_tool_calls_from_text(text)

@@ -254,6 +254,11 @@ pub fn wire_agents(
             .collect(),
     );
     orchestrator.set_use_streaming(true);
+    // Sub-agents' context compaction uses the session's LLM summariser.
+    orchestrator.set_compactor(Some(Arc::new(orca_core::agent::SessionCompactor::new(
+        session.client.clone(),
+        config.clone(),
+    ))));
     orchestrator.set_system_prompt_factory(Some(pi_agents::pi_prompt_factory(
         &session.config,
         session.ctx.cwd.clone(),

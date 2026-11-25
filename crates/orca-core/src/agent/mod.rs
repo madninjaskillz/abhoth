@@ -23,6 +23,7 @@ pub mod tool_exposure;
 pub mod tool_hooks;
 mod turn;
 
+pub use context::SessionCompactor;
 pub use registry::ToolRegistry;
 pub use session::{AgentError, AgentObserver, AgentSession, NullObserver, ToolCallRecord, TurnEnd};
 pub use tool_hooks::ToolHooks;

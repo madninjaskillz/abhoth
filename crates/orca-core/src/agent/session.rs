@@ -646,6 +646,10 @@ impl AgentSession {
             permissions::PermissionVerdict::Allow => true,
             permissions::PermissionVerdict::Deny => false,
             permissions::PermissionVerdict::Ask { scope_key } => {
+                // Background agents can't prompt: refused, as without a prompter.
+                if permissions::is_non_interactive() {
+                    return false;
+                }
                 let Some(prompter) = self.prompter.as_mut() else {
                     return false;
                 };

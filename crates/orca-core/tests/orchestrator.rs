@@ -731,9 +731,67 @@ async fn spawn_agent_multi_message_response_executes_tool_call_after_text_messag
     assert_eq!(c.iteration_count(), 2);
 }
 
-// SpawnAgentAsync_ToolResultImages_ReachTheModelUnlessVisionIsOff: not ported. The Rust
-// SubAgentToolExecutor returns a ToolResult, but ChatMessage has no image parts yet, so tool
-// result images can't reach a sub-agent's model (the client side of ToolImagesChatClient).
+/// A tool pipeline that answers every call with a PNG (a sub-agent reading a screenshot).
+struct ImageExecutor;
+
+const SHOT_PNG: [u8; 6] = [0x89, 0x50, 0x4E, 0x47, 1, 2];
+
+#[async_trait::async_trait]
+impl SubAgentToolExecutor for ImageExecutor {
+    async fn execute(&self, _: &str, _: &str) -> ToolResult {
+        ToolResult {
+            parts: Some(vec![orca_abstractions::ToolResultPart::Image {
+                data: SHOT_PNG.to_vec(),
+                mime_type: "image/png".into(),
+            }]),
+            ..ToolResult::success("Read image file [image/png]")
+        }
+    }
+}
+
+#[tokio::test]
+async fn spawn_agent_tool_result_images_reach_the_model_unless_vision_is_off() {
+    for (provider, vision, expect_image) in [
+        (Some("anthropic"), None, true),
+        (None, None, true),
+        (None, Some(false), false),
+    ] {
+        // The image goes back next to the tool result (the OpenAI-compatible client moves it
+        // into a user message; see tool_images tests).
+        let client = FuncClient::seq(|_, _, n| {
+            if n == 0 {
+                call_id("c1", "read", json!({"path": "shot.png"}), "")
+            } else {
+                text("Seen.")
+            }
+        });
+        let mut config = OrcaConfig::default();
+        config.lm_studio.native_tool_calling = true;
+        config.lm_studio.provider = provider.map(str::to_string);
+        config.lm_studio.vision = vision;
+        let o = orchestrator(client.clone(), config);
+        o.set_tools(tools(&["read"]));
+        o.set_executor(Some(Arc::new(ImageExecutor)));
+
+        let c = o.spawn_agent("task", "general").await;
+
+        assert_eq!(c.status(), AgentStatus::Completed);
+        let requests = client.requests.lock().unwrap().clone();
+        let tool_msgs: Vec<_> = requests[1]
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+        assert_eq!(tool_msgs.len(), 1);
+        assert_eq!(tool_msgs[0].tool_call_id.as_deref(), Some("c1"));
+        let images: Vec<_> = tool_msgs[0].images().collect();
+        if expect_image {
+            assert_eq!(images.len(), 1, "{provider:?} {vision:?}");
+            assert_eq!(images[0].data, SHOT_PNG.to_vec());
+        } else {
+            assert!(images.is_empty(), "{provider:?} {vision:?}");
+        }
+    }
+}
 
 #[tokio::test]
 async fn spawn_agent_iteration_exhaustion_returns_partial_summary() {
@@ -2751,9 +2809,46 @@ async fn lead_spawned_agent_keeps_its_conversation_for_follow_ups_when_the_lead_
     }
 }
 
-// BackgroundAgent_CannotPromptForPermission: not ported. C# runs background agents inside
-// InteractionScope.EnterNonInteractive(), which PermissionManager reads; the Rust port has no
-// interaction scope yet (the background note in the system prompt is all it does).
+#[tokio::test]
+async fn background_agent_cannot_prompt_for_permission() {
+    // C# checks a PermissionManager with a counting prompter; here the tool pipeline reads the
+    // interaction scope the session's permission check reads.
+    let seen: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(Vec::new()));
+    // A user message last (the task, or a message resuming it) gets a bash call.
+    let client = FuncClient::seq(|m, _, _| {
+        if m.last().is_some_and(|l| l.role == Role::User) {
+            call("bash", json!({"command": "x"}))
+        } else {
+            text("done")
+        }
+    });
+    let o = native(client, None);
+    o.set_tools(tools(&["bash"]));
+    let s2 = seen.clone();
+    o.set_executor(executor(move |_, _| {
+        let non_interactive = orca_core::agent::permissions::is_non_interactive();
+        s2.lock().unwrap().push(non_interactive);
+        if non_interactive {
+            "Error: permission denied".into()
+        } else {
+            "ran".into()
+        }
+    }));
+
+    let agent = o.start_background_agent("run it", "general", None);
+    wait_until(|| !agent.is_active()).await;
+    assert_eq!(*seen.lock().unwrap(), vec![true]);
+    // A foreground spawn (the Lead waits on it) is still interactive.
+    o.spawn_agent("run it", "general").await;
+    assert_eq!(*seen.lock().unwrap(), vec![true, false]);
+    // A resumed background agent can't prompt either.
+    assert_eq!(
+        o.send_message(&agent.id, "again"),
+        AgentMessageResult::Resumed
+    );
+    wait_until(|| !agent.is_active()).await;
+    assert_eq!(seen.lock().unwrap().last(), Some(&true));
+}
 
 #[tokio::test]
 async fn progress_marker_updates_reported_progress_and_raises_an_event() {

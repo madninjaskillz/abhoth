@@ -221,3 +221,40 @@ async fn repl_host_runs_review_agents_through_the_orchestrator() {
     assert_eq!(outcome.result.as_deref(), Some("Looks fine."));
     assert!(host.manager().is_some());
 }
+
+#[tokio::test]
+async fn wired_sub_agents_get_the_advertised_tools_and_the_session_compactor() {
+    let work = tempfile::tempdir().unwrap();
+    let mut config = OrcaConfig::default();
+    config.lm_studio.base_url = "http://127.0.0.1:9".into();
+    config.lm_studio.models = vec!["m".into()];
+    let (registry, services) = orca_cli::build_registry_in(&config, work.path());
+    let client = orca_core::client::client_from_config(
+        &config,
+        Arc::new(orca_core::client::ServedModels::new()),
+    )
+    .unwrap();
+    let mut session = orca_core::agent::AgentSession::new(
+        config,
+        client,
+        registry,
+        orca_abstractions::ToolContext::new(work.path()),
+    );
+    orca_cli::wire_agents(&mut session, &services.agent_tools, None, true, None).unwrap();
+
+    let o = session.orchestrator.clone().unwrap();
+    let names: Vec<String> = o.tools().into_iter().map(|t| t.name).collect();
+    let advertised: Vec<String> = session
+        .registry
+        .definitions()
+        .into_iter()
+        .map(|d| d.name)
+        .filter(|n| n != "lead_mode")
+        .collect();
+    // ToolExposure.FilterAdvertised: the Lead's advertised list, in its order.
+    assert_eq!(names, advertised);
+    assert!(session.registry.names().len() > names.len());
+    // The built-in types' `think` resolves to the registered tool.
+    assert!(names.iter().any(|n| n == "think"));
+    assert!(o.has_compactor());
+}
