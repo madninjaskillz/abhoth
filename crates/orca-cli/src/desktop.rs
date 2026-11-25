@@ -218,8 +218,64 @@ fn pick_folder_hook() -> orca_webui::server::PickFolderFn {
     })
 }
 
+/// The folder the desktop app starts in when it was launched from its own install folder
+/// (the Start-menu shortcut starts it in `%LocalAppData%\Abhoth\current`, D137): the last
+/// opened project, else the user's home folder. `None` keeps `cwd` (a launch from a project).
+pub fn start_folder(
+    cwd: &Path,
+    install_roots: &[PathBuf],
+    last_opened: impl FnOnce() -> Option<PathBuf>,
+    user_home: &Path,
+) -> Option<PathBuf> {
+    let inside = install_roots
+        .iter()
+        .any(|root| orca_webui::paths::is_under(cwd, root));
+    inside.then(|| last_opened().unwrap_or_else(|| user_home.to_path_buf()))
+}
+
+/// The Velopack install root (`%LocalAppData%\Abhoth`): the parent of the exe's `current`
+/// folder when Velopack's updater sits there, and on Windows `%LocalAppData%\Abhoth` itself.
+fn install_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    let updater = if cfg!(windows) {
+        "Update.exe"
+    } else {
+        "UpdateNix"
+    };
+    if let Some(root) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent()?.parent().map(Path::to_path_buf))
+        && root.join(updater).is_file()
+    {
+        roots.push(root);
+    }
+    if cfg!(windows)
+        && let Some(local) = std::env::var_os("LOCALAPPDATA")
+    {
+        roots.push(PathBuf::from(local).join(orca_core::brand::PRODUCT_NAME));
+    }
+    roots
+}
+
 /// Runs the desktop app; returns the process exit code.
 pub fn run(raw: Vec<String>) -> i32 {
+    use orca_webui::projects::store::ProjectStore;
+    if let Ok(cwd) = std::env::current_dir()
+        && let Some(dir) = start_folder(
+            &cwd,
+            &install_roots(),
+            || ProjectStore::new(ProjectStore::default_path()).last_opened(),
+            &orca_core::config::user_profile(),
+        )
+    {
+        tracing::info!(
+            "desktop: started in the install folder; opening {}",
+            dir.display()
+        );
+        if let Err(e) = std::env::set_current_dir(&dir) {
+            tracing::warn!("desktop: could not move to {}: {e}", dir.display());
+        }
+    }
     let home = orca_core::config::default_config_dir();
     let lock = match try_lock(&home) {
         Ok(Some(lock)) => lock,
@@ -510,6 +566,39 @@ fn finish(code: i32) -> ! {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_launch_from_the_install_folder_opens_the_last_project_else_home() {
+        let (root, home) = if cfg!(windows) {
+            (r"C:\Users\u\AppData\Local\Abhoth", r"C:\Users\u")
+        } else {
+            ("/home/u/.local/share/Abhoth", "/home/u")
+        };
+        let (root, home) = (PathBuf::from(root), PathBuf::from(home));
+        let project = home.join("src").join("proj");
+        let roots = [root.clone()];
+        let last = || Some(project.clone());
+        let start = |cwd: &Path, roots: &[PathBuf], last: &dyn Fn() -> Option<PathBuf>| {
+            super::start_folder(cwd, roots, last, &home)
+        };
+        // From the install folder or anything inside it: the last opened project.
+        assert_eq!(
+            start(&root.join("current"), &roots, &last),
+            Some(project.clone())
+        );
+        assert_eq!(start(&root, &roots, &last), Some(project.clone()));
+        // No last project: the home folder.
+        assert_eq!(
+            start(&root.join("current"), &roots, &|| None),
+            Some(home.clone())
+        );
+        // A launch from a project folder (or one that only shares the prefix) keeps it.
+        assert_eq!(start(&project, &roots, &last), None);
+        let sibling = PathBuf::from(format!("{}Other", root.display()));
+        assert_eq!(start(&sibling, &roots, &last), None);
+        // Not installed: nothing changes.
+        assert_eq!(start(&root.join("current"), &[], &last), None);
+    }
+
     use super::*;
 
     #[test]

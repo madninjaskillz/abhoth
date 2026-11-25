@@ -35,6 +35,9 @@ struct StoreFile {
     projects: Option<Vec<ProjectInfo>>,
 }
 
+/// Next to projects.json: the folder of the last opened project.
+const LAST_OPENED_FILE: &str = "last-project";
+
 pub struct ProjectStore {
     file: PathBuf,
     lock: Mutex<()>,
@@ -91,10 +94,15 @@ impl ProjectStore {
         self.read()
     }
 
-    /// Add a folder for `owner` (or return the existing entry for it).
+    /// Add a folder for `owner` (or return the existing entry for it). Either way an owner-less
+    /// one (the desktop app's, or a token-mode web UI's) becomes the last opened project
+    /// ([`Self::last_opened`]).
     pub fn add(&self, path: &str, name: Option<&str>, owner: Option<i64>) -> ProjectInfo {
         let full = paths::normalize(path).to_string_lossy().to_string();
         let _g = self.lock.lock().unwrap();
+        if owner.is_none() {
+            let _ = std::fs::write(self.state_dir().join(LAST_OPENED_FILE), &full);
+        }
         let mut list = self.read();
         let id = Self::id_for(&full, owner);
         if let Some(existing) = list.iter().find(|p| p.id == id) {
@@ -113,6 +121,21 @@ impl ProjectStore {
         list.push(info.clone());
         self.write(&list);
         info
+    }
+
+    /// The folder of the owner-less project opened last (started in, or added from the UI), while it is
+    /// still in the list and exists. The desktop app opens it when launched from its install
+    /// folder (D137).
+    pub fn last_opened(&self) -> Option<PathBuf> {
+        let _g = self.lock.lock().unwrap();
+        let text = std::fs::read_to_string(self.state_dir().join(LAST_OPENED_FILE)).ok()?;
+        let last = text.trim();
+        let listed = self
+            .read()
+            .into_iter()
+            .any(|p| paths::same_path(&p.path, last));
+        let dir = PathBuf::from(last);
+        (listed && dir.is_dir()).then_some(dir)
     }
 
     /// Forget a project (never touches its folder).
@@ -239,5 +262,40 @@ impl EngineChoiceStore {
         if std::fs::write(&tmp, serde_json::to_string(all).unwrap_or_default()).is_ok() {
             let _ = std::fs::rename(&tmp, &self.file);
         }
+    }
+}
+
+#[cfg(test)]
+mod last_opened_tests {
+    use super::*;
+
+    #[test]
+    fn the_last_added_or_reopened_folder_is_the_last_opened_while_listed() {
+        let home = tempfile::tempdir().unwrap();
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let store = ProjectStore::new(home.path().join("projects.json"));
+        assert_eq!(store.last_opened(), None);
+        store.add(&a.path().to_string_lossy(), None, None);
+        let pb = store.add(&b.path().to_string_lossy(), None, None);
+        assert!(paths::same_path(
+            &store.last_opened().unwrap().to_string_lossy(),
+            &pb.path
+        ));
+        // Opening a listed project again makes it the last one.
+        let pa = store.add(&a.path().to_string_lossy(), None, None);
+        assert!(paths::same_path(
+            &store.last_opened().unwrap().to_string_lossy(),
+            &pa.path
+        ));
+        // A user's own project (accounts mode) does not count.
+        store.add(&b.path().to_string_lossy(), None, Some(7));
+        assert!(paths::same_path(
+            &store.last_opened().unwrap().to_string_lossy(),
+            &pa.path
+        ));
+        // A project removed from the list is not offered.
+        store.remove(&pa.id);
+        assert_eq!(store.last_opened(), None);
     }
 }

@@ -628,6 +628,13 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   checks GitHub Releases at start and every 6 hours, downloads a newer release and adds
   "Update available: restart into <version>" to the tray menu, which stops the host and hands
   over to Velopack's updater. Outside a Velopack install it is all a no-op.
+- **D137** (user decision) The Start-menu shortcut starts the desktop app in its install folder
+  (`%LOCALAPPDATA%\Abhoth\current`), which used to open that folder as a project. A launch whose
+  working folder is inside the install root (`desktop::start_folder`) now opens the last opened
+  project instead, or the user's home folder when there is none. `ProjectStore` keeps the last
+  opened folder in `last-project` next to projects.json, written on every `add` (the folder a
+  session starts in, or one added in the UI), and offers it only while it is listed and exists.
+  A launch from any other folder is unchanged.
 - **D109** User-visible "openorca" text reads Abhoth (`brand::PRODUCT_NAME` / `BINARY_NAME`):
   the `--hostui-set-password` usage line, the requester names of profile switches (TUI, web UI,
   bench runner), the slot request labels (`Abhoth lead`, `Abhoth A: <label>`), the file log's
