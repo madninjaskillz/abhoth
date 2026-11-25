@@ -25,6 +25,9 @@ orca-tools-utility.workspace = true
 orca-tools-archive = { workspace = true, optional = true }
 orca-tools-network = { workspace = true, optional = true }
 async-trait.workspace = true
+orca-tools-mcp = { workspace = true, optional = true }
+orca-tools-lsp = { workspace = true, optional = true }
+orca-tools-image = { workspace = true, optional = true }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -34,9 +37,12 @@ tracing-subscriber.workspace = true
 
 [features]
 # Optional tool groups (PORTING.md "Plugins"): on by default, like the C# plugin folder.
-default = ["archive", "network"]
+default = ["archive", "network", "mcp", "lsp", "image"]
 archive = ["dep:orca-tools-archive"]
 network = ["dep:orca-tools-network"]
+mcp = ["dep:orca-tools-mcp"]
+lsp = ["dep:orca-tools-lsp"]
+image = ["dep:orca-tools-image"]
 
 [dev-dependencies]
 orca-testkit.workspace = true

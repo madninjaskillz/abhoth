@@ -11,6 +11,9 @@ members = [
     "crates/orca-tools-utility",
     "crates/orca-tools-archive",
     "crates/orca-tools-network",
+    "crates/orca-tools-mcp",
+    "crates/orca-tools-lsp",
+    "crates/orca-tools-image",
     "crates/orca-cli",
     "crates/orca-testkit",
     "crates/orca-crosscheck",
@@ -36,18 +39,24 @@ orca-tools-web = { path = "crates/orca-tools-web" }
 orca-tools-utility = { path = "crates/orca-tools-utility" }
 orca-tools-archive = { path = "crates/orca-tools-archive" }
 orca-tools-network = { path = "crates/orca-tools-network" }
+orca-tools-mcp = { path = "crates/orca-tools-mcp" }
+orca-tools-lsp = { path = "crates/orca-tools-lsp" }
+orca-tools-image = { path = "crates/orca-tools-image" }
 orca-testkit = { path = "crates/orca-testkit" }
 
 anyhow = "=1.0.105"
 async-trait = "=0.1.92"
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+base64 = "=0.23.1"
 futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
 globset = "=0.4.22"
 # Only for `hyper::ext::ReasonPhrase` (web_fetch's "HTTP <code> <reason>"); already in the tree via reqwest.
 hyper = { version = "=1.13.0", default-features = false, features = ["http1", "client"] }
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
 indexmap = { version = "=2.14.2", features = ["serde"] }
 regex = "=1.13.2"
 reqwest = { version = "=0.13.5", default-features = false, features = ["json", "stream", "rustls"] }
+rmcp = { version = "=3.11.0", default-features = false, features = ["client", "transport-child-process", "base64"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }
 sha2 = "=0.10.8"

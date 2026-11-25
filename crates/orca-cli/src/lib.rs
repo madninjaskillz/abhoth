@@ -35,16 +35,40 @@ pub struct SinglePromptResult {
 /// The compiled-in tools (C# loads them from plugin DLLs). Registration order is the C# one:
 /// plugin assemblies in file-name order (Agent, Archive, FileSystem, Git, GitHub,
 /// ImageGeneration, Interactive, Lsp, Network, Shell, Utility, Web), and within each the tool
-/// classes sorted by name. The advertised list keeps this order.
+/// classes sorted by name. The advertised list keeps this order. Optional groups sit behind
+/// Cargo features (`archive`, `network`, `image`, `lsp`, `mcp`); MCP tools need the servers
+/// started, see [`ToolServices::start_mcp`]. Language servers start in the current directory.
 pub fn build_registry(config: &OrcaConfig) -> ToolRegistry {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    build_registry_in(config, &cwd).0
+}
+
+/// [`build_registry`] for a working folder, with the services its tools run on.
+pub fn build_registry_in(config: &OrcaConfig, cwd: &Path) -> (ToolRegistry, ToolServices) {
     let mut r = ToolRegistry::new();
+    #[allow(unused_mut)]
+    let mut services = ToolServices::default();
     #[cfg(feature = "archive")]
     r.register_all(orca_tools_archive::all_tools());
     r.register_all(orca_tools_fs::all_tools());
     r.register_all(orca_tools_git::all_tools());
+    #[cfg(feature = "image")]
+    r.register_all(orca_tools_image::all_tools(
+        &config.image_gen,
+        Some(Arc::new(std::sync::Mutex::new(
+            config.agent.uncensored.clone(),
+        ))),
+    ));
     r.register_all(orca_tools_utility::interactive_tools(Some(Arc::new(
         prompter::ConsolePrompter,
     ))));
+    #[cfg(feature = "lsp")]
+    {
+        services.lsp = lsp_manager(config, cwd);
+        r.register_all(orca_tools_lsp::all_tools(services.lsp.clone()));
+    }
+    #[cfg(not(feature = "lsp"))]
+    let _ = cwd;
     #[cfg(feature = "network")]
     r.register_all(orca_tools_network::all_tools());
     r.register_all(orca_tools_shell::all_tools(
@@ -53,7 +77,90 @@ pub fn build_registry(config: &OrcaConfig) -> ToolRegistry {
     r.register_all(orca_tools_utility::utility_tools());
     r.register_all(orca_tools_web::all_tools());
     // Disabled tools stay registered; the permission check refuses them (as in C#).
-    r
+    let exposure = config.clone();
+    r.set_advertise_filter(Arc::new(move |name: &str| {
+        orca_core::agent::tool_exposure::is_advertised(name, &exposure)
+    }));
+    (r, services)
+}
+
+/// The LSP client manager when `lsp.enabled` and servers are configured.
+#[cfg(feature = "lsp")]
+fn lsp_manager(config: &OrcaConfig, cwd: &Path) -> Option<Arc<orca_tools_lsp::LspClientManager>> {
+    if !config.lsp.enabled || config.lsp.servers.is_empty() {
+        return None;
+    }
+    let servers = config
+        .lsp
+        .servers
+        .iter()
+        .map(|(lang, s)| {
+            (
+                lang.clone(),
+                orca_tools_lsp::LspServerConfig {
+                    command: s.command.clone(),
+                    args: s.args.clone(),
+                    root_uri: s.root_uri.clone(),
+                },
+            )
+        })
+        .collect();
+    tracing::info!(
+        "LSP enabled with {} server(s): {}",
+        config.lsp.servers.len(),
+        config
+            .lsp
+            .servers
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    Some(Arc::new(orca_tools_lsp::LspClientManager::new(
+        servers, cwd,
+    )))
+}
+
+/// What the tools run on: MCP server connections and language servers. Shut down with
+/// [`ToolServices::shutdown`] when the session ends.
+#[derive(Default)]
+pub struct ToolServices {
+    #[cfg(feature = "mcp")]
+    pub mcp: orca_tools_mcp::McpManager,
+    #[cfg(feature = "lsp")]
+    pub lsp: Option<Arc<orca_tools_lsp::LspClientManager>>,
+}
+
+impl ToolServices {
+    /// Start the configured MCP servers and register their tools (`mcp_{server}_{tool}`).
+    /// Servers that fail are logged and skipped.
+    pub async fn start_mcp(
+        &mut self,
+        config: &OrcaConfig,
+        cwd: &Path,
+        registry: &mut ToolRegistry,
+    ) {
+        #[cfg(feature = "mcp")]
+        if !config.mcp_servers.is_empty() {
+            let tools = self.mcp.initialize(&config.mcp_servers, cwd).await;
+            if !tools.is_empty() {
+                tracing::info!("Registered {} MCP tools", tools.len());
+            }
+            registry.register_all(orca_tools_mcp::proxy_tools(tools));
+        }
+        #[cfg(not(feature = "mcp"))]
+        let _ = (config, cwd, registry);
+    }
+
+    /// Close the MCP connections and stop the language servers.
+    pub async fn shutdown(&mut self) {
+        #[cfg(feature = "mcp")]
+        self.mcp.dispose().await;
+        #[cfg(feature = "lsp")]
+        if let Some(lsp) = self.lsp.take() {
+            lsp.dispose().await;
+        }
+    }
 }
 
 /// Prints streamed text to stderr when a human is watching (not in JSON mode).
@@ -110,7 +217,8 @@ pub async fn run_single_prompt_in_session(
 ) -> Result<SinglePromptResult> {
     let served = Arc::new(ServedModels::new());
     let client = client_from_config(&config, served)?;
-    let registry = build_registry(&config);
+    let (mut registry, mut services) = build_registry_in(&config, &cwd);
+    services.start_mcp(&config, &cwd, &mut registry).await;
     let tool_hooks = config_dir.map(|d| orca_core::agent::ToolHooks::from_config(&config, d));
     let mut session = AgentSession::new(config, client, registry, ToolContext::new(cwd));
     // C# runs the startup probes (max_tokens negotiation, context-window detection) before
@@ -130,6 +238,7 @@ pub async fn run_single_prompt_in_session(
         .tool_hooks
         .flush(std::time::Duration::from_secs(10))
         .await;
+    services.shutdown().await;
     result
 }
 
