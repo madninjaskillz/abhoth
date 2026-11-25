@@ -22,6 +22,7 @@ orca-tools-shell.workspace = true
 orca-tools-pi.workspace = true
 orca-tools-git.workspace = true
 orca-tools-web.workspace = true
+orca-tools-agent.workspace = true
 orca-tools-utility.workspace = true
 orca-webui.workspace = true
 orca-tools-common.workspace = true

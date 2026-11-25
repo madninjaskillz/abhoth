@@ -42,16 +42,28 @@ pub fn client_from_config(
     config: &crate::config::OrcaConfig,
     served: std::sync::Arc<ServedModels>,
 ) -> Result<OpenAiClient, ChatError> {
-    let lm = &config.lm_studio;
-    let model = lm
+    let model = config
+        .lm_studio
         .primary_model()
         .map(str::to_string)
         .ok_or(ChatError::NoModel)?;
+    Ok(client_for_model(config, served, &model))
+}
+
+/// A client for one named model on the main model server (`LmStudioClientFactory.Create(model)`):
+/// pair programming's alternate models and voters.
+pub fn client_for_model(
+    config: &crate::config::OrcaConfig,
+    served: std::sync::Arc<ServedModels>,
+    model: &str,
+) -> OpenAiClient {
+    let lm = &config.lm_studio;
+    let model = model.to_string();
     let mut settings = ClientSettings::new(lm.base_url.clone(), lm.resolve_api_key(), Some(model));
     settings.request_timeout = std::time::Duration::from_secs(lm.timeout_seconds.max(1) as u64);
     settings.idle_timeout =
         std::time::Duration::from_secs(lm.streaming_timeout_seconds.max(1) as u64);
     settings.session_field = config.agent.uncensored.field();
     settings.vision = lm.vision;
-    Ok(OpenAiClient::new(settings, served))
+    OpenAiClient::new(settings, served)
 }

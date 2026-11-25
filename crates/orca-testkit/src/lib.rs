@@ -47,6 +47,9 @@ pub struct Reply {
     /// Break the stream off after this many SSE events: the connection drops without the end
     /// of the chunked body (a server or proxy dying mid-response).
     pub die_after_events: Option<usize>,
+    /// Answer only a request for this model (`body.model`): concurrent requests to different
+    /// models (pair programming) get their own replies whatever order they arrive in.
+    pub for_model: Option<String>,
     /// Pause this long before each SSE event (a slow model: time to cancel mid-stream).
     pub chunk_delay_ms: u64,
     /// `usage.prompt_tokens_details.cached_tokens`, when set.
@@ -83,6 +86,12 @@ impl Reply {
 
     pub fn with_served_header(mut self, m: impl Into<String>) -> Self {
         self.served_model_header = Some(m.into());
+        self
+    }
+
+    /// Answer only a request for `model` (see [`Reply::for_model`]).
+    pub fn for_model(mut self, model: impl Into<String>) -> Self {
+        self.for_model = Some(model.into());
         self
     }
 
@@ -167,6 +176,8 @@ impl Recorded {
 struct Inner {
     script: Vec<Reply>,
     next: usize,
+    /// Script entries already answered (only used once a reply names a model).
+    used: Vec<bool>,
     requests: Vec<Recorded>,
     routes: BTreeMap<String, (u16, String)>,
     keyed: BTreeMap<String, String>,
@@ -451,7 +462,21 @@ async fn chat(
                 })
                 .collect(),
         });
-        let idx = g.next.min(g.script.len().saturating_sub(1));
+        let idx = if g.script.iter().any(|r| r.for_model.is_some()) {
+            // The first unanswered reply for this request's model (or for any model).
+            let model = body["model"].as_str().unwrap_or_default().to_string();
+            let len = g.script.len();
+            g.used.resize(len, false);
+            let found = (0..len).find(|&i| {
+                !g.used[i] && g.script[i].for_model.as_deref().is_none_or(|m| m == model)
+            });
+            if let Some(i) = found {
+                g.used[i] = true;
+            }
+            found.unwrap_or(len.saturating_sub(1))
+        } else {
+            g.next.min(g.script.len().saturating_sub(1))
+        };
         g.next += 1;
         g.script
             .get(idx)

@@ -22,9 +22,18 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use orca_abstractions::{ToolContext, ToolResult};
+use orca_core::agent::sub_agent_tools::{ClientFactory, SessionToolExecutor, SharedPipeline};
 use orca_core::agent::{AgentObserver, AgentSession, ToolCallRecord, ToolRegistry};
 use orca_core::client::{ServedModels, ToolCall, client_from_config};
 use orca_core::config::{ConfigManager, OrcaConfig};
+use orca_core::orchestration::CancelToken;
+use orca_core::orchestration::custom_agents::CustomAgentLoader;
+use orca_core::orchestration::planner_phase::{PlannerPhase, planner_enabled};
+use orca_core::orchestration::types::AgentTypeRegistry;
+use orca_core::orchestration::{
+    AgentChatClient, AgentManager, AgentOrchestrator, DefaultClientProvider,
+};
+pub use orca_tools_agent::AgentToolsHandle;
 use serde::Serialize;
 
 pub use args::CliArgs;
@@ -58,6 +67,8 @@ pub fn build_registry_in(config: &OrcaConfig, cwd: &Path) -> (ToolRegistry, Tool
     let mut r = ToolRegistry::new();
     #[allow(unused_mut)]
     let mut services = ToolServices::default();
+    // The Agent plugin comes first (ReportProgressTool, SpawnAgentTool, SpawnAgentsTool).
+    r.register_all(orca_tools_agent::all_tools(&services.agent_tools));
     #[cfg(feature = "archive")]
     r.register_all(orca_tools_archive::all_tools());
     r.register_all(orca_tools_fs::all_tools());
@@ -138,6 +149,8 @@ fn lsp_manager(config: &OrcaConfig, cwd: &Path) -> Option<Arc<orca_tools_lsp::Ls
 /// [`ToolServices::shutdown`] when the session ends.
 #[derive(Default)]
 pub struct ToolServices {
+    /// Wires the agent tools to a session's sub-agents ([`wire_agents`]).
+    pub agent_tools: AgentToolsHandle,
     #[cfg(feature = "mcp")]
     pub mcp: orca_tools_mcp::McpManager,
     #[cfg(feature = "lsp")]
@@ -174,6 +187,74 @@ impl ToolServices {
             lsp.dispose().await;
         }
     }
+}
+
+/// Sub-agents for `session` (`ToolWiring`, agent part): the orchestrator with the session's
+/// tools and custom agent types, sub-agent tool calls through a copy of the session's
+/// pipeline, and the agent tools wired to the manager. Start/finish lines go to stderr unless
+/// `quiet`.
+pub fn wire_agents(
+    session: &mut AgentSession,
+    handle: &AgentToolsHandle,
+    config_dir: Option<&Path>,
+    quiet: bool,
+) -> Result<Arc<AgentManager>> {
+    let config = session.config.clone();
+    let cwd = session.ctx.cwd.clone();
+    // Sub-agents send through the session's client (its usage logging and routing).
+    let client: Arc<dyn AgentChatClient> = Arc::new(session.client.clone());
+    let mut types = AgentTypeRegistry::new();
+    if let Some(dir) = config_dir {
+        let names: Vec<String> = session
+            .registry
+            .definitions()
+            .into_iter()
+            .map(|d| d.name)
+            .collect();
+        let custom = CustomAgentLoader::discover_agents(dir, &cwd, Some(&names), &mut |w| {
+            tracing::warn!("{w}");
+            if !quiet {
+                eprintln!("\u{26a0} {w}");
+            }
+        });
+        types.register_custom(custom.iter());
+    }
+    let orchestrator = AgentOrchestrator::new(
+        Arc::new(DefaultClientProvider::new(client)),
+        config.clone(),
+        types,
+        cwd,
+    );
+    // Sub-agents never choose a Lead mode.
+    orchestrator.set_tools(
+        session
+            .registry
+            .definitions()
+            .into_iter()
+            .filter(|d| d.name != orca_core::agent::policies::LEAD_MODE_TOOL_NAME)
+            .collect(),
+    );
+    orchestrator.set_use_streaming(true);
+    let shared = SharedPipeline::new();
+    let factory_client = session.client.clone();
+    let factory: ClientFactory = Arc::new(move || factory_client.clone());
+    orchestrator.set_executor(Some(Arc::new(SessionToolExecutor::new(
+        config,
+        session.registry.clone(),
+        session.ctx.clone(),
+        session.tool_hooks.clone(),
+        factory,
+        shared.clone(),
+        &orchestrator,
+    ))));
+    let manager = AgentManager::new(orchestrator.clone());
+    if !quiet {
+        manager.set_line_sink(Some(Arc::new(|line: &str| eprintln!("{line}"))));
+    }
+    handle.set(Some(manager.clone()));
+    session.orchestrator = Some(orchestrator);
+    session.sub_agent_pipeline = Some(shared);
+    Ok(manager)
 }
 
 /// Prints streamed text to stderr when a human is watching (not in JSON mode).
@@ -301,7 +382,18 @@ pub async fn run_single_prompt_in_session(
         session.messages = r.messages;
         session.tool_hooks.session_id = Some(r.id);
     }
-    let result = run_prepared(&mut session, prompt, quiet).await;
+    wire_agents(&mut session, &services.agent_tools, config_dir, quiet)?;
+    // agent.planner: a read-only planner writes the plan before the Lead's first turn.
+    let prompt = match session.orchestrator.clone() {
+        Some(o) if planner_enabled(&session.config) => {
+            let mut planner = PlannerPhase::new(session.config.clone(), o, session.ctx.cwd.clone());
+            planner
+                .prepare_first_message(prompt, &CancelToken::new())
+                .await
+        }
+        _ => prompt.to_string(),
+    };
+    let result = run_prepared(&mut session, &prompt, quiet).await;
     // Every lease goes back on exit.
     if let Some(rt) = &slots {
         rt.shutdown().await;

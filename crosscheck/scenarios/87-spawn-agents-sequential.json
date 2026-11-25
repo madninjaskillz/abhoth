@@ -1,0 +1,16 @@
+{
+  "prompt": "Count the lines of a.txt and b.txt with two explore agents.",
+  "config": {"agent": {"leadMode": "hands-on", "maxConcurrent": 1}},
+  "files": {"a.txt": "1\n2\n", "b.txt": "1\n2\n3\n"},
+  "replies": [
+    {"tools": [{"name": "spawn_agents", "args": {"agents": [
+      {"task": "Count the lines of a.txt.", "agent_type": "explore", "label": "Count a"},
+      {"task": "Count the lines of b.txt.", "agent_type": "explore"},
+      {"agent_type": "explore"}
+    ]}}]},
+    {"tools": [{"name": "read_file", "args": {"path": "a.txt"}}]},
+    {"text": "[progress 90%] a.txt has 2 lines."},
+    {"text": "b.txt has 3 lines."},
+    {"text": "Agent A: 2 lines, Agent B: 3 lines."}
+  ]
+}

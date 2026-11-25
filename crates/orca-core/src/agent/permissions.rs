@@ -134,7 +134,7 @@ pub enum PermissionDecision {
 }
 
 /// `IPermissionPrompter`: asks the user whether a tool call may run.
-pub trait PermissionPrompter: Send {
+pub trait PermissionPrompter: Send + Sync {
     /// `risk` is the C# risk level name ("ReadOnly", "Moderate", "Dangerous").
     fn prompt(&mut self, tool_name: &str, risk: &str) -> PermissionDecision;
 }

@@ -1,0 +1,11 @@
+{
+  "prompt": "What is the first line of notes.txt? Use an explore agent.",
+  "config": {"agent": {"leadMode": "hands-on"}},
+  "files": {"notes.txt": "alpha\nbeta\n"},
+  "replies": [
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Read notes.txt and report its first line.", "agent_type": "explore", "label": "Read notes"}}]},
+    {"tools": [{"name": "read_file", "args": {"path": "notes.txt"}}]},
+    {"text": "The first line of notes.txt is alpha."},
+    {"text": "Agent A found that the first line is alpha."}
+  ]
+}

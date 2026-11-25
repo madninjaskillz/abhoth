@@ -25,7 +25,9 @@
 //! startup context-window probes) is compared too. A reply can stream its reasoning in small
 //! chunks (`reasoning_chunk_chars`), open with a null-content role chunk
 //! (`null_role_content`), break off after some events (`die_after_events`) or be an HTTP error
-//! (`error`: `[status, body]`).
+//! (`error`: `[status, body]`). A reply with `for_model` only answers requests for that model,
+//! and `unordered_requests` compares the request bodies sorted instead of in arrival order:
+//! together they make concurrent requests (pair programming) deterministic.
 //!
 //! For the git tools a scenario can run `setup` commands in the work folder after its files
 //! are written (e.g. `["git", "init"]`) with extra environment variables (`env`, also given to
@@ -50,7 +52,8 @@
 //!
 //! Known, documented gaps are ignored by default: the advertised tool list (the `tools` array
 //! and the tool-derived parts of the system prompt: the AVAILABLE TOOLS lines and the
-//! lead_mode tool's LEAD MODE section), since Rust has only the core tools until phase 3. The
+//! lead_mode tool's LEAD MODE section; a text-mode sub-agent's TOOLS AVAILABLE list), since Rust
+//! does not have every C# tool yet. The
 //! rest of the system prompt is compared. `--strict` compares everything; a scenario with
 //! `"strict": true` (the Pi profile's) is always compared in full.
 //!
@@ -147,6 +150,10 @@ struct Scenario {
     /// Answers for other endpoints: `"METHOD /path"` -> `[status, body]`.
     #[serde(default)]
     server_routes: BTreeMap<String, (u16, String)>,
+    /// Compare the request bodies as a set (sorted) instead of in arrival order: requests sent
+    /// concurrently (pair programming) reach the server in either order.
+    #[serde(default)]
+    unordered_requests: bool,
     /// Compare the per-request usage lines of the file log (default on; off for scenarios
     /// whose request ends at a timing-dependent point, such as a Ctrl+C mid-stream).
     #[serde(default = "yes")]
@@ -202,6 +209,9 @@ struct ScriptReply {
     /// `[status, body]`: answer with an HTTP error instead.
     #[serde(default)]
     error: Option<(u16, String)>,
+    /// Answer only a request for this model (concurrent requests to several models).
+    #[serde(default)]
+    for_model: Option<String>,
     /// Pause before each streamed event (a slow reply, e.g. to cancel with Ctrl+C).
     #[serde(default)]
     chunk_delay_ms: u64,
@@ -260,6 +270,7 @@ impl ScriptReply {
             null_role_content: self.null_role_content,
             die_after_events: self.die_after_events,
             error: self.error.clone(),
+            for_model: self.for_model.clone(),
             chunk_delay_ms: self.chunk_delay_ms,
             ..Reply::default()
         }
@@ -691,7 +702,7 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
 }
 
 /// The "Slot usage" and "Provider usage" lines of the logs in `dir`, in file order, without
-/// the time stamp and with the measured times masked (`<MS>`).
+/// the time stamp and with the measured times masked (`<MS>`) and sub-agent ids numbered.
 fn usage_lines(dir: &Path) -> Vec<String> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
         .into_iter()
@@ -703,6 +714,9 @@ fn usage_lines(dir: &Path) -> Vec<String> {
     let stamp = regex::Regex::new(r"^\d\d:\d\d:\d\d\.\d{3} ").unwrap();
     let ms = regex::Regex::new(r", \d+ ms \|").unwrap();
     let first = regex::Regex::new(r"(first_think_ms|first_answer_ms)=\d+").unwrap();
+    // Sub-agent ids are random: numbered in order of appearance (`<AGENT1>`, ...).
+    let agent = regex::Regex::new(r"Slot usage ([0-9a-f]{8}) on").unwrap();
+    let mut agents: Vec<String> = Vec::new();
     let mut out = Vec::new();
     for f in files {
         let text = String::from_utf8_lossy(&std::fs::read(&f).unwrap_or_default()).into_owned();
@@ -713,6 +727,17 @@ fn usage_lines(dir: &Path) -> Vec<String> {
             let l = stamp.replace(line, "");
             let l = ms.replace_all(&l, ", <MS> ms |");
             let l = first.replace_all(&l, "$1=<MS>");
+            let l = agent.replace_all(&l, |c: &regex::Captures| {
+                let id = c[1].to_string();
+                let n = match agents.iter().position(|a| *a == id) {
+                    Some(i) => i + 1,
+                    None => {
+                        agents.push(id);
+                        agents.len()
+                    }
+                };
+                format!("Slot usage <AGENT{n}> on")
+            });
             out.push(l.into_owned());
         }
     }
@@ -871,6 +896,17 @@ PROGRESS:",
             .map_or(out.len(), |e| start + e);
         out.replace_range(start..end, "<tool list>");
     }
+    // A text-mode sub-agent's prompt lists its tools too ("TOOLS AVAILABLE:", platform lines).
+    for (head, gap) in [
+        ("TOOLS AVAILABLE:\r\n", "\r\n\r\n"),
+        ("TOOLS AVAILABLE:\n", "\n\n"),
+    ] {
+        if let Some(start) = out.find(head).map(|i| i + head.len()) {
+            let end = out[start..].find(gap).map_or(out.len(), |e| start + e);
+            out.replace_range(start..end, "<tool list>");
+            break;
+        }
+    }
     const LEAD: &str = "
 
 LEAD MODE (auto):
@@ -958,6 +994,7 @@ fn compare(
     strict: bool,
     interactive: Option<&pty::Interactive>,
     usage_log: bool,
+    unordered: bool,
 ) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(inter) = interactive {
@@ -982,13 +1019,25 @@ fn compare(
             rs.requests.len()
         ));
     }
-    for (i, (a, b)) in cs.requests.iter().zip(&rs.requests).enumerate() {
-        let (a, b) = if strict {
-            (a.clone(), b.clone())
-        } else {
-            (mask_known_gaps(a.clone()), mask_known_gaps(b.clone()))
-        };
-        diff(&format!("request[{i}]"), &a, &b, &mut out);
+    let prepare = |requests: &[Value]| {
+        let mut v: Vec<Value> = requests
+            .iter()
+            .map(|r| {
+                if strict {
+                    r.clone()
+                } else {
+                    mask_known_gaps(r.clone())
+                }
+            })
+            .collect();
+        if unordered {
+            v.sort_by_cached_key(|r| r.to_string());
+        }
+        v
+    };
+    let (c_requests, r_requests) = (prepare(&cs.requests), prepare(&rs.requests));
+    for (i, (a, b)) in c_requests.iter().zip(&r_requests).enumerate() {
+        diff(&format!("request[{i}]"), a, b, &mut out);
     }
     diff(
         "image_requests",
@@ -1106,6 +1155,7 @@ async fn main() -> Result<()> {
             strict || scenario.strict,
             scenario.interactive.as_ref(),
             scenario.usage_log,
+            scenario.unordered_requests,
         );
         if diffs.is_empty() {
             passed += 1;

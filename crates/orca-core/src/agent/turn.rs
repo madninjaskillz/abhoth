@@ -8,9 +8,12 @@
 //! its complete text tool call runs), adaptive reasoning, the server error probe after an
 //! empty reply, and the startup probes (`MaxTokensNegotiator`, the context-window detection).
 //!
-//! Not ported yet (see STATUS.md): pair voting, early read-only runs, background helper
-//! collection, the delegated-check request, the parameter auto-correction and the
-//! non-streaming fallback of the loop's catch-all error handler.
+//! Also pair model programming (`pair_vote.rs`: the alternates' requests go out with each
+//! request, the vote runs once the primary's stream ended) and the early read-only tool runs
+//! (`early_runs.rs`: started while the response still streams, taken when the call runs).
+//!
+//! Not ported yet (see STATUS.md): the parameter auto-correction and the non-streaming
+//! fallback of the loop's catch-all error handler.
 
 use std::time::Duration;
 
@@ -105,8 +108,25 @@ impl AgentSession {
         user_message: ChatMessage,
         observer: &mut dyn AgentObserver,
     ) -> Result<TurnEnd, AgentError> {
+        self.turn_pair_stats = Default::default();
+        let end = self.run_turn_loop(user_message, observer).await;
+        // The `finally` of `RunAgentLoopAsync`: unused early runs stop, the pair tallies show.
+        self.end_early_runs();
+        self.finish_pair_stats(observer);
+        end
+    }
+
+    async fn run_turn_loop(
+        &mut self,
+        user_message: ChatMessage,
+        observer: &mut dyn AgentObserver,
+    ) -> Result<TurnEnd, AgentError> {
         self.messages.push(user_message);
         self.begin_turn();
+        // A new request: no Lead mode chosen yet, and the Lead's bar starts at 0%.
+        if let Some(o) = &self.orchestrator {
+            o.reset_lead_progress();
+        }
         self.overflow_recovery_used = false;
         let mut s = LoopState {
             iteration_budget: self.config.agent.main_loop_max_iterations.max(1),
@@ -157,6 +177,11 @@ impl AgentSession {
                     .is_some_and(|a| a.should_skip(&self.messages)),
             };
             let options = self.build_options_for(s.runaway_recovery_active, skip_thinking);
+            // Pair model programming: the alternates' requests run alongside the stream (left
+            // running when the loop moves on without voting, as C# leaves its tasks).
+            let pair_tasks = self.fire_parallel_requests(&options);
+            // Read-only calls may start while the rest of the response is still streaming.
+            self.begin_early_runs();
             // The cap watches this request only (not the wind-down requests made elsewhere).
             if let Some(cap) = reasoning_cap.as_mut() {
                 cap.begin_request();
@@ -274,7 +299,7 @@ impl AgentSession {
                 outcome.thinking_token_count,
                 self.config.thinking.budget_tokens,
             );
-            let response = outcome.response;
+            let mut response = outcome.response;
             if let Some(err) = &outcome.stream_error {
                 // Partial output survived a mid-stream death: run it if it holds a complete
                 // tool call (the generation wasn't wasted); otherwise retry.
@@ -318,6 +343,12 @@ impl AgentSession {
                         continue;
                     }
                 }
+            }
+
+            // Pair model voting: the winner's text and tool calls replace the primary's.
+            if let Some(tasks) = pair_tasks {
+                self.handle_pair_voting(tasks, &mut response, observer)
+                    .await;
             }
 
             // Prefer the server's real output count over stream-chunk counting.
@@ -391,6 +422,17 @@ impl AgentSession {
                 self.check_stuck_probing(&mut s, observer);
             } else {
                 self.messages.push(response.to_message());
+
+                // Helpers started in the background and never collected: wait for them and
+                // hand their reports back, so the turn (or a -p run) can't end under them.
+                if let Some(collect) = self.collect_background.clone()
+                    && let Some(background) = collect().await.filter(|b| !b.is_empty())
+                {
+                    observer.on_notice("Background helpers finished; handing their reports over.");
+                    self.messages.push(ChatMessage::user(background));
+                    iteration += 1;
+                    continue;
+                }
 
                 // Refuse to wind down over a failing test run (at most twice per turn).
                 if !s.summary_requested
@@ -757,14 +799,45 @@ impl AgentSession {
         native: bool,
         observer: &mut dyn AgentObserver,
     ) -> String {
-        if let Some(block) = super::policies::check_blocked(
+        let types = self
+            .orchestrator
+            .as_ref()
+            .map(|o| o.type_registry().clone());
+        let mut block = super::policies::check_blocked(
             &self.config,
             &self.registry,
             self.plan_mode,
             native,
             &call.name,
             &call.arguments,
-        ) {
+            types.as_ref(),
+        );
+        // agent.leadMode "auto": the per-request choice (only with the lead_mode tool).
+        if block.is_none()
+            && let Some(orchestrator) = &self.orchestrator
+        {
+            let advertised = self
+                .registry
+                .resolve(super::policies::LEAD_MODE_TOOL_NAME)
+                .is_some();
+            match super::policies::check_auto_lead(
+                &self.config,
+                orchestrator.lead_request_mode().as_deref(),
+                advertised,
+                &call.name,
+            ) {
+                super::policies::AutoLeadVerdict::Run => {}
+                super::policies::AutoLeadVerdict::ChooseHandsOn(reason) => {
+                    tracing::info!(
+                        "Lead mode for this request: {} \u{2014} {reason}",
+                        super::policies::LEAD_MODE_HANDS_ON
+                    );
+                    orchestrator.set_lead_request_mode(Some(super::policies::LEAD_MODE_HANDS_ON));
+                }
+                super::policies::AutoLeadVerdict::Blocked(b) => block = Some(b),
+            }
+        }
+        if let Some(block) = block {
             tracing::info!("blocked tool {}: {}", call.name, block.message);
             observer.on_notice(&block.message);
             return block.message;
@@ -896,6 +969,32 @@ impl AgentSession {
                     super::prompt_constants::get_nudge_message(
                         self.native_tools,
                         self.is_pi_profile(),
+                    ),
+                )));
+            return true;
+        }
+
+        // Delegated work and no passing check since the agents finished: ask the Lead once to
+        // check the result itself before it answers.
+        if s.tools_executed
+            && !s.verification_requested
+            && !self.is_verification_off()
+            && self.delegated_without_check()
+        {
+            s.verification_requested = true;
+            // One request: whatever the Lead does next, its reply ends the turn.
+            s.verification_tools_used = true;
+            let wrap_up = prompts::extract_final_prose(text);
+            s.pre_verification_wrap_up =
+                prompts::is_substantive_final_message(&wrap_up).then_some(wrap_up);
+            s.pre_verification_epoch = self.mutation_epoch;
+            tracing::info!(
+                "Delegated work with no check since the agents finished \u{2014} asking the Lead for the final check"
+            );
+            self.messages
+                .push(ChatMessage::user(prompts::platform_lines(
+                    super::prompt_constants::get_delegated_check_message(
+                        self.config.tool_profile.eq_ignore_ascii_case("pi"),
                     ),
                 )));
             return true;
@@ -1246,6 +1345,94 @@ fn parsed_to_call(p: &ParsedToolCall) -> ToolCall {
     }
 }
 
+impl AgentSession {
+    fn is_verification_off(&self) -> bool {
+        matches!(
+            self.config
+                .agent
+                .verification_mode
+                .trim()
+                .to_lowercase()
+                .as_str(),
+            "off" | "never" | "false"
+        )
+    }
+
+    /// `DelegatedWithoutCheck`: this turn's last successful delegation of code work has no
+    /// passing command run after it.
+    pub(super) fn delegated_without_check(&self) -> bool {
+        delegated_without_check(self.turn_history())
+    }
+}
+
+/// `DelegatedWithoutCheck` over a turn's records: the last successful delegation of code work
+/// has no passing command run after it.
+pub fn delegated_without_check(history: &[super::session::ToolCallRecord]) -> bool {
+    let Some(last) = history.iter().rposition(|r| {
+        matches!(r.name.as_str(), "subagent" | "spawn_agent" | "spawn_agents")
+            && !r.is_error
+            && delegates_code_work(r.arguments.as_deref())
+    }) else {
+        return false;
+    };
+    !history[last + 1..].iter().any(|r| {
+        is_command_runner(&r.name)
+            && run_evidence::classify(r.result.as_deref(), r.is_error, r.arguments.as_deref())
+                == run_evidence::RunOutcome::Pass
+    })
+}
+
+/// Agent types that only read: delegating to them changes no code.
+const READ_ONLY_AGENT_TYPES: &[&str] =
+    &["scout", "planner", "reviewer", "explore", "plan", "review"];
+
+/// `DelegatesCodeWork`: whether a delegation call's arguments send work to an agent that can
+/// change code: any named agent (agent / agent_type, in single, tasks, chain or agents form)
+/// that is not read-only, a task with no agent, or a follow-up ("to"). Unparsable = yes.
+pub fn delegates_code_work(args_json: Option<&str>) -> bool {
+    let Some(text) = args_json.filter(|a| !a.trim().is_empty()) else {
+        return true;
+    };
+    let Ok(Value::Object(root)) = serde_json::from_str::<Value>(text) else {
+        return true;
+    };
+    if root
+        .get("to")
+        .and_then(Value::as_str)
+        .is_some_and(|t| !t.trim().is_empty())
+    {
+        return true;
+    }
+    let root = Value::Object(root);
+    let mut items = vec![&root];
+    for key in ["tasks", "chain", "agents"] {
+        if let Some(Value::Array(arr)) = root.get(key) {
+            items.extend(arr.iter().filter(|e| e.is_object()));
+        }
+    }
+    let mut saw_task = false;
+    for item in items {
+        if !item.get("task").is_some_and(Value::is_string) {
+            continue;
+        }
+        saw_task = true;
+        let agent = item
+            .get("agent")
+            .and_then(Value::as_str)
+            .or_else(|| item.get("agent_type").and_then(Value::as_str))
+            .map(str::trim);
+        match agent {
+            Some(a)
+                if !a.is_empty()
+                    && READ_ONLY_AGENT_TYPES
+                        .iter()
+                        .any(|r| r.eq_ignore_ascii_case(a)) => {}
+            _ => return true,
+        }
+    }
+    !saw_task
+}
+
 fn is_command_runner(name: &str) -> bool {
     matches!(
         name,
@@ -1278,7 +1465,7 @@ fn normalized_args(raw: &str) -> String {
 }
 
 /// `StripReason`: drop a `_reason` argument before the tool sees it.
-fn strip_reason(raw: &str) -> String {
+pub(super) fn strip_reason(raw: &str) -> String {
     if !raw.contains("_reason") {
         return raw.to_string();
     }

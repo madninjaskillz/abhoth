@@ -1,0 +1,10 @@
+{
+  "prompt": "Have an explore agent try to write a file.",
+  "config": {"agent": {"leadMode": "hands-on"}},
+  "replies": [
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Write x.txt.", "agent_type": "explore"}}]},
+    {"tools": [{"name": "write_file", "args": {"path": "x.txt", "content": "x"}}, {"name": "glob", "args": {"pattern": "*.txt"}}]},
+    {"text": "I can't write files."},
+    {"text": "The explore agent could not write."}
+  ]
+}

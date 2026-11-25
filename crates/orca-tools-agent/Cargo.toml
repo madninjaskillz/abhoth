@@ -1,0 +1,21 @@
+[package]
+name = "orca-tools-agent"
+description = "Agent tools: spawn_agent, spawn_agents and report_progress (port of OpenOrca.Tools.Agent)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+orca-abstractions.workspace = true
+orca-core.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+orca-testkit.workspace = true
+
+[lints]
+workspace = true

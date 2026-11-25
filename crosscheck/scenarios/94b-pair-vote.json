@@ -1,0 +1,20 @@
+{
+  "prompt": "What does notes.txt say?",
+  "config": {"lmStudio": {"models": ["fake-model", "alt-model"], "pairModelProgramming": true}},
+  "files": {"notes.txt": "alpha\n"},
+  "unordered_requests": true,
+  "replies": [
+    {"for_model": "fake-model", "text": "It probably says hello."},
+    {"for_model": "alt-model", "text": "I will read the file first.", "tools": [{"name": "read_file", "args": {"path": "notes.txt"}}]},
+    {"for_model": "fake-model", "text": "{\"choice\":\"B\"}"},
+    {"for_model": "alt-model", "text": "{\"choice\":\"B\"}"},
+    {"for_model": "fake-model", "text": "Done."},
+    {"for_model": "alt-model", "text": "Finished."},
+    {"for_model": "fake-model", "text": "{\"choice\":\"B\"}"},
+    {"for_model": "alt-model", "text": "{\"choice\":\"B\"}"},
+    {"for_model": "fake-model", "text": "notes.txt holds a single line that says alpha, and nothing else at all."},
+    {"for_model": "alt-model", "text": "The file notes.txt contains one line: alpha. That is the whole file."},
+    {"for_model": "fake-model", "text": "I prefer {\"choice\":\"A\"}"},
+    {"for_model": "alt-model", "text": "<think>close call</think>{\"choice\":\"b\"}"}
+  ]
+}

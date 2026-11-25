@@ -8,6 +8,7 @@ members = [
     "crates/orca-tools-shell",
     "crates/orca-tools-git",
     "crates/orca-tools-web",
+    "crates/orca-tools-agent",
     "crates/orca-tools-utility",
     "crates/orca-tools-archive",
     "crates/orca-tools-network",
@@ -38,6 +39,7 @@ orca-tools-fs = { path = "crates/orca-tools-fs" }
 orca-tools-shell = { path = "crates/orca-tools-shell" }
 orca-tools-git = { path = "crates/orca-tools-git" }
 orca-tools-web = { path = "crates/orca-tools-web" }
+orca-tools-agent = { path = "crates/orca-tools-agent" }
 orca-tools-utility = { path = "crates/orca-tools-utility" }
 orca-tools-archive = { path = "crates/orca-tools-archive" }
 orca-tools-network = { path = "crates/orca-tools-network" }

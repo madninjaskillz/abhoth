@@ -3,8 +3,8 @@
 //!
 //! Phase 1 covers one agent, native tool calls and the summary wind-down. Not yet ported (see
 //! `PORTING.md`): text-mode tool calls, parameter alias repair, the verification request, the
-//! runaway-reasoning cap, compaction, retries/failover, hooks, checkpoints, read-before-edit,
-//! early read-only tools and sub-agents.
+//! runaway-reasoning cap, compaction, retries/failover, hooks, checkpoints, read-before-edit
+//! and sub-agents.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -148,7 +148,26 @@ pub struct AgentSession {
     pub server_identity: crate::client::ServerIdentity,
     /// HTTP client for the startup probes and the server error probe (15 s timeout).
     pub probe_http: reqwest::Client,
+    /// Sub-agents (spawn tools, lead mode, delegated checks); None = no agent tools wired.
+    pub orchestrator: Option<Arc<crate::orchestration::AgentOrchestrator>>,
+    /// The pipeline state shared with sub-agents' tool calls (see `sub_agent_tools`).
+    pub sub_agent_pipeline: Option<super::sub_agent_tools::SharedPipeline>,
+    /// Called when the Lead would end its turn (`CollectBackgroundWork`): a message to continue
+    /// the turn with (peer mode: background helpers' reports it never collected), or None.
+    pub collect_background: Option<BackgroundCollector>,
+    /// Read-only calls started while the current response streams (agent.earlyReadOnlyTools).
+    pub(crate) early_runs: Option<super::early_runs::EarlyRuns>,
+    /// Calls whose early run was used this session.
+    pub early_tool_runs_used: usize,
+    /// Pair model programming vote tallies for the session (`ReplState.Pair*`).
+    pub pair_stats: super::pair_vote::PairStats,
+    /// This turn's tallies (`AgentLoopState.Pair*`).
+    pub(super) turn_pair_stats: super::pair_vote::PairStats,
 }
+
+/// See [`AgentSession::collect_background`].
+pub type BackgroundCollector =
+    Arc<dyn Fn() -> futures_util::future::BoxFuture<'static, Option<String>> + Send + Sync>;
 
 impl AgentSession {
     pub fn new(
@@ -198,6 +217,13 @@ impl AgentSession {
                 .timeout(Duration::from_secs(HTTP_PROBE_TIMEOUT_SECONDS))
                 .build()
                 .expect("reqwest client builds with static settings"),
+            orchestrator: None,
+            sub_agent_pipeline: None,
+            collect_background: None,
+            early_runs: None,
+            early_tool_runs_used: 0,
+            pair_stats: Default::default(),
+            turn_pair_stats: Default::default(),
         }
     }
 
@@ -471,8 +497,15 @@ impl AgentSession {
         if !self.check_permission(tool.as_ref(), &args) {
             return ToolResult::denied("Permission denied by user.");
         }
+        // Already started while the model was still writing (agent.earlyReadOnlyTools): its
+        // pre-hook ran with it.
+        let early = self.take_early_run(call).await;
         // Hooks see the tool name the model used and its argument text.
-        if !self.tool_hooks.pre_hook(&call.name, &hook_args).await {
+        let hook_allowed = match &early {
+            Some(e) => e.hook_allowed,
+            None => self.tool_hooks.pre_hook(&call.name, &hook_args).await,
+        };
+        if !hook_allowed {
             return ToolResult::blocked("Tool blocked by hook.");
         }
         if !prepares && let Some(err) = validate_required_args(tool.as_ref(), &args) {
@@ -486,14 +519,31 @@ impl AgentSession {
             return ToolResult::blocked(err);
         }
 
+        // A spawn tool's sub-agents share this pipeline's state; their calls are recorded
+        // before the spawn call itself.
+        let shared = self
+            .sub_agent_pipeline
+            .clone()
+            .filter(|_| crate::orchestration::activity::is_agent_tool(tool.name()));
+        if let Some(shared) = &shared {
+            shared.seed_from(self);
+        }
         let started = Instant::now();
-        let result = self.run_tool(&tool, &args, observer).await;
+        let (result, elapsed) = match early {
+            Some(e) => (e.result, e.elapsed_ms),
+            None => {
+                let result = self.run_tool(&tool, &args, observer).await;
+                (result, started.elapsed().as_millis() as i64)
+            }
+        };
+        if let Some(shared) = &shared {
+            shared.drain_into(self);
+        }
         // `cd`: later tool calls resolve paths against the new directory (C# changes the
         // process-wide current directory).
         if let Some(dir) = result.cwd_change().filter(|_| !result.is_error) {
             self.ctx.cwd = dir;
         }
-        let elapsed = started.elapsed().as_millis() as i64;
         self.tool_hooks
             .post_hook(&call.name, &hook_args, &result.content, result.is_error);
 
@@ -666,34 +716,49 @@ impl AgentSession {
     }
 
     fn check_directory_restriction(&self, tool: &dyn Tool, args: &Value) -> Option<String> {
-        let allowed = self.config.allowed_directory.as_deref()?;
-        if !tool
-            .capabilities()
-            .contains(ToolCapabilities::DIRECTORY_RESTRICTED)
-        {
-            return None;
-        }
-        let path = args
-            .get("path")
-            .or_else(|| args.get("directory"))
-            .and_then(Value::as_str)?;
-        let full = self.ctx.full_path(path);
-        let allowed_full = self.ctx.full_path(allowed);
-        let full_s = full.to_string_lossy().to_lowercase();
-        let allowed_s = allowed_full
-            .to_string_lossy()
-            .trim_end_matches(['/', '\\'])
-            .to_lowercase();
-        if full_s == allowed_s
-            || full_s.starts_with(&format!("{allowed_s}/"))
-            || full_s.starts_with(&format!("{allowed_s}\\"))
-        {
-            return None;
-        }
-        Some(format!(
-            "ERROR: Path '{path}' is outside the allowed directory '{allowed}'. File operations are restricted."
-        ))
+        directory_restriction(
+            self.config.allowed_directory.as_deref(),
+            &self.ctx,
+            tool,
+            args,
+        )
     }
+}
+
+/// `allowedDirectory`: a directory-restricted tool's path must lie inside it.
+pub(crate) fn directory_restriction(
+    allowed: Option<&str>,
+    ctx: &ToolContext,
+    tool: &dyn Tool,
+    args: &Value,
+) -> Option<String> {
+    let allowed = allowed?;
+    if !tool
+        .capabilities()
+        .contains(ToolCapabilities::DIRECTORY_RESTRICTED)
+    {
+        return None;
+    }
+    let path = args
+        .get("path")
+        .or_else(|| args.get("directory"))
+        .and_then(Value::as_str)?;
+    let full = ctx.full_path(path);
+    let allowed_full = ctx.full_path(allowed);
+    let full_s = full.to_string_lossy().to_lowercase();
+    let allowed_s = allowed_full
+        .to_string_lossy()
+        .trim_end_matches(['/', '\\'])
+        .to_lowercase();
+    if full_s == allowed_s
+        || full_s.starts_with(&format!("{allowed_s}/"))
+        || full_s.starts_with(&format!("{allowed_s}\\"))
+    {
+        return None;
+    }
+    Some(format!(
+        "ERROR: Path '{path}' is outside the allowed directory '{allowed}'. File operations are restricted."
+    ))
 }
 
 fn orca_tools_common_trim(content: &str, max: usize) -> String {
