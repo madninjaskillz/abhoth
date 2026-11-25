@@ -1,0 +1,21 @@
+[package]
+name = "orca-tools-shell"
+description = "Shell tools: bash, get_process_output, stop_process and the background process manager (port of OpenOrca.Tools.Shell)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+orca-abstractions.workspace = true
+orca-tools-common.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

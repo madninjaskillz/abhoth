@@ -1,0 +1,284 @@
+{
+  "lmStudio": {
+    "baseUrl": "http://127.0.0.1:9/v1",
+    "apiKey": "k\u0027\u002B\u003C\u003E\u0026\u0022\\t\u00E9\uD83D\uDE00\u0060",
+    "apiKeyEnv": "MY_KEY_ENV",
+    "vision": false,
+    "models": [
+      "qwen3.8-27b",
+      "backup-model"
+    ],
+    "temperature": 1,
+    "maxTokens": 4096,
+    "sampling": {
+      "preset": "qwen-thinking-coding",
+      "topK": 20,
+      "minP": 0.05
+    },
+    "modelSampling": {
+      "m": {
+        "temperature": 0.25,
+        "topK": 5
+      }
+    },
+    "timeoutSeconds": 120,
+    "streamingTimeoutSeconds": 120,
+    "nativeToolCalling": false,
+    "backupMinResponseLength": 0,
+    "backupOnRefusal": false,
+    "pairModelProgramming": false
+  },
+  "providers": {
+    "haiku": {
+      "type": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "ANTHROPIC_KEY",
+      "models": [],
+      "model": "claude-haiku-5-5",
+      "contextWindow": 200000,
+      "pricing": {
+        "inputPerMTok": 1,
+        "outputPerMTok": 5,
+        "cacheReadPerMTok": 0.1,
+        "cacheWritePerMTok": 1.25,
+        "longContextThreshold": 100000,
+        "longContextFactor": 5
+      }
+    }
+  },
+  "permissions": {
+    "autoApproveAll": false,
+    "autoApproveReadOnly": true,
+    "autoApproveModerate": false,
+    "alwaysApprove": [],
+    "disabledTools": [],
+    "allowPatterns": [],
+    "denyPatterns": []
+  },
+  "session": {
+    "autoSave": true,
+    "maxSessions": 100
+  },
+  "context": {
+    "contextWindowSize": 32768,
+    "autoDetectContextWindow": true,
+    "autoCompactThreshold": 0.8,
+    "compactPreserveLastN": 4,
+    "autoCompactEnabled": true,
+    "reserveTokens": 0,
+    "keepRecentTokens": 0,
+    "compactAtRatio": 0.6,
+    "keepFirstTokens": 9000,
+    "effectiveKeepFirstTokens": 3276,
+    "compactCostGate": true,
+    "thinkingAwareCompaction": true,
+    "prefillTokensPerSecond": 1000,
+    "charsPerToken": 3.5
+  },
+  "agent": {
+    "engine": "native",
+    "maxIterations": 40,
+    "mainLoopMaxIterations": 50,
+    "maxIterationsHardCap": 150,
+    "stuckProbeThreshold": 8,
+    "taskReminderInterval": 8,
+    "taskReminderMinContextTokens": 16000,
+    "verificationMode": "auto",
+    "maxConcurrent": 2,
+    "preloadBriefFiles": true,
+    "repeatCallNotes": true,
+    "earlyReadOnlyTools": true,
+    "minFreeCopiesToDelegate": 0,
+    "peerMode": false,
+    "peerBackground": true,
+    "peerRepetitionGuard": true,
+    "peerMaxCutOffsInARow": 3,
+    "peerMaxTokens": 0,
+    "leadMode": "auto",
+    "leadBash": true,
+    "reviewerMaxIterations": 15,
+    "iterationExtensions": 2,
+    "timeoutSeconds": 1200,
+    "reasoning": {
+      "lead": "medium",
+      "maxStepTokens": 0,
+      "capRetries": 1,
+      "adaptive": "worker",
+      "adaptiveSkipAfter": [
+        "write"
+      ],
+      "adaptiveMaxSkips": 3,
+      "adaptiveBriefRule": true
+    },
+    "uncensored": {
+      "enabled": false,
+      "bodyField": "experimental_speed_projection",
+      "bodyValue": {
+        "x": [
+          1,
+          2.5,
+          "s"
+        ]
+      },
+      "providers": [
+        "haiku"
+      ],
+      "serverKinds": [
+        "strata"
+      ],
+      "imageModel": "qwen-image-uncensored"
+    },
+    "maxSpawnDepth": 3,
+    "toolTimeoutSeconds": 120,
+    "providerSchedule": [
+      "local",
+      "haiku"
+    ],
+    "maxAgents": 0,
+    "planner": {
+      "provider": "fable",
+      "maxSteps": 30,
+      "effort": "high",
+      "timeoutSeconds": 1200,
+      "planFile": "PLAN.md"
+    }
+  },
+  "hooks": {
+    "preToolHooks": {
+      "bash": "echo pre"
+    },
+    "postToolHooks": {}
+  },
+  "memory": {
+    "autoMemoryEnabled": false,
+    "includeInPrompt": false,
+    "maxMemoryFiles": 20
+  },
+  "thinking": {
+    "budgetTokens": 0,
+    "reasoningEffort": "low",
+    "level": "medium",
+    "runawayCapChunks": 12000,
+    "defaultVisible": false
+  },
+  "shell": {
+    "idleTimeoutSeconds": 120
+  },
+  "imageGen": {
+    "enabled": false,
+    "baseUrl": "http://localhost:7860/v1",
+    "apiKey": "none",
+    "timeoutSeconds": 120,
+    "outputDirectory": ""
+  },
+  "lsp": {
+    "enabled": true,
+    "servers": {
+      "rust": {
+        "command": "rust-analyzer",
+        "args": [
+          "--stdio"
+        ]
+      }
+    }
+  },
+  "formatter": {
+    "enabled": false,
+    "commands": {},
+    "showDiagnosticsAfterWrite": true,
+    "diagnosticsLimit": 20
+  },
+  "tools": {
+    "extendedTools": false,
+    "extraTools": []
+  },
+  "ui": {
+    "hyperlinks": "auto",
+    "inlineImages": "auto"
+  },
+  "mcpServers": {
+    "fs": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "server"
+      ],
+      "env": {
+        "A": "b"
+      },
+      "enabled": true
+    }
+  },
+  "slots": {
+    "enabled": true,
+    "registryUrl": "http://127.0.0.1:9",
+    "copies": [
+      {
+        "name": "A",
+        "baseUrl": "http://h:8080/v1",
+        "slots": 2,
+        "model": "dense",
+        "extraBody": {
+          "reasoning_effort": "low"
+        },
+        "preserveThinking": false
+      }
+    ],
+    "extraBody": {
+      "chat_template_kwargs": {
+        "enable_thinking": true
+      }
+    },
+    "preserveThinking": true,
+    "wholeCopyPerAgent": true,
+    "leadContextWindow": 32768,
+    "pinLeadPrefix": true,
+    "agentsPerCopy": 1,
+    "lead": {
+      "name": "CPU",
+      "baseUrl": "http://h:8013/v1",
+      "contextWindow": 32768,
+      "sampling": {
+        "topP": 0.9
+      }
+    },
+    "heartbeatSeconds": 0,
+    "idleReleaseMinutes": 15,
+    "retrySeconds": 3,
+    "healthTimeoutMs": 1500,
+    "registryTimeoutMs": 1500
+  },
+  "toolProfile": "pi",
+  "pi": {
+    "extraTools": false,
+    "shellPath": "C:/Program Files/Git/bin/bash.exe",
+    "readBeforeEdit": false,
+    "batchCallsRule": true,
+    "appendSystemPrompt": "Line1\nLine2",
+    "agentTools": true,
+    "bashTimeoutSeconds": 300,
+    "jobs": true
+  },
+  "bridges": {
+    "claude": {
+      "model": "opus",
+      "extraArgs": [
+        "--x"
+      ],
+      "passApiKey": false,
+      "progressBars": true,
+      "isolateSettings": true
+    },
+    "codex": {
+      "extraArgs": [],
+      "passApiKey": false,
+      "progressBars": true,
+      "isolateSettings": true
+    }
+  },
+  "profiles": {
+    "serverUrl": "http://127.0.0.1:9",
+    "active": "dense",
+    "timeoutMs": 4000
+  }
+}

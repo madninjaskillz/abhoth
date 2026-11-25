@@ -1,0 +1,39 @@
+{
+  "lmStudio": {
+    "baseUrl": "http://127.0.0.1:9/v1",
+    "apiKey": "k'+<>&\"\\té😀`",
+    "model": "qwen3.8-27b",
+    "backupModel": "backup-model",
+    "temperature": 1,
+    "maxTokens": 4096,
+    "sampling": { "preset": "qwen-thinking-coding", "minP": 0.05, "topK": 20 },
+    "modelSampling": { "m": { "topK": 5, "temperature": 0.25 } },
+    "vision": false,
+    "apiKeyEnv": "MY_KEY_ENV"
+  },
+  "providers": {
+    "haiku": { "provider": "anthropic", "model": "claude-haiku-5-5", "apiKeyEnv": "ANTHROPIC_KEY", "baseUrl": "https://api.anthropic.com", "contextWindow": 200000,
+      "pricing": { "inputPerMTok": 1, "outputPerMTok": 5, "cacheReadPerMTok": 0.1, "cacheWritePerMTok": 1.25, "longContextThreshold": 100000, "longContextFactor": 5 } }
+  },
+  "context": { "contextWindowSize": 65536, "compactAtRatio": 0.6 },
+  "agent": { "maxIterations": 15, "timeoutSeconds": 300, "providerSchedule": ["local", "haiku"],
+    "reasoning": { "lead": "medium", "adaptive": "worker", "adaptiveSkipAfter": ["write"] },
+    "uncensored": { "bodyValue": { "x": [1, 2.5, "s"] }, "providers": ["haiku"] },
+    "planner": { "provider": "fable" } },
+  "thinking": { "level": "medium", "reasoningEffort": "low" },
+  "shell": { "idleTimeoutSeconds": 15 },
+  "hooks": { "preToolHooks": { "bash": "echo pre" } },
+  "lsp": { "enabled": true, "servers": { "rust": { "command": "rust-analyzer", "args": ["--stdio"] } } },
+  "mcpServers": { "fs": { "command": "npx", "args": ["-y", "server"], "env": { "A": "b" } } },
+  "slots": {
+    "registryUrl": "http://127.0.0.1:9",
+    "copies": [ { "name": "A", "baseUrl": "http://h:8080/v1", "slots": 2, "model": "dense", "extraBody": { "reasoning_effort": "low" }, "preserveThinking": false } ],
+    "extraBody": { "chat_template_kwargs": { "enable_thinking": true } },
+    "lead": { "name": "CPU", "baseUrl": "http://h:8013/v1", "contextWindow": 32768, "sampling": { "topP": 0.9 } }
+  },
+  "toolProfile": "pi",
+  "pi": { "shellPath": "C:/Program Files/Git/bin/bash.exe", "appendSystemPrompt": "Line1\nLine2" },
+  "bridges": { "claude": { "model": "opus", "extraArgs": ["--x"] } },
+  "profiles": { "serverUrl": "http://127.0.0.1:9", "active": "dense" },
+  "unknownTopLevel": { "keep": true }
+}

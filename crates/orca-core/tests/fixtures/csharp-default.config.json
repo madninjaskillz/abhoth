@@ -1,0 +1,155 @@
+{
+  "lmStudio": {
+    "baseUrl": "http://localhost:1234/v1",
+    "apiKey": "lm-studio",
+    "models": [],
+    "temperature": 0.7,
+    "timeoutSeconds": 120,
+    "streamingTimeoutSeconds": 120,
+    "nativeToolCalling": false,
+    "backupMinResponseLength": 0,
+    "backupOnRefusal": false,
+    "pairModelProgramming": false
+  },
+  "providers": {},
+  "permissions": {
+    "autoApproveAll": false,
+    "autoApproveReadOnly": true,
+    "autoApproveModerate": false,
+    "alwaysApprove": [],
+    "disabledTools": [],
+    "allowPatterns": [],
+    "denyPatterns": []
+  },
+  "session": {
+    "autoSave": true,
+    "maxSessions": 100
+  },
+  "context": {
+    "contextWindowSize": 8192,
+    "autoDetectContextWindow": true,
+    "autoCompactThreshold": 0.8,
+    "compactPreserveLastN": 4,
+    "autoCompactEnabled": true,
+    "reserveTokens": 0,
+    "keepRecentTokens": 0,
+    "compactAtRatio": 0.5,
+    "keepFirstTokens": 9000,
+    "effectiveKeepFirstTokens": 819,
+    "compactCostGate": true,
+    "thinkingAwareCompaction": true,
+    "prefillTokensPerSecond": 1000,
+    "charsPerToken": 3.5
+  },
+  "agent": {
+    "engine": "native",
+    "maxIterations": 40,
+    "mainLoopMaxIterations": 50,
+    "maxIterationsHardCap": 150,
+    "stuckProbeThreshold": 8,
+    "taskReminderInterval": 8,
+    "taskReminderMinContextTokens": 16000,
+    "verificationMode": "auto",
+    "maxConcurrent": 2,
+    "preloadBriefFiles": true,
+    "repeatCallNotes": true,
+    "earlyReadOnlyTools": true,
+    "minFreeCopiesToDelegate": 0,
+    "peerMode": false,
+    "peerBackground": true,
+    "peerRepetitionGuard": true,
+    "peerMaxCutOffsInARow": 3,
+    "peerMaxTokens": 0,
+    "leadMode": "auto",
+    "leadBash": true,
+    "reviewerMaxIterations": 15,
+    "iterationExtensions": 2,
+    "timeoutSeconds": 1200,
+    "reasoning": {
+      "maxStepTokens": 0,
+      "capRetries": 1,
+      "adaptiveMaxSkips": 3,
+      "adaptiveBriefRule": true
+    },
+    "uncensored": {
+      "enabled": false,
+      "bodyField": "experimental_speed_projection",
+      "serverKinds": [
+        "strata"
+      ],
+      "imageModel": "qwen-image-uncensored"
+    },
+    "maxSpawnDepth": 3,
+    "toolTimeoutSeconds": 120,
+    "maxAgents": 0
+  },
+  "hooks": {
+    "preToolHooks": {},
+    "postToolHooks": {}
+  },
+  "memory": {
+    "autoMemoryEnabled": false,
+    "includeInPrompt": false,
+    "maxMemoryFiles": 20
+  },
+  "thinking": {
+    "budgetTokens": 0,
+    "runawayCapChunks": 12000,
+    "defaultVisible": false
+  },
+  "shell": {
+    "idleTimeoutSeconds": 120
+  },
+  "imageGen": {
+    "enabled": false,
+    "baseUrl": "http://localhost:7860/v1",
+    "apiKey": "none",
+    "timeoutSeconds": 120,
+    "outputDirectory": ""
+  },
+  "lsp": {
+    "enabled": false,
+    "servers": {}
+  },
+  "formatter": {
+    "enabled": false,
+    "commands": {},
+    "showDiagnosticsAfterWrite": true,
+    "diagnosticsLimit": 20
+  },
+  "tools": {
+    "extendedTools": false,
+    "extraTools": []
+  },
+  "ui": {
+    "hyperlinks": "auto",
+    "inlineImages": "auto"
+  },
+  "mcpServers": {},
+  "toolProfile": "openorca",
+  "pi": {
+    "extraTools": false,
+    "readBeforeEdit": false,
+    "batchCallsRule": true,
+    "agentTools": true,
+    "bashTimeoutSeconds": 300,
+    "jobs": true
+  },
+  "bridges": {
+    "claude": {
+      "extraArgs": [],
+      "passApiKey": false,
+      "progressBars": true,
+      "isolateSettings": true
+    },
+    "codex": {
+      "extraArgs": [],
+      "passApiKey": false,
+      "progressBars": true,
+      "isolateSettings": true
+    }
+  },
+  "profiles": {
+    "timeoutMs": 4000
+  }
+}
