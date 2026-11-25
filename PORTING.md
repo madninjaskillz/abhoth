@@ -314,3 +314,13 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   and whole floats as `200.0` (both builds read either form).
 - **D76** Each bench run is an in-process Rust session configured from its own `config.json`
   (C# starts a worker process per run).
+- **D77** Usage lines (`Slot usage ...`, `Provider usage ...`) go to a log target passed in
+  explicitly, not through the global `tracing` subscriber, so each in-process bench run writes
+  its own run home's log (where the bench metrics parser reads them).
+- **D78** The file log copies the C# name, location and format
+  (`<config home>/logs/openorca-{date}.log`, `HH:mm:ss.fff [INF] Category: msg`, `.1`/`.2`
+  fallbacks), local time via `chrono`.
+- **D79** `Usage` has `reasoning_tokens`; `ChatResponse` has `usage_reported` and `timings`
+  (llama.cpp / Strata). Cache-write tokens are 0 (no Anthropic client).
+- **D80** The cross-check compares every scenario's usage log lines (times masked) unless the
+  scenario sets `usage_log: false`.
