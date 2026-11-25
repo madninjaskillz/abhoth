@@ -19,10 +19,12 @@ use super::copy_models::{CopyModelClient, CopyModels};
 use crate::client::request_parameters::thinking_switch_first;
 use crate::client::{
     ChatBackend, ChatError, ChatMessage, ChatOptions, ChatResponse, ClientSettings, OpenAiClient,
-    ServedModels, StreamControl, StreamEvent, is_transport_failure, server_identity::ServerKind,
+    RequestStats, ServedModels, StreamControl, StreamEvent, is_transport_failure,
+    server_identity::ServerKind, usage::SLOTS_CATEGORY,
 };
 use crate::config::model::Map;
 use crate::config::{OrcaConfig, SamplingConfig, SlotCopyConfig, sampling_presets};
+use crate::logging::LogSink;
 
 /// Builds a copy's client (tests replace the HTTP client).
 pub type CopyClientOverride = Arc<dyn Fn(&SlotCopyConfig) -> Arc<dyn ChatBackend> + Send + Sync>;
@@ -427,6 +429,8 @@ pub struct SlottedChatClient {
     last_activity: Mutex<Option<Instant>>,
     prompt_tokens: AtomicI64,
     cached_tokens: AtomicI64,
+    /// Where the "Slot usage" lines of requests on a slot go (the Slots logger).
+    usage_log: Option<Arc<dyn LogSink>>,
 }
 
 impl SlottedChatClient {
@@ -449,7 +453,14 @@ impl SlottedChatClient {
             last_activity: Mutex::new(None),
             prompt_tokens: AtomicI64::new(0),
             cached_tokens: AtomicI64::new(0),
+            usage_log: None,
         }
+    }
+
+    /// Log each request on a slot ("Slot usage {owner} on {slot}: ...") to `log`.
+    pub fn with_usage_log(mut self, log: Option<Arc<dyn LogSink>>) -> Self {
+        self.usage_log = log;
+        self
     }
 
     pub fn lease(&self) -> &Arc<SlotLease> {
@@ -626,16 +637,19 @@ impl SlottedChatClient {
         }
     }
 
-    fn record(&self, slot: Option<&str>, r: &ChatResponse) {
-        let prompt = r.usage.prompt_tokens.unwrap_or(0);
-        let cached = r.usage.cached_tokens.unwrap_or(0);
-        self.prompt_tokens.fetch_add(prompt, Ordering::SeqCst);
-        self.cached_tokens.fetch_add(cached, Ordering::SeqCst);
+    fn record(&self, slot: Option<&str>, stats: &RequestStats) {
+        if let Some(usage) = stats.usage {
+            self.prompt_tokens
+                .fetch_add(usage.prompt_tokens.unwrap_or(0), Ordering::SeqCst);
+            self.cached_tokens
+                .fetch_add(usage.cached_tokens.unwrap_or(0), Ordering::SeqCst);
+        }
+        // Requests on the fallback are logged by the fallback client itself (when it logs usage).
         if let Some(slot) = slot {
-            tracing::info!(
-                "Usage {} on {slot}: prompt {prompt}, cached {cached}, output {}",
-                self.lease.owner(),
-                r.usage.completion_tokens.unwrap_or(0)
+            stats.log(
+                self.usage_log.as_deref(),
+                SLOTS_CATEGORY,
+                &format!("{} on {slot}", self.lease.owner()),
             );
         }
     }
@@ -653,9 +667,11 @@ impl SlottedChatClient {
         } else {
             options.clone()
         };
+        let mut stats = RequestStats::start(Some(options), None, None, None);
         match client.complete(actor, messages, &sent).await {
             Ok(r) => {
-                self.record(slot.as_deref(), &r);
+                stats.observe_response(&r);
+                self.record(slot.as_deref(), &stats);
                 if Self::pins(kind) && self.is_lead() && r.tool_calls.is_empty() {
                     self.release_lead_pin(
                         &client,
@@ -677,8 +693,10 @@ impl SlottedChatClient {
                 } else {
                     options.clone()
                 };
+                let mut stats = RequestStats::start(Some(options), None, None, None);
                 let r = client.complete(actor, messages, &sent).await?;
-                self.record(slot.as_deref(), &r);
+                stats.observe_response(&r);
+                self.record(slot.as_deref(), &stats);
                 Ok(r)
             }
             Err(e) => Err(e),
@@ -702,18 +720,40 @@ impl SlottedChatClient {
                 options.clone()
             };
             let mut started = false;
+            // Logged when the attempt ends, also when the caller drops the request (cancel).
+            let mut log = SlotStreamLog {
+                client: self,
+                slot: slot.clone(),
+                stats: Some(RequestStats::start(Some(options), None, None, None)),
+            };
             let result = {
+                let stats = log.stats.as_mut().expect("armed");
                 let mut tracked = |e: StreamEvent| {
                     started = true;
+                    stats.observe_event(&e);
                     on_event(e)
                 };
                 client
                     .stream_with_control(actor, messages, &sent, &mut tracked)
                     .await
             };
+            if let Some(stats) = log.stats.as_mut() {
+                match &result {
+                    Ok(r) => stats.observe_stream_end(r),
+                    Err(ChatError::Interrupted { partial, .. }) => {
+                        stats.observe_stream_end(partial)
+                    }
+                    Err(_) => {}
+                }
+            }
+            let fails_over = matches!(&result, Err(e)
+                if !started && attempt == 0 && slot.is_some() && is_transport_failure(e));
+            if fails_over {
+                log.stats = None;
+            }
+            drop(log);
             match result {
                 Ok(r) => {
-                    self.record(slot.as_deref(), &r);
                     if !r.stopped && r.tool_calls.is_empty() && Self::pins(kind) && self.is_lead() {
                         self.release_lead_pin(
                             &client,
@@ -734,6 +774,21 @@ impl SlottedChatClient {
                 }
                 Err(e) => return Err(e),
             }
+        }
+    }
+}
+
+/// Records a streamed attempt's stats on drop (C#: Record in the stream's finally).
+struct SlotStreamLog<'a> {
+    client: &'a SlottedChatClient,
+    slot: Option<String>,
+    stats: Option<RequestStats>,
+}
+
+impl Drop for SlotStreamLog<'_> {
+    fn drop(&mut self) {
+        if let Some(stats) = self.stats.take() {
+            self.client.record(self.slot.as_deref(), &stats);
         }
     }
 }

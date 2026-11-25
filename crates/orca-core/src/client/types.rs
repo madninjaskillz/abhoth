@@ -294,6 +294,8 @@ pub struct Usage {
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub cached_tokens: Option<i64>,
+    /// `completion_tokens_details.reasoning_tokens` (`UsageDetails.ReasoningTokenCount`).
+    pub reasoning_tokens: Option<i64>,
 }
 
 /// A streamed piece of a response.
@@ -331,6 +333,10 @@ pub struct ChatResponse {
     pub tool_calls: Vec<ToolCall>,
     pub finish_reason: Option<String>,
     pub usage: Usage,
+    /// The server reported usage (a `usage` object arrived); `usage` is all `None` otherwise.
+    pub usage_reported: bool,
+    /// llama.cpp / Strata `timings` (the last ones the stream carried).
+    pub timings: Option<super::usage::ServerTimings>,
     /// The model id the response body named.
     pub model: Option<String>,
     /// What served the request (header or body), see [`super::ServedModels`].

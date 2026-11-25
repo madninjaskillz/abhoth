@@ -1,0 +1,19 @@
+{
+  "prompt": "Say hi",
+  "usage_log": true,
+  "config": {
+    "thinking": {
+      "level": "medium",
+      "reasoningEffort": "low"
+    }
+  },
+  "replies": [
+    {
+      "reasoning": "A greeting is all that is needed here.",
+      "reasoning_chunk_chars": 6,
+      "text": "Hi there, this is a plain answer with enough words to count.",
+      "completion_tokens": 25,
+      "reasoning_tokens": 9
+    }
+  ]
+}

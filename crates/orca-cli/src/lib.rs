@@ -4,6 +4,7 @@
 pub mod args;
 pub mod commands;
 pub mod custom_commands;
+pub mod file_log;
 pub mod hostui;
 pub mod input_preprocessor;
 pub mod model_discovery;
@@ -199,6 +200,60 @@ impl AgentObserver for ConsoleObserver {
     }
 }
 
+/// `ServiceRegistration`'s chat client: the provider client behind the usage logger (route
+/// "provider", so each request's "Slot usage" line lands in `log`), the sticky-slot runtime
+/// over it when `slots` is on and configured (the Lead's pinned client, the logged provider as
+/// its fallback), and canned answers in demo mode (`DemoChatClient`, not logged).
+pub fn wire_client(
+    config: &OrcaConfig,
+    log: Option<Arc<dyn orca_core::logging::LogSink>>,
+    slots: bool,
+) -> Result<(
+    orca_core::client::OpenAiClient,
+    Option<Arc<orca_core::slots::SlotRuntime>>,
+)> {
+    let client = client_from_config(config, Arc::new(ServedModels::new()))?;
+    if config.demo_mode {
+        // `--demo`: canned answers, no server (DemoChatClient).
+        return Ok((
+            client.with_router(Arc::new(orca_core::client::demo::DemoChatClient)),
+            None,
+        ));
+    }
+    let fallback: Arc<dyn orca_core::client::ChatBackend> =
+        Arc::new(orca_core::client::UsageLoggingBackend::new(
+            Arc::new(client.clone()),
+            log.clone(),
+            orca_core::client::usage::USAGE_CATEGORY,
+            "provider",
+        ));
+    let runtime = if slots {
+        orca_core::slots::SlotRuntime::create_with_log(config, fallback.clone(), log)
+    } else {
+        None
+    };
+    let router = match &runtime {
+        Some(rt) => rt.lead_client(),
+        None => fallback,
+    };
+    Ok((client.with_router(router), runtime))
+}
+
+/// "Provider usage ..." per provider (`Program`'s exit lines), to the process log.
+pub fn log_provider_usage() {
+    let Some(log) = orca_core::logging::process_log() else {
+        return;
+    };
+    for usage in orca_core::client::ProviderUsageLedger::shared().snapshot() {
+        orca_core::logging::LogSink::log(
+            &*log,
+            orca_core::logging::Level::Info,
+            "OpenOrca.Program",
+            &format!("Provider usage {usage}"),
+        );
+    }
+}
+
 /// Load the config from `config_dir` (default `OPENORCA_HOME` or `~/.openorca`).
 pub fn load_config(config_dir: Option<&Path>) -> Result<OrcaConfig> {
     let mut m = ConfigManager::new(config_dir);
@@ -230,21 +285,7 @@ pub async fn run_single_prompt_in_session(
     if orca_core::engines::selected_bridge(&config).is_some() {
         return run_bridge_prompt(config, cwd, prompt, quiet, restored).await;
     }
-    let served = Arc::new(ServedModels::new());
-    let mut client = client_from_config(&config, served)?;
-    // Sticky slots (config "slots"): the app-wide client is the Lead's pinned client, with
-    // the normal provider as its fallback.
-    let slots = if config.demo_mode {
-        None
-    } else {
-        orca_core::slots::SlotRuntime::create(&config, Arc::new(client.clone()))
-    };
-    if let Some(rt) = &slots {
-        client = client.with_router(rt.lead_client());
-    }
-    if config.demo_mode {
-        client = client.with_router(Arc::new(orca_core::client::demo::DemoChatClient));
-    }
+    let (client, slots) = wire_client(&config, orca_core::logging::process_sink(), true)?;
     let (mut registry, mut services) = build_registry_in(&config, &cwd);
     services.start_mcp(&config, &cwd, &mut registry).await;
     let tool_hooks = config_dir.map(|d| orca_core::agent::ToolHooks::from_config(&config, d));
@@ -518,20 +559,7 @@ async fn run_interactive(
     restored: Option<sessions::RestoredSession>,
     startup_notices: Vec<String>,
 ) -> Result<i32> {
-    let served = Arc::new(ServedModels::new());
-    let mut client = client_from_config(&config, served)?;
-    let slots = if config.demo_mode {
-        None
-    } else {
-        orca_core::slots::SlotRuntime::create(&config, Arc::new(client.clone()))
-    };
-    if let Some(rt) = &slots {
-        client = client.with_router(rt.lead_client());
-    }
-    if config.demo_mode {
-        // `--demo`: canned answers, no server (DemoChatClient).
-        client = client.with_router(Arc::new(orca_core::client::demo::DemoChatClient));
-    }
+    let (client, slots) = wire_client(&config, orca_core::logging::process_sink(), true)?;
     let (mut registry, mut services) = build_registry_in(&config, &cwd);
     services.start_mcp(&config, &cwd, &mut registry).await;
     let tool_hooks = orca_core::agent::ToolHooks::from_config(&config, config_dir);

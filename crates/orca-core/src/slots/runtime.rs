@@ -37,6 +37,7 @@ pub struct SlotRuntime {
     /// The Lead's own endpoint (slots.lead), or `None` when it leases a slot.
     pub lead_endpoint: Option<SlotLeadConfig>,
     lead_target: Arc<dyn ChatBackend>,
+    usage_log: Option<Arc<dyn crate::logging::LogSink>>,
     lead_busy: Mutex<Option<BusyFn>>,
     shutdown: AtomicBool,
     idle_check: AtomicBool,
@@ -50,6 +51,17 @@ impl SlotRuntime {
         fallback: Arc<dyn ChatBackend>,
         server_kind: Option<ServerKindProbe>,
     ) -> Arc<Self> {
+        Self::new_with_log(allocator, clients, fallback, server_kind, None)
+    }
+
+    /// [`Self::new`] with the Slots logger: where the slot clients' "Slot usage" lines go.
+    pub fn new_with_log(
+        allocator: Arc<SlotAllocator>,
+        clients: Arc<SlotClientFactory>,
+        fallback: Arc<dyn ChatBackend>,
+        server_kind: Option<ServerKindProbe>,
+        usage_log: Option<Arc<dyn crate::logging::LogSink>>,
+    ) -> Arc<Self> {
         let lead_lease = allocator.new_lease(
             SlotRequest::new(LEAD_OWNER, LEAD_KIND, "OpenOrca lead")
                 .with_prefer_copy(Some(&allocator.lead_copy())),
@@ -60,14 +72,20 @@ impl SlotRuntime {
             &fallback,
             &server_kind,
             lead_lease.clone(),
+            &usage_log,
         ));
         let lead_endpoint = allocator
             .config()
             .lead
             .clone()
             .filter(|l| !l.base_url.is_empty());
-        let lead_target: Arc<dyn ChatBackend> = if lead_endpoint.is_some() {
-            clients.for_lead()
+        let lead_target: Arc<dyn ChatBackend> = if let Some(endpoint) = &lead_endpoint {
+            Arc::new(crate::client::UsageLoggingBackend::new(
+                clients.for_lead(),
+                usage_log.clone(),
+                crate::client::usage::SLOTS_CATEGORY,
+                &format!("lead on {}", endpoint.name),
+            ))
         } else {
             lead_slot_client.clone()
         };
@@ -80,6 +98,7 @@ impl SlotRuntime {
             lead_slot_client,
             lead_endpoint,
             lead_target,
+            usage_log,
             lead_busy: Mutex::new(None),
             shutdown: AtomicBool::new(false),
             idle_check: AtomicBool::new(false),
@@ -111,6 +130,7 @@ impl SlotRuntime {
         fallback: &Arc<dyn ChatBackend>,
         server_kind: &Option<ServerKindProbe>,
         lease: Arc<SlotLease>,
+        usage_log: &Option<Arc<dyn crate::logging::LogSink>>,
     ) -> SlottedChatClient {
         let c = clients.clone();
         SlottedChatClient::new(
@@ -120,16 +140,28 @@ impl SlotRuntime {
             fallback.clone(),
             server_kind.clone(),
         )
+        .with_usage_log(usage_log.clone())
     }
 
     /// Production wiring, or `None` when `slots` is absent or disabled.
     pub fn create(config: &OrcaConfig, fallback: Arc<dyn ChatBackend>) -> Option<Arc<Self>> {
+        Self::create_with_log(config, fallback, None)
+    }
+
+    /// [`Self::create`] logging the slot clients' usage to `usage_log` (`SlotRuntime.Create`
+    /// with the app's logger factory).
+    pub fn create_with_log(
+        config: &OrcaConfig,
+        fallback: Arc<dyn ChatBackend>,
+        usage_log: Option<Arc<dyn crate::logging::LogSink>>,
+    ) -> Option<Arc<Self>> {
         let allocator = SlotAllocator::create(config)?;
-        Some(Self::new(
+        Some(Self::new_with_log(
             allocator,
             Arc::new(SlotClientFactory::new(config.clone(), None, None, None)),
             fallback,
             Some(Self::copy_kind_probe(config, None)),
+            usage_log,
         ))
     }
 
@@ -256,6 +288,7 @@ impl SlotRuntime {
             &self.fallback,
             &self.server_kind,
             lease,
+            &self.usage_log,
         ))
     }
 

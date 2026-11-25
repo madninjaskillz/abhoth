@@ -312,6 +312,8 @@ impl OpenAiClient {
             }
         }
         out.usage = parse_usage(&v["usage"]);
+        out.usage_reported = v["usage"].is_object();
+        out.timings = super::usage::ServerTimings::from_value(&v["timings"]);
         let served = self.served.complete(
             actor,
             requested.as_deref(),
@@ -547,6 +549,7 @@ fn parse_usage(u: &Value) -> Usage {
         prompt_tokens: u["prompt_tokens"].as_i64(),
         completion_tokens: u["completion_tokens"].as_i64(),
         cached_tokens: u["prompt_tokens_details"]["cached_tokens"].as_i64(),
+        reasoning_tokens: u["completion_tokens_details"]["reasoning_tokens"].as_i64(),
     }
 }
 
@@ -616,6 +619,8 @@ struct Accumulator {
     calls: BTreeMap<usize, PartialCall>,
     finish_reason: Option<String>,
     usage: Usage,
+    usage_reported: bool,
+    timings: Option<super::usage::ServerTimings>,
     model: Option<String>,
     leading_empty_part: bool,
     content_items: usize,
@@ -648,6 +653,10 @@ impl Accumulator {
         {
             self.model = Some(m.to_string());
         }
+        // RequestStats: the timings ride next to the usage (any chunk's win over earlier ones).
+        if let Some(t) = super::usage::ServerTimings::from_value(&v["timings"]) {
+            self.timings = Some(t);
+        }
         // Microsoft.Extensions.AI reports an update's text and reasoning before its usage.
         let mut tool_call_delta = false;
         if let Some(choice) = v["choices"].as_array().and_then(|c| c.first()) {
@@ -656,6 +665,7 @@ impl Accumulator {
         if v.get("usage").is_some_and(|u| u.is_object()) {
             let usage = parse_usage(&v["usage"]);
             self.usage = usage;
+            self.usage_reported = true;
             self.content_items += 1;
             emit(StreamEvent::Usage(usage));
         }
@@ -742,6 +752,8 @@ impl Accumulator {
             tool_calls,
             finish_reason: self.finish_reason,
             usage: self.usage,
+            usage_reported: self.usage_reported,
+            timings: self.timings,
             model: self.model,
             served_model: None,
             leading_empty_part: self.leading_empty_part,

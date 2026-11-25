@@ -9,6 +9,7 @@ pub mod config;
 pub mod engines;
 pub mod hooks;
 pub mod live;
+pub mod logging;
 pub mod profiles;
 pub mod session;
 pub mod slots;

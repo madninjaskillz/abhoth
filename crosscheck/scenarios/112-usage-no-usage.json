@@ -1,0 +1,15 @@
+{
+  "prompt": "Tell me something.",
+  "usage_log": true,
+  "replies": [
+    {
+      "reasoning": "Thinking it over.",
+      "reasoning_chunk_chars": 5,
+      "text": "Something short and sweet.",
+      "no_usage": true
+    },
+    {
+      "text": "Something short and sweet."
+    }
+  ]
+}
