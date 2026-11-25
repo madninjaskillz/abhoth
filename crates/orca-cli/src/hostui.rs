@@ -142,12 +142,6 @@ pub async fn run(
         eprintln!("openorca: --tui needs the interactive mode, which is not ported to Rust yet.");
         return Ok(2);
     }
-    if args.login {
-        eprintln!(
-            "openorca: --hostui-login (sign-in mode) is not ported to Rust yet; use the token."
-        );
-        return Ok(2);
-    }
     if orca_core::engines::selected_bridge(&config).is_some() {
         eprintln!(
             "openorca: the Rust web UI runs the native engine only (agent.engine is {}).",
@@ -236,6 +230,12 @@ pub async fn run(
         .unwrap_or_else(orca_webui::util::new_token);
     let mut options = WebUiOptions::new(token);
     options.host = args.endpoint.host.clone();
+    if args.login {
+        let mut login = orca_webui::login::LoginOptions::new(args.state_dir.clone());
+        login.trusted_proxies = args.trusted_proxies.clone();
+        login.require_totp = args.require_totp;
+        options.login = Some(login);
+    }
     options.port = args.endpoint.port;
     options.session_factory = Some(factory);
     options.profiles_url = orca_core::profiles::resolve_server_url(&config);
@@ -266,8 +266,24 @@ pub async fn run(
     };
 
     println!("OpenOrca {} — web UI (headless)", crate::version());
-    println!("● Web UI {}", server.url_with_token());
-    if args.endpoint.is_lan() {
+    // Sign-in mode: no token in the URL.
+    let url = if args.login {
+        server.base_url().to_string()
+    } else {
+        server.url_with_token()
+    };
+    println!("● Web UI {url}");
+    if args.login {
+        if args.trusted_proxies.is_empty() {
+            println!("  Sign-in mode; plain HTTP only from this machine.");
+        } else {
+            let proxies: Vec<String> = args.trusted_proxies.iter().map(|p| p.to_string()).collect();
+            println!(
+                "  Sign-in mode; HTTPS through {} (plain HTTP only from this machine).",
+                proxies.join(", ")
+            );
+        }
+    } else if args.endpoint.is_lan() {
         println!("  Open to the network: anyone with the token can drive this session.");
     }
     println!("Working folder: {}", cwd.display());
@@ -277,7 +293,7 @@ pub async fn run(
             println!("{line}");
         }
     });
-    if args.open && !open_browser(&server.url_with_token()) {
+    if args.open && !open_browser(&url) {
         eprintln!("openorca: could not open a browser; open the URL yourself.");
     }
 

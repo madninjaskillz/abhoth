@@ -6,6 +6,7 @@ pub mod commands;
 pub mod custom_commands;
 pub mod file_log;
 pub mod hostui;
+pub mod hostui_password;
 pub mod input_preprocessor;
 pub mod model_discovery;
 pub mod pi_profile;
@@ -505,6 +506,10 @@ pub fn version() -> &'static str {
 /// The whole program; returns the process exit code.
 pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
     let cwd = std::env::current_dir().context("reading the current directory")?;
+    // --hostui-set-password / --hostui-reset-2fa: manage the web UI's sign-in account, then exit.
+    if let Some(code) = hostui_password::try_run(&raw) {
+        return Ok(code);
+    }
     let args = CliArgs::parse(&raw, &cwd);
     if args.show_version {
         println!("OpenOrca v{} (Rust port)", version());

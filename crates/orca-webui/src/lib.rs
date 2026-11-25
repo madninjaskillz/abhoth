@@ -10,6 +10,7 @@ pub mod git;
 pub mod hostui;
 pub mod hub;
 pub mod live;
+pub mod login;
 pub mod native;
 pub mod paths;
 pub mod profiles;

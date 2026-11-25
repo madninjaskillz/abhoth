@@ -77,14 +77,14 @@ pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
         .map(|(_, v)| v.to_string())
 }
 
-fn is_websocket(headers: &HeaderMap) -> bool {
+pub fn is_websocket(headers: &HeaderMap) -> bool {
     headers
         .get(header::UPGRADE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
 }
 
-fn starts_with_segment(path: &str, prefix: &str) -> bool {
+pub fn starts_with_segment(path: &str, prefix: &str) -> bool {
     path == prefix
         || path
             .strip_prefix(prefix)

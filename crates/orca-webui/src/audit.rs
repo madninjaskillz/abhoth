@@ -14,6 +14,22 @@ pub struct Caller {
     pub user: Option<String>,
 }
 
+tokio::task_local! {
+    /// Who the request being handled came from, as sign-in mode sees it (the signed-in user, the
+    /// client IP behind the trusted proxy); it fills in what a handler's own caller lacks.
+    static REQUEST_CALLER: Caller;
+}
+
+/// Run `f` with `caller` as the request's caller for the audit log.
+pub async fn with_caller<F: std::future::Future>(caller: Caller, f: F) -> F::Output {
+    REQUEST_CALLER.scope(caller, f).await
+}
+
+/// The request's caller set by sign-in mode, if any.
+pub fn request_caller() -> Option<Caller> {
+    REQUEST_CALLER.try_with(Caller::clone).ok()
+}
+
 pub struct AuditLog {
     path: Option<PathBuf>,
     lock: Mutex<()>,
@@ -39,6 +55,18 @@ impl AuditLog {
     /// One line: time, event, ip, user, then `fields` (an object) in order.
     pub fn write(&self, caller: Option<&Caller>, event: &str, fields: Value) {
         let Some(path) = &self.path else { return };
+        let scoped = request_caller();
+        let merged;
+        let caller = match (caller, scoped) {
+            (c, None) => c,
+            (c, Some(s)) => {
+                merged = Caller {
+                    ip: s.ip.or_else(|| c.and_then(|c| c.ip.clone())),
+                    user: c.and_then(|c| c.user.clone()).or(s.user),
+                };
+                Some(&merged)
+            }
+        };
         let mut entry = Map::new();
         entry.insert("time".into(), Value::String(crate::util::utc_now_iso()));
         entry.insert("event".into(), Value::String(event.into()));
