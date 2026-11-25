@@ -124,5 +124,4 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 - Not ported by design: `job screenshot` (needs `unsafe` Win32 capture, D37). C# bugs not
   reproduced: LSP PascalCase wire fields (D42), MCP image base64 (D43).
 - Archive sizes/timestamps, network ping/DNS output, env ordering differ (unit-tested only).
-- No per-request usage logging (`RequestStats`); tool-result images are not sent to the model.
 - Live smoke (LiteLLM, qwen3.8-27b, read a file and answer) passed 2026-11-25 for phase 1.
