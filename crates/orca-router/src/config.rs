@@ -281,6 +281,10 @@ pub struct PlacementConfig {
     /// Session affinity by prompt_cache_key / x-session-id / metadata.session_id.
     pub affinity: bool,
     pub affinity_ttl_seconds: u64,
+    /// Least load leaves a request's current card (in the shadow: the card it actually landed
+    /// on) only when that card has no free lane, or when the predicted net gain of moving
+    /// (observe.rs `gain`: batching speed-up minus the cached prompt recomputed) exceeds this.
+    pub min_move_gain_seconds: f64,
 }
 
 impl Default for PlacementConfig {
@@ -292,6 +296,7 @@ impl Default for PlacementConfig {
             queue_seconds: 300,
             affinity: false,
             affinity_ttl_seconds: 900,
+            min_move_gain_seconds: 1.0,
         }
     }
 }

@@ -1,7 +1,7 @@
 {
   "settings": { "requestLog": "/state/requests.jsonl" },
   "slots": { "enabled": false },
-  "placement": { "leaseAware": true, "admission": true, "affinity": true, "leadReserve": 1, "queueSeconds": 300 },
+  "placement": { "leaseAware": true, "admission": true, "affinity": true, "leadReserve": 1, "queueSeconds": 300, "minMoveGainSeconds": 1.0 },
   "onDemand": { "enabled": false, "dryRun": true },
   "observe": {
     "enabled": true,

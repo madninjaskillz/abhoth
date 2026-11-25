@@ -717,12 +717,21 @@ Clients stay on LiteLLM, and qfn-lb logs nothing, so the trial is **decision-onl
 - **How placement decides.** At each arrival it rebuilds every card's true in-flight count and
   applies the router's policy: cache affinity (a request that reused at least 1024 cached
   tokens on its card stays there: the stand-in for session affinity, since the logs carry no
-  session key), else least load per lane (a tie keeps the actual card), then admission with
-  the Lead reserve (one of the Lead card's 4 lanes kept back). It scores that choice against
-  the actual card. Where they differ, the predicted gain is the engine queue wait avoided (if
-  the other card had a free lane) plus the batching slowdown (tokens out times the difference
-  in per-row decode time at the two batch sizes, learned from the logs' 5 s throughput
-  events), minus the cached prompt that would be recomputed on the other card.
+  session key), else least load per lane, then admission with the Lead reserve (one of the
+  Lead card's 4 lanes kept back). It scores that choice against the actual card. Where they
+  differ, the predicted gain is the engine queue wait avoided (if the other card had a free
+  lane) plus the batching slowdown (tokens out times the difference in per-row decode time at
+  the two batch sizes), minus the cached prompt that would be recomputed on the other card.
+- **Stay unless it pays (from 2026-11-25 evening).** Least load keeps the request on its
+  card while that card has a free lane, unless the same gain model, fed with what is known
+  at arrival (the recent average answer length, capped by the request's own
+  `max_tokens`), predicts more than `placement.minMoveGainSeconds` (default 1 s). A full
+  card still moves. The first day's two disagreements both had a negative predicted gain.
+- **Speed model.** Per-row decode time is learned from finished requests (decode seconds
+  over tokens, at the batch size the request started into; answers under 64 tokens are
+  skipped), prefill speed likewise. The first version used the logs' 5 s throughput events,
+  whose rate includes idle time: a lightly used card looked up to 6 times slower than it is,
+  which put -7.8 s on an 80-token answer.
 - **Limits of the score.** Pinned traffic (`-a`/`-b` aliases, slot clients) could not have
   moved, but shows up as a disagreement whenever the other card was idler. The logs do not say
   which requests were pinned, so the agreement figure is a lower bound for pool traffic.

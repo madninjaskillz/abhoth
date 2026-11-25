@@ -87,20 +87,70 @@ pub struct Arrival<'a> {
     pub loads: &'a HashMap<String, u32>,
     pub lead_cards: &'a [String],
     pub cache_hit: u64,
+    /// learned decode/prefill speed per card (missing: no batching gain is predicted)
+    pub speed: Option<&'a HashMap<String, Speed>>,
+    /// expected completion tokens, known at arrival (0: no batching gain is predicted)
+    pub completion_est: f64,
+}
+
+/// Predicted seconds saved by running a request on `there` instead of `here` (the card it is
+/// on): engine queue wait avoided, plus the batching speed-up (tokens out times the difference
+/// in per-row decode time at the two batch sizes), minus the cached prompt that `there` would
+/// have to recompute. Used both to score a choice (with what happened) and to make it (with
+/// what is known at arrival).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Gain {
+    pub queue: f64,
+    pub batch: f64,
+    pub cache: f64,
+    pub net: f64,
+}
+
+pub fn gain(
+    queue: f64,
+    completion: f64,
+    here: Option<&Speed>,
+    there: Option<&Speed>,
+    batch_here: u32,
+    batch_there: u32,
+    cache_hit: u64,
+) -> Gain {
+    let (rx, ry) = (
+        here.map_or(0.0, |s| s.row_secs(batch_here)),
+        there.map_or(0.0, |s| s.row_secs(batch_there)),
+    );
+    let batch = if rx > 0.0 && ry > 0.0 {
+        completion * (rx - ry)
+    } else {
+        0.0
+    };
+    let pre = there
+        .map(|s| s.prefill_tps)
+        .filter(|&t| t > 0.0)
+        .unwrap_or(2000.0);
+    let cache = cache_hit as f64 / pre;
+    Gain {
+        queue,
+        batch,
+        cache,
+        net: queue + batch - cache,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Choice {
     pub card: String,
-    /// affinity | least | admission-move | queue
+    /// affinity | least | stay | admission-move | queue
     pub reason: &'static str,
     pub would_queue: bool,
 }
 
 /// The router's placement (placement.rs) applied to a known state: cache affinity (the stand-in
-/// for session affinity), then least load per lane (ties keep the actual card), then admission
-/// with the Lead reserve. Requests are treated as non-Lead; the Lead's long sessions keep
-/// their card through cache affinity.
+/// for session affinity), then least load per lane, then admission with the Lead reserve.
+/// Least load keeps the actual card ("stay") while it has a free lane, unless the predicted net
+/// gain of moving (`gain`, with queue wait 0 since a lane is free) exceeds
+/// `minMoveGainSeconds`. Requests are treated as non-Lead; the Lead's long sessions keep their
+/// card through cache affinity.
 pub fn choose(p: &PlacementConfig, keep_tokens: u64, a: &Arrival) -> Choice {
     let load = |c: &str| a.loads.get(c).copied().unwrap_or(0);
     let lanes = |c: &str| a.lanes.get(c).copied().unwrap_or(1).max(1);
@@ -125,6 +175,32 @@ pub fn choose(p: &PlacementConfig, keep_tokens: u64, a: &Arrival) -> Choice {
         )
     });
     order.extend(rest.into_iter().cloned());
+    let free_here = if p.admission {
+        limit(a.actual)
+    } else {
+        lanes(a.actual)
+    };
+    if base == "least"
+        && let Some(f) = order.first().cloned()
+        && f != a.actual
+        && a.lanes.contains_key(a.actual)
+        && load(a.actual) < free_here
+    {
+        let g = gain(
+            0.0,
+            a.completion_est,
+            a.speed.and_then(|m| m.get(a.actual)),
+            a.speed.and_then(|m| m.get(f.as_str())),
+            load(a.actual) + 1,
+            load(&f) + 1,
+            a.cache_hit,
+        );
+        if g.net <= p.min_move_gain_seconds {
+            order.retain(|c| c != a.actual);
+            order.insert(0, a.actual.to_string());
+            base = "stay";
+        }
+    }
     let Some(first) = order.first().cloned() else {
         return Choice {
             card: a.actual.to_string(),
@@ -155,10 +231,14 @@ pub fn choose(p: &PlacementConfig, keep_tokens: u64, a: &Arrival) -> Choice {
     }
 }
 
-// ── engine speed model (from the logs' 5 s throughput events) ─────────────────────────────
+// ── engine speed model (from finished requests' own decode and prefill times) ────────────
+//
+// Not from the 5 s throughput events: their decode rate is tokens over the whole window, idle
+// time included, so a lightly used card looked several times slower per row than it is (the
+// 2026-11-25 trial predicted -7.8 s for an 80-token answer).
 
-#[derive(Clone)]
-struct Speed {
+#[derive(Clone, Debug)]
+pub struct Speed {
     /// seconds per token per row, by decode batch size 1..=8 (index 0 unused)
     row: [f64; 9],
     prefill_tps: f64,
@@ -173,40 +253,41 @@ impl Default for Speed {
     }
 }
 
+/// Requests shorter than this are not used for the decode rate (speculative decoding and
+/// the first token make short answers unrepresentative).
+const LEARN_MIN_TOKENS: f64 = 64.0;
+
+fn ewma(old: f64, new: f64) -> f64 {
+    if old == 0.0 {
+        new
+    } else {
+        0.9 * old + 0.1 * new
+    }
+}
+
 impl Speed {
-    fn learn(&mut self, ev: &Value) {
-        let dec = ev
-            .pointer("/throughput_tokens_per_second/decode")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0);
-        let avg = ev
-            .pointer("/decode_batch/average_size")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0);
-        if dec > 1.0 && avg >= 0.5 {
-            let n = (avg.round() as usize).clamp(1, 8);
-            let s = avg / dec;
-            self.row[n] = if self.row[n] == 0.0 {
-                s
-            } else {
-                0.9 * self.row[n] + 0.1 * s
-            };
+    /// One finished request: `completion` tokens decoded in `decode_secs` while `batch` rows
+    /// (it and the ones in flight when it started) shared the card; `prefill` tokens computed
+    /// in `prefill_secs`.
+    pub fn learn(
+        &mut self,
+        batch: u32,
+        completion: f64,
+        decode_secs: f64,
+        prefill: f64,
+        prefill_secs: f64,
+    ) {
+        if completion >= LEARN_MIN_TOKENS && decode_secs > 0.0 {
+            let n = (batch as usize).clamp(1, 8);
+            self.row[n] = ewma(self.row[n], decode_secs / completion);
         }
-        let pre = ev
-            .pointer("/throughput_tokens_per_second/prefill")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0);
-        if pre > 10.0 {
-            self.prefill_tps = if self.prefill_tps == 0.0 {
-                pre
-            } else {
-                0.9 * self.prefill_tps + 0.1 * pre
-            };
+        if prefill >= 256.0 && prefill_secs > 0.0 {
+            self.prefill_tps = ewma(self.prefill_tps, prefill / prefill_secs);
         }
     }
 
     /// seconds per token for one row at batch `n` (nearest learned size; 0 when unknown)
-    fn row_secs(&self, n: u32) -> f64 {
+    pub fn row_secs(&self, n: u32) -> f64 {
         let n = (n as usize).clamp(1, 8);
         (0..8)
             .flat_map(|d| [n.checked_sub(d), Some(n + d)])
@@ -267,6 +348,8 @@ impl Follow {
 
 struct Start {
     ts: i64,
+    /// expected completion tokens at arrival: the recent average, capped by what was asked for
+    completion_est: f64,
     loads: HashMap<String, u32>,
     lead_cards: Vec<String>,
     warm: bool,
@@ -277,6 +360,8 @@ pub struct Tracker {
     lanes: IndexMap<String, u32>,
     inflight: HashMap<String, HashMap<String, Start>>,
     speed: HashMap<String, Speed>,
+    /// recent completion tokens (EWMA over all cards)
+    completion_avg: f64,
     recoveries: HashMap<String, u64>,
     pub lead_cards: Vec<String>,
     started_ms: i64,
@@ -291,6 +376,7 @@ impl Tracker {
                 .keys()
                 .map(|c| (c.clone(), Speed::default()))
                 .collect(),
+            completion_avg: 0.0,
             recoveries: HashMap::new(),
             lanes,
             lead_cards: Vec::new(),
@@ -340,8 +426,14 @@ impl Tracker {
         match ev.get("event").and_then(Value::as_str) {
             Some("request_start") => {
                 let loads = self.loads();
+                let asked = ev
+                    .pointer("/request/requested_output_tokens")
+                    .and_then(Value::as_f64)
+                    .filter(|&t| t > 0.0)
+                    .unwrap_or(f64::MAX);
                 let s = Start {
                     ts,
+                    completion_est: self.completion_avg.min(asked),
                     loads,
                     lead_cards: self.lead_cards.clone(),
                     warm: ts - self.started_ms < self.warmup_ms,
@@ -360,11 +452,20 @@ impl Tracker {
                     return out;
                 };
                 out.push(self.score(card, ev, &s, ts, p, keep_tokens));
+                let num = |ptr: &str| ev.pointer(ptr).and_then(Value::as_f64).unwrap_or(0.0);
+                let completion = num("/result/completion_tokens");
+                if let Some(sp) = self.speed.get_mut(card) {
+                    sp.learn(
+                        s.loads.get(card).copied().unwrap_or(0) + 1,
+                        completion,
+                        num("/timings_seconds/decode"),
+                        num("/result/computed_prefill_tokens"),
+                        num("/timings_seconds/prefill"),
+                    );
+                }
+                self.completion_avg = ewma(self.completion_avg, completion);
             }
             Some("throughput") => {
-                if let Some(sp) = self.speed.get_mut(card) {
-                    sp.learn(ev);
-                }
                 let r = ev
                     .get("engine_recoveries")
                     .and_then(Value::as_u64)
@@ -406,6 +507,8 @@ impl Tracker {
             loads: &s.loads,
             lead_cards: &s.lead_cards,
             cache_hit,
+            speed: Some(&self.speed),
+            completion_est: s.completion_est,
         };
         let ch = choose(p, keep_tokens, &a);
         let agree = ch.card == card;
@@ -424,6 +527,7 @@ impl Tracker {
             "seconds": round3((ts - s.ts) as f64 / 1000.0),
             "prompt": num("/result/prompt_tokens") as u64,
             "completion": completion as u64,
+            "completionEst": s.completion_est.round() as u64,
             "cacheHit": cache_hit,
             "stream": ev.pointer("/request/stream").and_then(Value::as_bool),
             "finish": finish,
@@ -438,27 +542,20 @@ impl Tracker {
                 lanes_y
             };
             let queue = if load(y) < limit_y { queue_wait } else { 0.0 };
-            let (sx, sy) = (
-                self.speed.get(card).cloned().unwrap_or_default(),
-                self.speed.get(y).cloned().unwrap_or_default(),
+            let g = gain(
+                queue,
+                completion,
+                self.speed.get(card),
+                self.speed.get(y),
+                load(card) + 1,
+                load(y) + 1,
+                cache_hit,
             );
-            let (rx, ry) = (sx.row_secs(load(card) + 1), sy.row_secs(load(y) + 1));
-            let batch = if rx > 0.0 && ry > 0.0 {
-                completion * (rx - ry)
-            } else {
-                0.0
-            };
-            let pre = if sy.prefill_tps > 0.0 {
-                sy.prefill_tps
-            } else {
-                2000.0
-            };
-            let cache = cache_hit as f64 / pre;
             line["gain"] = json!({
-                "queue": round3(queue),
-                "batch": round3(batch),
-                "cache": round3(-cache),
-                "net": round3(queue + batch - cache),
+                "queue": round3(g.queue),
+                "batch": round3(g.batch),
+                "cache": round3(-g.cache),
+                "net": round3(g.net),
             });
         }
         line

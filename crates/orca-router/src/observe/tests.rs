@@ -34,6 +34,44 @@ fn pick(actual: &str, a: u32, b: u32, lead: &[&str], hit: u64) -> Choice {
             loads: &l,
             lead_cards: &lead,
             cache_hit: hit,
+            speed: None,
+            completion_est: 0.0,
+        },
+    )
+}
+
+/// Speeds where B decodes `b_row` s/token/row at any batch and A `a_row`.
+fn speeds(a_row: f64, b_row: f64) -> HashMap<String, Speed> {
+    let mut m = HashMap::new();
+    for (c, r) in [("A", a_row), ("B", b_row)] {
+        let mut s = Speed::default();
+        s.learn(1, 1000.0, 1000.0 * r, 4000.0, 1.0);
+        m.insert(c.to_string(), s);
+    }
+    m
+}
+
+fn pick_est(
+    actual: &str,
+    a: u32,
+    b: u32,
+    hit: u64,
+    sp: &HashMap<String, Speed>,
+    est: f64,
+) -> Choice {
+    let lanes = lanes();
+    let l = loads(a, b);
+    choose(
+        &on(),
+        1024,
+        &Arrival {
+            actual,
+            lanes: &lanes,
+            loads: &l,
+            lead_cards: &[],
+            cache_hit: hit,
+            speed: Some(sp),
+            completion_est: est,
         },
     )
 }
@@ -45,9 +83,69 @@ fn ties_keep_the_actual_card() {
 }
 
 #[test]
-fn least_load_moves() {
-    let c = pick("A", 3, 1, &[], 0);
+fn least_load_moves_off_a_full_card() {
+    let c = pick("A", 4, 1, &[], 0);
     assert_eq!((c.card.as_str(), c.reason), ("B", "least"));
+}
+
+#[test]
+fn least_load_stays_without_a_predicted_gain() {
+    // A has a free lane and nothing predicts a gain from moving: stay
+    let c = pick("A", 3, 1, &[], 0);
+    assert_eq!((c.card.as_str(), c.reason), ("A", "stay"));
+    // the trial's two disagreements: an idler card, same speed, small gain
+    let sp = speeds(0.02, 0.02);
+    let c = pick_est("A", 1, 0, 0, &sp, 80.0);
+    assert_eq!((c.card.as_str(), c.reason), ("A", "stay"));
+    let c = pick_est("B", 0, 1, 0, &sp, 1286.0);
+    assert_eq!((c.card.as_str(), c.reason), ("B", "stay"));
+}
+
+#[test]
+fn least_load_moves_when_the_gain_clears_the_margin() {
+    // B is 10 ms/token faster per row: 500 tokens = 5 s gain > 1 s
+    let sp = speeds(0.03, 0.02);
+    let c = pick_est("A", 1, 0, 0, &sp, 500.0);
+    assert_eq!((c.card.as_str(), c.reason), ("B", "least"));
+    // 50 tokens = 0.5 s: under the margin, stay
+    let c = pick_est("A", 1, 0, 0, &sp, 50.0);
+    assert_eq!((c.card.as_str(), c.reason), ("A", "stay"));
+    // the cached prompt B would recompute eats the gain: 5 s batching gain minus
+    // 17000 / 4000 tok/s = 4.25 s recompute = 0.75 s, under the margin
+    let c = pick_est("A", 1, 0, 17_000, &sp, 500.0);
+    assert_eq!(c.card.as_str(), "A");
+    // the margin is configurable
+    let lanes = lanes();
+    let l = loads(1, 0);
+    let c = choose(
+        &PlacementConfig {
+            min_move_gain_seconds: 0.25,
+            ..on()
+        },
+        1024,
+        &Arrival {
+            actual: "A",
+            lanes: &lanes,
+            loads: &l,
+            lead_cards: &[],
+            cache_hit: 0,
+            speed: Some(&sp),
+            completion_est: 50.0,
+        },
+    );
+    assert_eq!((c.card.as_str(), c.reason), ("B", "least"));
+}
+
+#[test]
+fn gain_is_queue_plus_batching_minus_recompute() {
+    let sp = speeds(0.03, 0.02);
+    let g = gain(2.0, 100.0, sp.get("A"), sp.get("B"), 2, 1, 8000);
+    assert!((g.batch - 1.0).abs() < 1e-9);
+    assert!((g.cache - 2.0).abs() < 1e-9);
+    assert!((g.net - 1.0).abs() < 1e-9);
+    // unknown speeds: no batching term, default prefill 2000 tok/s
+    let g = gain(0.0, 100.0, None, None, 2, 1, 4000);
+    assert_eq!((g.batch, g.cache, g.net), (0.0, 2.0, -2.0));
 }
 
 #[test]
@@ -88,34 +186,77 @@ fn admission_off_is_plain_least() {
             loads: &l,
             lead_cards: &[],
             cache_hit: 0,
+            speed: None,
+            completion_est: 0.0,
         },
     );
     assert_eq!((c.card.as_str(), c.would_queue), ("B", false));
 }
 
 #[test]
-fn speed_falls_back_to_nearest_batch() {
+fn speed_learns_from_requests_and_falls_back_to_nearest_batch() {
     let mut s = Speed::default();
-    s.learn(
-        &json!({"throughput_tokens_per_second": {"decode": 70.0, "prefill": 0.0},
-                    "decode_batch": {"average_size": 1.0}}),
-    );
-    s.learn(
-        &json!({"throughput_tokens_per_second": {"decode": 160.0, "prefill": 5000.0},
-                    "decode_batch": {"average_size": 4.0}}),
-    );
-    assert!((s.row_secs(1) - 1.0 / 70.0).abs() < 1e-9);
-    assert!((s.row_secs(4) - 4.0 / 160.0).abs() < 1e-9);
+    // 700 tokens in 10 s alone on the card; 400 in 10 s with three others
+    s.learn(1, 700.0, 10.0, 0.0, 0.0);
+    s.learn(4, 400.0, 10.0, 5000.0, 1.0);
+    assert!((s.row_secs(1) - 10.0 / 700.0).abs() < 1e-9);
+    assert!((s.row_secs(4) - 10.0 / 400.0).abs() < 1e-9);
     assert!(
         (s.row_secs(3) - s.row_secs(4)).abs() < 1e-9
             || (s.row_secs(3) - s.row_secs(1)).abs() < 1e-9
     );
     assert_eq!(s.prefill_tps, 5000.0);
+    // short answers (speculative decoding, first token) are not learned
+    s.learn(8, 16.0, 1.0, 0.0, 0.0);
+    assert_eq!(s.row[8], 0.0);
 }
 
 fn start(ts: i64, id: u64) -> Value {
     json!({"event": "request_start", "timestamp_unix_ms": ts, "server_instance_id": "s",
            "request": {"request_id": id}})
+}
+
+fn start_asking(ts: i64, id: u64, max: u64) -> Value {
+    json!({"event": "request_start", "timestamp_unix_ms": ts, "server_instance_id": "s",
+           "request": {"request_id": id, "requested_output_tokens": max}})
+}
+
+fn done_timed(ts: i64, id: u64, completion: u64, decode_secs: f64) -> Value {
+    json!({"event": "request_done", "timestamp_unix_ms": ts, "server_instance_id": "s",
+           "request": {"request_id": id, "stream": true},
+           "engine_timing": {"queue_wait_seconds": 0.0},
+           "timings_seconds": {"decode": decode_secs, "prefill": 0.5},
+           "result": {"prefix_cache_hit_tokens": 0, "completion_tokens": completion,
+                      "computed_prefill_tokens": 2000,
+                      "prompt_tokens": 2000, "finish_reason": "stop_token"}})
+}
+
+#[test]
+fn tracker_learns_speed_and_completion_and_applies_the_margin() {
+    let p = on();
+    let mut t = Tracker::new(lanes(), 0, 0);
+    // A decodes 30 ms/token, B 20 ms/token; answers average 1000 tokens
+    t.event("A", &start(1, 1), &p, 1024);
+    t.event("A", &done_timed(2, 1, 1000, 30.0), &p, 1024);
+    t.event("B", &start(3, 2), &p, 1024);
+    t.event("B", &done_timed(4, 2, 1000, 20.0), &p, 1024);
+    // one busy on A, B idle: moving a ~1000-token answer saves about 10 s
+    t.event("A", &start(10, 3), &p, 1024);
+    t.event("A", &start(11, 4), &p, 1024);
+    let l = t.event("A", &done_timed(50, 4, 1000, 30.0), &p, 1024);
+    assert_eq!(
+        (l[0]["chosen"].as_str(), l[0]["reason"].as_str()),
+        (Some("B"), Some("least"))
+    );
+    assert_eq!(l[0]["completionEst"], 1000);
+    // the same, but the client asked for at most 20 tokens: 0.2 s, stay
+    t.event("A", &start_asking(60, 5, 20), &p, 1024);
+    let l = t.event("A", &done_timed(70, 5, 20, 0.6), &p, 1024);
+    assert_eq!(
+        (l[0]["chosen"].as_str(), l[0]["reason"].as_str()),
+        (Some("A"), Some("stay"))
+    );
+    assert_eq!(l[0]["agree"], true);
 }
 
 fn done(ts: i64, id: u64, hit: u64, qw: f64) -> Value {
