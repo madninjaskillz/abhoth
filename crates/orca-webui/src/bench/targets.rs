@@ -29,10 +29,7 @@ impl BenchTarget {
 
     /// What "the same target" means for the one-run-per-target rule: the endpoint, not the name.
     pub fn key(&self) -> String {
-        self.endpoint
-            .trim()
-            .trim_end_matches('/')
-            .to_lowercase()
+        self.endpoint.trim().trim_end_matches('/').to_lowercase()
     }
 
     /// The endpoint as results rows record it: no user:password part.

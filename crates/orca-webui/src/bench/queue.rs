@@ -18,9 +18,9 @@ use serde_json::{Value, json};
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 
+use super::CancelToken;
 use super::runner::BenchRunner;
 use super::time;
-use super::CancelToken;
 
 const RESTORE_KEY: &str = "queue";
 
@@ -318,7 +318,8 @@ impl BenchQueue {
             let before = q.items.len();
             q.items.retain(|i| {
                 !(i.status != "started"
-                    && (!finished_only || matches!(i.status.as_str(), "done" | "failed" | "cancelled")))
+                    && (!finished_only
+                        || matches!(i.status.as_str(), "done" | "failed" | "cancelled")))
             });
             n = (before - q.items.len()) as i32;
             self.save(&q);
@@ -333,7 +334,8 @@ impl BenchQueue {
         {
             let mut q = self.q.lock().unwrap();
             for i in q.items.iter_mut().filter(|i| {
-                id.is_none_or(|id| i.id == id) && matches!(i.status.as_str(), "failed" | "cancelled")
+                id.is_none_or(|id| i.id == id)
+                    && matches!(i.status.as_str(), "failed" | "cancelled")
             }) {
                 i.status = "queued".into();
                 i.batch = None;
@@ -478,7 +480,10 @@ impl BenchQueue {
                     }
                     .into();
                     if item.status == "failed" {
-                        item.note = runs.iter().find(|r| r.1 == "error").and_then(|r| r.3.clone());
+                        item.note = runs
+                            .iter()
+                            .find(|r| r.1 == "error")
+                            .and_then(|r| r.3.clone());
                     } else if item.status == "cancelled" && item.note.is_none() {
                         item.note = Some("cancelled".into());
                     }
@@ -728,7 +733,8 @@ impl BenchQueue {
             }
         }
         let back_seconds: Option<i32> =
-            (at.is_some() && live.is_some() && at != live && self.profiles.is_some()).then_some(180);
+            (at.is_some() && live.is_some() && at != live && self.profiles.is_some())
+                .then_some(180);
         if let Some(b) = back_seconds {
             switch_total += b as f64;
         }

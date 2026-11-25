@@ -194,7 +194,10 @@ impl LiveSession for RunSession {
             }
             Style::Held { auto_finish } => {
                 let log = home.join("logs").join("openorca-2026-11-20.log");
-                append(&log, "10:00:00.000 [INF] Slots: Slot usage lead: prompt 1000, cached 400, re-read 600, output 300, reasoning 200, 900 ms | content=40 tool=60 calls=bash predicted_n=300 predicted_ms=600");
+                append(
+                    &log,
+                    "10:00:00.000 [INF] Slots: Slot usage lead: prompt 1000, cached 400, re-read 600, output 300, reasoning 200, 900 ms | content=40 tool=60 calls=bash predicted_n=300 predicted_ms=600",
+                );
                 if auto_finish {
                     finish.cancel();
                 }
@@ -203,7 +206,10 @@ impl LiveSession for RunSession {
                     tokio::time::sleep(Duration::from_millis(150)).await;
                     if !cancelled.load(Ordering::SeqCst) {
                         std::fs::write(cwd.join("answer.txt"), "42").unwrap();
-                        append(&log, "10:00:05.000 [INF] Slots: Slot usage lead: prompt 2000, cached 1500, re-read 500, output 100, reasoning 10, 500 ms | content=70 tool=20 calls=- predicted_n=100 predicted_ms=400");
+                        append(
+                            &log,
+                            "10:00:05.000 [INF] Slots: Slot usage lead: prompt 2000, cached 1500, re-read 500, output 100, reasoning 10, 500 ms | content=70 tool=20 calls=- predicted_n=100 predicted_ms=400",
+                        );
                     }
                     *ended.lock().unwrap() = Some(Instant::now());
                     busy.store(false, Ordering::SeqCst);
@@ -317,7 +323,11 @@ impl Env {
     }
 
     /// BenchRunnerTests.NewRunner: the "demo" suite (one arm with overrides).
-    fn runner_tests_runner(&self, registry: Option<&str>, profiles: Option<Arc<ProfileService>>) -> Arc<BenchRunner> {
+    fn runner_tests_runner(
+        &self,
+        registry: Option<&str>,
+        profiles: Option<Arc<ProfileService>>,
+    ) -> Arc<BenchRunner> {
         let o = self.options(
             Style::Runner,
             r#"{"agent":{"leadMode":"hands-on"},"slots":{"copies":[{"name":"A","slots":3}]}}"#,
@@ -352,7 +362,10 @@ impl Env {
 
     fn write_suite(&self, name: &str, json: &str) {
         std::fs::write(
-            self.path().join("bench").join("suites").join(format!("{name}.json")),
+            self.path()
+                .join("bench")
+                .join("suites")
+                .join(format!("{name}.json")),
             json,
         )
         .unwrap();
@@ -477,7 +490,11 @@ impl ApiServer {
     }
 
     fn service(&self) -> Arc<ProfileService> {
-        Arc::new(ProfileService::new(Some(&self.url), None, Duration::from_secs(5)))
+        Arc::new(ProfileService::new(
+            Some(&self.url),
+            None,
+            Duration::from_secs(5),
+        ))
     }
 
     fn live(&self) -> String {
@@ -521,11 +538,22 @@ async fn profile_arms_run_profile_by_profile_switch_the_layout_once_and_record_t
     assert_eq!(rows[2]["settings"]["agent"]["maxConcurrent"], 4);
 
     // Decode speed per copy, the slots and helpers used, and the run's own logs.
-    assert_eq!(dense["copy_tps"]["A"], time::round(142.0 * 1000.0 / 5602.0, 1));
-    assert_eq!(dense["copy_tps"]["B"], time::round(641.0 * 1000.0 / 43889.0, 1));
+    assert_eq!(
+        dense["copy_tps"]["A"],
+        time::round(142.0 * 1000.0 / 5602.0, 1)
+    );
+    assert_eq!(
+        dense["copy_tps"]["B"],
+        time::round(641.0 * 1000.0 / 43889.0, 1)
+    );
     assert_eq!(dense["slots"], json!(["A1", "B1"]));
     assert_eq!(dense["helper_routes"], json!(["agent 1 (Undo)"]));
-    assert!(runner.logs(&s(dense, "id").unwrap(), 120_000).unwrap().contains("Slot usage"));
+    assert!(
+        runner
+            .logs(&s(dense, "id").unwrap(), 120_000)
+            .unwrap()
+            .contains("Slot usage")
+    );
     assert!(runner.logs("../x", 120_000).is_none());
     runner.stop_all().await;
 }
@@ -536,7 +564,10 @@ async fn off_live_profile_without_confirmation_is_refused_and_never_switches() {
     let env = Env::new();
     let api = ApiServer::start().await;
     let runner = env.runner_tests_runner(None, Some(api.service()));
-    env.write_suite("off", r#"{"arms":[{"name":"d","profile":"dense2"}],"tasks":["demo"],"reps":1}"#);
+    env.write_suite(
+        "off",
+        r#"{"arms":[{"name":"d","profile":"dense2"}],"tasks":["demo"],"reps":1}"#,
+    );
     runner.enqueue("off").unwrap();
     until("the queue to empty", 30, || {
         runner.state()["queue"].as_array().unwrap().is_empty()
@@ -555,7 +586,10 @@ async fn confirmed_suite_on_another_layout_switches_back_when_it_ends() {
     let env = Env::new();
     let api = ApiServer::start().await;
     let runner = env.runner_tests_runner(None, Some(api.service()));
-    env.write_suite("dense", r#"{"arms":[{"name":"d","profile":"dense2"}],"tasks":["demo"],"reps":1}"#);
+    env.write_suite(
+        "dense",
+        r#"{"arms":[{"name":"d","profile":"dense2"}],"tasks":["demo"],"reps":1}"#,
+    );
     runner.enqueue_batch("dense", true).unwrap();
     until("the row and the switch back", 90, || {
         !runner.results(false).is_empty() && api.live() == "flash2" && api.switches() >= 2
@@ -599,7 +633,11 @@ async fn queue_runs_grouped_by_layout_on_one_confirmation_switches_back_and_surv
         let deadline = Instant::now() + Duration::from_secs(120);
         while Instant::now() < deadline {
             let st = queue.state();
-            if st["items"].as_array().unwrap().iter().all(|i| i["status"] == "done")
+            if st["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|i| i["status"] == "done")
                 && api.live() == "flash2"
                 && api.switches() >= 2
             {
@@ -631,7 +669,10 @@ async fn unknown_profile_fails_its_runs_without_switching() {
     let env = Env::new();
     let api = ApiServer::start().await;
     let runner = env.runner_tests_runner(None, Some(api.service()));
-    env.write_suite("bad", r#"{"arms":[{"name":"x","profile":"nope"}],"tasks":["demo"],"reps":2}"#);
+    env.write_suite(
+        "bad",
+        r#"{"arms":[{"name":"x","profile":"nope"}],"tasks":["demo"],"reps":2}"#,
+    );
     runner.enqueue("bad").unwrap();
     until("the queue to empty", 30, || {
         runner.state()["queue"].as_array().unwrap().is_empty()
@@ -640,9 +681,11 @@ async fn unknown_profile_fails_its_runs_without_switching() {
     let st = runner.state();
     let recent = st["recent"].as_array().unwrap();
     assert_eq!(recent.len(), 2);
-    assert!(recent
-        .iter()
-        .all(|r| s(r, "note").unwrap().contains("unknown profile nope")));
+    assert!(
+        recent
+            .iter()
+            .all(|r| s(r, "note").unwrap().contains("unknown profile nope"))
+    );
     assert_eq!(api.switches(), 0);
     runner.stop_all().await;
 }
@@ -654,22 +697,43 @@ async fn run_config_must_lease_from_the_registry_when_the_bench_is_gated() {
     // that adds the registry is fine.
     let gated = env.runner_tests_runner(Some("http://127.0.0.1:1"), None);
     let home = env.path().join("h1");
-    assert!(gated.write_home(&home, &BenchArm::new("x", "auto", None, None), None, None).is_err());
+    assert!(
+        gated
+            .write_home(&home, &BenchArm::new("x", "auto", None, None), None, None)
+            .is_err()
+    );
     gated
         .write_home(
             &home,
-            &BenchArm::new("x", "auto", Some(vec!["slots.registryUrl=http://127.0.0.1:1".into()]), None),
+            &BenchArm::new(
+                "x",
+                "auto",
+                Some(vec!["slots.registryUrl=http://127.0.0.1:1".into()]),
+                None,
+            ),
             None,
             None,
         )
         .unwrap();
-    assert!(std::fs::read_to_string(home.join("config.json")).unwrap().contains("registryUrl"));
+    assert!(
+        std::fs::read_to_string(home.join("config.json"))
+            .unwrap()
+            .contains("registryUrl")
+    );
     gated.stop_all().await;
 }
 
 fn git(cwd: &Path, args: &[&str]) {
-    let out = std::process::Command::new("git").current_dir(cwd).args(args).output().unwrap();
-    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    let out = std::process::Command::new("git")
+        .current_dir(cwd)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -680,17 +744,51 @@ async fn refresh_mirror_fetches_new_commits_from_origin_and_reports_the_head() {
     git(&upstream, &["init", "-q", "-b", "main"]);
     std::fs::write(upstream.join("a.txt"), "1").unwrap();
     git(&upstream, &["add", "."]);
-    git(&upstream, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "one"]);
+    git(
+        &upstream,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "one",
+        ],
+    );
     std::fs::create_dir_all(env.path().join("kit")).unwrap();
     git(
         env.path(),
-        &["clone", "-q", "--mirror", upstream.to_str().unwrap(), env.path().join("kit").join("openorca.git").to_str().unwrap()],
+        &[
+            "clone",
+            "-q",
+            "--mirror",
+            upstream.to_str().unwrap(),
+            env.path()
+                .join("kit")
+                .join("openorca.git")
+                .to_str()
+                .unwrap(),
+        ],
     );
     let runner = env.runner_tests_runner(None, None);
     assert!(runner.mirror().await.to_string().contains("one"));
 
     std::fs::write(upstream.join("a.txt"), "2").unwrap();
-    git(&upstream, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "two"]);
+    git(
+        &upstream,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-am",
+            "two",
+        ],
+    );
     let r = runner.refresh_mirror().await;
     assert!(r.ok(), "{}", r.error);
     assert!(runner.mirror().await.to_string().contains("two"));
@@ -735,7 +833,10 @@ async fn a_suite_run_sets_up_watches_scores_and_records() {
     assert_eq!(row["requests"], 2);
     assert_eq!(row["helpers"], 1);
     assert_eq!(row["output_tokens"], 783);
-    assert_eq!(row["decode_tps"], time::round(783.0 * 1000.0 / (5602.0 + 43889.0), 1));
+    assert_eq!(
+        row["decode_tps"],
+        time::round(783.0 * 1000.0 / (5602.0 + 43889.0), 1)
+    );
     assert_eq!(row["lead_tps"], time::round(142.0 * 1000.0 / 5602.0, 1));
     assert!(row["wall_s"].as_f64().unwrap() > 0.0);
 
@@ -745,9 +846,18 @@ async fn a_suite_run_sets_up_watches_scores_and_records() {
     assert_eq!(config["slots"]["copies"][0]["slots"], 5);
     assert_eq!(config["pi"]["extraTools"], true);
     assert_eq!(config["permissions"]["autoApproveAll"], true);
-    assert!(runner.output(&s(row, "id").unwrap()).unwrap().contains("score.json"));
+    assert!(
+        runner
+            .output(&s(row, "id").unwrap())
+            .unwrap()
+            .contains("score.json")
+    );
     assert!(runner.output("../../etc").is_none());
-    assert!(std::fs::read_to_string(env.path().join("audit.log")).unwrap().contains("\"bench.result\""));
+    assert!(
+        std::fs::read_to_string(env.path().join("audit.log"))
+            .unwrap()
+            .contains("\"bench.result\"")
+    );
     runner.stop_all().await;
 }
 
@@ -776,7 +886,11 @@ async fn results_with_archived_adds_archive_folders_marked_and_a_bad_line_skips_
     let before = std::fs::read(runner.results_file()).unwrap();
 
     // The queue's time estimates read results.jsonl alone, as before.
-    let st: Vec<String> = runner.results(false).iter().map(|r| s(r, "status").unwrap()).collect();
+    let st: Vec<String> = runner
+        .results(false)
+        .iter()
+        .map(|r| s(r, "status").unwrap())
+        .collect();
     assert_eq!(st, ["failed", "passed", "stopped"]);
 
     let all = runner.results(true);
@@ -801,7 +915,8 @@ async fn results_with_archived_adds_archive_folders_marked_and_a_bad_line_skips_
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn queue_after_a_restart_with_items_left_neither_starts_nor_switches_and_clears_a_settled_switch_back() {
+async fn queue_after_a_restart_with_items_left_neither_starts_nor_switches_and_clears_a_settled_switch_back()
+ {
     need_python!();
     // queue.json as a stopped overnight queue left it: not running, items still queued, and
     // the switch back already done but still flagged as scheduled.
@@ -818,7 +933,8 @@ async fn queue_after_a_restart_with_items_left_neither_starts_nor_switches_and_c
           {"id":"a2","suite":"demo","profile":"flash2","mode":"auto","reps":1,"status":"cancelled","runs":["r"],"added":"2026-11-22T02:08:16+00:00"}]}"#,
     )
     .unwrap();
-    let saved = || -> Value { serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap() };
+    let saved =
+        || -> Value { serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap() };
     {
         let queue = BenchQueue::new(runner.clone(), dir.clone(), Some(profiles.clone()), true);
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -831,7 +947,12 @@ async fn queue_after_a_restart_with_items_left_neither_starts_nor_switches_and_c
         assert_eq!(q["restoreScheduled"], false);
         assert!(q["restoreLayout"].is_null());
         assert_eq!(q["running"], false);
-        let statuses: Vec<String> = q["items"].as_array().unwrap().iter().map(|i| s(i, "status").unwrap()).collect();
+        let statuses: Vec<String> = q["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| s(i, "status").unwrap())
+            .collect();
         assert_eq!(statuses, ["queued", "cancelled"]);
         assert_eq!(api.switches(), 0);
         assert!(runner.results(false).is_empty());
@@ -882,7 +1003,12 @@ async fn targeted_suite_runs_one_per_target_targets_in_parallel_without_the_leas
                     "two-targets",
                     vec![
                         BenchArm::new("base", "hands-on", None, None),
-                        BenchArm::new("cap", "hands-on", Some(vec!["agent.reasoning.maxStepTokens=4096".into()]), None),
+                        BenchArm::new(
+                            "cap",
+                            "hands-on",
+                            Some(vec!["agent.reasoning.maxStepTokens=4096".into()]),
+                            None,
+                        ),
                     ],
                     &["demo"],
                 )
@@ -897,9 +1023,16 @@ async fn targeted_suite_runs_one_per_target_targets_in_parallel_without_the_leas
     until("two runs to start", 60, || env.started() == 2).await;
     tokio::time::sleep(Duration::from_millis(400)).await;
     assert_eq!(env.sessions().len(), 2);
-    let mut endpoints: Vec<String> = env.sessions().iter().map(|s| s.endpoint().unwrap()).collect();
+    let mut endpoints: Vec<String> = env
+        .sessions()
+        .iter()
+        .map(|s| s.endpoint().unwrap())
+        .collect();
     endpoints.sort();
-    assert_eq!(endpoints, ["http://127.0.0.1:18080/v1", "http://127.0.0.1:18091/v1"]);
+    assert_eq!(
+        endpoints,
+        ["http://127.0.0.1:18080/v1", "http://127.0.0.1:18091/v1"]
+    );
     let st = runner.state();
     assert_eq!(st["running"].as_array().unwrap().len(), 2);
     assert_eq!(st["queue"].as_array().unwrap().len(), 2);
@@ -907,9 +1040,9 @@ async fn targeted_suite_runs_one_per_target_targets_in_parallel_without_the_leas
 
     // Live counts while it runs: the one request logged so far.
     until("live counts", 60, || {
-        runs_of(&runner).iter().any(|r| {
-            s(r, "status").as_deref() == Some("running") && r["live"]["requests"] == 1
-        })
+        runs_of(&runner)
+            .iter()
+            .any(|r| s(r, "status").as_deref() == Some("running") && r["live"]["requests"] == 1)
     })
     .await;
     let live = runs_of(&runner)
@@ -934,7 +1067,10 @@ async fn targeted_suite_runs_one_per_target_targets_in_parallel_without_the_leas
     assert!(sessions.iter().all(|s| s.disposed()));
     // Never two runs on one endpoint at the same time.
     for ep in ["http://127.0.0.1:18080/v1", "http://127.0.0.1:18091/v1"] {
-        let mut group: Vec<&Arc<RunSession>> = sessions.iter().filter(|s| s.endpoint().as_deref() == Some(ep)).collect();
+        let mut group: Vec<&Arc<RunSession>> = sessions
+            .iter()
+            .filter(|s| s.endpoint().as_deref() == Some(ep))
+            .collect();
         group.sort_by_key(|s| s.started_at.lock().unwrap().unwrap());
         for w in group.windows(2) {
             let start = w[1].started_at.lock().unwrap().unwrap();
@@ -967,9 +1103,11 @@ async fn targeted_suite_runs_one_per_target_targets_in_parallel_without_the_leas
     assert_eq!(on_b["slots"]["enabled"], false);
     assert_eq!(on_b["lmStudio"]["models"][0], "iq3s");
     assert_eq!(on_b["lmStudio"]["apiKeyEnv"], SECRET_ENV);
-    assert!(sessions
-        .iter()
-        .any(|s| s.config()["agent"]["reasoning"]["maxStepTokens"] == 4096));
+    assert!(
+        sessions
+            .iter()
+            .any(|s| s.config()["agent"]["reasoning"]["maxStepTokens"] == 4096)
+    );
     runner.stop_all().await;
 }
 
@@ -984,7 +1122,11 @@ async fn each_mode_runs_every_cell_on_every_target_and_the_summary_splits_by_tar
                 reps: 2,
                 targets: Some(vec![a(), b()]),
                 target_mode: Some("each".into()),
-                ..BenchSuite::new("ab", vec![BenchArm::new("base", "hands-on", None, None)], &["demo"])
+                ..BenchSuite::new(
+                    "ab",
+                    vec![BenchArm::new("base", "hands-on", None, None)],
+                    &["demo"],
+                )
             },
             false,
         )
@@ -999,13 +1141,19 @@ async fn each_mode_runs_every_cell_on_every_target_and_the_summary_splits_by_tar
     assert_eq!(ids.len(), 4);
 
     let by_target = summary::compute(&rows, Some(&batch), None, true);
-    let mut targets: Vec<String> = by_target.iter().map(|s| s.target.clone().unwrap()).collect();
+    let mut targets: Vec<String> = by_target
+        .iter()
+        .map(|s| s.target.clone().unwrap())
+        .collect();
     targets.sort();
     assert_eq!(targets, ["a", "b"]);
     assert!(by_target.iter().all(|s| (s.runs, s.passes) == (2, 2)));
     let together = summary::compute(&rows, Some(&batch), None, false);
     assert_eq!(together.len(), 1);
-    assert_eq!((together[0].runs, together[0].scored, together[0].passes), (4, 4, 4));
+    assert_eq!(
+        (together[0].runs, together[0].scored, together[0].passes),
+        (4, 4, 4)
+    );
     assert_eq!(together[0].median_steps, Some(2.0));
     assert!(summary::compute(&rows, Some("another-batch"), None, false).is_empty());
     runner.stop_all().await;
@@ -1019,14 +1167,25 @@ async fn untargeted_run_runs_alone_and_holds_back_what_is_queued_behind_it() {
     let env = Env::new();
     let runner = env.target_runner(false, None);
     runner
-        .save_suite(BenchSuite::new("classic", vec![BenchArm::new("auto", "auto", None, None)], &["demo"]), false)
+        .save_suite(
+            BenchSuite::new(
+                "classic",
+                vec![BenchArm::new("auto", "auto", None, None)],
+                &["demo"],
+            ),
+            false,
+        )
         .unwrap();
     runner
         .save_suite(
             BenchSuite {
                 reps: 2,
                 targets: Some(vec![a(), b()]),
-                ..BenchSuite::new("targeted", vec![BenchArm::new("base", "hands-on", None, None)], &["demo"])
+                ..BenchSuite::new(
+                    "targeted",
+                    vec![BenchArm::new("base", "hands-on", None, None)],
+                    &["demo"],
+                )
             },
             false,
         )
@@ -1038,7 +1197,10 @@ async fn untargeted_run_runs_alone_and_holds_back_what_is_queued_behind_it() {
     let sessions = env.sessions();
     assert_eq!(sessions.len(), 1);
     let only = &sessions[0];
-    assert_ne!(only.endpoint().as_deref(), Some("http://127.0.0.1:18080/v1"));
+    assert_ne!(
+        only.endpoint().as_deref(),
+        Some("http://127.0.0.1:18080/v1")
+    );
     assert_eq!(only.config()["slots"]["enabled"], true); // the base config's slots, untouched
 
     only.finish();
@@ -1048,7 +1210,10 @@ async fn untargeted_run_runs_alone_and_holds_back_what_is_queued_behind_it() {
     }
     until("three rows", 60, || runner.results(false).len() == 3).await;
     let first = &runner.results(false)[0];
-    assert!(s(first, "batch").unwrap().ends_with("-classic"), "first row is not the classic run");
+    assert!(
+        s(first, "batch").unwrap().ends_with("-classic"),
+        "first row is not the classic run"
+    );
     assert!(first.get("target").is_none());
     runner.stop_all().await;
 }
@@ -1063,7 +1228,11 @@ async fn cancel_stops_only_that_run_a_queued_one_leaves_the_queue_and_a_batch_go
             BenchSuite {
                 reps: 2,
                 targets: Some(vec![a(), b()]),
-                ..BenchSuite::new("cancel", vec![BenchArm::new("base", "hands-on", None, None)], &["demo", "other"])
+                ..BenchSuite::new(
+                    "cancel",
+                    vec![BenchArm::new("base", "hands-on", None, None)],
+                    &["demo", "other"],
+                )
             },
             false,
         )
@@ -1098,16 +1267,29 @@ async fn cancel_stops_only_that_run_a_queued_one_leaves_the_queue_and_a_batch_go
 
     // A running run: its own session is cancelled and closed; the other target's run carries on.
     let first = env.sessions()[0].clone();
-    let first_target = if first.endpoint().as_deref() == Some("http://127.0.0.1:18080/v1") { "a" } else { "b" };
+    let first_target = if first.endpoint().as_deref() == Some("http://127.0.0.1:18080/v1") {
+        "a"
+    } else {
+        "b"
+    };
     let first_id = runs_of(&runner)
         .into_iter()
-        .find(|r| s(r, "target").as_deref() == Some(first_target) && s(r, "status").as_deref() == Some("running"))
+        .find(|r| {
+            s(r, "target").as_deref() == Some(first_target)
+                && s(r, "status").as_deref() == Some("running")
+        })
         .and_then(|r| s(&r, "id"))
         .unwrap();
     assert!(runner.cancel(&first_id));
-    until("the cancelled run's session to close", 60, || first.disposed()).await;
+    until("the cancelled run's session to close", 60, || {
+        first.disposed()
+    })
+    .await;
     until("the cancelled run's row", 60, || {
-        runner.results(false).iter().any(|r| s(r, "id").as_deref() == Some(first_id.as_str()))
+        runner
+            .results(false)
+            .iter()
+            .any(|r| s(r, "id").as_deref() == Some(first_id.as_str()))
     })
     .await;
     let stopped = runner
@@ -1122,14 +1304,28 @@ async fn cancel_stops_only_that_run_a_queued_one_leaves_the_queue_and_a_batch_go
     assert!(!other.cancelled.load(Ordering::SeqCst));
 
     // Its target is free again: the remaining queued run starts there.
-    until("the next run on the freed target", 60, || env.started() == 3).await;
+    until("the next run on the freed target", 60, || {
+        env.started() == 3
+    })
+    .await;
     assert_eq!(env.sessions()[2].endpoint(), first.endpoint());
 
     // The batch: everything left of it stops; nothing else was queued.
     assert_eq!(runner.cancel_batch(&batch), 2);
-    until("rows for the stopped runs", 60, || runner.results(false).len() == 3).await;
-    assert!(runner.results(false).iter().all(|r| r["status"] == "stopped"));
-    until("every session closed", 30, || env.sessions().iter().all(|s| s.disposed())).await;
+    until("rows for the stopped runs", 60, || {
+        runner.results(false).len() == 3
+    })
+    .await;
+    assert!(
+        runner
+            .results(false)
+            .iter()
+            .all(|r| r["status"] == "stopped")
+    );
+    until("every session closed", 30, || {
+        env.sessions().iter().all(|s| s.disposed())
+    })
+    .await;
     let st = runner.state();
     assert!(st["running"].as_array().unwrap().is_empty());
     assert!(st["queue"].as_array().unwrap().is_empty());
@@ -1155,7 +1351,11 @@ async fn results_are_persisted_as_json_lines_without_the_key() {
             .save_suite(
                 BenchSuite {
                     targets: Some(vec![b()]),
-                    ..BenchSuite::new("persist", vec![BenchArm::new("base", "hands-on", None, None)], &["demo"])
+                    ..BenchSuite::new(
+                        "persist",
+                        vec![BenchArm::new("base", "hands-on", None, None)],
+                        &["demo"],
+                    )
                 },
                 false,
             )
@@ -1171,10 +1371,18 @@ async fn results_are_persisted_as_json_lines_without_the_key() {
     assert_eq!(lines.len(), 1);
     let row = BenchResultRow::parse(&serde_json::from_str(lines[0]).unwrap()).unwrap();
     assert_eq!(
-        (row.task.as_str(), row.arm.as_str(), row.target.as_deref(), row.pass),
+        (
+            row.task.as_str(),
+            row.arm.as_str(),
+            row.target.as_deref(),
+            row.pass
+        ),
         ("demo", "base", Some("b"), Some(true))
     );
-    assert_eq!(row.target_endpoint.as_deref(), Some("http://127.0.0.1:18091/v1"));
+    assert_eq!(
+        row.target_endpoint.as_deref(),
+        Some("http://127.0.0.1:18091/v1")
+    );
     assert!(row.wall_seconds.unwrap() >= 0.0);
     {
         let again = with_key();
@@ -1215,54 +1423,170 @@ async fn save_suite_validates_what_the_page_composed() {
     let ok = BenchSuite {
         reps: 3,
         targets: Some(vec![a()]),
-        ..BenchSuite::new("my.suite-1", vec![BenchArm::new("base", "auto", None, None)], &["demo"])
+        ..BenchSuite::new(
+            "my.suite-1",
+            vec![BenchArm::new("base", "auto", None, None)],
+            &["demo"],
+        )
     };
     runner.save_suite(ok.clone(), false).unwrap();
-    let saved = runner.suites().into_iter().find(|s| s.name == "my.suite-1").unwrap();
+    let saved = runner
+        .suites()
+        .into_iter()
+        .find(|s| s.name == "my.suite-1")
+        .unwrap();
     assert_eq!(
-        (saved.reps, saved.targets.as_ref().unwrap()[0].name.as_str(), saved.arms[0].lead_mode.as_str()),
+        (
+            saved.reps,
+            saved.targets.as_ref().unwrap()[0].name.as_str(),
+            saved.arms[0].lead_mode.as_str()
+        ),
         (3, "a", "auto")
     );
-    assert!(runner.save_suite(ok.clone(), false).unwrap_err().contains("already exists"));
-    runner.save_suite(BenchSuite { reps: 5, ..ok.clone() }, true).unwrap();
-    assert_eq!(runner.suites().into_iter().find(|s| s.name == "my.suite-1").unwrap().reps, 5);
+    assert!(
+        runner
+            .save_suite(ok.clone(), false)
+            .unwrap_err()
+            .contains("already exists")
+    );
+    runner
+        .save_suite(
+            BenchSuite {
+                reps: 5,
+                ..ok.clone()
+            },
+            true,
+        )
+        .unwrap();
+    assert_eq!(
+        runner
+            .suites()
+            .into_iter()
+            .find(|s| s.name == "my.suite-1")
+            .unwrap()
+            .reps,
+        5
+    );
 
     let refused = |s: BenchSuite, why: &str| {
         let e = runner.save_suite(s, false).unwrap_err();
         assert!(e.contains(why), "{e} should say {why}");
     };
-    let x = || BenchSuite { name: "x".into(), ..ok.clone() };
-    refused(BenchSuite { name: "../evil".into(), ..ok.clone() }, "suite name");
-    refused(BenchSuite { arms: vec![], ..x() }, "no arms");
+    let x = || BenchSuite {
+        name: "x".into(),
+        ..ok.clone()
+    };
     refused(
-        BenchSuite { arms: vec![BenchArm::new("a", "auto", None, None), BenchArm::new("a", "auto", None, None)], ..x() },
+        BenchSuite {
+            name: "../evil".into(),
+            ..ok.clone()
+        },
+        "suite name",
+    );
+    refused(
+        BenchSuite {
+            arms: vec![],
+            ..x()
+        },
+        "no arms",
+    );
+    refused(
+        BenchSuite {
+            arms: vec![
+                BenchArm::new("a", "auto", None, None),
+                BenchArm::new("a", "auto", None, None),
+            ],
+            ..x()
+        },
         "name of its own",
     );
-    refused(BenchSuite { arms: vec![BenchArm::new("a", "auto", Some(vec!["nokey".into()]), None)], ..x() }, "key=value");
-    refused(BenchSuite { reps: 0, ..x() }, "Reps");
-    refused(BenchSuite { targets: Some(vec![BenchTarget::new("t", "ftp://host/x")]), ..x() }, "http(s)");
     refused(
-        BenchSuite { targets: Some(vec![a(), BenchTarget { name: "a2".into(), ..a() }]), ..x() },
+        BenchSuite {
+            arms: vec![BenchArm::new("a", "auto", Some(vec!["nokey".into()]), None)],
+            ..x()
+        },
+        "key=value",
+    );
+    refused(BenchSuite { reps: 0, ..x() }, "Reps");
+    refused(
+        BenchSuite {
+            targets: Some(vec![BenchTarget::new("t", "ftp://host/x")]),
+            ..x()
+        },
+        "http(s)",
+    );
+    refused(
+        BenchSuite {
+            targets: Some(vec![
+                a(),
+                BenchTarget {
+                    name: "a2".into(),
+                    ..a()
+                },
+            ]),
+            ..x()
+        },
         "its own endpoint",
     );
     refused(
-        BenchSuite { targets: Some(vec![BenchTarget { api_key_env: Some("sk-not-a-name!".into()), ..a() }]), ..x() },
+        BenchSuite {
+            targets: Some(vec![BenchTarget {
+                api_key_env: Some("sk-not-a-name!".into()),
+                ..a()
+            }]),
+            ..x()
+        },
         "NAME of an environment variable",
     );
-    refused(BenchSuite { target_mode: Some("random".into()), ..x() }, "targetMode");
+    refused(
+        BenchSuite {
+            target_mode: Some("random".into()),
+            ..x()
+        },
+        "targetMode",
+    );
     // Profile arms switch the whole server: not in a suite with targets (fine without).
-    refused(BenchSuite { arms: vec![BenchArm::new("dense", "auto", None, Some("dense2"))], ..x() }, "Profile arms");
-    refused(BenchSuite { profile: Some("flash2".into()), ..x() }, "Profile arms");
+    refused(
+        BenchSuite {
+            arms: vec![BenchArm::new("dense", "auto", None, Some("dense2"))],
+            ..x()
+        },
+        "Profile arms",
+    );
+    refused(
+        BenchSuite {
+            profile: Some("flash2".into()),
+            ..x()
+        },
+        "Profile arms",
+    );
     runner
-        .save_suite(BenchSuite { targets: None, arms: vec![BenchArm::new("dense", "auto", None, Some("dense2"))], ..x() }, false)
+        .save_suite(
+            BenchSuite {
+                targets: None,
+                arms: vec![BenchArm::new("dense", "auto", None, Some("dense2"))],
+                ..x()
+            },
+            false,
+        )
         .unwrap();
-    assert!(runner.suites().into_iter().find(|s| s.name == "x").unwrap().targets.is_none());
+    assert!(
+        runner
+            .suites()
+            .into_iter()
+            .find(|s| s.name == "x")
+            .unwrap()
+            .targets
+            .is_none()
+    );
     runner.stop_all().await;
 }
 
+type Events = Arc<Mutex<Vec<(String, Value)>>>;
+
 /// Reads the event stream into a shared list of (name, data).
-fn read_events(resp: reqwest::Response) -> (Arc<Mutex<Vec<(String, Value)>>>, tokio::task::JoinHandle<()>) {
-    let events = Arc::new(Mutex::new(Vec::new()));
+fn read_events(resp: reqwest::Response) -> (Events, tokio::task::JoinHandle<()>) {
+    let events: Events = Arc::new(Mutex::new(Vec::new()));
     let ev = events.clone();
     let task = tokio::spawn(async move {
         use futures_util::StreamExt;
@@ -1277,7 +1601,9 @@ fn read_events(resp: reqwest::Response) -> (Arc<Mutex<Vec<(String, Value)>>>, to
                 if let Some(n) = line.strip_prefix("event: ") {
                     name = Some(n.to_string());
                 } else if let (Some(d), Some(n)) = (line.strip_prefix("data: "), &name) {
-                    ev.lock().unwrap().push((n.clone(), serde_json::from_str(d).unwrap()));
+                    ev.lock()
+                        .unwrap()
+                        .push((n.clone(), serde_json::from_str(d).unwrap()));
                 }
             }
         }
@@ -1293,12 +1619,34 @@ async fn http_a_suite_is_saved_started_streamed_summarised_and_cancelled() {
     std::fs::create_dir_all(&web).unwrap();
     let bench = env.target_options(false, None);
     let host = Host::start_with(FakeSession::new(&web), |o| o.bench = Some(bench)).await;
-    let tasks: Value = host.api(Method::GET, "/api/bench/tasks").send().await.unwrap().json().await.unwrap();
-    assert!(tasks.as_array().unwrap().iter().any(|t| t["name"] == "demo"));
+    let tasks: Value = host
+        .api(Method::GET, "/api/bench/tasks")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        tasks
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == "demo")
+    );
 
     // The stream first: a snapshot, then every change of the runs we start.
-    let stream = host.api(Method::GET, "/api/bench/events").send().await.unwrap();
-    assert!(stream.headers()["content-type"].to_str().unwrap().starts_with("text/event-stream"));
+    let stream = host
+        .api(Method::GET, "/api/bench/events")
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        stream.headers()["content-type"]
+            .to_str()
+            .unwrap()
+            .starts_with("text/event-stream")
+    );
     let (events, reader) = read_events(stream);
     let evs = || events.lock().unwrap().clone();
 
@@ -1334,13 +1682,18 @@ async fn http_a_suite_is_saved_started_streamed_summarised_and_cancelled() {
     // queued → running, with elapsed time and counts.
     until("a running event with counts and elapsed time", 60, || {
         evs().iter().any(|(n, d)| {
-            n == "run" && d["status"] == "running" && d["live"].is_object() && d["elapsed"].as_f64().unwrap_or(0.0) >= 1.0
+            n == "run"
+                && d["status"] == "running"
+                && d["live"].is_object()
+                && d["elapsed"].as_f64().unwrap_or(0.0) >= 1.0
         })
     })
     .await;
     let all = evs();
     assert_eq!(all[0].0, "snapshot");
-    assert!(all.iter().any(|(n, d)| n == "run" && d["status"] == "queued" && s(d, "batch").as_deref() == Some(batch.as_str())));
+    assert!(all.iter().any(|(n, d)| n == "run"
+        && d["status"] == "queued"
+        && s(d, "batch").as_deref() == Some(batch.as_str())));
     assert!(all.iter().any(|(n, d)| n == "status" && d["running"] == 1));
     let running_id = all
         .iter()
@@ -1348,7 +1701,10 @@ async fn http_a_suite_is_saved_started_streamed_summarised_and_cancelled() {
         .and_then(|(_, d)| s(d, "id"))
         .unwrap();
     let logs = host
-        .api(Method::GET, &format!("/api/bench/runs/{running_id}/logs?tail=400"))
+        .api(
+            Method::GET,
+            &format!("/api/bench/runs/{running_id}/logs?tail=400"),
+        )
         .send()
         .await
         .unwrap()
@@ -1360,7 +1716,12 @@ async fn http_a_suite_is_saved_started_streamed_summarised_and_cancelled() {
     // The first run passes; the second is cancelled while it runs; the rest of the batch too.
     env.sessions()[0].finish();
     until("a passed event", 60, || {
-        evs().iter().any(|(n, d)| n == "run" && s(d, "id").as_deref() == Some(running_id.as_str()) && d["status"] == "passed" && d["pass"] == true)
+        evs().iter().any(|(n, d)| {
+            n == "run"
+                && s(d, "id").as_deref() == Some(running_id.as_str())
+                && d["status"] == "passed"
+                && d["pass"] == true
+        })
     })
     .await;
     until("the second run", 60, || env.started() == 2).await;
@@ -1371,9 +1732,20 @@ async fn http_a_suite_is_saved_started_streamed_summarised_and_cancelled() {
         .and_then(|(_, d)| s(d, "id"))
         .unwrap();
     assert_ne!(running_id, second_id);
-    assert!(host.api(Method::POST, &format!("/api/bench/runs/{second_id}/cancel")).send().await.unwrap().status().is_success());
+    assert!(
+        host.api(Method::POST, &format!("/api/bench/runs/{second_id}/cancel"))
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .is_success()
+    );
     assert_eq!(
-        host.api(Method::POST, "/api/bench/runs/nope/cancel").send().await.unwrap().status(),
+        host.api(Method::POST, "/api/bench/runs/nope/cancel")
+            .send()
+            .await
+            .unwrap()
+            .status(),
         StatusCode::NOT_FOUND
     );
     let cancelled: Value = host
@@ -1386,11 +1758,17 @@ async fn http_a_suite_is_saved_started_streamed_summarised_and_cancelled() {
         .unwrap();
     assert!(cancelled["cancelled"].as_i64().unwrap() >= 1);
     until("a stopped event", 60, || {
-        evs().iter().any(|(n, d)| n == "run" && s(d, "id").as_deref() == Some(second_id.as_str()) && d["status"] == "stopped")
+        evs().iter().any(|(n, d)| {
+            n == "run"
+                && s(d, "id").as_deref() == Some(second_id.as_str())
+                && d["status"] == "stopped"
+        })
     })
     .await;
     until("an idle status", 60, || {
-        evs().iter().any(|(n, d)| n == "status" && d["running"] == 0 && d["queued"] == 0)
+        evs()
+            .iter()
+            .any(|(n, d)| n == "status" && d["running"] == 0 && d["queued"] == 0)
     })
     .await;
 
@@ -1405,24 +1783,67 @@ async fn http_a_suite_is_saved_started_streamed_summarised_and_cancelled() {
     let lines = summary.as_array().unwrap();
     assert_eq!(lines.len(), 1);
     let line = &lines[0];
-    assert_eq!((line["task"].as_str(), line["arm"].as_str(), line["passes"].as_i64()), (Some("demo"), Some("base"), Some(1)));
+    assert_eq!(
+        (
+            line["task"].as_str(),
+            line["arm"].as_str(),
+            line["passes"].as_i64()
+        ),
+        (Some("demo"), Some("base"), Some(1))
+    );
     // The passed run (2 requests) is the one scored; the stopped ones are counted only.
     assert!((2..=3).contains(&line["runs"].as_i64().unwrap()));
     assert_eq!(line["scored"], 1);
     assert_eq!(line["medianSteps"], 2.0);
-    let results: Value = host.api(Method::GET, "/api/bench/results").send().await.unwrap().json().await.unwrap();
-    assert!(results
-        .as_array()
+    let results: Value = host
+        .api(Method::GET, "/api/bench/results")
+        .send()
+        .await
         .unwrap()
-        .iter()
-        .any(|r| s(r, "id").as_deref() == Some(running_id.as_str()) && r["status"] == "passed"));
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        results
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| s(r, "id").as_deref() == Some(running_id.as_str()) && r["status"] == "passed")
+    );
 
     // The page's state, the queue and /api/info.
-    let state: Value = host.api(Method::GET, "/api/bench").send().await.unwrap().json().await.unwrap();
-    assert!(state["suites"].as_array().unwrap().iter().any(|s| s["name"] == "web"));
-    let q: Value = host.api(Method::GET, "/api/bench/queue").send().await.unwrap().json().await.unwrap();
+    let state: Value = host
+        .api(Method::GET, "/api/bench")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        state["suites"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["name"] == "web")
+    );
+    let q: Value = host
+        .api(Method::GET, "/api/bench/queue")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     assert_eq!(q["running"], false);
-    let info: Value = host.api(Method::GET, "/api/info").send().await.unwrap().json().await.unwrap();
+    let info: Value = host
+        .api(Method::GET, "/api/info")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     assert_eq!(info["bench"], true);
     reader.abort();
 }
@@ -1447,45 +1868,103 @@ async fn http_queue_endpoints_add_move_requeue_clear_and_refuse_an_unconfirmed_s
         .await
         .unwrap();
     assert_eq!(add["added"], 2);
-    assert_eq!(add["skipped"], json!(["nope · (config) · -: no such suite"]));
-    let empty = host.api(Method::POST, "/api/bench/queue/items").json(&json!({"items": []})).send().await.unwrap();
+    assert_eq!(
+        add["skipped"],
+        json!(["nope · (config) · -: no such suite"])
+    );
+    let empty = host
+        .api(Method::POST, "/api/bench/queue/items")
+        .json(&json!({"items": []}))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(empty.status(), StatusCode::BAD_REQUEST);
 
-    let q: Value = host.api(Method::GET, "/api/bench/queue").send().await.unwrap().json().await.unwrap();
-    let ids: Vec<String> = q["items"].as_array().unwrap().iter().map(|i| s(i, "id").unwrap()).collect();
+    let q: Value = host
+        .api(Method::GET, "/api/bench/queue")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let ids: Vec<String> = q["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| s(i, "id").unwrap())
+        .collect();
     assert_eq!(q["items"][0]["mode"], "auto");
     assert_eq!(q["items"][0]["reps"], 2);
-    assert!(host
-        .api(Method::POST, &format!("/api/bench/queue/items/{}/move", ids[1]))
+    assert!(
+        host.api(
+            Method::POST,
+            &format!("/api/bench/queue/items/{}/move", ids[1])
+        )
         .json(&json!({"to": 0}))
         .send()
         .await
         .unwrap()
         .status()
-        .is_success());
-    let q: Value = host.api(Method::GET, "/api/bench/queue").send().await.unwrap().json().await.unwrap();
+        .is_success()
+    );
+    let q: Value = host
+        .api(Method::GET, "/api/bench/queue")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     assert_eq!(s(&q["items"][0], "id").unwrap(), ids[1]);
 
-    let plan: Value = host.api(Method::GET, "/api/bench/queue/plan").send().await.unwrap().json().await.unwrap();
+    let plan: Value = host
+        .api(Method::GET, "/api/bench/queue/plan")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     assert_eq!(plan["items"].as_array().unwrap().len(), 2);
     assert_eq!(plan["unknownTasks"], 2);
 
-    let refused = host.api(Method::POST, "/api/bench/queue/start").json(&json!({})).send().await.unwrap();
+    let refused = host
+        .api(Method::POST, "/api/bench/queue/start")
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(refused.status(), StatusCode::CONFLICT);
     assert!(refused.text().await.unwrap().contains("confirmation"));
-    let requeued: Value = host.api(Method::POST, "/api/bench/queue/requeue").send().await.unwrap().json().await.unwrap();
+    let requeued: Value = host
+        .api(Method::POST, "/api/bench/queue/requeue")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     assert_eq!(requeued["requeued"], 0);
     assert_eq!(
-        host.api(Method::DELETE, "/api/bench/queue/items/nope").send().await.unwrap().status(),
+        host.api(Method::DELETE, "/api/bench/queue/items/nope")
+            .send()
+            .await
+            .unwrap()
+            .status(),
         StatusCode::NOT_FOUND
     );
-    assert!(host
-        .api(Method::DELETE, &format!("/api/bench/queue/items/{}", ids[0]))
+    assert!(
+        host.api(
+            Method::DELETE,
+            &format!("/api/bench/queue/items/{}", ids[0])
+        )
         .send()
         .await
         .unwrap()
         .status()
-        .is_success());
+        .is_success()
+    );
     let cleared: Value = host
         .api(Method::POST, "/api/bench/queue/clear")
         .json(&json!({"finishedOnly": false}))
@@ -1496,6 +1975,9 @@ async fn http_queue_endpoints_add_move_requeue_clear_and_refuse_an_unconfirmed_s
         .await
         .unwrap();
     assert_eq!(cleared["removed"], 1);
-    let file: Value = serde_json::from_str(&std::fs::read_to_string(env.path().join("bench").join("queue.json")).unwrap()).unwrap();
+    let file: Value = serde_json::from_str(
+        &std::fs::read_to_string(env.path().join("bench").join("queue.json")).unwrap(),
+    )
+    .unwrap();
     assert!(file["items"].as_array().unwrap().is_empty());
 }

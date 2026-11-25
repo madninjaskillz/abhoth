@@ -286,11 +286,22 @@ impl BenchRunner {
         if !path.is_dir() {
             return json!({"exists": false, "path": shown});
         }
-        let head = git::run(&path, &["log", "-1", "--all", "--format=%h %cs %s"], None, None, None).await;
+        let head = git::run(
+            &path,
+            &["log", "-1", "--all", "--format=%h %cs %s"],
+            None,
+            None,
+            None,
+        )
+        .await;
         let origin = git::run(&path, &["remote", "get-url", "origin"], None, None, None).await;
         let stamp = ["FETCH_HEAD", "packed-refs", "HEAD"]
             .iter()
-            .filter_map(|f| std::fs::metadata(path.join(f)).and_then(|m| m.modified()).ok())
+            .filter_map(|f| {
+                std::fs::metadata(path.join(f))
+                    .and_then(|m| m.modified())
+                    .ok()
+            })
             .max();
         let updated = match stamp {
             Some(t) => {
@@ -411,27 +422,85 @@ impl BenchRunner {
             description: Some(desc.into()),
             ..BenchSuite::new(name, arms, tasks)
         };
-        write("validate-undo", suite("validate-undo", vec![arm("auto", "auto")], &["fanout-ez-undo"],
-            "One fanout-ez component (Undo), auto Lead: a short end-to-end check of the runner."));
-        write("fanout-ez-arms", suite("fanout-ez-arms",
-            vec![arm("auto", "auto"), arm("hands-on", "hands-on"), BenchArm::new("peer", "auto", Some(vec!["slots.agentsPerCopy=3".into()]), None)],
-            &["fanout-ez"],
-            "Five C# components: does handing them to helpers beat one agent? auto vs hands-on vs more helpers per copy."));
-        write("fanout8", suite("fanout8", vec![arm("auto", "auto"), arm("hands-on", "hands-on")], &["fanout8"],
-            "Eight small Python modules (the original fan-out task)."));
-        write("realtasks", suite("realtasks", vec![arm("auto", "auto"), arm("hands-on", "hands-on")],
-            &["agents-per-copy", "head-tail-output", "context-overflow"],
-            "Three past OpenOrca commits as issues, scored with the commits' own held-back tests (needs the openorca mirror)."));
-        write("realtask-one", suite("realtask-one", vec![arm("auto", "auto")], &["agents-per-copy"],
-            "One real task (slot allocator: agents per copy), auto Lead."));
-        write("realtask-engines", suite("realtask-engines",
-            vec![arm("native", "auto"), BenchArm::for_engine("claude", None), BenchArm::for_engine("codex", None)],
-            &["agents-per-copy"],
-            "One real task on each engine: native OpenOrca, Claude Code and Codex (the bridges need their CLI logged in)."));
-        write("profiles-flash-dense", suite("profiles-flash-dense",
-            vec![BenchArm::new("flash2", "auto", None, Some("flash2")), BenchArm::new("dense2", "auto", None, Some("dense2"))],
-            &["fanout-ez"],
-            "Five C# components on two inference profiles: Flash x2 against dense 27B x2. Switches the server layout between them (about 3-4 min each way, restarting the model servers)."));
+        write(
+            "validate-undo",
+            suite(
+                "validate-undo",
+                vec![arm("auto", "auto")],
+                &["fanout-ez-undo"],
+                "One fanout-ez component (Undo), auto Lead: a short end-to-end check of the runner.",
+            ),
+        );
+        write(
+            "fanout-ez-arms",
+            suite(
+                "fanout-ez-arms",
+                vec![
+                    arm("auto", "auto"),
+                    arm("hands-on", "hands-on"),
+                    BenchArm::new(
+                        "peer",
+                        "auto",
+                        Some(vec!["slots.agentsPerCopy=3".into()]),
+                        None,
+                    ),
+                ],
+                &["fanout-ez"],
+                "Five C# components: does handing them to helpers beat one agent? auto vs hands-on vs more helpers per copy.",
+            ),
+        );
+        write(
+            "fanout8",
+            suite(
+                "fanout8",
+                vec![arm("auto", "auto"), arm("hands-on", "hands-on")],
+                &["fanout8"],
+                "Eight small Python modules (the original fan-out task).",
+            ),
+        );
+        write(
+            "realtasks",
+            suite(
+                "realtasks",
+                vec![arm("auto", "auto"), arm("hands-on", "hands-on")],
+                &["agents-per-copy", "head-tail-output", "context-overflow"],
+                "Three past OpenOrca commits as issues, scored with the commits' own held-back tests (needs the openorca mirror).",
+            ),
+        );
+        write(
+            "realtask-one",
+            suite(
+                "realtask-one",
+                vec![arm("auto", "auto")],
+                &["agents-per-copy"],
+                "One real task (slot allocator: agents per copy), auto Lead.",
+            ),
+        );
+        write(
+            "realtask-engines",
+            suite(
+                "realtask-engines",
+                vec![
+                    arm("native", "auto"),
+                    BenchArm::for_engine("claude", None),
+                    BenchArm::for_engine("codex", None),
+                ],
+                &["agents-per-copy"],
+                "One real task on each engine: native OpenOrca, Claude Code and Codex (the bridges need their CLI logged in).",
+            ),
+        );
+        write(
+            "profiles-flash-dense",
+            suite(
+                "profiles-flash-dense",
+                vec![
+                    BenchArm::new("flash2", "auto", None, Some("flash2")),
+                    BenchArm::new("dense2", "auto", None, Some("dense2")),
+                ],
+                &["fanout-ez"],
+                "Five C# components on two inference profiles: Flash x2 against dense 27B x2. Switches the server layout between them (about 3-4 min each way, restarting the model servers).",
+            ),
+        );
     }
 
     /// The kit's tasks (name, timeout), read once.
@@ -546,8 +615,11 @@ impl BenchRunner {
         if file.exists() && !overwrite {
             return Err(format!("A suite named {name} already exists."));
         }
-        std::fs::write(&file, serde_json::to_string_pretty(&suite).unwrap_or_default())
-            .map_err(|e| e.to_string())?;
+        std::fs::write(
+            &file,
+            serde_json::to_string_pretty(&suite).unwrap_or_default(),
+        )
+        .map_err(|e| e.to_string())?;
         self.changed();
         Ok(suite)
     }
@@ -582,10 +654,7 @@ impl BenchRunner {
             None => BenchArm::new(profile.unwrap_or("default"), "auto", Some(vec![]), own),
             Some(m) => {
                 let m = agent_modes::normalize(Some(m)).ok_or_else(|| {
-                    format!(
-                        "Unknown mode {m} (one of {}).",
-                        agent_modes::ALL.join(", ")
-                    )
+                    format!("Unknown mode {m} (one of {}).", agent_modes::ALL.join(", "))
                 })?;
                 BenchArm::new(m, m, Some(agent_modes::bench_sets(m)), own)
             }
@@ -633,7 +702,14 @@ impl BenchRunner {
             .chain(inner.recent.iter())
             .map(|id| inner.run(id))
             .filter(|r| r.batch.as_deref() == Some(batch))
-            .map(|r| (r.id.clone(), r.status.clone(), r.project_id.clone(), r.note.clone()))
+            .map(|r| {
+                (
+                    r.id.clone(),
+                    r.status.clone(),
+                    r.project_id.clone(),
+                    r.note.clone(),
+                )
+            })
             .collect()
     }
 
@@ -958,7 +1034,13 @@ impl BenchRunner {
         if unsafe_run_id(run_id) {
             return None;
         }
-        let logs = self.options.dir.join("runs").join(run_id).join("home").join("logs");
+        let logs = self
+            .options
+            .dir
+            .join("runs")
+            .join(run_id)
+            .join("home")
+            .join("logs");
         if !logs.is_dir() {
             return None;
         }
@@ -974,7 +1056,10 @@ impl BenchRunner {
                 continue;
             };
             let name = f.file_name().unwrap().to_string_lossy().into_owned();
-            sb.push_str(&format!("── {name} ──\n{}\n\n", String::from_utf8_lossy(&bytes)));
+            sb.push_str(&format!(
+                "── {name} ──\n{}\n\n",
+                String::from_utf8_lossy(&bytes)
+            ));
         }
         if sb.chars().count() > max_chars {
             Some(format!("…\n{}", tail_chars(&sb, max_chars)))
@@ -1057,7 +1142,8 @@ impl BenchRunner {
             // Stopped or cancelled while it was being checked, or the target went to another run.
             let (again, same_target) = inner.pick(&held);
             if again.as_deref() != Some(next.as_str())
-                || same_target.as_ref().map(BenchTarget::key) != target.as_ref().map(BenchTarget::key)
+                || same_target.as_ref().map(BenchTarget::key)
+                    != target.as_ref().map(BenchTarget::key)
             {
                 continue;
             }
@@ -1083,9 +1169,17 @@ impl BenchRunner {
             tracing::error!("Bench run {id}: {e}");
             let mut inner = self.inner.lock().unwrap();
             if let Some(r) = inner.runs.get_mut(&id)
-                && matches!(r.status.as_str(), "queued" | "setup" | "running" | "scoring")
+                && matches!(
+                    r.status.as_str(),
+                    "queued" | "setup" | "running" | "scoring"
+                )
             {
-                r.status = if token.is_cancelled() { "stopped" } else { "error" }.into();
+                r.status = if token.is_cancelled() {
+                    "stopped"
+                } else {
+                    "error"
+                }
+                .into();
                 r.note = Some(e);
             }
         }
@@ -1167,7 +1261,9 @@ impl BenchRunner {
             if let Some(slots) = doc.get("slots").and_then(Value::as_object) {
                 let leased: Vec<String> = slots
                     .iter()
-                    .filter(|(_, v)| !matches!(v, Value::Null | Value::Bool(false)) && v.as_str() != Some(""))
+                    .filter(|(_, v)| {
+                        !matches!(v, Value::Null | Value::Bool(false)) && v.as_str() != Some("")
+                    })
                     .map(|(k, v)| match lease_holder(v) {
                         Some(who) => format!("{k} ({who})"),
                         None => k.clone(),
@@ -1333,7 +1429,11 @@ impl BenchRunner {
             _ => false,
         };
         if same {
-            self.inner.lock().unwrap().restore.retain(|(b, _)| b != &batch);
+            self.inner
+                .lock()
+                .unwrap()
+                .restore
+                .retain(|(b, _)| b != &batch);
             return None;
         }
         if let Some(leases) = catalog
@@ -1389,7 +1489,11 @@ impl BenchRunner {
             )
             .await;
         // Done, or failed (the server rolled back): never loop on it.
-        self.inner.lock().unwrap().restore.retain(|(b, _)| b != &batch);
+        self.inner
+            .lock()
+            .unwrap()
+            .restore
+            .retain(|(b, _)| b != &batch);
         tracing::info!(
             "Bench: switch back to {layout} after {batch}: {}",
             job.state.unwrap_or_default()
@@ -1451,7 +1555,10 @@ impl BenchRunner {
         row.insert("suite".into(), json!(run.suite));
         row.insert("arm".into(), json!(run.arm.name));
         row.insert("lead_mode".into(), json!(run.arm.lead_mode));
-        row.insert("sets".into(), json!(run.arm.set.clone().unwrap_or_default()));
+        row.insert(
+            "sets".into(),
+            json!(run.arm.set.clone().unwrap_or_default()),
+        );
         row.insert("task".into(), json!(run.task));
         row.insert("rep".into(), json!(run.rep));
         row.insert("profile".into(), json!(run.profile));
@@ -1488,7 +1595,10 @@ impl BenchRunner {
                 .and_then(Value::as_i64)
                 .unwrap_or(1800);
             let timeout = Duration::from_secs(
-                run.timeout_seconds.map(i64::from).unwrap_or(setup_timeout).max(0) as u64,
+                run.timeout_seconds
+                    .map(i64::from)
+                    .unwrap_or(setup_timeout)
+                    .max(0) as u64,
             );
             let mut profile: Option<ProfileDefinition> = None;
             if let Some(t) = &target {
@@ -1566,7 +1676,12 @@ impl BenchRunner {
                     row.insert("timeout".into(), json!(true));
                     break;
                 }
-                if in_quiet_window(now, Duration::ZERO, self.options.quiet_from, self.options.quiet_to) {
+                if in_quiet_window(
+                    now,
+                    Duration::ZERO,
+                    self.options.quiet_from,
+                    self.options.quiet_to,
+                ) {
                     session.cancel().await;
                     self.update(id, |r| r.note = Some("stopped for the quiet window".into()));
                     row.insert("quiet_window_stop".into(), json!(true));
@@ -1621,14 +1736,20 @@ impl BenchRunner {
                 check.to_string_lossy().into_owned(),
             );
             let (rc, score, err) = self
-                .kit(&["check", &run.task, &ws_s, &check_s], Duration::from_secs(45 * 60))
+                .kit(
+                    &["check", &run.task, &ws_s, &check_s],
+                    Duration::from_secs(45 * 60),
+                )
                 .await?;
             match &score {
                 Some(Value::Object(sc)) if rc == 0 => {
                     const WRONG: &str = "The requested operation requires an element of a different type, or the checker left a field out.";
                     let pass = sc.get("pass").and_then(Value::as_bool).ok_or(WRONG)?;
                     let reason = sc.get("reason").ok_or(WRONG)?;
-                    let tp = sc.get("tests_passed").and_then(Value::as_i64).ok_or(WRONG)?;
+                    let tp = sc
+                        .get("tests_passed")
+                        .and_then(Value::as_i64)
+                        .ok_or(WRONG)?;
                     let tt = sc.get("tests_total").and_then(Value::as_i64).ok_or(WRONG)?;
                     row.insert("pass".into(), json!(pass));
                     row.insert("reason".into(), reason.clone());
@@ -1766,7 +1887,11 @@ impl BenchRunner {
 
     /// Time-weighted mean AC output (W) over the run, from Home Assistant history.
     async fn power(&self, start: SystemTime, end: SystemTime) -> Option<f64> {
-        let file = self.options.power_env_file.as_ref().filter(|f| f.is_file())?;
+        let file = self
+            .options
+            .power_env_file
+            .as_ref()
+            .filter(|f| f.is_file())?;
         let text = std::fs::read_to_string(file).ok()?;
         let mut env = BTreeMap::new();
         for l in text.lines().map(str::trim) {
@@ -2023,7 +2148,9 @@ pub fn apply_set(root: &mut Value, kv: &str) -> Result<(), String> {
     match node {
         Value::Array(arr) if last.parse::<usize>().is_ok() => {
             let i: usize = last.parse().unwrap();
-            let slot = arr.get_mut(i).ok_or_else(|| format!("No such index in {kv}"))?;
+            let slot = arr
+                .get_mut(i)
+                .ok_or_else(|| format!("No such index in {kv}"))?;
             *slot = value;
         }
         Value::Object(o) => {
@@ -2040,29 +2167,27 @@ fn field(detail: &str, name: &str) -> Option<i64> {
     let mut rest = detail;
     let mut at_start = true;
     loop {
-        if let Some(i) = rest.find(&prefix) {
-            let before_ok = if i == 0 {
-                at_start
-            } else {
-                rest[..i].chars().last().is_some_and(char::is_whitespace)
-            };
-            let after = &rest[i + prefix.len()..];
-            let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
-            if before_ok && !digits.is_empty() {
-                return digits.parse().ok();
-            }
-            rest = &rest[i + 1..];
-            at_start = false;
+        let i = rest.find(&prefix)?;
+        let before_ok = if i == 0 {
+            at_start
         } else {
-            return None;
+            rest[..i].chars().last().is_some_and(char::is_whitespace)
+        };
+        let after = &rest[i + prefix.len()..];
+        let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+        if before_ok && !digits.is_empty() {
+            return digits.parse().ok();
         }
+        rest = &rest[i + 1..];
+        at_start = false;
     }
 }
 
 /// Totals from the run's own log ("Slot usage" lines, or a bridge's "Bridge turn" lines):
 /// requests, tokens, decode speed, helpers.
 pub fn metrics(home: &Path) -> Map<String, Value> {
-    let (mut requests, mut prompt, mut cached, mut output, mut reasoning) = (0i64, 0i64, 0i64, 0i64, 0i64);
+    let (mut requests, mut prompt, mut cached, mut output, mut reasoning) =
+        (0i64, 0i64, 0i64, 0i64, 0i64);
     let (mut content, mut tool, mut pred_n, mut pred_ms, mut lead_n, mut lead_ms) =
         (0i64, 0i64, 0i64, 0i64, 0i64, 0i64);
     let mut cost = 0f64;
@@ -2149,8 +2274,14 @@ pub fn metrics(home: &Path) -> Map<String, Value> {
     out.insert("reasoning_tokens".into(), json!(reasoning));
     out.insert("content_tokens".into(), json!(content));
     out.insert("tool_tokens".into(), json!(tool));
-    out.insert("decode_tps".into(), json!((pred_ms > 0).then(|| tps(pred_n, pred_ms))));
-    out.insert("lead_tps".into(), json!((lead_ms > 0).then(|| tps(lead_n, lead_ms))));
+    out.insert(
+        "decode_tps".into(),
+        json!((pred_ms > 0).then(|| tps(pred_n, pred_ms))),
+    );
+    out.insert(
+        "lead_tps".into(),
+        json!((lead_ms > 0).then(|| tps(lead_n, lead_ms))),
+    );
     out.insert("helpers".into(), json!(helpers.len()));
     out.insert(
         "helper_routes".into(),
@@ -2174,7 +2305,10 @@ pub fn metrics(home: &Path) -> Map<String, Value> {
             )
         },
     );
-    out.insert("bridge_turns".into(), json!((bridge_turns > 0).then_some(bridge_turns)));
+    out.insert(
+        "bridge_turns".into(),
+        json!((bridge_turns > 0).then_some(bridge_turns)),
+    );
     out.insert(
         "cost_usd".into(),
         json!((bridge_turns > 0).then(|| round(cost, 4))),
@@ -2228,15 +2362,34 @@ mod tests {
     fn run_config_must_lease_from_the_registry() {
         let c = |s: &str| serde_json::from_str::<Value>(s).unwrap();
         assert_eq!(
-            leasing_problem(&c(r#"{"slots":{"registryUrl":"http://h:8099","copies":[{"name":"A"}]}}"#)),
+            leasing_problem(&c(
+                r#"{"slots":{"registryUrl":"http://h:8099","copies":[{"name":"A"}]}}"#
+            )),
             None
         );
-        assert!(leasing_problem(&c(r#"{"slots":{"copies":[{"name":"A"}]}}"#)).unwrap().contains("registryUrl"));
+        assert!(
+            leasing_problem(&c(r#"{"slots":{"copies":[{"name":"A"}]}}"#))
+                .unwrap()
+                .contains("registryUrl")
+        );
         assert!(leasing_problem(&c(r#"{"slots":{"enabled":false,"registryUrl":"http://h:8099","copies":[{"name":"A"}]}}"#)).unwrap().contains("enabled=false"));
-        assert!(leasing_problem(&c(r#"{"agent":{}}"#)).unwrap().contains("no slots section"));
-        assert!(leasing_problem(&c(r#"{"slots":{"registryUrl":"http://h:8099","copies":[]}}"#)).unwrap().contains("copies"));
+        assert!(
+            leasing_problem(&c(r#"{"agent":{}}"#))
+                .unwrap()
+                .contains("no slots section")
+        );
+        assert!(
+            leasing_problem(&c(
+                r#"{"slots":{"registryUrl":"http://h:8099","copies":[]}}"#
+            ))
+            .unwrap()
+            .contains("copies")
+        );
         // A bridge engine arm doesn't use the local slots.
-        assert_eq!(leasing_problem(&c(r#"{"agent":{"engine":"claude"}}"#)), None);
+        assert_eq!(
+            leasing_problem(&c(r#"{"agent":{"engine":"claude"}}"#)),
+            None
+        );
     }
 
     #[test]
@@ -2295,7 +2448,10 @@ mod tests {
         assert_eq!(m["output_tokens"], 783);
         assert_eq!(m["content_tokens"], 498);
         assert_eq!(m["tool_tokens"], 65);
-        assert_eq!(m["decode_tps"], round(783.0 * 1000.0 / (5602.0 + 43889.0), 1));
+        assert_eq!(
+            m["decode_tps"],
+            round(783.0 * 1000.0 / (5602.0 + 43889.0), 1)
+        );
         assert_eq!(m["lead_tps"], round(142.0 * 1000.0 / 5602.0, 1));
         assert_eq!(m["slots"], json!(["A1", "B1"]));
         assert_eq!(m["helper_routes"], json!(["agent 1 (Undo)"]));
@@ -2324,17 +2480,30 @@ mod tests {
         let ok = BenchSuite {
             reps: 3,
             targets: Some(vec![BenchTarget::new("a", "http://127.0.0.1:18080/v1")]),
-            ..BenchSuite::new("x", vec![BenchArm::new("base", "auto", None, None)], &["demo"])
+            ..BenchSuite::new(
+                "x",
+                vec![BenchArm::new("base", "auto", None, None)],
+                &["demo"],
+            )
         };
         assert_eq!(BenchRunner::problem(&ok), None);
         let refused = |s: BenchSuite, why: &str| {
             let p = BenchRunner::problem(&s).unwrap_or_default();
             assert!(p.contains(why), "{p} should say {why}");
         };
-        refused(BenchSuite { arms: vec![], ..ok.clone() }, "no arms");
         refused(
             BenchSuite {
-                arms: vec![BenchArm::new("a", "auto", None, None), BenchArm::new("a", "auto", None, None)],
+                arms: vec![],
+                ..ok.clone()
+            },
+            "no arms",
+        );
+        refused(
+            BenchSuite {
+                arms: vec![
+                    BenchArm::new("a", "auto", None, None),
+                    BenchArm::new("a", "auto", None, None),
+                ],
                 ..ok.clone()
             },
             "name of its own",
@@ -2346,7 +2515,13 @@ mod tests {
             },
             "key=value",
         );
-        refused(BenchSuite { reps: 0, ..ok.clone() }, "Reps");
+        refused(
+            BenchSuite {
+                reps: 0,
+                ..ok.clone()
+            },
+            "Reps",
+        );
         refused(
             BenchSuite {
                 targets: Some(vec![BenchTarget::new("t", "ftp://host/x")]),
@@ -2361,6 +2536,9 @@ mod tests {
         assert_eq!(field("content=0 tool=52 calls=bash", "tool"), Some(52));
         assert_eq!(field("xtool=5 tool=7", "tool"), Some(7));
         assert_eq!(field("tool=", "tool"), None);
-        assert_eq!(field("predicted_n=142 predicted_ms=5602", "predicted_ms"), Some(5602));
+        assert_eq!(
+            field("predicted_n=142 predicted_ms=5602", "predicted_ms"),
+            Some(5602)
+        );
     }
 }

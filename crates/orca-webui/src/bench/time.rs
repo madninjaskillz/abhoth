@@ -157,7 +157,9 @@ pub fn parse_iso(s: &str) -> Option<SystemTime> {
             };
             let o = &rest[1..];
             let (oh, om) = match o.len() {
-                5 if o.as_bytes()[2] == b':' => (o[..2].parse::<i64>().ok()?, o[3..].parse::<i64>().ok()?),
+                5 if o.as_bytes()[2] == b':' => {
+                    (o[..2].parse::<i64>().ok()?, o[3..].parse::<i64>().ok()?)
+                }
                 4 => (o[..2].parse::<i64>().ok()?, o[2..].parse::<i64>().ok()?),
                 2 => (o.parse::<i64>().ok()?, 0),
                 _ => return None,
@@ -208,7 +210,10 @@ mod tests {
         let t = from_unix(1_795_314_521, 158_604_600);
         assert_eq!(iso_o(t), "2026-11-22T02:28:41.1586046+00:00");
         assert_eq!(iso_json(t), "2026-11-22T02:28:41.1586046+00:00");
-        assert_eq!(iso_json(from_unix(1_795_314_521, 0)), "2026-11-22T02:28:41+00:00");
+        assert_eq!(
+            iso_json(from_unix(1_795_314_521, 0)),
+            "2026-11-22T02:28:41+00:00"
+        );
         assert_eq!(stamp(t), "20261122-022841");
         assert_eq!(at("2026-11-22T02:28:41.1586046+00:00"), t);
         assert_eq!(at("2026-11-22T03:28:41.1586046+01:00"), t);

@@ -206,7 +206,9 @@ fn bench_options(
         .map(PathBuf::from)
         .unwrap_or_else(|| dir.join("kit"));
     let factory: orca_webui::bench::BenchSessionFactory = Arc::new(
-        move |folder: &str, env: &std::collections::BTreeMap<String, String>| -> Arc<dyn LiveSession> {
+        move |folder: &str,
+              env: &std::collections::BTreeMap<String, String>|
+              -> Arc<dyn LiveSession> {
             let failed = |error: String| -> Arc<dyn LiveSession> {
                 Arc::new(FailedSession {
                     bus: Arc::new(LiveEventBus::new()),

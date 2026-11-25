@@ -116,7 +116,11 @@ elif cmd == "check":
 #[tokio::test(flavor = "multi_thread")]
 async fn hostui_bench_runs_a_suite_in_its_own_home_and_records_the_row() {
     let python = if cfg!(windows) { "python" } else { "python3" };
-    if !Command::new(python).arg("--version").output().is_ok_and(|o| o.status.success()) {
+    if !Command::new(python)
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success())
+    {
         eprintln!("python is not on PATH: skipped");
         return;
     }
@@ -201,7 +205,13 @@ async fn hostui_bench_runs_a_suite_in_its_own_home_and_records_the_row() {
     let info: Value = get("api/info").await.unwrap().json().await.unwrap();
     assert_eq!(info["bench"], true);
     let state: Value = get("api/bench").await.unwrap().json().await.unwrap();
-    assert!(state["suites"].as_array().unwrap().iter().any(|s| s["name"] == "e2e"));
+    assert!(
+        state["suites"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["name"] == "e2e")
+    );
     let started: Value = c
         .post(format!("{base}api/bench/start"))
         .header("X-OpenOrca-Token", "e2e-token-123")
@@ -216,7 +226,12 @@ async fn hostui_bench_runs_a_suite_in_its_own_home_and_records_the_row() {
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
     let row = loop {
-        let rows: Value = get("api/bench/results").await.unwrap().json().await.unwrap();
+        let rows: Value = get("api/bench/results")
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
         if let Some(r) = rows.as_array().and_then(|a| a.first()) {
             break r.clone();
         }
@@ -229,15 +244,35 @@ async fn hostui_bench_runs_a_suite_in_its_own_home_and_records_the_row() {
     };
     let _ = child.kill();
     let out = child.wait_with_output().unwrap();
-    let ws = bench.join("runs").join(row["id"].as_str().unwrap()).join("ws");
-    let listing: Vec<String> = std::fs::read_dir(&ws).map(|r| r.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
+    let ws = bench
+        .join("runs")
+        .join(row["id"].as_str().unwrap())
+        .join("ws");
+    let listing: Vec<String> = std::fs::read_dir(&ws)
+        .map(|r| {
+            r.flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
     assert_eq!(
-        row["status"], "passed",
+        row["status"],
+        "passed",
         "{row}
 requests: {}
 ws: {listing:?}
 stderr: {}",
-        server.requests().iter().map(|r| r.body["messages"].as_array().map(|m| m.last().cloned()).unwrap_or_default().map(|m| m.to_string()).unwrap_or_default()).collect::<Vec<_>>().join(" || "),
+        server
+            .requests()
+            .iter()
+            .map(|r| r.body["messages"]
+                .as_array()
+                .map(|m| m.last().cloned())
+                .unwrap_or_default()
+                .map(|m| m.to_string())
+                .unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join(" || "),
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(row["suite"], "e2e");
@@ -247,7 +282,14 @@ stderr: {}",
     // The run's home: the base config with the arm's lead mode, tools auto-approved.
     let run = row["id"].as_str().unwrap();
     let cfg: Value = serde_json::from_str(
-        &std::fs::read_to_string(bench.join("runs").join(run).join("home").join("config.json")).unwrap(),
+        &std::fs::read_to_string(
+            bench
+                .join("runs")
+                .join(run)
+                .join("home")
+                .join("config.json"),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(cfg["permissions"]["autoApproveAll"], true);

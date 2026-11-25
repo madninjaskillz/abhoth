@@ -147,17 +147,90 @@ mod tests {
         );
 
         let rows = vec![
-            row("t3", "base", "passed", Some(true), Some(100.0), Some(10), Some(5000), Some(9000), "b1"),
-            row("t3", "cap", "passed", Some(true), Some(80.0), Some(12), Some(2000), Some(6000), "b1"),
-            row("t3", "base", "failed", Some(false), Some(300.0), Some(30), Some(9000), Some(20000), "b1"),
-            row("t3", "base", "passed", Some(true), Some(200.0), Some(20), Some(7000), Some(10000), "b1"),
-            row("t3", "base", "stopped", None, Some(40.0), None, None, None, "b1"), // counted, not scored
-            row("gems", "base", "timeout", Some(false), Some(1200.0), Some(44), Some(100), Some(200), "b1"),
-            row("t3", "base", "passed", Some(true), Some(1.0), Some(1), Some(1), Some(1), "b0"), // another batch
+            row(
+                "t3",
+                "base",
+                "passed",
+                Some(true),
+                Some(100.0),
+                Some(10),
+                Some(5000),
+                Some(9000),
+                "b1",
+            ),
+            row(
+                "t3",
+                "cap",
+                "passed",
+                Some(true),
+                Some(80.0),
+                Some(12),
+                Some(2000),
+                Some(6000),
+                "b1",
+            ),
+            row(
+                "t3",
+                "base",
+                "failed",
+                Some(false),
+                Some(300.0),
+                Some(30),
+                Some(9000),
+                Some(20000),
+                "b1",
+            ),
+            row(
+                "t3",
+                "base",
+                "passed",
+                Some(true),
+                Some(200.0),
+                Some(20),
+                Some(7000),
+                Some(10000),
+                "b1",
+            ),
+            row(
+                "t3",
+                "base",
+                "stopped",
+                None,
+                Some(40.0),
+                None,
+                None,
+                None,
+                "b1",
+            ), // counted, not scored
+            row(
+                "gems",
+                "base",
+                "timeout",
+                Some(false),
+                Some(1200.0),
+                Some(44),
+                Some(100),
+                Some(200),
+                "b1",
+            ),
+            row(
+                "t3",
+                "base",
+                "passed",
+                Some(true),
+                Some(1.0),
+                Some(1),
+                Some(1),
+                Some(1),
+                "b0",
+            ), // another batch
             json!("not a row"),
         ];
         let s = compute(&rows, Some("b1"), None, false);
-        let keys: Vec<(&str, &str)> = s.iter().map(|x| (x.task.as_str(), x.arm.as_str())).collect();
+        let keys: Vec<(&str, &str)> = s
+            .iter()
+            .map(|x| (x.task.as_str(), x.arm.as_str()))
+            .collect();
         assert_eq!(keys, [("t3", "base"), ("t3", "cap"), ("gems", "base")]);
         let t3 = &s[0];
         assert_eq!((t3.runs, t3.scored, t3.passes), (4, 3, 2));

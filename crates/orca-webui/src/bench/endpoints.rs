@@ -55,15 +55,17 @@ fn text(t: String) -> Response {
 }
 
 /// A JSON body (an empty one reads as the defaults).
-fn body<T: DeserializeOwned + Default>(bytes: &Bytes) -> Result<T, Response> {
+fn body<T: DeserializeOwned + Default>(bytes: &Bytes) -> Result<T, String> {
     if bytes.iter().all(u8::is_ascii_whitespace) {
         return Ok(T::default());
     }
-    serde_json::from_slice(bytes).map_err(|e| bad(&format!("Invalid JSON body: {e}")))
+    serde_json::from_slice(bytes).map_err(|e| format!("Invalid JSON body: {e}"))
 }
 
 fn runner(s: &AppState) -> &Arc<BenchRunner> {
-    s.bench.as_ref().expect("bench routes are mapped only with a runner")
+    s.bench
+        .as_ref()
+        .expect("bench routes are mapped only with a runner")
 }
 
 fn queue(s: &AppState) -> &Arc<BenchQueue> {
@@ -94,7 +96,10 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/api/bench/queue/items", post(queue_add))
         .route("/api/bench/queue/items/{id}", delete(queue_remove))
         .route("/api/bench/queue/items/{id}/move", post(queue_move))
-        .route("/api/bench/queue/items/{id}/requeue", post(queue_requeue_one))
+        .route(
+            "/api/bench/queue/items/{id}/requeue",
+            post(queue_requeue_one),
+        )
         .route("/api/bench/queue/requeue", post(queue_requeue_all))
         .route("/api/bench/queue/clear", post(queue_clear))
         .route("/api/bench/queue/start", post(queue_start))
@@ -134,7 +139,12 @@ async fn summary_rows(State(s): S, Query(q): Query<HashMap<String, String>>) -> 
         },
     };
     let rows = runner(&s).results(false);
-    let out = summary::compute(&rows, get("batch").as_deref(), get("suite").as_deref(), by_target);
+    let out = summary::compute(
+        &rows,
+        get("batch").as_deref(),
+        get("suite").as_deref(),
+        by_target,
+    );
     ok(serde_json::to_value(out).unwrap_or_default())
 }
 
@@ -173,7 +183,7 @@ struct SaveBody {
 async fn save_suite(State(s): S, ConnectInfo(addr): Addr, bytes: Bytes) -> Response {
     let b: SaveBody = match body(&bytes) {
         Ok(b) => b,
-        Err(r) => return r,
+        Err(e) => return bad(&e),
     };
     let Some(suite) = b.suite else {
         return bad("No suite.");
@@ -215,7 +225,7 @@ struct StartBody {
 async fn start(State(s): S, ConnectInfo(addr): Addr, bytes: Bytes) -> Response {
     let b: StartBody = match body(&bytes) {
         Ok(b) => b,
-        Err(r) => return r,
+        Err(e) => return bad(&e),
     };
     match runner(&s).enqueue_batch(
         b.suite.as_deref().unwrap_or(""),
@@ -299,7 +309,7 @@ struct QueueAddBody {
 async fn queue_add(State(s): S, ConnectInfo(addr): Addr, bytes: Bytes) -> Response {
     let b: QueueAddBody = match body(&bytes) {
         Ok(b) => b,
-        Err(r) => return r,
+        Err(e) => return bad(&e),
     };
     let items = match b.items {
         Some(i) if !i.is_empty() => i,
@@ -340,7 +350,7 @@ struct MoveBody {
 async fn queue_move(State(s): S, Path(id): Path<String>, bytes: Bytes) -> Response {
     let b: MoveBody = match body(&bytes) {
         Ok(b) => b,
-        Err(r) => return r,
+        Err(e) => return bad(&e),
     };
     if queue(&s).move_to(&id, b.to) {
         ok(json!({"ok": true}))
@@ -366,7 +376,7 @@ struct ClearBody {
 async fn queue_clear(State(s): S, ConnectInfo(addr): Addr, bytes: Bytes) -> Response {
     let b: ClearBody = match body(&bytes) {
         Ok(b) => b,
-        Err(r) => return r,
+        Err(e) => return bad(&e),
     };
     let finished_only = b.finished_only.unwrap_or(false);
     let n = queue(&s).clear(finished_only);
@@ -387,7 +397,7 @@ struct QueueStartBody {
 async fn queue_start(State(s): S, ConnectInfo(addr): Addr, bytes: Bytes) -> Response {
     let b: QueueStartBody = match body(&bytes) {
         Ok(b) => b,
-        Err(r) => return r,
+        Err(e) => return bad(&e),
     };
     let error = queue(&s).start(b.confirm.unwrap_or(false)).await;
     s.audit.write(
@@ -410,7 +420,7 @@ struct QueuePauseBody {
 async fn queue_pause(State(s): S, ConnectInfo(addr): Addr, bytes: Bytes) -> Response {
     let b: QueuePauseBody = match body(&bytes) {
         Ok(b) => b,
-        Err(r) => return r,
+        Err(e) => return bad(&e),
     };
     let stop_current = b.stop_current.unwrap_or(false);
     queue(&s).pause(stop_current);
@@ -438,7 +448,8 @@ async fn resume(State(s): S, ConnectInfo(addr): Addr) -> Response {
 
 async fn stop(State(s): S, ConnectInfo(addr): Addr) -> Response {
     runner(&s).stop();
-    s.audit.write(Some(&caller(addr)), "bench.stop", Value::Null);
+    s.audit
+        .write(Some(&caller(addr)), "bench.stop", Value::Null);
     ok(json!({"ok": true}))
 }
 
@@ -471,7 +482,10 @@ async fn next_chunk(mut st: Stream) -> Option<(Result<Bytes, Infallible>, Stream
         }
         let status = st.runner.status();
         st.status = status.to_string();
-        let chunk = event("snapshot", &json!({"runs": runs, "status": status}).to_string());
+        let chunk = event(
+            "snapshot",
+            &json!({"runs": runs, "status": status}).to_string(),
+        );
         return Some((Ok(Bytes::from(chunk)), st));
     }
     loop {

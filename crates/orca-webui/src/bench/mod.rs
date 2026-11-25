@@ -118,7 +118,12 @@ impl Default for BenchArm {
 }
 
 impl BenchArm {
-    pub fn new(name: &str, lead_mode: &str, set: Option<Vec<String>>, profile: Option<&str>) -> Self {
+    pub fn new(
+        name: &str,
+        lead_mode: &str,
+        set: Option<Vec<String>>,
+        profile: Option<&str>,
+    ) -> Self {
         Self {
             name: name.into(),
             lead_mode: lead_mode.into(),
