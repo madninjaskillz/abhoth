@@ -229,6 +229,14 @@ pub fn wire_agents(
         types.register_custom(custom.iter());
     }
     let mut provider: Arc<dyn AgentClientProvider> = Arc::new(DefaultClientProvider::new(client));
+    // Named providers (agent.providerSchedule, agent.planner): logged with provider= and model=
+    // and added up in the session's usage ledger.
+    provider = Arc::new(orca_core::orchestration::ProviderRoutes::new(
+        provider,
+        config.clone(),
+        orca_core::client::usage::ProviderUsageLedger::shared(),
+        orca_core::logging::process_sink(),
+    ));
     if let Some(rt) = slots {
         provider = Arc::new(SlotClientProvider::new(provider, rt.clone()));
     }

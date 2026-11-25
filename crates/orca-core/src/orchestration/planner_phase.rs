@@ -61,6 +61,7 @@ impl PlannerPhase {
         };
         self.done = true;
         let provider = planner.provider.clone().unwrap_or_default();
+        let cost_before = self.cost_of(&provider);
         let started = Instant::now();
         tracing::info!(
             "Planner: {provider} writes the plan (at most {} steps, {} s)",
@@ -91,10 +92,11 @@ impl PlannerPhase {
         self.last_run = Some(run.clone());
         let plan = plan_text(&run);
         let provider_model = run.state().provider_model.clone();
+        let cost = self.cost_of(&provider) - cost_before;
         tracing::info!(
-            "Planner usage {provider} ({}): {:?} in {:.0} s, {} steps, plan {} chars",
+            "Planner usage {provider} ({}): {} in {:.0} s, {} steps, ${cost:.4}, plan {} chars",
             provider_model.clone().unwrap_or_default(),
-            run.status(),
+            run.status().as_str(),
             started.elapsed().as_secs_f64(),
             run.iteration_count(),
             plan.as_ref().map_or(0, |p| p.encode_utf16().count())
@@ -121,6 +123,19 @@ impl PlannerPhase {
             &planner.plan_file,
             provider_model.as_deref().unwrap_or(&provider),
         )
+    }
+}
+
+impl PlannerPhase {
+    /// `CostOf`: what `provider` has cost this session so far (USD).
+    fn cost_of(&self, provider: &str) -> f64 {
+        self.orchestrator
+            .usage_ledger()
+            .snapshot()
+            .iter()
+            .filter(|u| u.provider.eq_ignore_ascii_case(provider))
+            .filter_map(|u| u.cost_usd)
+            .sum()
     }
 }
 

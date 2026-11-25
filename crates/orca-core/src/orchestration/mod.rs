@@ -11,6 +11,7 @@ pub mod labels;
 pub mod orchestrator;
 pub mod palette;
 pub mod prompt_loader;
+pub mod provider_routes;
 pub mod read_only_command;
 pub mod repetition;
 pub mod slot_provider;
@@ -27,6 +28,7 @@ pub use client::{
 pub use context::{AgentContext, AgentSpec, AgentState};
 pub use events::AgentEvent;
 pub use orchestrator::*;
+pub use provider_routes::{ProviderClientFactory, ProviderRoutes};
 pub use slot_provider::SlotClientProvider;
 pub mod manager;
 pub use manager::{AgentManager, SubagentOutcome, SubagentTask};

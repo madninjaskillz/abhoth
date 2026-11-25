@@ -381,6 +381,13 @@ impl AgentOrchestrator {
         AMBIENT.try_with(|a| a.agent.clone()).ok().flatten()
     }
 
+    /// `UsageLedger`: where named providers' requests are added up and costed.
+    pub fn usage_ledger(&self) -> Arc<crate::client::usage::ProviderUsageLedger> {
+        self.provider
+            .usage_ledger()
+            .unwrap_or_else(crate::client::usage::ProviderUsageLedger::shared)
+    }
+
     /// Progress the Lead reported for the current task (0..1).
     pub fn lead_progress(&self) -> Option<f64> {
         self.lead.lock().unwrap_or_else(|e| e.into_inner()).progress

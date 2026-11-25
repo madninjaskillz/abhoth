@@ -182,6 +182,11 @@ pub trait AgentClientProvider: Send + Sync {
 
     /// The type this agent resolved to (for logs and providers that care).
     fn note_type(&self, _agent: &AgentContext, _type_def: &AgentTypeDefinition) {}
+
+    /// Where named providers' usage is added up (`UsageLedger`); None = the process-wide one.
+    fn usage_ledger(&self) -> Option<Arc<crate::client::usage::ProviderUsageLedger>> {
+        None
+    }
 }
 
 /// Every agent uses the main client.

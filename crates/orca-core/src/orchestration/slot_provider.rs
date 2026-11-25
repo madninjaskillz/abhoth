@@ -229,4 +229,8 @@ impl AgentClientProvider for SlotClientProvider {
     fn note_type(&self, agent: &AgentContext, type_def: &AgentTypeDefinition) {
         self.inner.note_type(agent, type_def);
     }
+
+    fn usage_ledger(&self) -> Option<Arc<crate::client::usage::ProviderUsageLedger>> {
+        self.inner.usage_ledger()
+    }
 }

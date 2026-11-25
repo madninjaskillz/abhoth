@@ -3,10 +3,11 @@
 
 use std::sync::{Arc, Mutex};
 
+use orca_core::client::usage::ProviderUsageLedger;
 use orca_core::client::{
     ChatError, ChatMessage, ChatOptions, ChatResponse, StreamControl, StreamEvent, Usage,
 };
-use orca_core::config::{OrcaConfig, PlannerConfig};
+use orca_core::config::{OrcaConfig, PlannerConfig, ProviderConfig, ProviderPricing};
 use orca_core::orchestration::context::{AgentContext, AgentSpec};
 use orca_core::orchestration::planner_phase::{
     PlannerPhase, plan_text, planner_enabled, planner_task,
@@ -14,8 +15,8 @@ use orca_core::orchestration::planner_phase::{
 use orca_core::orchestration::read_only_command;
 use orca_core::orchestration::types::{AgentStatus, AgentTypeRegistry};
 use orca_core::orchestration::{
-    AgentChatClient, AgentClientProvider, AgentOrchestrator, CancelToken, MAX_RESULT_CHARS,
-    ProviderRoute,
+    AgentChatClient, AgentOrchestrator, CancelToken, DefaultClientProvider, MAX_RESULT_CHARS,
+    ProviderRoutes,
 };
 
 /// Answers every request with `answer` (None: fails like a 400).
@@ -56,6 +57,7 @@ impl FixedClient {
                 cached_tokens: None,
                 reasoning_tokens: None,
             },
+            usage_reported: true,
             content_items: 1,
             text_parts: 1,
             ..ChatResponse::default()
@@ -90,39 +92,32 @@ impl AgentChatClient for FixedClient {
     }
 }
 
-/// The local model for default agents, "fable" as a named provider.
-struct Provider {
-    local: Arc<FixedClient>,
-    fable: Arc<FixedClient>,
-}
-
-#[async_trait::async_trait]
-impl AgentClientProvider for Provider {
-    fn default_client(&self) -> Arc<dyn AgentChatClient> {
-        self.local.clone()
-    }
-
-    fn provider_route(&self, name: &str) -> Option<ProviderRoute> {
-        (name == "fable").then(|| ProviderRoute {
-            name: "fable".into(),
-            model: "claude-fable-5-2".into(),
-            client: self.fable.clone(),
-            context_window: None,
-            max_tokens: None,
-        })
-    }
-}
-
 struct Fixture {
     phase: PlannerPhase,
     fable: Arc<FixedClient>,
     local: Arc<FixedClient>,
+    ledger: Arc<ProviderUsageLedger>,
     _dir: tempfile::TempDir,
 }
 
 fn create(plan_answer: Option<&str>, enabled: bool, effort: &str) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let mut config = OrcaConfig::default();
+    config.providers.insert(
+        "fable".into(),
+        ProviderConfig {
+            kind: "anthropic".into(),
+            model: Some("claude-fable-5-2".into()),
+            pricing: Some(ProviderPricing {
+                input_per_m_tok: 8.0,
+                output_per_m_tok: 40.0,
+                cache_read_per_m_tok: 0.2,
+                cache_write_per_m_tok: 10.0,
+                ..Default::default()
+            }),
+            ..ProviderConfig::default()
+        },
+    );
     if enabled {
         config.agent.planner = Some(PlannerConfig {
             provider: Some("fable".into()),
@@ -134,11 +129,18 @@ fn create(plan_answer: Option<&str>, enabled: bool, effort: &str) -> Fixture {
     }
     let fable = FixedClient::new(plan_answer);
     let local = FixedClient::new(Some("local"));
+    let ledger = Arc::new(ProviderUsageLedger::new());
+    let f: Arc<dyn AgentChatClient> = fable.clone();
+    // C#: ProviderClientFactory = name => name == "fable" ? fable : null, UsageLedger = ledger.
+    let provider = ProviderRoutes::new(
+        Arc::new(DefaultClientProvider::new(local.clone())),
+        config.clone(),
+        ledger.clone(),
+        None,
+    )
+    .with_factory(Arc::new(move |name| (name == "fable").then(|| f.clone())));
     let orchestrator = AgentOrchestrator::new(
-        Arc::new(Provider {
-            local: local.clone(),
-            fable: fable.clone(),
-        }),
+        Arc::new(provider),
         config.clone(),
         AgentTypeRegistry::new(),
         dir.path(),
@@ -147,6 +149,7 @@ fn create(plan_answer: Option<&str>, enabled: bool, effort: &str) -> Fixture {
         phase: PlannerPhase::new(config, orchestrator, dir.path().to_path_buf()),
         fable,
         local,
+        ledger,
         _dir: dir,
     }
 }
@@ -180,8 +183,11 @@ async fn plan_is_saved_and_handed_to_the_lead_once_only() {
     assert!(brief.contains("real data formats to sample from this machine"));
     assert!(brief.contains("verification checklist"));
     assert!(f.local.requests.lock().unwrap().is_empty());
-    // (The C# test also checks the cost booked in the provider usage ledger; the ledger is not
-    // ported yet.)
+    // Usage and cost are booked under the planner's provider.
+    let rows = f.ledger.snapshot();
+    let usage = rows.iter().find(|u| u.provider == "fable").unwrap();
+    let expected = 10_000.0 * 8.0 / 1e6 + 2_000.0 * 40.0 / 1e6;
+    assert!((usage.cost_usd.unwrap() - expected).abs() < 1e-6);
 
     assert_eq!(f.phase.prepare_first_message("next", &ct).await, "next");
     assert_eq!(f.fable.requests.lock().unwrap().len(), 1);

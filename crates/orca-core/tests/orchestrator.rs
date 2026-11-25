@@ -1379,6 +1379,13 @@ fn swarm_config(max_agents: i32, max_tokens: Option<i32>, window: Option<i32>) -
             model: Some("claude-haiku-5-5".into()),
             context_window: window,
             max_tokens,
+            pricing: Some(orca_core::config::ProviderPricing {
+                input_per_m_tok: 0.10,
+                output_per_m_tok: 0.50,
+                cache_read_per_m_tok: 0.01,
+                cache_write_per_m_tok: 0.125,
+                ..Default::default()
+            }),
             ..ProviderConfig::default()
         },
     );
@@ -1419,6 +1426,7 @@ impl SwarmClient {
                 completion_tokens: Some(100),
                 reasoning_tokens: None,
             },
+            usage_reported: true,
             ..text(&format!("Done on {}.", self.name))
         }
     }
@@ -1898,9 +1906,104 @@ async fn provider_limits_max_tokens_per_provider_and_no_local_sampler_fields() {
     }
 }
 
-// ProviderUsage_IsAddedUpPerProvider_AndCosted, Ledger_LongContextRate_AndLocalRowFirst and
-// UsageLog_NamesProviderAndModel: not ported. ProviderUsageLedger and RequestStats (per-provider
-// usage and cost) have no Rust port yet.
+#[tokio::test]
+async fn provider_usage_is_added_up_per_provider_and_costed() {
+    // C#: ProviderClientFactory + UsageLedger; here ProviderRoutes over the local client.
+    let config = swarm_config(10, None, None);
+    let local = SwarmClient::new("local", 1000);
+    let haiku = SwarmClient::new("haiku", 4000);
+    let ledger = Arc::new(orca_core::client::usage::ProviderUsageLedger::new());
+    let h: Arc<dyn AgentChatClient> = haiku.clone();
+    let provider = ProviderRoutes::new(
+        Arc::new(DefaultClientProvider::new(local.clone())),
+        config.clone(),
+        ledger.clone(),
+        None,
+    )
+    .with_factory(Arc::new(move |name| (name == "haiku").then(|| h.clone())));
+    let o = AgentOrchestrator::new(
+        Arc::new(provider),
+        config,
+        AgentTypeRegistry::new(),
+        std::env::temp_dir(),
+    );
+    for i in 1..=3 {
+        o.spawn_agent(&format!("task {i}"), "general").await;
+    }
+
+    // Only the haiku route is wrapped here (the local client is the test's own), so one row.
+    let rows = ledger.snapshot();
+    assert_eq!(rows.len(), 1);
+    let row = &rows[0];
+    assert_eq!(row.provider, "haiku");
+    assert_eq!(row.model.as_deref(), Some("claude-haiku-5-5"));
+    assert_eq!(row.requests, 1);
+    assert_eq!(row.prompt, 4000);
+    assert_eq!(row.cached, 2000);
+    // 2000 uncached * 0.10 + 2000 cached * 0.01 + 100 out * 0.50 per MTok
+    let expected = (2000.0 * 0.10 + 2000.0 * 0.01 + 100.0 * 0.50) / 1e6;
+    assert!((row.cost_usd.unwrap() - expected).abs() < 1e-9);
+    assert!(Arc::ptr_eq(&o.usage_ledger(), &ledger));
+    // Haiku's agent (the third) asked for haiku's model.
+    assert_eq!(
+        haiku.options.lock().unwrap()[0].model.as_deref(),
+        Some("claude-haiku-5-5")
+    );
+}
+
+#[tokio::test]
+async fn an_unbuildable_provider_runs_its_agent_on_the_local_model() {
+    // haiku is "anthropic", which has no Rust client: the agent falls back to local.
+    let config = swarm_config(10, None, None);
+    let local = SwarmClient::new("local", 1000);
+    let provider = ProviderRoutes::new(
+        Arc::new(DefaultClientProvider::new(local.clone())),
+        config.clone(),
+        Arc::new(orca_core::client::usage::ProviderUsageLedger::new()),
+        None,
+    );
+    assert!(provider.provider_route("haiku").is_none());
+    assert!(provider.provider_route("nope").is_none());
+    let o = AgentOrchestrator::new(
+        Arc::new(provider),
+        config,
+        AgentTypeRegistry::new(),
+        std::env::temp_dir(),
+    );
+    for i in 1..=3 {
+        o.spawn_agent(&format!("task {i}"), "general").await;
+    }
+    assert_eq!(local.tasks.lock().unwrap().len(), 3);
+}
+
+#[test]
+fn an_openai_compatible_provider_gets_a_logged_route_with_its_limits() {
+    let mut config = OrcaConfig::default();
+    config.providers.insert(
+        "cloud".into(),
+        ProviderConfig {
+            base_url: "http://127.0.0.1:9/v1".into(),
+            models: vec!["big-model".into()],
+            context_window: Some(64000),
+            max_tokens: Some(4000),
+            ..ProviderConfig::default()
+        },
+    );
+    let local = SwarmClient::new("local", 1000);
+    let provider = ProviderRoutes::new(
+        Arc::new(DefaultClientProvider::new(local)),
+        config,
+        Arc::new(orca_core::client::usage::ProviderUsageLedger::new()),
+        None,
+    );
+    let route = provider.provider_route("Cloud").unwrap();
+    assert_eq!(route.model, "big-model");
+    assert_eq!(route.context_window, Some(64000));
+    assert_eq!(route.max_tokens, Some(4000));
+    // Cached: the same client again.
+    let again = provider.provider_route("cloud").unwrap();
+    assert!(Arc::ptr_eq(&route.client, &again.client));
+}
 
 /// A slot copy's backend: records each request's task.
 struct RecordingBackend {
