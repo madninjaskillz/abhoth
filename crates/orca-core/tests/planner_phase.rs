@@ -54,6 +54,7 @@ impl FixedClient {
                 prompt_tokens: Some(10_000),
                 completion_tokens: Some(2_000),
                 cached_tokens: None,
+                reasoning_tokens: None,
             },
             content_items: 1,
             text_parts: 1,

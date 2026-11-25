@@ -3,7 +3,12 @@
 pub mod git;
 pub mod html;
 pub mod http;
+pub mod path_safety;
 pub mod process;
+pub mod task_store;
+
+pub use path_safety::is_dangerous_path;
+pub use task_store::TaskStore;
 
 use std::future::Future;
 use std::time::Duration;
@@ -202,6 +207,16 @@ pub fn required_str<'a>(args: &'a Value, name: &str) -> Result<&'a str, String> 
     args.get(name)
         .and_then(Value::as_str)
         .ok_or_else(|| format!("Missing required argument: {name}"))
+}
+
+/// An I/O error as .NET's exception message shows it: the OS text without Rust's
+/// ` (os error N)` suffix (on Windows both come from `FormatMessage`).
+pub fn io_message(e: &std::io::Error) -> String {
+    let s = e.to_string();
+    match s.rfind(" (os error ") {
+        Some(i) if s.ends_with(')') => s[..i].to_string(),
+        _ => s,
+    }
 }
 
 /// Appends `line` and a [`NEWLINE`] (`StringBuilder.AppendLine`).

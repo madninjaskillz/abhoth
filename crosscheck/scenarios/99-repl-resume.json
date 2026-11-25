@@ -1,0 +1,71 @@
+{
+  "_comment": "Interactive: -r <id> resumes a saved session in the REPL: the first request carries its messages; with autoSave on the same session file is updated.",
+  "args": [
+    "-r",
+    "resume01"
+  ],
+  "config": {
+    "session": {
+      "autoSave": true
+    }
+  },
+  "home_files": {
+    "sessions/resume01.json": "{\n  \"id\": \"resume01\",\n  \"title\": \"Earlier work\",\n  \"createdAt\": \"2026-11-20T10:00:00Z\",\n  \"updatedAt\": \"2026-11-20T10:05:00Z\",\n  \"workingDirectory\": \"<WORK_JSON>\",\n  \"model\": \"fake-model\",\n  \"systemPrompt\": \"You are Orca.\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"What is in notes.txt?\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"text\": \"It holds a shopping list.\"\n    }\n  ]\n}"
+  },
+  "replies": [
+    {
+      "text": "Continuing the earlier work. RESUME-DONE"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "and what else?"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "RESUME-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!"
+    ]
+  }
+}

@@ -136,7 +136,29 @@ impl ToolResult {
     pub fn blocked(reason: impl Into<String>) -> Self {
         Self::error_with(reason, ToolErrorCode::Blocked)
     }
+
+    /// Asks the host to change the working directory for later tool calls (the `cd` tool; C#
+    /// changes the process-wide current directory instead).
+    pub fn with_cwd_change(mut self, new_cwd: &Path) -> Self {
+        self.metadata.get_or_insert_with(Default::default).insert(
+            META_SET_CWD.into(),
+            Value::String(new_cwd.to_string_lossy().into_owned()),
+        );
+        self
+    }
+
+    /// The working directory this result asks the host to switch to, if any.
+    pub fn cwd_change(&self) -> Option<PathBuf> {
+        self.metadata
+            .as_ref()?
+            .get(META_SET_CWD)?
+            .as_str()
+            .map(PathBuf::from)
+    }
 }
+
+/// [`ToolResult::metadata`] key: the new working directory after a `cd`.
+pub const META_SET_CWD: &str = "set_cwd";
 
 /// Display hints for the terminal UI (`IToolRenderHints`).
 #[derive(Debug, Clone, PartialEq)]
@@ -221,7 +243,10 @@ pub trait Tool: Send + Sync {
     }
 
     /// File paths this call changes (checkpoints, files_modified). Default: `args.path`.
-    fn affected_file_paths(&self, args: &Value) -> Vec<String> {
+    /// `ctx` lets a tool resolve them the way it resolves them itself (the Pi tools return
+    /// absolute paths, as C# `PiToolBase.GetAffectedFilePaths` does).
+    fn affected_file_paths(&self, args: &Value, ctx: &ToolContext) -> Vec<String> {
+        let _ = ctx;
         args.get("path")
             .and_then(Value::as_str)
             .map(|s| vec![s.to_string()])
@@ -229,6 +254,15 @@ pub trait Tool: Send + Sync {
     }
 
     fn render_hints(&self) -> Option<ToolRenderHints> {
+        None
+    }
+
+    /// `IArgumentPreparingTool.PrepareArguments`: a tool that owns argument repair, coercion
+    /// and validation (and its error text) returns `Some(Ok(arguments_json))` with the prepared
+    /// arguments or `Some(Err(message))`. `None` (the default): the host parses, alias-resolves
+    /// and checks required arguments itself.
+    fn prepare_arguments(&self, arguments_json: &str) -> Option<Result<String, String>> {
+        let _ = arguments_json;
         None
     }
 

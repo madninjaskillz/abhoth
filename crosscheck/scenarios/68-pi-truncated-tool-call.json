@@ -1,0 +1,11 @@
+{
+  "prompt": "Create a.txt with abc",
+  "strict": true,
+  "config": {"toolProfile": "pi", "lmStudio": {"nativeToolCalling": false}},
+  "replies": [
+    {"text": "<tool_call>\n{\"name\": \"write\", \"arguments\": {\"path\": \"a.txt\", \"content\": \"ab"},
+    {"text": "<tool_call>\n{\"name\": \"write\", \"arguments\": {\"path\": \"a.txt\", \"content\": \"abc\"}}\n</tool_call>"},
+    {"text": "I created a.txt containing the text abc as you asked, in the working folder."},
+    {"text": "Verified."}
+  ]
+}

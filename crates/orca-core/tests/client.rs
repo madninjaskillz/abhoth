@@ -583,3 +583,23 @@ fn complete_header_beats_body_and_is_used_once() {
         Some("qwen3.8-27b")
     );
 }
+
+/// Tool schemas reach the wire in the M.E.AI `ToolJson` shape (seen in the C# requests).
+#[test]
+fn tool_parameters_use_the_meai_wire_shape() {
+    let def = orca_core::client::ToolDefinition {
+        name: "t".into(),
+        description: "d".into(),
+        parameters: json!({"type": "object", "properties": {"a": {"type": "object", "properties": {}, "required": ["x"]}}, "required": ["a"], "$schema": "x"}),
+    };
+    let wire = def.to_wire();
+    assert_eq!(
+        serde_json::to_string(&wire["function"]["parameters"]).unwrap(),
+        r#"{"type":"object","required":["a"],"properties":{"a":{"type":"object","properties":{},"required":["x"]}},"additionalProperties":false}"#
+    );
+    let empty = orca_core::client::wire_parameters(&json!({"type": "object", "properties": {}}));
+    assert_eq!(
+        empty,
+        json!({"type": "object", "required": [], "properties": {}, "additionalProperties": false})
+    );
+}

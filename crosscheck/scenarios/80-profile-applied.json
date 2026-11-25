@@ -1,0 +1,17 @@
+{
+  "prompt": "Say hello",
+  "args": ["--profile", "fast"],
+  "config": {
+    "profiles": {
+      "serverUrl": "<SERVER_ROOT>"
+    }
+  },
+  "server_routes": {
+    "GET /profiles": [200, "{\"profiles\":{\"fast\":{\"client\":{\"lmStudio.temperature\":0.2,\"thinking.reasoningEffort\":\"low\"}},\"slow\":{\"client\":{\"lmStudio.temperature\":0.9}}}}"]
+  },
+  "replies": [
+    {
+      "text": "Hello from the fast profile."
+    }
+  ]
+}

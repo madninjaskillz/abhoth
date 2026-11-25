@@ -1,0 +1,12 @@
+{
+  "prompt": "Rename the variable",
+  "strict": true,
+  "config": {"toolProfile": "pi"},
+  "files": {"main.js": "let count = 1;\r\nconsole.log(count);\r\n"},
+  "replies": [
+    {"tools": [{"name": "read", "args": {"path": "main.js"}}]},
+    {"tools": [{"name": "edit", "args": {"path": "main.js", "oldText": "let count = 1;", "newText": "let total = 1;"}}]},
+    {"tools": [{"name": "edit", "args": {"path": "main.js", "edits": "[{\"oldText\": \"console.log(count);\", \"newText\": \"console.log(total);\"}]"}}]},
+    {"text": "I renamed count to total in main.js, keeping its CRLF line endings intact for you."}
+  ]
+}

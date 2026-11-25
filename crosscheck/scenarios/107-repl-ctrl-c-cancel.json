@@ -1,0 +1,93 @@
+{
+  "usage_log": false,
+  "_comment": "Interactive: Ctrl+C during a slowly streamed reply cancels the turn (Generation cancelled.); the partial reply is dropped but the prompt stays, so the next request has both user messages.",
+  "replies": [
+    {
+      "text": "This reply streams slowly so there is time to cancel it in the middle. This reply streams slowly so there is time to cancel it in the middle. This reply streams slowly so there is time to cancel it in the middle. This reply streams slowly so there is time to cancel it in the middle. This reply streams slowly so there is time to cancel it in the middle. This reply streams slowly so there is time to cancel it in the middle. NEVER-REACHED",
+      "chunk_delay_ms": 60
+    },
+    {
+      "text": "After the cancel. AFTER-DONE"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "tell me a long story"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "streams slowly"
+      },
+      {
+        "action": "key",
+        "name": "ctrl-c"
+      },
+      {
+        "action": "waitFor",
+        "text": "Generation cancelled."
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 800
+      },
+      {
+        "action": "expectNot",
+        "text": "NEVER-REACHED"
+      },
+      {
+        "action": "type",
+        "text": "again"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "AFTER-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!",
+      "Generation cancelled."
+    ]
+  }
+}

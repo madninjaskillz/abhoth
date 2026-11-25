@@ -1,5 +1,5 @@
 //! Shell tools (port of `OpenOrca.Tools.Shell`): `bash`, `get_process_output`,
-//! `stop_process`. `start_background_process` and `list_processes` are phase 2.
+//! `list_processes`, `start_background_process`, `stop_process`.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,15 +12,28 @@ use serde_json::Value;
 
 pub mod process;
 
-/// Every tool in this crate.
+/// Every tool in this crate, in the C# registration order (class names sorted).
 pub fn all_tools(idle_timeout_seconds: i32) -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(BashTool {
             idle_timeout_seconds,
         }),
         Arc::new(GetProcessOutputTool),
+        Arc::new(ListProcessesTool),
+        Arc::new(StartBackgroundProcessTool),
         Arc::new(StopProcessTool),
     ]
+}
+
+/// `TimeSpan` formatted `hh\:mm\:ss` (the hours component wraps at a day, as in .NET).
+fn uptime(started: std::time::Instant) -> String {
+    let secs = started.elapsed().as_secs();
+    format!(
+        "{:02}:{:02}:{:02}",
+        (secs / 3600) % 24,
+        (secs / 60) % 60,
+        secs % 60
+    )
 }
 
 fn schema(text: &str) -> Value {
@@ -67,7 +80,7 @@ impl Tool for BashTool {
         "command"
     }
 
-    fn affected_file_paths(&self, _args: &Value) -> Vec<String> {
+    fn affected_file_paths(&self, _args: &Value, _ctx: &ToolContext) -> Vec<String> {
         Vec::new()
     }
 
@@ -291,19 +304,10 @@ impl Tool for GetProcessOutputTool {
             Some(code) => format!("Exited with code {code}"),
             None => "Running".into(),
         };
-        let secs = p.started.elapsed().as_secs();
         let mut sb = String::new();
         append_line(&mut sb, &format!("Process {}: {}", p.id, p.command));
         append_line(&mut sb, &format!("Status: {status}"));
-        append_line(
-            &mut sb,
-            &format!(
-                "Uptime: {:02}:{:02}:{:02}",
-                (secs / 3600) % 24,
-                (secs / 60) % 60,
-                secs % 60
-            ),
-        );
+        append_line(&mut sb, &format!("Uptime: {}", uptime(p.started)));
         append_line(
             &mut sb,
             &format!("Total lines captured: {}", p.total_lines_captured()),
@@ -387,5 +391,165 @@ impl Tool for StopProcessTool {
             append_line(&mut sb, l);
         }
         ToolResult::success(sb)
+    }
+}
+
+pub struct ListProcessesTool;
+
+#[async_trait::async_trait]
+impl Tool for ListProcessesTool {
+    fn name(&self) -> &str {
+        "list_processes"
+    }
+
+    fn description(&self) -> &str {
+        "List all background processes and their status (running/exited), command, uptime, and process ID."
+    }
+
+    fn risk_level(&self) -> ToolRiskLevel {
+        ToolRiskLevel::ReadOnly
+    }
+
+    fn render_hints(&self) -> Option<ToolRenderHints> {
+        Some(ToolRenderHints {
+            emoji: "\u{1f4bb}",
+            short_description: "List background processes",
+            summary_arg_keys: &[],
+            aliases: &[],
+        })
+    }
+
+    fn parameter_schema(&self) -> Value {
+        schema(
+            r#"{
+        "type": "object",
+        "properties": {}
+    }"#,
+        )
+    }
+
+    async fn execute(&self, _args: &Value, _ctx: &ToolContext) -> ToolResult {
+        let mut processes = process::list_all();
+        if processes.is_empty() {
+            return ToolResult::success("No background processes.");
+        }
+        // C# enumerates a ConcurrentDictionary (no defined order); oldest first reads best.
+        processes.sort_by_key(|p| p.started);
+        let mut sb = String::new();
+        append_line(
+            &mut sb,
+            &format!("{} background process(es):", processes.len()),
+        );
+        append_line(&mut sb, "");
+        for p in &processes {
+            let status = match p.exit_code() {
+                Some(code) => format!("Exited (code {code})"),
+                None => "Running".into(),
+            };
+            append_line(&mut sb, &format!("  ID: {}", p.id));
+            append_line(&mut sb, &format!("  Command: {}", p.command));
+            append_line(&mut sb, &format!("  Status: {status}"));
+            append_line(&mut sb, &format!("  Uptime: {}", uptime(p.started)));
+            append_line(
+                &mut sb,
+                &format!("  Lines captured: {}", p.total_lines_captured()),
+            );
+            append_line(&mut sb, "");
+        }
+        ToolResult::success(sb)
+    }
+}
+
+pub struct StartBackgroundProcessTool;
+
+#[async_trait::async_trait]
+impl Tool for StartBackgroundProcessTool {
+    fn name(&self) -> &str {
+        "start_background_process"
+    }
+
+    fn description(&self) -> &str {
+        "Start a long-running command in the background (servers, watchers, build --watch). Returns a process ID. Use get_process_output to check output and stop_process to terminate. For short commands, prefer bash instead."
+    }
+
+    fn risk_level(&self) -> ToolRiskLevel {
+        ToolRiskLevel::Dangerous
+    }
+
+    fn permission_arg_name(&self) -> &str {
+        "command"
+    }
+
+    fn render_hints(&self) -> Option<ToolRenderHints> {
+        Some(ToolRenderHints {
+            emoji: "\u{2699}\u{fe0f}",
+            short_description: "Start background process",
+            summary_arg_keys: &["command"],
+            aliases: &[],
+        })
+    }
+
+    fn parameter_schema(&self) -> Value {
+        schema(
+            r#"{
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "description": "The shell command to execute in the background"
+            },
+            "working_directory": {
+                "type": "string",
+                "description": "Working directory for the command. Defaults to current directory."
+            }
+        },
+        "required": ["command"]
+    }"#,
+        )
+    }
+
+    async fn execute(&self, args: &Value, ctx: &ToolContext) -> ToolResult {
+        let command = match required_str(args, "command") {
+            Ok(c) => c,
+            Err(e) => return ToolResult::error(e),
+        };
+        let work_dir = args
+            .get("working_directory")
+            .and_then(Value::as_str)
+            .unwrap_or(".");
+        let work_dir = ctx.full_path(work_dir);
+        if !work_dir.is_dir() {
+            return ToolResult::error(format!(
+                "Working directory not found: {}",
+                work_dir.display()
+            ));
+        }
+
+        // Relaunch guard: a model that cannot observe a GUI app will happily start the same
+        // command forever, leaking a process (and window) each time.
+        if let Some(existing) = process::list_all()
+            .into_iter()
+            .find(|p| !p.has_exited() && p.command == command)
+        {
+            let id = &existing.id;
+            return ToolResult::error_with(
+                format!(
+                    "This exact command is ALREADY RUNNING as process \"{id}\". Do not start it again. Use get_process_output with process_id \"{id}\" to check it, or stop_process first if you changed the code and need a restart. Note: GUI apps (games, windows) produce no output to read \u{2014} verify code changes by compiling/analyzing instead, and ask the user to test the running app."
+                ),
+                orca_abstractions::ToolErrorCode::Blocked,
+            );
+        }
+
+        match process::start(command, &work_dir) {
+            Ok(m) => ToolResult::success(format!(
+                "Started background process {id}: {command}\nWorking directory: {}\nUse get_process_output with process_id \"{id}\" to check output.",
+                work_dir.display(),
+                id = m.id
+            )),
+            Err(e) => ToolResult::error(format!(
+                "Failed to start background process: {}",
+                orca_tools_common::io_message(&e)
+            )),
+        }
     }
 }

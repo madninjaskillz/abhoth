@@ -1,0 +1,79 @@
+{
+  "_comment": "Interactive: two turns in one session: the second request carries the first turn's prompt and reply.",
+  "replies": [
+    {
+      "text": "First answer. ONE-DONE"
+    },
+    {
+      "text": "Second answer. TWO-DONE"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "first question"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "ONE-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "second question"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "TWO-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!"
+    ]
+  }
+}

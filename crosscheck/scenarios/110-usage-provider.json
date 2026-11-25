@@ -1,0 +1,34 @@
+{
+  "prompt": "What does hello.txt say?",
+  "usage_log": true,
+  "files": {
+    "hello.txt": "hi there\n"
+  },
+  "replies": [
+    {
+      "reasoning": "I should read it.",
+      "reasoning_chunk_chars": 4,
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "hello.txt"
+          }
+        }
+      ],
+      "prompt_tokens": 1000,
+      "cached_tokens": 900,
+      "timings": { "cache_n": 900, "prompt_n": 100, "prompt_ms": 85.5, "predicted_n": 20, "predicted_ms": 140.2 }
+    },
+    {
+      "text": "The file says hi there, nothing else.",
+      "prompt_tokens": 1100,
+      "cached_tokens": 1000,
+      "reasoning_tokens": 3,
+      "timings": { "cache_n": 1000, "prompt_n": 100, "prompt_ms": 90.49, "predicted_n": 10, "predicted_ms": 60.5 }
+    },
+    {
+      "text": "The file says hi there, nothing else."
+    }
+  ]
+}

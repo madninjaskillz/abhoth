@@ -197,3 +197,130 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   nothing. Usage reported for a history changed in place since the request is discarded.
 - **D19** Session files keep the C# JSON shape (read and written both ways); `--print` does not
   auto-save, as in C#.
+- **D20** The client's stop hook is a per-chunk `UpdateEnd` event with a Stop return
+  (`stream_with_control`); `agent::streaming` ports `StreamingResponseProcessor` (runaway cancel,
+  per-step reasoning cap, `ThinkTagFilter`, tool-less retry of a content-free stream).
+- **D21** A stream that dies mid-response returns `ChatError::Interrupted` carrying the partial
+  reply; tool calls from an unfinished stream are dropped, as in C#.
+- **D22** "Empty reply" means no content items at all (usage included), matching C#; the
+  tool-less retry ignores the retry's usage, as C# does.
+- **D23** The fake server records non-chat requests (compared by the cross-check) and can stream
+  reasoning in chunks, open with a null-content role chunk, and die mid-stream. Runaway scenarios
+  use the null role chunk (C# counts the usual empty first chunk as text).
+- **D24** `ServerIdentity` keeps one cache entry per server with a single in-flight probe; the
+  startup probes (`AgentSession.startup_probes`) are off for library use and on in the CLI.
+- **D30** Git and GitHub tools share `orca-tools-git`; `github` has a `program` field (default
+  `gh`) so tests can point it at a missing program.
+- **D31** Child command lines are built as C# builds them: on Windows the argument string is
+  passed through unchanged, elsewhere it is split with .NET's rules
+  (`orca_tools_common::process`).
+- **D32** HTML-to-text is a direct port of the C# regex code; the script/style stripper (a
+  backreference in C#) is hand-written; `HtmlDecode` uses the 253-entity table.
+- **D33** New pinned deps: `hyper =1.13.0` (already in the tree; reason phrases in HTTP
+  errors) and reqwest's `charset` feature (`encoding_rs` pinned at 0.8.34).
+- **D34** Connection errors are worded like .NET (OS message plus `(host:port)`).
+- **D25** Utility and Interactive tools share `orca-tools-utility`; Archive and Network are
+  separate crates. Optional tool groups are CLI Cargo features, all on by default (`archive`,
+  `network`, `mcp`, `lsp`, `image`). The registry keeps the C# order: plugin assemblies by file
+  name, tool classes by name within each.
+- **D26** `cd` changes the session's working directory (not the process's): its result carries
+  the new directory (`ToolResult::with_cwd_change`) and the session applies it. Tools that wait
+  on the user (ask_user) get no timeout. ask_user goes through a `UserPrompter` trait; without a
+  terminal it fails with the C# `--print` message.
+- **D27** `TaskStore` is one shared store per process (like the C# static class); the tool holds
+  an `Arc` so tests can use their own.
+- **D28** Archive uses `zip =9.8.2` (deflate only). Network runs the system `ping` and the OS
+  resolver (raw ICMP needs `unsafe`, which the workspace forbids).
+- **D29** `agent::tool_exposure` ports `ToolExposure.FilterAdvertised` (core list, extraTools,
+  extendedTools, mcp_* always, lsp_* with `lsp.enabled`, image tools with `imageGen.enabled`);
+  every tool stays executable. Tool schemas are rewritten on the wire as the C# OpenAI adapter
+  does (fixed key order, `additionalProperties: false`).
+- **D40** MCP uses the official SDK `rmcp =3.11.0` (protocol 2025-11-25); on Windows server
+  commands are wrapped in `cmd.exe /c` as in C#.
+- **D41** Image tools use `image =0.25.10` (PNG, JPEG, WebP, GIF, BMP only); format detected
+  from content; resize uses Catmull-Rom.
+- **D42** The C# LSP client sends PascalCase field names (`TextDocument`), so against a real
+  server hover/definition/diagnostics never work (a C# bug, left unchanged). Rust speaks
+  correct LSP; the cross-check compares only the LSP error paths.
+- **D43** MCP image content is base64-decoded in Rust (C# keeps the base64 text as bytes, a C#
+  bug).
+- **D44** Cross-check extensions: fake MCP/LSP server placeholders, binary input files,
+  pixel-hash image comparison, recorded images-API requests. The recorded-arguments rule for
+  the first of several calls applies only to calls C# starts early (read-only tools).
+- **D35** `Tool::prepare_arguments` lets a tool validate its own arguments (Pi's validation
+  texts); `affected_file_paths` takes the `ToolContext`, so tools can return absolute paths.
+- **D36** Pi's subagent, progress and lead_mode tools take their host behaviour from optional
+  hooks; without a host they answer C#'s "not available in this session" errors. The CLI wires
+  progress to the Lead's "Progress recorded: N%." text.
+- **D37** `job screenshot` is not ported (Win32 window capture needs `unsafe`); it validates its
+  arguments and returns an error. The pure helpers are ported.
+- **D38** `orca-tools-pi` depends only on `orca-abstractions`; the Pi profile registers its
+  tools over same-named ones and `tool_exposure` uses `FilterPiProfile` for the advertised set
+  (Pi tools, agent tools with `pi.agentTools`, mcp_*, extraTools). Cross-check scenarios can set
+  `"strict": true` to compare tools and the whole system prompt (all Pi scenarios do).
+- **D39** New pinned dep: `unicode-normalization =0.1.23` (Pi edit fuzzy matching).
+- **D45** A `ChatBackend` trait plus an optional router on `OpenAiClient`: the slot runtime
+  (`slots::SlotRuntime`, lazy Lead lease, Strata prefix pin, idle release) sits behind the
+  existing client, so `AgentSession` is unchanged.
+- **D46** A tokio task-local replaces C#'s AsyncLocal ambient client
+  (`SlotRuntime::with_ambient`), so an agent's compaction call stays on its own copy.
+- **D47** A monotonic clock replaces `DateTimeOffset` in the allocator and idle release; tests
+  inject a clock.
+- **D48** Engines (Claude Code / Codex bridges) use a small `CancelToken` and `EngineError`
+  (Unavailable, Failed, Cancelled) instead of adding `tokio-util`.
+- **D49** Cross-check config placeholders `<SERVER>`, `<SERVER_ROOT>`, `<HOME_JSON>`,
+  `<WORK_JSON>` (no fixed ports or paths); profile/mode/engine errors on stderr are compared.
+- **D65** `orca-webui` (axum) hosts `--hostui`; chat sessions sit behind a `LiveSession` trait
+  and sub-agent features behind an `AgentHost` trait (wired after the orchestration merge).
+- **D66** Hub protocol: JSON over one websocket (`/hub/ws`) with the C# method names, numbered
+  messages, acks and pings; reconnect resumes (`?resume=&last=`) and replays missed events
+  within a 30 s grace period.
+- **D67** The React client picks its transport from `/api/info` (`"hub":"ws"` selects the
+  websocket adapter `hubConnection.ts`), so one client build works with both hosts.
+- **D68** The built client is embedded with rust-embed (an optional folder can be served
+  instead); SPA fallback and token auth (header, cookie, query token redirect) as in C#.
+- **D69** The file-change watcher polls.
+- **D70** The settings page takes its schema from the caller (the config schema comes with the
+  REPL port).
+- **D71** Extra projects run as in-process sessions (C# uses worker processes).
+- **D72** The native session runs on its own thread and sends approvals to the browser; only
+  headless mode is supported (`--tui`, `--hostui-login` are refused).
+- **D57** The REPL uses crossterm only (no ratatui): the C# UI is a scrolling transcript with a
+  bottom status panel, not a full-screen app.
+- **D58** Slash commands are compiled in behind an async `Command` trait with a
+  `CommandContext` and C#'s sentinels (`__clear__`, `__ask_toggle__`, `__plan_toggle__`).
+- **D59** `/review` and `/workflow` go through an `AgentHost` trait (wired with
+  orchestration); `/engine` switches only to native in interactive mode.
+- **D60** Custom markdown commands send the rendered template and run a turn for both `/name`
+  and `/customcommand name` (C# drops the template for `/name` and never runs a turn for
+  `/customcommand`): a deliberate fix of a C# bug, so no cross-check scenario.
+- **D61** Cancel drops the turn future when the console Ctrl+C signal or the raw-mode key
+  watcher fires; open tool calls are closed afterwards. The unfinished markdown block streams
+  as plain text and is replaced by the rendered block when complete.
+- **D62** Images live in `ChatMessage.parts`; the image rewrite is in `OpenAiClient`, keyed on
+  `lmStudio.vision`, with a vision probe and a resend without images. The Windows clipboard is
+  read through PowerShell (no `unsafe`).
+- **D63** `orca-crosscheck` (test tooling only) uses `unsafe_code = "deny"` with one audited
+  `SetConsoleCtrlHandler(NULL, FALSE)` call so Ctrl+C reaches child processes in PTY
+  scenarios. Shipped crates keep `forbid`. Interactive scenarios (95-107) run in a PTY
+  (`portable-pty` + `vt100`) and compare screens, requests and session files.
+- **D64** `/config` saves from a fresh load plus the profile overlay (profile values are not
+  written into config.json); `/profile switch` saves `profiles.active` and restarts with
+  `--profile` and `--resume`.
+- **D73** Bench runs are kept by id in one state object; changes go out on the C#
+  `/api/bench/events` stream (the React client is unchanged); cancelling a run drops its task.
+- **D74** Bench times: UK summer time computed by hand, .NET timestamp text and rounding.
+- **D75** `results.jsonl` rows keep the C# keys and order; Rust writes `+`/non-ASCII unescaped
+  and whole floats as `200.0` (both builds read either form).
+- **D76** Each bench run is an in-process Rust session configured from its own `config.json`
+  (C# starts a worker process per run).
+- **D77** Usage lines (`Slot usage ...`, `Provider usage ...`) go to a log target passed in
+  explicitly, not through the global `tracing` subscriber, so each in-process bench run writes
+  its own run home's log (where the bench metrics parser reads them).
+- **D78** The file log copies the C# name, location and format
+  (`<config home>/logs/openorca-{date}.log`, `HH:mm:ss.fff [INF] Category: msg`, `.1`/`.2`
+  fallbacks), local time via `chrono`.
+- **D79** `Usage` has `reasoning_tokens`; `ChatResponse` has `usage_reported` and `timings`
+  (llama.cpp / Strata). Cache-write tokens are 0 (no Anthropic client).
+- **D80** The cross-check compares every scenario's usage log lines (times masked) unless the
+  scenario sets `usage_log: false`.

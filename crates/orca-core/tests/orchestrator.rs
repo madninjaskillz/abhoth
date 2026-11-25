@@ -1201,6 +1201,7 @@ async fn reported_prompt_size_run(input: i64, cached: i64) {
                     prompt_tokens: Some(input),
                     cached_tokens: Some(cached),
                     completion_tokens: Some(10),
+                    reasoning_tokens: None,
                 },
                 ..call_id(&format!("c{n}"), "read_file", json!({"path": "x"}), "")
             };
@@ -1416,6 +1417,7 @@ impl SwarmClient {
                 prompt_tokens: Some(self.prompt_tokens),
                 cached_tokens: Some(self.prompt_tokens / 2),
                 completion_tokens: Some(100),
+                reasoning_tokens: None,
             },
             ..text(&format!("Done on {}.", self.name))
         }
@@ -1692,6 +1694,7 @@ async fn pinned_provider_read_only_runs_off_the_schedule_and_refuses_writes() {
                 prompt_tokens: Some(2000),
                 completion_tokens: Some(300),
                 cached_tokens: None,
+                reasoning_tokens: None,
             },
             ..r
         }
@@ -1792,6 +1795,7 @@ async fn read_only_agent_has_a_hard_step_limit_and_is_asked_for_its_answer() {
                 prompt_tokens: Some(100),
                 completion_tokens: Some(10),
                 cached_tokens: None,
+                reasoning_tokens: None,
             },
             ..r
         }

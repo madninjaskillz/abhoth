@@ -1,0 +1,15 @@
+{
+  "prompt": "What is in notes.txt?",
+  "strict": true,
+  "config": {"toolProfile": "pi"},
+  "files": {"notes.txt": "alpha\nbeta\ngamma\ndelta\n", "AGENTS.md": "Always answer in English.\n"},
+  "replies": [
+    {"tools": [
+      {"name": "read", "args": {"path": "notes.txt"}},
+      {"name": "read", "args": {"path": "notes.txt", "offset": 2, "limit": 2}}
+    ]},
+    {"tools": [{"name": "read", "args": {"path": "missing.txt"}}]},
+    {"tools": [{"name": "read", "args": {"path": "notes.txt", "offset": 99}}]},
+    {"text": "notes.txt lists four Greek letters: alpha, beta, gamma and delta, one per line."}
+  ]
+}

@@ -1,5 +1,6 @@
 import * as signalR from "@microsoft/signalr";
 import { csrfHeaders } from "@/lib/auth";
+import { WsHubConnection, hubSocketUrl, transportOf, type HubLike, type HubState } from "@/lib/hubConnection";
 import type { QueryClient } from "@tanstack/react-query";
 import { existingSessionStore, sessionStore, useConnection, type EngineResult, type LiveEvent, type LiveSnapshot } from "@/store/session";
 import { normPath, useWorkspace } from "@/store/workspace";
@@ -7,15 +8,17 @@ import type { EditMarkers } from "@/lib/api";
 import { beginLoad, finishLoad, openedAgents, routeAgentEvents } from "@/features/agents/agentStore";
 import type { AgentTranscriptWire } from "@/features/agents/agentTabs";
 
-// One SignalR connection to /hub/session for every project. A project's events that arrive while
+// One hub connection for every project: SignalR at /hub/session (the C# host) or the plain
+// websocket at /hub/ws (the Rust host; see hubConnection.ts). A project's events that arrive while
 // its snapshot loads are held and applied after it (those already in the snapshot drop by Seq).
 
-let connection: signalR.HubConnection | null = null;
+let connection: HubLike | null = null;
+let starting = false;
 const loading = new Set<string>();
 const held = new Map<string, LiveEvent[]>();
 const watched = new Set<string>();
 
-async function loadSnapshot(conn: signalR.HubConnection, pid: string) {
+async function loadSnapshot(conn: HubLike, pid: string) {
   loading.add(pid);
   held.set(pid, []);
   try {
@@ -38,22 +41,70 @@ async function loadSnapshot(conn: signalR.HubConnection, pid: string) {
 export function watchProject(pid: string) {
   if (watched.has(pid)) return;
   watched.add(pid);
-  if (connection?.state === signalR.HubConnectionState.Connected) void loadSnapshot(connection, pid);
+  if (connection?.state === "Connected") void loadSnapshot(connection, pid);
 }
 
 export function unwatchProject(pid: string) {
   watched.delete(pid);
 }
 
-export function startHub(queryClient: QueryClient): signalR.HubConnection {
-  if (connection) return connection;
+/** SignalR's connection seen through the small interface the app uses. */
+function fromSignalR(c: signalR.HubConnection): HubLike {
+  return {
+    get state() {
+      return c.state as unknown as HubState;
+    },
+    invoke: (method, ...args) => c.invoke(method, ...args),
+    on: (method, handler) => c.on(method, handler),
+    off: (method) => c.off(method),
+    start: () => c.start(),
+    stop: () => c.stop(),
+    onreconnecting: (cb) => c.onreconnecting(cb),
+    onreconnected: (cb) => c.onreconnected(cb),
+    onclose: (cb) => c.onclose(cb),
+  };
+}
+
+/** The transport the server offers (/api/info says `hub: "ws"` on the Rust host). */
+async function detectTransport(): Promise<"ws" | "signalr" | "unauthorized"> {
+  try {
+    const res = await fetch("/api/info", { credentials: "same-origin", cache: "no-store" });
+    if (res.status === 401) return "unauthorized";
+    return res.ok ? transportOf(await res.json()) : "signalr";
+  } catch {
+    return "signalr";
+  }
+}
+
+export function startHub(queryClient: QueryClient): void {
+  if (connection || starting) return;
+  starting = true;
   const setConnection = useConnection.getState().setConnection;
-  const conn = new signalR.HubConnectionBuilder()
-    .withUrl("/hub/session", { withCredentials: true, headers: csrfHeaders() })
-    .withAutomaticReconnect({ nextRetryDelayInMilliseconds: (ctx) => Math.min(10000, 500 * 2 ** ctx.previousRetryCount) })
-    .configureLogging(signalR.LogLevel.Warning)
-    .build();
-  conn.serverTimeoutInMilliseconds = 60000;
+  setConnection("connecting");
+  void detectTransport().then((transport) => {
+    if (transport === "unauthorized") {
+      starting = false;
+      setConnection("unauthorized");
+      return;
+    }
+    connect(queryClient, transport);
+  });
+}
+
+function connect(queryClient: QueryClient, transport: "ws" | "signalr") {
+  const setConnection = useConnection.getState().setConnection;
+  let conn: HubLike;
+  if (transport === "ws") {
+    conn = new WsHubConnection({ url: hubSocketUrl(window.location) });
+  } else {
+    const sr = new signalR.HubConnectionBuilder()
+      .withUrl("/hub/session", { withCredentials: true, headers: csrfHeaders() })
+      .withAutomaticReconnect({ nextRetryDelayInMilliseconds: (ctx) => Math.min(10000, 500 * 2 ** ctx.previousRetryCount) })
+      .configureLogging(signalR.LogLevel.Warning)
+      .build();
+    sr.serverTimeoutInMilliseconds = 60000;
+    conn = fromSignalR(sr);
+  }
 
   conn.on("events", (pid: string, events: LiveEvent[]) => {
     if (loading.has(pid)) held.get(pid)?.push(...events);
@@ -87,6 +138,8 @@ export function startHub(queryClient: QueryClient): signalR.HubConnection {
     await Promise.all([...watched].flatMap((pid) => openedAgents(pid).map((a) => loadAgentTranscript(pid, a))));
     void queryClient.invalidateQueries();
   });
+  // Resumed within the server's grace period (websocket only): nothing was missed.
+  conn.onresumed?.(() => setConnection("connected"));
   conn.onclose(() => setConnection("disconnected"));
 
   const start = async () => {
@@ -101,9 +154,9 @@ export function startHub(queryClient: QueryClient): signalR.HubConnection {
       if (!msg.includes("401")) setTimeout(start, 3000);
     }
   };
-  void start();
   connection = conn;
-  return conn;
+  starting = false;
+  void start();
 }
 
 export async function sendPrompt(pid: string, text: string): Promise<string | null> {
@@ -154,7 +207,7 @@ export async function answerQuestion(pid: string, id: string, answer: string): P
 /** Fetch a sub-agent's transcript (its tab opened, or a refresh); live events keep it current after. */
 export async function loadAgentTranscript(pid: string, agentId: string): Promise<void> {
   beginLoad(pid, agentId);
-  if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+  if (!connection || connection.state !== "Connected") {
     finishLoad(pid, agentId, null, "Not connected.");
     return;
   }

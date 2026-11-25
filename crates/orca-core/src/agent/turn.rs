@@ -97,6 +97,17 @@ impl AgentSession {
         user_message: &str,
         observer: &mut dyn AgentObserver,
     ) -> Result<TurnEnd, AgentError> {
+        self.run_turn_with_message(ChatMessage::user(user_message), observer)
+            .await
+    }
+
+    /// [`Self::run_turn`] with a prepared user message (a prompt with attachments:
+    /// `attachments::message_builder::build`).
+    pub async fn run_turn_with_message(
+        &mut self,
+        user_message: ChatMessage,
+        observer: &mut dyn AgentObserver,
+    ) -> Result<TurnEnd, AgentError> {
         self.turn_pair_stats = Default::default();
         let end = self.run_turn_loop(user_message, observer).await;
         // The `finally` of `RunAgentLoopAsync`: unused early runs stop, the pair tallies show.
@@ -107,10 +118,10 @@ impl AgentSession {
 
     async fn run_turn_loop(
         &mut self,
-        user_message: &str,
+        user_message: ChatMessage,
         observer: &mut dyn AgentObserver,
     ) -> Result<TurnEnd, AgentError> {
-        self.messages.push(ChatMessage::user(user_message));
+        self.messages.push(user_message);
         self.begin_turn();
         // A new request: no Lead mode chosen yet, and the Lead's bar starts at 0%.
         if let Some(o) = &self.orchestrator {
@@ -486,6 +497,11 @@ impl AgentSession {
         })
     }
 
+    /// `PiToolset.IsPiProfile(config.ToolProfile)`: Pi's wording for the loop's messages.
+    pub(super) fn is_pi_profile(&self) -> bool {
+        orca_tools_pi::is_pi_profile(&self.config.tool_profile)
+    }
+
     /// `ResolveNativeToolsForActiveModel`: native iff config wants it, there are tools, and
     /// this model hasn't already proven it can't do native calls (sticky).
     pub fn resolve_native_tools(&self) -> bool {
@@ -746,7 +762,10 @@ impl AgentSession {
     async fn execute_native_calls(&mut self, calls: &[ToolCall], observer: &mut dyn AgentObserver) {
         let several = calls.len() > 1;
         for (i, call) in calls.iter().enumerate() {
-            self.record_raw_arguments = several && i == 0;
+            // C# starts the first call early while the response streams (and records its raw
+            // arguments) only when it is one of the ReadOnlyCommand tools.
+            self.record_raw_arguments = several && i == 0 && early_start_tool(&call.name);
+            self.last_tool_images.clear();
             let mut result = self.run_one_call(call, true, observer).await;
             if self.config.agent.repeat_call_notes
                 && let Some(note) =
@@ -754,8 +773,10 @@ impl AgentSession {
             {
                 result.push_str(&note);
             }
+            // The client sends these as C# does (ToolImagesChatClient).
+            let images = std::mem::take(&mut self.last_tool_images);
             self.messages
-                .push(ChatMessage::tool_result(call.id.clone(), result));
+                .push(ChatMessage::tool_result(call.id.clone(), result).with_images(images));
         }
         self.record_raw_arguments = false;
     }
@@ -828,6 +849,8 @@ impl AgentSession {
         observer.on_tool_start(&call);
         let result = self.execute_tool_call(&call, observer).await;
         observer.on_tool_end(&call, &result);
+        self.last_tool_images =
+            crate::client::tool_images::tool_result_images(&result, &self.config);
         self.apply_retry_detection(&call, &result)
     }
 
@@ -891,7 +914,7 @@ impl AgentSession {
 
     /// `TryGetRecentTestFailure`: the latest test/build-style run this turn failed (and no
     /// later one passed): a head+tail excerpt of its output.
-    fn recent_test_failure(&self) -> Option<String> {
+    pub fn recent_test_failure(&self) -> Option<String> {
         for r in self.turn_history().iter().rev() {
             if !is_command_runner(&r.name) {
                 continue;
@@ -928,7 +951,7 @@ impl AgentSession {
             observer.on_notice("Tool call was truncated \u{2014} asking model to continue...");
             self.messages
                 .push(ChatMessage::user(prompts::platform_lines(
-                    msg::TRUNCATED_TOOL_CALL_MESSAGE,
+                    super::prompt_constants::get_truncated_tool_call_message(self.is_pi_profile()),
                 )));
             return true;
         }
@@ -943,7 +966,10 @@ impl AgentSession {
             observer.on_notice("Nudging model to use tool calls...");
             self.messages
                 .push(ChatMessage::user(prompts::platform_lines(
-                    msg::nudge_message(self.native_tools),
+                    super::prompt_constants::get_nudge_message(
+                        self.native_tools,
+                        self.is_pi_profile(),
+                    ),
                 )));
             return true;
         }
@@ -983,7 +1009,7 @@ impl AgentSession {
                 s.pre_verification_epoch = self.mutation_epoch;
                 self.messages
                     .push(ChatMessage::user(prompts::platform_lines(
-                        prompts::VERIFICATION_MESSAGE,
+                        super::prompt_constants::get_verification_message(self.is_pi_profile()),
                     )));
                 return true;
             }
@@ -994,7 +1020,9 @@ impl AgentSession {
                 s.verification_tools_used = true;
                 self.messages
                     .push(ChatMessage::user(prompts::platform_lines(
-                        prompts::VERIFICATION_RETRY_MESSAGE,
+                        super::prompt_constants::get_verification_retry_message(
+                            self.is_pi_profile(),
+                        ),
                     )));
                 return true;
             }
@@ -1118,7 +1146,7 @@ impl AgentSession {
             &streak.failure.key,
             &failure,
             &streak.recent_probes,
-            false,
+            self.is_pi_profile(),
         );
         self.add_harness_note(&note);
     }
@@ -1410,6 +1438,22 @@ fn is_command_runner(name: &str) -> bool {
         name,
         "bash" | "shell" | "run_command" | "execute_command" | "get_process_output" | "run_tests"
     )
+}
+
+/// `ReadOnlyCommand.Tools`: the only tools `EarlyToolStarter` may start before a response ends.
+fn early_start_tool(name: &str) -> bool {
+    [
+        "read",
+        "read_file",
+        "grep",
+        "find",
+        "ls",
+        "glob",
+        "list_directory",
+        "bash",
+    ]
+    .iter()
+    .any(|t| t.eq_ignore_ascii_case(name))
 }
 
 /// Arguments in one canonical form for loop detection (compact JSON, or the raw text).

@@ -1,0 +1,12 @@
+{
+  "prompt": "Create the files",
+  "strict": true,
+  "config": {"toolProfile": "pi"},
+  "files": {"old.txt": "old content\n"},
+  "replies": [
+    {"tools": [{"name": "write", "args": {"path": "src/new.txt", "content": "line one\nline two\n"}}]},
+    {"tools": [{"name": "write", "args": {"path": "old.txt", "content": "replaced without reading\n"}}]},
+    {"tools": [{"name": "write", "args": {"path": "x.txt"}}]},
+    {"text": "I wrote src/new.txt with two lines and replaced the content of old.txt as requested."}
+  ]
+}

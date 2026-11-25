@@ -1,0 +1,20 @@
+{
+  "prompt": "Try the image tools with bad input",
+  "files": {"notes.png": "this is not an image\n"},
+  "binary_files": {
+    "solid.png": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAEklEQVR4nGM4IWfzHx9mGBkKAC3CiEEiqWH5AAAAAElFTkSuQmCC"
+  },
+  "replies": [
+    {"tools": [{"name": "generate_image", "args": {"prompt": "anything", "save_path": "g.png"}}]},
+    {"tools": [{"name": "edit_image", "args": {"image_path": "solid.png", "prompt": "anything"}}]},
+    {"tools": [{"name": "crop_image", "args": {"path": "missing.png", "x": 0, "y": 0, "width": 1, "height": 1}}]},
+    {"tools": [{"name": "crop_image", "args": {"path": "solid.png", "x": 4, "y": 4, "width": 5, "height": 2, "save_path": "c.png"}}]},
+    {"tools": [{"name": "crop_image", "args": {"path": "solid.png", "x": -1, "y": 0, "width": 2, "height": 2}}]},
+    {"tools": [{"name": "crop_image", "args": {"path": "solid.png", "x": 0, "y": 0, "width": 0, "height": 2}}]},
+    {"tools": [{"name": "resize_image", "args": {"path": "solid.png", "width": 2, "height": 2, "save_path": "out.tiff"}}]},
+    {"tools": [{"name": "resize_image", "args": {"path": "solid.png", "width": 2, "height": 2, "save_path": "noext"}}]},
+    {"tools": [{"name": "resize_image", "args": {"path": "notes.png", "width": 2, "height": 2, "save_path": "n2.png"}}]},
+    {"tools": [{"name": "resize_image", "args": {"path": "solid.png", "width": 2, "height": -3}}]},
+    {"text": "Every bad call was refused with a clear error message from the image tools."}
+  ]
+}

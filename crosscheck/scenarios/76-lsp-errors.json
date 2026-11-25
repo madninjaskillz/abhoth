@@ -1,0 +1,18 @@
+{
+  "prompt": "Use the LSP tools on files without a server",
+  "files": {"main.rs": "fn main() {}\n", "notes.txt": "hi\n", "app.py": "print(1)\n"},
+  "config": {
+    "lsp": {"enabled": true, "servers": {"rust": {"command": "<FAKE_LSP>"}}}
+  },
+  "replies": [
+    {"tools": [{"name": "lsp_hover", "args": {"path": "notes.txt", "line": 1, "character": 0}}]},
+    {"tools": [{"name": "lsp_go_to_definition", "args": {"path": "app.py", "line": 1, "character": 0}}]},
+    {"tools": [{"name": "lsp_find_references", "args": {"path": "app.py", "line": 1, "character": 0}}]},
+    {"tools": [{"name": "lsp_hover", "args": {"path": "main.rs", "line": 0, "character": 0}}]},
+    {"tools": [{"name": "lsp_call_hierarchy", "args": {"path": "main.rs", "line": "1", "character": -2}}]},
+    {"tools": [{"name": "lsp_document_symbols", "args": {"path": "Makefile"}}]},
+    {"tools": [{"name": "lsp_diagnostics", "args": {"path": "app.py"}}]},
+    {"tools": [{"name": "lsp_workspace_symbols", "args": {"query": "main", "language": "rust"}}]},
+    {"text": "No server answered: the files have no configured language server or the positions were invalid."}
+  ]
+}

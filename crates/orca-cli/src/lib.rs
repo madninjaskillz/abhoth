@@ -1,8 +1,19 @@
 //! The `openorca` program. Phase 1: one-shot prompts (`--print` / `--prompt`); the
-//! interactive REPL/TUI and the web host follow in later phases (see PORTING.md).
+//! interactive REPL and the `--hostui` web host.
 
 pub mod args;
+pub mod commands;
+pub mod custom_commands;
+pub mod file_log;
+pub mod hostui;
+pub mod input_preprocessor;
+pub mod model_discovery;
+pub mod pi_profile;
+pub mod prompter;
+pub mod render;
+pub mod repl;
 pub mod sessions;
+pub mod ui;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -40,25 +51,142 @@ pub struct SinglePromptResult {
     pub success: bool,
 }
 
-/// The tool set, registered at compile time (D3): file, shell, git/GitHub, web and agent tools.
-/// The agent tools stay unwired (see [`build_registry_with_agents`]).
+/// The compiled-in tools (C# loads them from plugin DLLs). Registration order is the C# one:
+/// plugin assemblies in file-name order (Agent, Archive, FileSystem, Git, GitHub,
+/// ImageGeneration, Interactive, Lsp, Network, Shell, Utility, Web), and within each the tool
+/// classes sorted by name. The advertised list keeps this order. Optional groups sit behind
+/// Cargo features (`archive`, `network`, `image`, `lsp`, `mcp`); MCP tools need the servers
+/// started, see [`ToolServices::start_mcp`]. Language servers start in the current directory.
 pub fn build_registry(config: &OrcaConfig) -> ToolRegistry {
-    build_registry_with_agents(config).0
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    build_registry_in(config, &cwd).0
 }
 
-/// [`build_registry`] and the handle that wires its agent tools to a session's sub-agents.
-pub fn build_registry_with_agents(config: &OrcaConfig) -> (ToolRegistry, AgentToolsHandle) {
-    let handle = AgentToolsHandle::new();
+/// [`build_registry`] for a working folder, with the services its tools run on.
+pub fn build_registry_in(config: &OrcaConfig, cwd: &Path) -> (ToolRegistry, ToolServices) {
     let mut r = ToolRegistry::new();
+    #[allow(unused_mut)]
+    let mut services = ToolServices::default();
+    // The Agent plugin comes first (ReportProgressTool, SpawnAgentTool, SpawnAgentsTool).
+    r.register_all(orca_tools_agent::all_tools(&services.agent_tools));
+    #[cfg(feature = "archive")]
+    r.register_all(orca_tools_archive::all_tools());
     r.register_all(orca_tools_fs::all_tools());
+    r.register_all(orca_tools_git::all_tools());
+    #[cfg(feature = "image")]
+    r.register_all(orca_tools_image::all_tools(
+        &config.image_gen,
+        Some(Arc::new(std::sync::Mutex::new(
+            config.agent.uncensored.clone(),
+        ))),
+    ));
+    r.register_all(orca_tools_utility::interactive_tools(Some(Arc::new(
+        prompter::ConsolePrompter,
+    ))));
+    #[cfg(feature = "lsp")]
+    {
+        services.lsp = lsp_manager(config, cwd);
+        r.register_all(orca_tools_lsp::all_tools(services.lsp.clone()));
+    }
+    #[cfg(not(feature = "lsp"))]
+    let _ = cwd;
+    #[cfg(feature = "network")]
+    r.register_all(orca_tools_network::all_tools());
     r.register_all(orca_tools_shell::all_tools(
         config.shell.idle_timeout_seconds,
     ));
-    r.register_all(orca_tools_git::all_tools());
+    r.register_all(orca_tools_utility::utility_tools());
     r.register_all(orca_tools_web::all_tools());
-    r.register_all(orca_tools_agent::all_tools(&handle));
     // Disabled tools stay registered; the permission check refuses them (as in C#).
-    (r, handle)
+    if orca_tools_pi::is_pi_profile(&config.tool_profile) {
+        pi_profile::register(&mut r, config);
+    }
+    let exposure = config.clone();
+    r.set_advertise_filter(Arc::new(move |name: &str| {
+        orca_core::agent::tool_exposure::is_advertised(name, &exposure)
+    }));
+    (r, services)
+}
+
+/// The LSP client manager when `lsp.enabled` and servers are configured.
+#[cfg(feature = "lsp")]
+fn lsp_manager(config: &OrcaConfig, cwd: &Path) -> Option<Arc<orca_tools_lsp::LspClientManager>> {
+    if !config.lsp.enabled || config.lsp.servers.is_empty() {
+        return None;
+    }
+    let servers = config
+        .lsp
+        .servers
+        .iter()
+        .map(|(lang, s)| {
+            (
+                lang.clone(),
+                orca_tools_lsp::LspServerConfig {
+                    command: s.command.clone(),
+                    args: s.args.clone(),
+                    root_uri: s.root_uri.clone(),
+                },
+            )
+        })
+        .collect();
+    tracing::info!(
+        "LSP enabled with {} server(s): {}",
+        config.lsp.servers.len(),
+        config
+            .lsp
+            .servers
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    Some(Arc::new(orca_tools_lsp::LspClientManager::new(
+        servers, cwd,
+    )))
+}
+
+/// What the tools run on: MCP server connections and language servers. Shut down with
+/// [`ToolServices::shutdown`] when the session ends.
+#[derive(Default)]
+pub struct ToolServices {
+    /// Wires the agent tools to a session's sub-agents ([`wire_agents`]).
+    pub agent_tools: AgentToolsHandle,
+    #[cfg(feature = "mcp")]
+    pub mcp: orca_tools_mcp::McpManager,
+    #[cfg(feature = "lsp")]
+    pub lsp: Option<Arc<orca_tools_lsp::LspClientManager>>,
+}
+
+impl ToolServices {
+    /// Start the configured MCP servers and register their tools (`mcp_{server}_{tool}`).
+    /// Servers that fail are logged and skipped.
+    pub async fn start_mcp(
+        &mut self,
+        config: &OrcaConfig,
+        cwd: &Path,
+        registry: &mut ToolRegistry,
+    ) {
+        #[cfg(feature = "mcp")]
+        if !config.mcp_servers.is_empty() {
+            let tools = self.mcp.initialize(&config.mcp_servers, cwd).await;
+            if !tools.is_empty() {
+                tracing::info!("Registered {} MCP tools", tools.len());
+            }
+            registry.register_all(orca_tools_mcp::proxy_tools(tools));
+        }
+        #[cfg(not(feature = "mcp"))]
+        let _ = (config, cwd, registry);
+    }
+
+    /// Close the MCP connections and stop the language servers.
+    pub async fn shutdown(&mut self) {
+        #[cfg(feature = "mcp")]
+        self.mcp.dispose().await;
+        #[cfg(feature = "lsp")]
+        if let Some(lsp) = self.lsp.take() {
+            lsp.dispose().await;
+        }
+    }
 }
 
 /// Sub-agents for `session` (`ToolWiring`, agent part): the orchestrator with the session's
@@ -68,13 +196,13 @@ pub fn build_registry_with_agents(config: &OrcaConfig) -> (ToolRegistry, AgentTo
 pub fn wire_agents(
     session: &mut AgentSession,
     handle: &AgentToolsHandle,
-    served: Arc<ServedModels>,
     config_dir: Option<&Path>,
     quiet: bool,
 ) -> Result<Arc<AgentManager>> {
     let config = session.config.clone();
     let cwd = session.ctx.cwd.clone();
-    let client: Arc<dyn AgentChatClient> = Arc::new(client_from_config(&config, served.clone())?);
+    // Sub-agents send through the session's client (its usage logging and routing).
+    let client: Arc<dyn AgentChatClient> = Arc::new(session.client.clone());
     let mut types = AgentTypeRegistry::new();
     if let Some(dir) = config_dir {
         let names: Vec<String> = session
@@ -108,12 +236,8 @@ pub fn wire_agents(
     );
     orchestrator.set_use_streaming(true);
     let shared = SharedPipeline::new();
-    let factory_config = config.clone();
-    let factory_served = served;
-    let factory: ClientFactory = Arc::new(move || {
-        client_from_config(&factory_config, factory_served.clone())
-            .expect("the main client was built from the same config")
-    });
+    let factory_client = session.client.clone();
+    let factory: ClientFactory = Arc::new(move || factory_client.clone());
     orchestrator.set_executor(Some(Arc::new(SessionToolExecutor::new(
         config,
         session.registry.clone(),
@@ -157,6 +281,60 @@ impl AgentObserver for ConsoleObserver {
     }
 }
 
+/// `ServiceRegistration`'s chat client: the provider client behind the usage logger (route
+/// "provider", so each request's "Slot usage" line lands in `log`), the sticky-slot runtime
+/// over it when `slots` is on and configured (the Lead's pinned client, the logged provider as
+/// its fallback), and canned answers in demo mode (`DemoChatClient`, not logged).
+pub fn wire_client(
+    config: &OrcaConfig,
+    log: Option<Arc<dyn orca_core::logging::LogSink>>,
+    slots: bool,
+) -> Result<(
+    orca_core::client::OpenAiClient,
+    Option<Arc<orca_core::slots::SlotRuntime>>,
+)> {
+    let client = client_from_config(config, Arc::new(ServedModels::new()))?;
+    if config.demo_mode {
+        // `--demo`: canned answers, no server (DemoChatClient).
+        return Ok((
+            client.with_router(Arc::new(orca_core::client::demo::DemoChatClient)),
+            None,
+        ));
+    }
+    let fallback: Arc<dyn orca_core::client::ChatBackend> =
+        Arc::new(orca_core::client::UsageLoggingBackend::new(
+            Arc::new(client.clone()),
+            log.clone(),
+            orca_core::client::usage::USAGE_CATEGORY,
+            "provider",
+        ));
+    let runtime = if slots {
+        orca_core::slots::SlotRuntime::create_with_log(config, fallback.clone(), log)
+    } else {
+        None
+    };
+    let router = match &runtime {
+        Some(rt) => rt.lead_client(),
+        None => fallback,
+    };
+    Ok((client.with_router(router), runtime))
+}
+
+/// "Provider usage ..." per provider (`Program`'s exit lines), to the process log.
+pub fn log_provider_usage() {
+    let Some(log) = orca_core::logging::process_log() else {
+        return;
+    };
+    for usage in orca_core::client::ProviderUsageLedger::shared().snapshot() {
+        orca_core::logging::LogSink::log(
+            &*log,
+            orca_core::logging::Level::Info,
+            "OpenOrca.Program",
+            &format!("Provider usage {usage}"),
+        );
+    }
+}
+
 /// Load the config from `config_dir` (default `OPENORCA_HOME` or `~/.openorca`).
 pub fn load_config(config_dir: Option<&Path>) -> Result<OrcaConfig> {
     let mut m = ConfigManager::new(config_dir);
@@ -185,14 +363,17 @@ pub async fn run_single_prompt_in_session(
     config_dir: Option<&Path>,
     restored: Option<sessions::RestoredSession>,
 ) -> Result<SinglePromptResult> {
-    let served = Arc::new(ServedModels::new());
-    let client = client_from_config(&config, served.clone())?;
-    let (registry, agent_tools) = build_registry_with_agents(&config);
+    if orca_core::engines::selected_bridge(&config).is_some() {
+        return run_bridge_prompt(config, cwd, prompt, quiet, restored).await;
+    }
+    let (client, slots) = wire_client(&config, orca_core::logging::process_sink(), true)?;
+    let (mut registry, mut services) = build_registry_in(&config, &cwd);
+    services.start_mcp(&config, &cwd, &mut registry).await;
     let tool_hooks = config_dir.map(|d| orca_core::agent::ToolHooks::from_config(&config, d));
     let mut session = AgentSession::new(config, client, registry, ToolContext::new(cwd));
     // C# runs the startup probes (max_tokens negotiation, context-window detection) before
     // the first turn.
-    session.startup_probes = true;
+    session.startup_probes = !session.config.demo_mode;
     if let Some(hooks) = tool_hooks {
         session.tool_hooks = hooks;
     }
@@ -201,7 +382,7 @@ pub async fn run_single_prompt_in_session(
         session.messages = r.messages;
         session.tool_hooks.session_id = Some(r.id);
     }
-    wire_agents(&mut session, &agent_tools, served, config_dir, quiet)?;
+    wire_agents(&mut session, &services.agent_tools, config_dir, quiet)?;
     // agent.planner: a read-only planner writes the plan before the Lead's first turn.
     let prompt = match session.orchestrator.clone() {
         Some(o) if planner_enabled(&session.config) => {
@@ -213,12 +394,72 @@ pub async fn run_single_prompt_in_session(
         _ => prompt.to_string(),
     };
     let result = run_prepared(&mut session, &prompt, quiet).await;
+    // Every lease goes back on exit.
+    if let Some(rt) = &slots {
+        rt.shutdown().await;
+    }
     // Post-hooks run in the background; give them a moment before the process exits.
     session
         .tool_hooks
         .flush(std::time::Duration::from_secs(10))
         .await;
+    services.shutdown().await;
+    pi_profile::kill_jobs();
     result
+}
+
+/// `--print` with a bridge engine (agent.engine claude / codex): the CLI runs the turn.
+async fn run_bridge_prompt(
+    config: OrcaConfig,
+    cwd: PathBuf,
+    prompt: &str,
+    quiet: bool,
+    restored: Option<sessions::RestoredSession>,
+) -> Result<SinglePromptResult> {
+    // The tools (ask_user is offered to the CLI as a host tool) and the system prompt the
+    // native loop would use (C# adds it before the prompt).
+    let (registry, mut services) = build_registry_in(&config, &cwd);
+    let mut native = AgentSession::new(
+        config.clone(),
+        client_from_config(&config, Arc::new(ServedModels::new()))?,
+        registry,
+        ToolContext::new(cwd.clone()),
+    );
+    native.native_tools = native.resolve_native_tools();
+    let system = native.default_system_prompt();
+    let registry = std::mem::take(&mut native.registry);
+    let session_id = restored.as_ref().map(|r| r.id.clone());
+    let mut conversation = orca_core::chat::Conversation::from_api_messages(
+        restored.map(|r| r.messages).unwrap_or_default(),
+        Default::default(),
+    );
+    let outcome = orca_core::engines::run_print_turn(
+        orca_core::engines::PrintTurnRequest {
+            config: &config,
+            cwd: &cwd,
+            conversation: &mut conversation,
+            system_prompt: Some(system),
+            prompt,
+            registry: Some(&registry),
+            session_id: session_id.as_deref(),
+            quiet,
+        },
+        &orca_core::engines::CancelToken::new(),
+    )
+    .await;
+    services.shutdown().await;
+    let outcome = outcome.map_err(|e| anyhow::anyhow!("{e}"))?;
+    if let Some(message) = &outcome.unavailable {
+        eprintln!("✗ {message}");
+    }
+    Ok(SinglePromptResult {
+        response: outcome.response,
+        tokens: outcome.tokens,
+        duration_ms: outcome.duration_ms,
+        tool_calls: outcome.tool_calls,
+        files_modified: outcome.files_modified,
+        success: outcome.success,
+    })
 }
 
 async fn run_prepared(
@@ -262,21 +503,85 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         println!("OpenOrca v{} (Rust port)", version());
         return Ok(0);
     }
-    let Some(prompt) = args.single_prompt.clone() else {
+    // --hostui: the web UI, headless (src/OpenOrca.Cli/HostUi). Ignored with --print.
+    let hostui_args = if args.single_prompt.is_none() {
+        orca_webui::hostui::HostUiArgs::parse(&raw)
+    } else {
+        None
+    };
+    if let Some(e) = hostui_args.as_ref().and_then(|h| h.error.clone()) {
+        eprintln!("openorca: {e}");
+        return Ok(2);
+    }
+    let mut manager = ConfigManager::new(None);
+    manager
+        .load()
+        .with_context(|| format!("loading {}", manager.file_path().display()))?;
+    let config_dir = orca_core::config::default_config_dir();
+    // An inference profile (--profile, else profiles.active) is applied over config.json first,
+    // so explicit flags such as --engine still win.
+    let mut profile_notices = Vec::new();
+    let profile_name = args
+        .profile
+        .clone()
+        .or_else(|| manager.config.profiles.active.clone());
+    if let Some(name) = profile_name.filter(|_| !args.demo_mode)
+        && let Some(error) = orca_core::profiles::apply_at_startup(
+            &mut manager,
+            &config_dir,
+            &name,
+            &mut profile_notices,
+        )
+        .await
+    {
+        eprintln!("{error}");
+        if args.profile.is_some() {
+            return Ok(2);
+        }
+    }
+    // --mode (the web UI's per-project mode): over the profile's own agent.leadMode / peerMode.
+    if let Some(mode) = args
+        .mode
+        .as_deref()
+        .filter(|m| !m.is_empty() && !args.demo_mode)
+    {
+        if orca_core::profiles::agent_modes::normalize(Some(mode)).is_none() {
+            eprintln!(
+                "{}",
+                orca_core::profiles::agent_modes::unknown_mode_message(mode)
+            );
+            return Ok(2);
+        }
+        if let Err(e) = manager.apply_mode(mode) {
+            eprintln!("{e}");
+            return Ok(2);
+        }
+    }
+    let mut config = manager.config.clone();
+    if let Err(e) = args.apply_to(&mut config) {
+        eprintln!("{e}");
+        return Ok(2);
+    }
+    if orca_core::engines::AgentEngines::normalize(Some(&config.agent.engine)).is_none() {
         eprintln!(
-            "The interactive mode is not ported to Rust yet. Use --print \"<prompt>\" (JSON output) or --prompt \"<prompt>\"."
+            "Unknown agent.engine '{}' in config (native, claude or codex).",
+            config.agent.engine
         );
         return Ok(2);
-    };
-    let mut config = load_config(None)?;
-    args.apply_to(&mut config);
+    }
     // Ensure the default prompt template exists and is current (Program.cs does it at startup).
     if let Err(e) = orca_core::config::prompt_manager::PromptManager::new().ensure_default_prompt()
     {
         tracing::warn!("could not write the default prompt template: {e}");
     }
 
-    let config_dir = orca_core::config::default_config_dir();
+    if let Some(h) = hostui_args {
+        for notice in &profile_notices {
+            eprintln!("{notice}");
+        }
+        return hostui::run(h, config, cwd).await;
+    }
+
     // Sweep checkpoint snapshots older than a week (best effort, in the background).
     let sweeper = orca_core::session::CheckpointManager::new(config_dir.join("checkpoints"));
     tokio::task::spawn_blocking(move || {
@@ -291,6 +596,31 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         sessions::Restore::Resumed(r) => Some(r),
         sessions::Restore::NotFound => return Ok(0),
         sessions::Restore::Unreadable => return Ok(1),
+    };
+    if args.single_prompt.is_some() {
+        for notice in &profile_notices {
+            eprintln!("{notice}");
+        }
+    }
+    // A bridge engine must be ready (installed, logged in) before the turn.
+    match orca_core::engines::prepare_engine_non_interactive(
+        &config,
+        &orca_core::engines::CancelToken::new(),
+    )
+    .await
+    {
+        Ok(Some(message)) => {
+            eprintln!("{message}");
+            return Ok(2);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            eprintln!("{e}");
+            return Ok(2);
+        }
+    }
+    let Some(prompt) = args.single_prompt.clone() else {
+        return run_interactive(config, cwd, &config_dir, restored, profile_notices).await;
     };
     // --print does not auto-save (only the interactive loop does, after each turn).
     let result = run_single_prompt_in_session(
@@ -311,4 +641,57 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         println!();
     }
     Ok(0)
+}
+
+/// The interactive REPL (`ReplLoop.RunAsync`), with the same session wiring as `--print`.
+async fn run_interactive(
+    config: OrcaConfig,
+    cwd: PathBuf,
+    config_dir: &Path,
+    restored: Option<sessions::RestoredSession>,
+    startup_notices: Vec<String>,
+) -> Result<i32> {
+    let (client, slots) = wire_client(&config, orca_core::logging::process_sink(), true)?;
+    let (mut registry, mut services) = build_registry_in(&config, &cwd);
+    services.start_mcp(&config, &cwd, &mut registry).await;
+    let tool_hooks = orca_core::agent::ToolHooks::from_config(&config, config_dir);
+    let active_profile = config.active_profile.clone();
+    let mut session = AgentSession::new(config, client, registry, ToolContext::new(cwd));
+    session.startup_probes = !session.config.demo_mode;
+    session.tool_hooks = tool_hooks;
+    let mut session_id = None;
+    if let Some(r) = restored {
+        session.messages = r.messages;
+        session.tool_hooks.session_id = Some(r.id.clone());
+        session_id = Some(r.id);
+    }
+    let console = ui::Console::stdout();
+    let mut repl = repl::Repl::new(console, session, config_dir.to_path_buf(), session_id);
+    repl.startup_notices = startup_notices;
+    repl.active_profile = active_profile;
+    let exit = repl.run().await;
+    if let Some(rt) = &slots {
+        rt.shutdown().await;
+    }
+    repl.session
+        .tool_hooks
+        .flush(std::time::Duration::from_secs(10))
+        .await;
+    services.shutdown().await;
+    pi_profile::kill_jobs();
+    match exit {
+        repl::ReplExit::Quit => Ok(0),
+        // The C# build restarts in-process; here the caller re-runs with the new profile.
+        repl::ReplExit::Restart {
+            profile,
+            session_id,
+        } => {
+            let mut next = vec!["--profile".to_string(), profile];
+            if let Some(id) = session_id {
+                next.push("--resume".into());
+                next.push(id);
+            }
+            Box::pin(main_with_args(next)).await
+        }
+    }
 }

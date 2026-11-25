@@ -1,0 +1,109 @@
+{
+  "_comment": "Interactive: !echo runs a shell command (no request); /sesion is an unknown command with a suggestion (/session), /hlep one without (no requests); then one real turn.",
+  "replies": [
+    {
+      "text": "Only this one. REAL-DONE"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "!echo shell-says-hi"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "⎿"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/sesion"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "did you mean"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/hlep"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "lists commands"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "a real prompt"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "REAL-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!",
+      "Unknown command",
+      "shell-says-hi"
+    ]
+  }
+}

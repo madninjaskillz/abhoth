@@ -1,0 +1,153 @@
+{
+  "_comment": "Interactive: /rewind removes the last turn (the next request lacks it); /clear empties the conversation (the next request has only the system prompt and the new prompt).",
+  "replies": [
+    {
+      "text": "Answer A. A-DONE"
+    },
+    {
+      "text": "Answer B. B-DONE"
+    },
+    {
+      "text": "Answer C. C-DONE"
+    },
+    {
+      "text": "Answer D. D-DONE"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "question A"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "A-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "question B"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "B-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/rewind"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "Rewound"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "expect",
+        "text": "Rewound 1 turn(s) (removed 2 messages)."
+      },
+      {
+        "action": "type",
+        "text": "question C"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "C-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/clear"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "question D"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "D-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!",
+      "Rewound ",
+      "No messages to rewind."
+    ]
+  }
+}

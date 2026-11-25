@@ -17,5 +17,9 @@ tokio.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 
+[features]
+# Kept for crates that ask for it; the HTTP helpers are always built.
+http = []
+
 [lints]
 workspace = true

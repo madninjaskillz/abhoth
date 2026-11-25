@@ -32,14 +32,15 @@ impl AgentToolsHandle {
 
 /// The three tools, wired to `handle`.
 pub fn all_tools(handle: &AgentToolsHandle) -> Vec<Arc<dyn Tool>> {
+    // C# registration order: tool classes by name.
     vec![
+        Arc::new(ReportProgressTool {
+            handle: handle.clone(),
+        }),
         Arc::new(SpawnAgentTool {
             handle: handle.clone(),
         }),
         Arc::new(SpawnAgentsTool {
-            handle: handle.clone(),
-        }),
-        Arc::new(ReportProgressTool {
             handle: handle.clone(),
         }),
     ]
@@ -123,7 +124,7 @@ impl Tool for SpawnAgentTool {
         ToolCapabilities::LONG_RUNNING
     }
 
-    fn affected_file_paths(&self, _args: &Value) -> Vec<String> {
+    fn affected_file_paths(&self, _args: &Value, _ctx: &ToolContext) -> Vec<String> {
         Vec::new()
     }
 
@@ -237,7 +238,7 @@ impl Tool for SpawnAgentsTool {
         ToolCapabilities::LONG_RUNNING
     }
 
-    fn affected_file_paths(&self, _args: &Value) -> Vec<String> {
+    fn affected_file_paths(&self, _args: &Value, _ctx: &ToolContext) -> Vec<String> {
         Vec::new()
     }
 
@@ -347,7 +348,7 @@ impl Tool for ReportProgressTool {
         ToolRiskLevel::ReadOnly
     }
 
-    fn affected_file_paths(&self, _args: &Value) -> Vec<String> {
+    fn affected_file_paths(&self, _args: &Value, _ctx: &ToolContext) -> Vec<String> {
         Vec::new()
     }
 

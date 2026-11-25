@@ -1,0 +1,25 @@
+{
+  "prompt": "Say hello",
+  "config": {
+    "slots": {
+      "copies": [
+        { "name": "A", "baseUrl": "<SERVER>", "slots": 2 }
+      ],
+      "model": "copy-model",
+      "localStateFile": "<HOME_JSON>/slots.json",
+      "idleReleaseMinutes": 0
+    }
+  },
+  "server_routes": {
+    "GET /health": [200, "{\"status\":\"ok\",\"service\":\"strata\"}"],
+    "GET /v1/models": [200, "{\"object\":\"list\",\"data\":[{\"id\":\"copy-model\",\"object\":\"model\",\"owned_by\":\"strata\"}]}"]
+  },
+  "replies": [
+    {
+      "text": "Hello from slot A1."
+    },
+    {
+      "text": "x"
+    }
+  ]
+}

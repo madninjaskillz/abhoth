@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 
 use super::f32_json;
 use super::served_models::{self, ServedModels};
+use super::tool_images;
 use super::types::{
     ChatMessage, ChatOptions, ChatResponse, StreamControl, StreamEvent, ToolCall, ToolCallDelta,
     Usage,
@@ -75,6 +76,9 @@ pub struct ClientSettings {
     pub session_field: Option<(String, Value)>,
     /// The request went straight to a model server (a slot copy), not through a gateway.
     pub direct: bool,
+    /// Whether the server takes images (`lmStudio.vision`); `None` = ask the server once
+    /// ([`super::tool_images::supports_vision`]).
+    pub vision: Option<bool>,
 }
 
 impl ClientSettings {
@@ -92,14 +96,18 @@ impl ClientSettings {
             echo_reasoning: false,
             session_field: None,
             direct: false,
+            vision: None,
         }
     }
 }
 
+#[derive(Clone)]
 pub struct OpenAiClient {
     http: reqwest::Client,
     settings: ClientSettings,
     served: Arc<ServedModels>,
+    /// Requests go here instead (sticky slots: the Lead's slot-pinned client).
+    router: Option<Arc<dyn super::backend::ChatBackend>>,
 }
 
 impl OpenAiClient {
@@ -113,11 +121,36 @@ impl OpenAiClient {
             http,
             settings,
             served,
+            router: None,
         }
+    }
+
+    /// Route every request through `router` (e.g. the slot runtime's Lead client); the
+    /// settings stay this client's (the model names the session sends).
+    pub fn with_router(mut self, router: Arc<dyn super::backend::ChatBackend>) -> Self {
+        self.router = Some(router);
+        self
+    }
+
+    /// This client without its router: what the router itself falls back to.
+    pub fn without_router(&self) -> Self {
+        Self {
+            router: None,
+            ..self.clone()
+        }
+    }
+
+    pub fn router(&self) -> Option<&Arc<dyn super::backend::ChatBackend>> {
+        self.router.as_ref()
     }
 
     pub fn settings(&self) -> &ClientSettings {
         &self.settings
+    }
+
+    /// For switches the REPL changes between requests (`/uncensored`).
+    pub fn settings_mut(&mut self) -> &mut ClientSettings {
+        &mut self.settings
     }
 
     pub fn served_models(&self) -> &Arc<ServedModels> {
@@ -202,8 +235,46 @@ impl OpenAiClient {
         Ok(Value::Object(body))
     }
 
-    /// Non-streaming request.
+    /// Whether this server takes images now (`ToolImagesChatClient.SupportsVisionAsync`).
+    async fn supports_vision(&self) -> bool {
+        tool_images::supports_vision(
+            &self.settings.base_url,
+            Some(&self.settings.api_key),
+            self.settings.vision,
+        )
+        .await
+    }
+
+    /// Non-streaming request. Images in the messages go as `ToolImagesChatClient` sends them
+    /// ([`tool_images::rewrite`]); a server that refuses them gets the request once more
+    /// without.
     pub async fn complete(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+    ) -> Result<ChatResponse, ChatError> {
+        if let Some(router) = &self.router {
+            return router.complete(actor, messages, options).await;
+        }
+        if !tool_images::has_images(messages) {
+            return self.complete_once(actor, messages, options).await;
+        }
+        let with_images = self.supports_vision().await;
+        match self
+            .complete_once(actor, &tool_images::rewrite(messages, with_images), options)
+            .await
+        {
+            Err(e) if with_images && tool_images::is_vision_refusal(&e) => {
+                tool_images::mark_refused(&self.settings.base_url, self.settings.vision, &e);
+            }
+            other => return other,
+        }
+        self.complete_once(actor, &tool_images::rewrite(messages, false), options)
+            .await
+    }
+
+    async fn complete_once(
         &self,
         actor: &str,
         messages: &[ChatMessage],
@@ -250,6 +321,8 @@ impl OpenAiClient {
             }
         }
         out.usage = parse_usage(&v["usage"]);
+        out.usage_reported = v["usage"].is_object();
+        out.timings = super::usage::ServerTimings::from_value(&v["timings"]);
         let served = self.served.complete(
             actor,
             requested.as_deref(),
@@ -295,7 +368,55 @@ impl OpenAiClient {
     /// [`Self::stream_with_control`] that also hands every raw tool-call fragment to
     /// `on_tool_delta` as it arrives (the early read-only tool runs: the C# client's raw
     /// `StreamingChatCompletionUpdate.ToolCallUpdates`), before the update's other events.
+    /// A routed client (slots) passes no fragments: its calls then start at the stream's end.
     pub async fn stream_observed(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+        mut on_tool_delta: Option<&mut (dyn FnMut(&ToolCallDelta) + Send)>,
+    ) -> Result<ChatResponse, ChatError> {
+        if let Some(router) = &self.router {
+            return router
+                .stream_with_control(actor, messages, options, on_event)
+                .await;
+        }
+        if !tool_images::has_images(messages) {
+            return self
+                .stream_once(actor, messages, options, on_event, on_tool_delta)
+                .await;
+        }
+        let with_images = self.supports_vision().await;
+        match self
+            .stream_once(
+                actor,
+                &tool_images::rewrite(messages, with_images),
+                options,
+                on_event,
+                on_tool_delta
+                    .as_mut()
+                    .map(|f| &mut **f as &mut (dyn FnMut(&ToolCallDelta) + Send)),
+            )
+            .await
+        {
+            // The refusal is the answer to the request itself: nothing has streamed yet.
+            Err(e) if with_images && tool_images::is_vision_refusal(&e) => {
+                tool_images::mark_refused(&self.settings.base_url, self.settings.vision, &e);
+            }
+            other => return other,
+        }
+        self.stream_once(
+            actor,
+            &tool_images::rewrite(messages, false),
+            options,
+            on_event,
+            on_tool_delta,
+        )
+        .await
+    }
+
+    async fn stream_once(
         &self,
         actor: &str,
         messages: &[ChatMessage],
@@ -460,6 +581,7 @@ fn parse_usage(u: &Value) -> Usage {
         prompt_tokens: u["prompt_tokens"].as_i64(),
         completion_tokens: u["completion_tokens"].as_i64(),
         cached_tokens: u["prompt_tokens_details"]["cached_tokens"].as_i64(),
+        reasoning_tokens: u["completion_tokens_details"]["reasoning_tokens"].as_i64(),
     }
 }
 
@@ -529,6 +651,8 @@ struct Accumulator {
     calls: BTreeMap<usize, PartialCall>,
     finish_reason: Option<String>,
     usage: Usage,
+    usage_reported: bool,
+    timings: Option<super::usage::ServerTimings>,
     model: Option<String>,
     leading_empty_part: bool,
     content_items: usize,
@@ -572,6 +696,10 @@ impl Accumulator {
         {
             self.model = Some(m.to_string());
         }
+        // RequestStats: the timings ride next to the usage (any chunk's win over earlier ones).
+        if let Some(t) = super::usage::ServerTimings::from_value(&v["timings"]) {
+            self.timings = Some(t);
+        }
         // Microsoft.Extensions.AI reports an update's text and reasoning before its usage.
         let mut tool_call_delta = false;
         if let Some(choice) = v["choices"].as_array().and_then(|c| c.first()) {
@@ -592,6 +720,7 @@ impl Accumulator {
         if v.get("usage").is_some_and(|u| u.is_object()) {
             let usage = parse_usage(&v["usage"]);
             self.usage = usage;
+            self.usage_reported = true;
             self.content_items += 1;
             emit(StreamEvent::Usage(usage));
         }
@@ -678,6 +807,8 @@ impl Accumulator {
             tool_calls,
             finish_reason: self.finish_reason,
             usage: self.usage,
+            usage_reported: self.usage_reported,
+            timings: self.timings,
             model: self.model,
             served_model: None,
             leading_empty_part: self.leading_empty_part,

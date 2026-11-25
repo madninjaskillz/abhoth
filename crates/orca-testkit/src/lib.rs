@@ -50,6 +50,14 @@ pub struct Reply {
     /// Answer only a request for this model (`body.model`): concurrent requests to different
     /// models (pair programming) get their own replies whatever order they arrive in.
     pub for_model: Option<String>,
+    /// Pause this long before each SSE event (a slow model: time to cancel mid-stream).
+    pub chunk_delay_ms: u64,
+    /// `usage.prompt_tokens_details.cached_tokens`, when set.
+    pub cached_tokens: Option<i64>,
+    /// `usage.completion_tokens_details.reasoning_tokens`, when set.
+    pub reasoning_tokens: Option<i64>,
+    /// llama.cpp / Strata `timings`, sent next to the usage when set.
+    pub timings: Option<Value>,
 }
 
 impl Reply {
@@ -178,6 +186,7 @@ struct Inner {
     /// `"METHOD /path"` of every request other than a chat completion, with its
     /// `Authorization` header.
     probes: Vec<(String, Option<String>)>,
+    image_requests: Vec<Value>,
 }
 
 pub struct FakeOpenAi {
@@ -202,6 +211,8 @@ impl FakeOpenAi {
         }));
         let app = Router::new()
             .route("/v1/chat/completions", post(chat))
+            .route("/v1/images/generations", post(image_generations))
+            .route("/v1/images/edits", post(image_edits))
             .fallback(other)
             .with_state(inner.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -258,6 +269,138 @@ impl FakeOpenAi {
             .map(|(_, a)| a.clone())
             .collect()
     }
+    /// The images API requests: `{"path", "authorization", "body"}` with the raw JSON body
+    /// text for generations and the form parts (`name`, `filename`, `content_type`, `text` or
+    /// `bytes`) for edits.
+    pub fn image_requests(&self) -> Vec<Value> {
+        self.inner.lock().unwrap().image_requests.clone()
+    }
+}
+
+/// A 1x1 PNG, the "image" every images API call returns.
+pub const TINY_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+/// The images answer: the tiny PNG, or a 500 when the prompt asks for a failure (`FAIL`).
+fn image_reply(prompt_fails: bool) -> Response<Body> {
+    if prompt_fails {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from("image backend exploded"))
+            .unwrap();
+    }
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({"data": [{"b64_json": TINY_PNG_BASE64}]}).to_string(),
+        ))
+        .unwrap()
+}
+
+fn header_value(headers: &HeaderMap, name: &str) -> String {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string()
+}
+
+async fn image_generations(
+    State(inner): State<Arc<Mutex<Inner>>>,
+    headers: HeaderMap,
+    body: String,
+) -> Response<Body> {
+    let fails = body.contains("FAIL");
+    inner.lock().unwrap().image_requests.push(json!({
+        "path": "/v1/images/generations",
+        "authorization": header_value(&headers, "authorization"),
+        "body": body,
+    }));
+    image_reply(fails)
+}
+
+async fn image_edits(
+    State(inner): State<Arc<Mutex<Inner>>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response<Body> {
+    let content_type = header_value(&headers, "content-type");
+    let parts = parse_multipart(&content_type, &body);
+    let fails = parts
+        .iter()
+        .any(|p| p["text"].as_str().is_some_and(|t| t.contains("FAIL")));
+    inner.lock().unwrap().image_requests.push(json!({
+        "path": "/v1/images/edits",
+        "authorization": header_value(&headers, "authorization"),
+        "body": parts,
+    }));
+    image_reply(fails)
+}
+
+/// Splits a `multipart/form-data` body into its parts (enough for tests: no nested parts).
+fn parse_multipart(content_type: &str, body: &[u8]) -> Vec<Value> {
+    let Some(boundary) = content_type.split(';').find_map(|p| {
+        p.trim()
+            .strip_prefix("boundary=")
+            .map(|b| b.trim_matches('"').to_string())
+    }) else {
+        return Vec::new();
+    };
+    let delim = format!("--{boundary}");
+    let mut out = Vec::new();
+    let mut rest = body;
+    while let Some(start) = find(rest, delim.as_bytes()) {
+        rest = &rest[start + delim.len()..];
+        if rest.starts_with(b"--") {
+            break;
+        }
+        let Some(end) = find(rest, delim.as_bytes()) else {
+            break;
+        };
+        const CRLF: &[u8] = &[13, 10];
+        let part = rest[..end].strip_prefix(CRLF).unwrap_or(&rest[..end]);
+        let part = part.strip_suffix(CRLF).unwrap_or(part);
+        let Some(split) = find(part, &[13, 10, 13, 10]) else {
+            continue;
+        };
+        let head = String::from_utf8_lossy(&part[..split]).to_string();
+        let data = &part[split + 4..];
+        let mut name = String::new();
+        let mut filename = Value::Null;
+        let mut ctype = Value::Null;
+        for line in head.lines() {
+            let lower = line.to_ascii_lowercase();
+            if lower.starts_with("content-disposition:") {
+                for attr in line.split(';').skip(1) {
+                    let (k, v) = attr.trim().split_once('=').unwrap_or(("", ""));
+                    let v = v.trim_matches('"').to_string();
+                    match k {
+                        "name" => name = v,
+                        "filename" => filename = json!(v),
+                        _ => {}
+                    }
+                }
+            } else if lower.starts_with("content-type:") {
+                ctype = json!(line["content-type:".len()..].trim());
+            }
+        }
+        // Text parts' content types differ by client (.NET labels them text/plain): not kept.
+        if filename.is_null() {
+            ctype = Value::Null;
+        }
+        let mut v = json!({"name": name, "filename": filename, "content_type": ctype});
+        if filename.is_null() {
+            v["text"] = json!(String::from_utf8_lossy(data));
+        } else {
+            v["bytes"] = json!(data.len());
+        }
+        out.push(v);
+    }
+    out
+}
+
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
 }
 
 /// The default `GET /v1/models` answer.
@@ -364,8 +507,14 @@ async fn chat(
             "tool_calls".into()
         }
     });
-    let usage = json!({"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens,
+    let mut usage = json!({"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens,
         "total_tokens": reply.prompt_tokens + reply.completion_tokens});
+    if let Some(c) = reply.cached_tokens {
+        usage["prompt_tokens_details"] = json!({"cached_tokens": c});
+    }
+    if let Some(r) = reply.reasoning_tokens {
+        usage["completion_tokens_details"] = json!({"reasoning_tokens": r});
+    }
     if !stream {
         let calls: Vec<Value> = reply
             .tool_calls
@@ -380,8 +529,11 @@ async fn chat(
         if !calls.is_empty() {
             message["tool_calls"] = Value::Array(calls);
         }
-        let v = json!({"id":"chatcmpl-fake","object":"chat.completion","model":model,
+        let mut v = json!({"id":"chatcmpl-fake","object":"chat.completion","model":model,
             "choices":[{"index":0,"message":message,"finish_reason":finish}],"usage":usage});
+        if let Some(t) = &reply.timings {
+            v["timings"] = t.clone();
+        }
         return builder
             .header("content-type", "application/json")
             .body(Body::from(v.to_string()))
@@ -442,7 +594,11 @@ async fn chat(
     events.push(chunk(json!({}), Some(&finish)));
     // A reply without token counts sends no usage chunk (an empty stream stays empty).
     if reply.prompt_tokens + reply.completion_tokens > 0 {
-        events.push(json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","model":model,"choices":[],"usage":usage}));
+        let mut last = json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","model":model,"choices":[],"usage":usage});
+        if let Some(t) = &reply.timings {
+            last["timings"] = t.clone();
+        }
+        events.push(last);
     }
     let builder = builder.header("content-type", "text/event-stream");
     if let Some(n) = reply.die_after_events {
@@ -460,6 +616,19 @@ async fn chat(
                 "fake server: stream broken off",
             ))
         }));
+        return builder.body(Body::from_stream(stream)).unwrap();
+    }
+    if reply.chunk_delay_ms > 0 {
+        let delay = Duration::from_millis(reply.chunk_delay_ms);
+        let lines: Vec<String> = events
+            .iter()
+            .map(|e| format!("data: {e}\n\n"))
+            .chain(std::iter::once("data: [DONE]\n\n".to_string()))
+            .collect();
+        let stream = futures_util::stream::iter(lines).then(move |line| async move {
+            tokio::time::sleep(delay).await;
+            Ok::<_, std::io::Error>(line)
+        });
         return builder.body(Body::from_stream(stream)).unwrap();
     }
     let mut sse = String::new();
@@ -556,4 +725,31 @@ impl StaticServer {
     pub fn requests(&self) -> Vec<String> {
         self.requests.lock().unwrap().clone()
     }
+}
+
+/// The path of one of this crate's helper programs (`fake-mcp-server`, `fake-lsp-server`):
+/// the nearest `target/<profile>/<name>` above the running test executable. `cargo test
+/// --workspace` builds them before any test runs; a narrower `cargo test -p <crate>` builds
+/// them here on first use.
+pub fn fake_bin(name: &str) -> std::path::PathBuf {
+    static BUILD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    let exe = std::env::current_exe().expect("current exe");
+    let find = || {
+        exe.ancestors()
+            .skip(1)
+            .map(|d| d.join(&file))
+            .find(|p| p.is_file())
+    };
+    let _guard = BUILD.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(p) = find() {
+        return p;
+    }
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let status = std::process::Command::new(cargo)
+        .args(["build", "-p", "orca-testkit", "--bin", name])
+        .status()
+        .expect("running cargo build for a fake server");
+    assert!(status.success(), "building {name} failed");
+    find().unwrap_or_else(|| panic!("{file} not found above {}", exe.display()))
 }

@@ -31,6 +31,54 @@ pub struct ToolCall {
     pub arguments: String,
 }
 
+/// An image in a message (`DataContent` with an image media type): attached to a prompt, or
+/// returned by a tool. `name` is the file it came from (a prompt attachment's path), if any.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImagePart {
+    pub data: Vec<u8>,
+    pub media_type: String,
+    pub name: Option<String>,
+}
+
+impl ImagePart {
+    pub fn new(data: Vec<u8>, media_type: impl Into<String>) -> Self {
+        Self {
+            data,
+            media_type: media_type.into(),
+            name: None,
+        }
+    }
+
+    /// The `data:` URI the OpenAI client sends (`data:image/png;base64,...`).
+    pub fn data_uri(&self) -> String {
+        use base64::Engine;
+        format!(
+            "data:{};base64,{}",
+            self.media_type,
+            base64::engine::general_purpose::STANDARD.encode(&self.data)
+        )
+    }
+}
+
+/// A content part after a message's text ([`ChatMessage::parts`]).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentPart {
+    Text(String),
+    Image(ImagePart),
+}
+
+impl ContentPart {
+    /// The OpenAI wire form of the part, as the .NET SDK writes it.
+    pub fn to_wire(&self) -> Value {
+        match self {
+            ContentPart::Text(t) => json!({"type": "text", "text": t}),
+            ContentPart::Image(i) => {
+                json!({"type": "image_url", "image_url": {"url": i.data_uri()}})
+            }
+        }
+    }
+}
+
 /// One conversation message.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChatMessage {
@@ -50,6 +98,11 @@ pub struct ChatMessage {
     /// tool calls (a pair-vote winner): non-empty text goes as a parts array with an empty
     /// first part, tool calls or not.
     pub empty_first_part: bool,
+    /// Content parts after `content` (C# `Contents` beyond the text): images attached to a
+    /// prompt or returned by a tool, and the notes that replace them for a server without
+    /// vision. A user or system message with parts goes on the wire as a parts array, text
+    /// first (`[{"type":"text",...}, {"type":"image_url",...}]`). Sessions keep only the text.
+    pub parts: Vec<ContentPart>,
 }
 
 impl ChatMessage {
@@ -62,7 +115,39 @@ impl ChatMessage {
             tool_call_id: None,
             leading_empty_part: false,
             empty_first_part: false,
+            parts: Vec::new(),
         }
+    }
+
+    /// The message with `images` appended as parts.
+    pub fn with_images(mut self, images: impl IntoIterator<Item = ImagePart>) -> Self {
+        self.parts
+            .extend(images.into_iter().map(ContentPart::Image));
+        self
+    }
+
+    /// The image parts.
+    pub fn images(&self) -> impl Iterator<Item = &ImagePart> {
+        self.parts.iter().filter_map(|p| match p {
+            ContentPart::Image(i) => Some(i),
+            ContentPart::Text(_) => None,
+        })
+    }
+
+    /// True when the message carries an image part.
+    pub fn has_images(&self) -> bool {
+        self.images().next().is_some()
+    }
+
+    /// All text (content plus text parts), as `ChatMessage.Text` concatenates it in C#.
+    pub fn text(&self) -> String {
+        let mut out = self.content.clone().unwrap_or_default();
+        for p in &self.parts {
+            if let ContentPart::Text(t) = p {
+                out.push_str(t);
+            }
+        }
+        out
     }
 
     pub fn system(content: impl Into<String>) -> Self {
@@ -126,10 +211,15 @@ impl ChatMessage {
                 }
             }
             Role::System | Role::User => {
-                m.insert(
-                    "content".into(),
-                    json!(self.content.clone().unwrap_or_default()),
-                );
+                let text = self.content.clone().unwrap_or_default();
+                let content = if self.parts.is_empty() {
+                    json!(text)
+                } else {
+                    let mut parts = vec![json!({"type": "text", "text": text})];
+                    parts.extend(self.parts.iter().map(ContentPart::to_wire));
+                    Value::Array(parts)
+                };
+                m.insert("content".into(), content);
             }
         }
         Value::Object(m)
@@ -148,9 +238,40 @@ impl ToolDefinition {
     pub fn to_wire(&self) -> Value {
         json!({
             "type": "function",
-            "function": {"description": self.description, "name": self.name, "parameters": self.parameters}
+            "function": {"description": self.description, "name": self.name, "parameters": wire_parameters(&self.parameters)}
         })
     }
+}
+
+/// The parameter schema as the Microsoft.Extensions.AI OpenAI adapter sends it: re-read into
+/// its `ToolJson` shape, so the top level is exactly `type` (default "object"), `required`
+/// (default `[]`), `properties` (default `{}`) and `additionalProperties` (default false), in
+/// that order; other top-level keys are dropped and nested schemas pass through unchanged.
+pub fn wire_parameters(schema: &Value) -> Value {
+    let type_ = schema
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("object");
+    let required = schema
+        .get("required")
+        .filter(|r| r.is_array())
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let properties = schema
+        .get("properties")
+        .filter(|p| p.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let additional = schema
+        .get("additionalProperties")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    json!({
+        "type": type_,
+        "required": required,
+        "properties": properties,
+        "additionalProperties": additional
+    })
 }
 
 /// Per-request options (`ChatOptions`). Non-standard fields go into `additional`, in order,
@@ -182,6 +303,8 @@ pub struct Usage {
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub cached_tokens: Option<i64>,
+    /// `completion_tokens_details.reasoning_tokens` (`UsageDetails.ReasoningTokenCount`).
+    pub reasoning_tokens: Option<i64>,
 }
 
 /// A streamed piece of a response.
@@ -230,6 +353,10 @@ pub struct ChatResponse {
     pub tool_calls: Vec<ToolCall>,
     pub finish_reason: Option<String>,
     pub usage: Usage,
+    /// The server reported usage (a `usage` object arrived); `usage` is all `None` otherwise.
+    pub usage_reported: bool,
+    /// llama.cpp / Strata `timings` (the last ones the stream carried).
+    pub timings: Option<super::usage::ServerTimings>,
     /// The model id the response body named.
     pub model: Option<String>,
     /// What served the request (header or body), see [`super::ServedModels`].
@@ -269,6 +396,7 @@ impl ChatResponse {
             tool_call_id: None,
             leading_empty_part: self.leading_empty_part,
             empty_first_part: self.empty_first_part,
+            parts: Vec::new(),
         }
     }
 }

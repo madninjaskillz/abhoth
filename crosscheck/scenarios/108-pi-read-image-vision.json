@@ -1,0 +1,12 @@
+{
+  "prompt": "What colour is solid.png?",
+  "strict": true,
+  "config": {"toolProfile": "pi", "lmStudio": {"vision": true}},
+  "binary_files": {
+    "solid.png": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAEklEQVR4nGM4IWfzHx9mGBkKAC3CiEEiqWH5AAAAAElFTkSuQmCC"
+  },
+  "replies": [
+    {"tools": [{"name": "read", "args": {"path": "solid.png"}}]},
+    {"text": "solid.png is a small square filled with one solid colour."}
+  ]
+}

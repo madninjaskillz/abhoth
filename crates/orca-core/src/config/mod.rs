@@ -6,6 +6,7 @@ pub mod memory_manager;
 pub mod model;
 pub mod project_instructions;
 pub mod prompt_manager;
+pub mod schema;
 
 pub use manager::{
     ConfigError, ConfigManager, default_config_dir, serialize_config, serialize_config_with_newline,

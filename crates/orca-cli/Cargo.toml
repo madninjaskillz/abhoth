@@ -19,19 +19,46 @@ orca-abstractions.workspace = true
 orca-core.workspace = true
 orca-tools-fs.workspace = true
 orca-tools-shell.workspace = true
+orca-tools-pi.workspace = true
 orca-tools-git.workspace = true
 orca-tools-web.workspace = true
 orca-tools-agent.workspace = true
+orca-tools-utility.workspace = true
+orca-webui.workspace = true
+orca-tools-common.workspace = true
+orca-tools-archive = { workspace = true, optional = true }
+orca-tools-network = { workspace = true, optional = true }
+async-trait.workspace = true
+orca-tools-mcp = { workspace = true, optional = true }
+orca-tools-lsp = { workspace = true, optional = true }
+orca-tools-image = { workspace = true, optional = true }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
+crossterm.workspace = true
+chrono.workspace = true
+unicode-width.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+
+[features]
+# Optional tool groups (PORTING.md "Plugins"): on by default, like the C# plugin folder.
+default = ["archive", "network", "mcp", "lsp", "image"]
+archive = ["dep:orca-tools-archive"]
+network = ["dep:orca-tools-network"]
+mcp = ["dep:orca-tools-mcp"]
+lsp = ["dep:orca-tools-lsp"]
+image = ["dep:orca-tools-image"]
 
 [dev-dependencies]
+reqwest.workspace = true
 orca-testkit.workspace = true
 tempfile.workspace = true
+async-trait.workspace = true
+regex.workspace = true
 
 [lints]
 workspace = true

@@ -449,15 +449,15 @@ fn all_tools_has_the_ten_tools() {
     assert_eq!(
         names,
         [
-            "git_status",
-            "git_diff",
-            "git_log",
-            "git_commit",
             "git_branch",
             "git_checkout",
+            "git_commit",
+            "git_diff",
+            "git_log",
             "git_pull",
             "git_push",
             "git_stash",
+            "git_status",
             "github"
         ]
     );

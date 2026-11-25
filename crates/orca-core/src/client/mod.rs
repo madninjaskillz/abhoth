@@ -1,18 +1,26 @@
 //! The OpenAI-compatible chat client and request shaping.
 
+pub mod backend;
 pub mod context_overflow;
 pub mod context_window_detector;
+pub mod demo;
 pub mod max_tokens_negotiator;
 pub mod openai;
 pub mod request_parameters;
 pub mod served_models;
 pub mod server_identity;
+pub mod tool_images;
 pub mod types;
+pub mod usage;
 
+pub use backend::{ChatBackend, is_transport_failure};
 pub use openai::{ChatError, ClientSettings, OpenAiClient, SseParser};
 pub use served_models::{ServedModel, ServedModels};
 pub use server_identity::{ServerIdentity, ServerInfo, ServerKind};
 pub use types::*;
+pub use usage::{
+    ProviderUsage, ProviderUsageLedger, RequestStats, ServerTimings, UsageLoggingBackend,
+};
 
 use serde_json::Value;
 
@@ -56,5 +64,6 @@ pub fn client_for_model(
     settings.idle_timeout =
         std::time::Duration::from_secs(lm.streaming_timeout_seconds.max(1) as u64);
     settings.session_field = config.agent.uncensored.field();
+    settings.vision = lm.vision;
     OpenAiClient::new(settings, served)
 }
