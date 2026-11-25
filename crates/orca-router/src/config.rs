@@ -38,6 +38,80 @@ pub struct RouterConfig {
     pub placement: PlacementConfig,
     #[serde(default)]
     pub on_demand: OnDemandConfig,
+    #[serde(default)]
+    pub observe: ObserveConfig,
+}
+
+/// Decision-only shadow (`observe`): follow the engines' own request logs, rebuild each card's
+/// true load at every real arrival, run the placement policy on it and score that choice
+/// against the card the request actually landed on. Reads files and GETs pig-slots `/list`;
+/// sends nothing to the engines except the optional, capped canary.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ObserveConfig {
+    pub enabled: bool,
+    /// card -> that card's ninfer request log (JSONL), followed read-only from its end.
+    pub ninfer_logs: IndexMap<String, String>,
+    /// pig-slots base URL (GET /list only): where the Lead holds a lease.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pig_slots_url: Option<String>,
+    /// Decisions (decisions-YYYY-MM-DD.jsonl) and daily summaries go here (UK dates).
+    pub dir: String,
+    pub poll_ms: u64,
+    /// A request that reused at least this many cached prompt tokens on its card stays there
+    /// (the stand-in for session affinity: the logs carry no session key).
+    pub cache_keep_tokens: u64,
+    /// Decisions in the first minutes after start are marked warm-up (loads not yet known).
+    pub warmup_seconds: u64,
+    /// The engines' true load (from the logs) also feeds the router's own placement.
+    pub feed_placement: bool,
+    pub canary: CanaryConfig,
+}
+
+impl Default for ObserveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            ninfer_logs: IndexMap::new(),
+            pig_slots_url: None,
+            dir: "observe".into(),
+            poll_ms: 1000,
+            cache_keep_tokens: 1024,
+            warmup_seconds: 600,
+            feed_placement: true,
+            canary: CanaryConfig::default(),
+        }
+    }
+}
+
+/// A tiny identical chat sent through LiteLLM and through the router, alternating which goes
+/// first, to measure the router's added latency and errors on real engines. Off unless
+/// `everySeconds` > 0; skipped in the 06:45-07:30 UK window and whenever a card has fewer than
+/// `minFreeLanes` free lanes (so it never queues behind, or ahead of, real work).
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CanaryConfig {
+    pub every_seconds: u64,
+    pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub litellm_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub router_url: Option<String>,
+    pub min_free_lanes: u32,
+    pub max_tokens: u32,
+}
+
+impl Default for CanaryConfig {
+    fn default() -> Self {
+        Self {
+            every_seconds: 0,
+            model: "qwen3.8-27b".into(),
+            litellm_url: None,
+            router_url: None,
+            min_free_lanes: 2,
+            max_tokens: 8,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

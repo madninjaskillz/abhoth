@@ -272,7 +272,7 @@ pub async fn place(
             lanes
         }
     };
-    let inflight = |c: &str| st.inflight(c);
+    let inflight = |c: &str| st.load(c);
     let least = |order: &[String]| -> Vec<String> {
         // the preferred card(s), then the rest by load per lane
         let mut rest: Vec<String> = eligible
@@ -283,7 +283,7 @@ pub async fn place(
         rest.sort_by_key(|c| {
             let lanes = snap.config.upstreams.get(c).map_or(1, |u| u.lanes.max(1)) as u64;
             (
-                st.inflight(c) as u64 * 1_000_000 / lanes,
+                st.load(c) as u64 * 1_000_000 / lanes,
                 st.card(c).picks * 1_000_000 / lanes,
             )
         });

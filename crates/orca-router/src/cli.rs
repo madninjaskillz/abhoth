@@ -22,6 +22,7 @@ pub const HELP: &str = "abhoth router: the OpenAI-compatible gateway (replaces L
 
 USAGE:
   abhoth router --config router.json [--port P | --listen ADDR] [--host H] [--lb-port P] [--slots-port P]
+  abhoth router observe-summary --dir DIR [--date YYYY-MM-DD]   (the decision-only shadow's day)
   abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
                 [--key-file PATH] [--base router.json] --out router.json [--watch SECONDS]
   abhoth router check --config router.json
@@ -42,6 +43,21 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
             Ok(0)
         }
         Some("import-litellm") => import_cmd(&args[1..]).await,
+        Some("observe-summary") => {
+            let (mut dir, mut date) = (None, None);
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--dir" => dir = Some(take(&args, &mut i, "--dir")?),
+                    "--date" => date = Some(take(&args, &mut i, "--date")?),
+                    a => bail!("unknown argument {a}"),
+                }
+                i += 1;
+            }
+            let dir = dir.ok_or_else(|| anyhow!("--dir is required"))?;
+            print!("{}", crate::observe::summary_cli(&dir, date));
+            Ok(0)
+        }
         Some("check") => {
             let mut config = None;
             let mut i = 1;
@@ -133,6 +149,8 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     }
     tokio::spawn(crate::reload::watch(st.clone(), Duration::from_secs(2)));
     tokio::spawn(crate::ondemand::background(st.clone()));
+    tokio::spawn(crate::observe::run(st.clone()));
+    tokio::spawn(crate::observe::canary(st.clone()));
     #[cfg(unix)]
     {
         let st = st.clone();

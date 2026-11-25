@@ -1,6 +1,24 @@
 {
   "settings": { "requestLog": "/state/requests.jsonl" },
   "slots": { "enabled": false },
-  "placement": { "leaseAware": false, "admission": false, "affinity": false },
-  "onDemand": { "enabled": false, "dryRun": true }
+  "placement": { "leaseAware": true, "admission": true, "affinity": true, "leadReserve": 1, "queueSeconds": 300 },
+  "onDemand": { "enabled": false, "dryRun": true },
+  "observe": {
+    "enabled": true,
+    "ninferLogs": { "A": "/ninfer-logs/req-layout-a.jsonl", "B": "/ninfer-logs/req-layout-b.jsonl" },
+    "pigSlotsUrl": "http://gpu-host:8099",
+    "dir": "/state/observe",
+    "pollMs": 1000,
+    "cacheKeepTokens": 1024,
+    "warmupSeconds": 600,
+    "feedPlacement": true,
+    "canary": {
+      "everySeconds": 900,
+      "model": "qwen3.8-27b",
+      "litellmUrl": "http://gpu-host:8010",
+      "routerUrl": "http://127.0.0.1:8020",
+      "minFreeLanes": 2,
+      "maxTokens": 8
+    }
+  }
 }

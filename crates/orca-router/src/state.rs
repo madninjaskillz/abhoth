@@ -171,6 +171,18 @@ impl AppState {
         }
     }
 
+    /// In-flight on `card` for placement: the router's own count, or the engine's own (from
+    /// `observe`) when that is higher and `observe.feedPlacement` is on.
+    pub fn load(&self, card: &str) -> u32 {
+        let own = self.inflight(card);
+        let snap = self.snapshot();
+        if snap.config.observe.enabled && snap.config.observe.feed_placement {
+            own.max(self.ext.observer.external_load(card).unwrap_or(0))
+        } else {
+            own
+        }
+    }
+
     pub fn inflight(&self, card: &str) -> u32 {
         self.card(card).inflight
     }

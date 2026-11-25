@@ -6,6 +6,7 @@ pub mod config;
 pub mod effort;
 pub mod import;
 pub mod metrics;
+pub mod observe;
 pub mod ondemand;
 pub mod placement;
 pub mod proxy;
@@ -23,6 +24,7 @@ pub struct Extensions {
     pub admission: placement::Admission,
     pub affinity: placement::Affinity,
     pub ondemand: ondemand::Coordinator,
+    pub observer: observe::Observer,
 }
 
 impl Extensions {
@@ -32,6 +34,7 @@ impl Extensions {
             admission: placement::Admission::default(),
             affinity: placement::Affinity::default(),
             ondemand: ondemand::Coordinator::default(),
+            observer: observe::Observer::default(),
         }
     }
 

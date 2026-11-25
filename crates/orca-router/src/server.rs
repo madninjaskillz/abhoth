@@ -118,6 +118,10 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
             json_response(200, &json!({"status": "ok", "service": "abhoth-router"}))
         }
         (Method::GET, "/status") => json_response(200, &status(&st)),
+        (Method::GET, "/observe") => {
+            let q = path_q.split_once('?').map(|(_, q)| q);
+            json_response(200, &crate::observe::view(&st, q))
+        }
         (Method::GET, "/metrics") => {
             let mut r = crate::status::metrics_text(&st).into_response();
             r.headers_mut().insert(
