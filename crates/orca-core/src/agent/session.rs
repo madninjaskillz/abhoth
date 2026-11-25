@@ -98,6 +98,8 @@ pub struct AgentSession {
     /// The wrap-up a turn ended on when it is not the last response text (verification
     /// changed nothing and the model then answered "Verified.").
     pub final_prose: Option<String>,
+    /// Session id, checkpoints, hooks and formatter around each tool call (none by default).
+    pub tool_hooks: super::tool_hooks::ToolHooks,
 }
 
 /// Per-turn wind-down state (`AgentLoopState`).
@@ -136,6 +138,7 @@ impl AgentSession {
             mutation_epoch: 0,
             turn_history_start: 0,
             final_prose: None,
+            tool_hooks: Default::default(),
         }
     }
 
@@ -422,9 +425,14 @@ impl AgentSession {
         ) {
             return ToolResult::denied("Permission denied by user.");
         }
+        // Hooks see the tool name the model used and its argument text.
+        if !self.tool_hooks.pre_hook(&call.name, &call.arguments).await {
+            return ToolResult::blocked("Tool blocked by hook.");
+        }
         if let Some(err) = validate_required_args(tool.as_ref(), &args) {
             return ToolResult::error_with(err, orca_abstractions::ToolErrorCode::InvalidArguments);
         }
+        self.tool_hooks.snapshot(tool.as_ref(), &args, &self.ctx);
         if let Some(err) = self.check_directory_restriction(tool.as_ref(), &args) {
             return ToolResult::blocked(err);
         }
@@ -435,6 +443,12 @@ impl AgentSession {
         let started = Instant::now();
         let result = self.run_tool(&tool, &args, observer).await;
         let elapsed = started.elapsed().as_millis() as i64;
+        self.tool_hooks.post_hook(
+            &call.name,
+            &call.arguments,
+            &result.content,
+            result.is_error,
+        );
 
         if !result.is_error {
             self.track_file_access(tool.as_ref(), &args);
@@ -479,7 +493,10 @@ impl AgentSession {
         } else if result.is_error {
             format!("ERROR: {}", result.content)
         } else {
-            truncate_tool_output(tool.name(), &result.content)
+            let truncated = truncate_tool_output(tool.name(), &result.content);
+            self.tool_hooks
+                .append_auto_format(tool.as_ref(), &args, &self.ctx, truncated)
+                .await
         };
         ToolResult { content, ..result }
     }
