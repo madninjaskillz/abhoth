@@ -1,0 +1,17 @@
+{
+  "prompt": "Explore the folder",
+  "config": {
+    "agent": {
+      "mainLoopMaxIterations": 2,
+      "maxIterationsHardCap": 2
+    }
+  },
+  "files": {
+    "a.txt": "a\n"
+  },
+  "replies": [
+    { "tools": [ { "name": "list_directory", "args": { "path": "." } } ] },
+    { "tools": [ { "name": "glob", "args": { "pattern": "*.txt" } } ] },
+    { "text": "## Done\nListed the folder.\n## In progress\nnothing\n## Failing tests\nnone\n## Next step\nread a.txt" }
+  ]
+}

@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use orca_abstractions::{ToolResult, ToolRiskLevel};
 
+use super::long_task::LongTaskMonitor;
 use super::loop_messages as msg;
 use super::prompts::{self, MAX_SUMMARY_CONTINUATIONS, SUMMARY_CONTINUE_MESSAGE};
 use super::run_evidence;
@@ -40,6 +41,10 @@ pub(super) struct LoopState {
     pub task_brief: Option<String>,
     pub iterations_since_reminder: i32,
     pub iteration_budget: i32,
+    /// Why the budget was not extended (named in the handoff request).
+    pub exhaust_reason: Option<String>,
+    /// History length at the start of each iteration (progress windows).
+    pub history_marks: Vec<usize>,
     pub pre_verification_wrap_up: Option<String>,
     pub pre_verification_epoch: u64,
 }
@@ -83,10 +88,14 @@ impl AgentSession {
         let mut iteration: i32 = 0;
         let mut budget_exhausted = false;
         loop {
-            if iteration >= s.iteration_budget {
+            // Soft limit reached: keep going only while the turn shows measurable progress.
+            if iteration >= s.iteration_budget
+                && !self.try_extend_budget(&mut s, iteration, observer)
+            {
                 budget_exhausted = true;
                 break;
             }
+            s.history_marks.push(self.tool_call_history.len());
             self.inject_task_reminder(&mut s, iteration);
             self.inject_budget_advisory(&mut s, iteration);
             let closed = self.close_dangling_tool_calls();
@@ -127,6 +136,21 @@ impl AgentSession {
             }
             // A healthy stream proves the connection is good again.
             s.same_model_retry_attempts = 0;
+
+            // Quality-based failover (refusals, too-short replies) when backups exist.
+            if self.model_index + 1 < self.config.lm_studio.models.len() {
+                let verdict = super::response_quality::check(&self.config, &response.text);
+                if verdict.should_switch_to_backup {
+                    observer.on_notice(&format!(
+                        "{} \u{2014} retrying with next model...",
+                        verdict.reason.as_deref().unwrap_or("Low-quality response")
+                    ));
+                    if self.switch_model(&mut s, observer).await {
+                        iteration += 1;
+                        continue;
+                    }
+                }
+            }
 
             // Prefer the server's real output count over stream-chunk counting.
             self.total_output_tokens += response
@@ -332,8 +356,8 @@ impl AgentSession {
         self.add_harness_note(&note);
     }
 
-    /// "Wrap it up" near the end of the budget. (C# defers it while a long task is still
-    /// measurably progressing and can be extended; budget extension is not ported yet.)
+    /// "Wrap it up" near the end of the budget, deferred while the turn is still measurably
+    /// progressing and the budget can still be extended.
     fn inject_budget_advisory(&mut self, s: &mut LoopState, iteration: i32) {
         if s.budget_advisory_injected
             || !s.tools_executed
@@ -345,6 +369,16 @@ impl AgentSession {
             .iteration_budget
             .max(self.config.agent.max_iterations_hard_cap);
         let extendable = s.iteration_budget < hard_cap;
+        if extendable {
+            let start = self.progress_window_start(s, iteration);
+            if self
+                .long_task_monitor()
+                .assess_progress(&self.tool_call_history, start)
+                .progress
+            {
+                return;
+            }
+        }
         s.budget_advisory_injected = true;
         let note = msg::budget_advisory(s.iteration_budget - iteration, extendable);
         self.add_harness_note(&note);
@@ -442,10 +476,20 @@ impl AgentSession {
             tokio::time::sleep(delay).await;
             return Recovery::Continue;
         }
+        if self.switch_model(s, observer).await {
+            Recovery::Continue
+        } else {
+            Recovery::Break
+        }
+    }
+
+    /// `TrySwitchModelAsync`: the next model in `lmStudio.models`, with per-turn state reset
+    /// and a short breather.
+    async fn switch_model(&mut self, s: &mut LoopState, observer: &mut dyn AgentObserver) -> bool {
         let models = &self.config.lm_studio.models;
         let next = self.model_index + 1;
         if next >= models.len() {
-            return Recovery::Break;
+            return false;
         }
         self.model_index = next;
         observer.on_notice(&format!(
@@ -459,7 +503,7 @@ impl AgentSession {
         self.recent_call_history.clear();
         self.native_tools = self.resolve_native_tools();
         tokio::time::sleep(self.failover_delay).await;
-        Recovery::Continue
+        true
     }
 
     /// `ToolCallExecutor.DetectDoomLoop`: the same call (tool + arguments) three times in a
@@ -757,14 +801,23 @@ impl AgentSession {
         observer: &mut dyn AgentObserver,
     ) {
         observer.on_notice(&format!(
-            "Iteration limit ({}) reached. Requesting a progress summary.",
-            s.iteration_budget
+            "Iteration limit ({}) reached{}. Requesting a progress summary.",
+            s.iteration_budget,
+            s.exhaust_reason
+                .as_deref()
+                .map(|r| format!(" \u{2014} {r}"))
+                .unwrap_or_default()
         ));
-        let facts = self.handoff_facts();
+        let facts = self
+            .long_task_monitor()
+            .build_handoff_facts(&self.tool_call_history, self.files_modified.iter());
+        let reason = s
+            .exhaust_reason
+            .clone()
+            .unwrap_or_else(|| format!("{} iterations", s.iteration_budget));
         self.messages
             .push(ChatMessage::user(msg::iteration_handoff_message(
-                &format!("{} iterations", s.iteration_budget),
-                &facts,
+                &reason, &facts,
             )));
         let options = self.build_options();
         let text = match self
@@ -787,14 +840,77 @@ impl AgentSession {
         self.last_assistant_response = Some(text);
     }
 
-    /// Harness-recorded facts for the handoff (`LongTaskMonitor.BuildHandoffFacts`, simplified
-    /// until the monitor is ported): the files changed this session.
-    fn handoff_facts(&self) -> String {
-        if self.files_modified.is_empty() {
-            "- Files modified: (none)".to_string()
-        } else {
-            format!("- Files modified: {}", self.files_modified.join(", "))
+    /// A long-task monitor over this turn's tool history.
+    pub(super) fn long_task_monitor(&self) -> LongTaskMonitor<'_> {
+        let mutating: std::collections::HashSet<String> = self
+            .registry
+            .all()
+            .iter()
+            .filter(|t| {
+                t.capabilities()
+                    .contains(orca_abstractions::ToolCapabilities::MODIFIES_FILES)
+            })
+            .map(|t| t.name().to_string())
+            .collect();
+        LongTaskMonitor::new(
+            self.turn_history_start,
+            move |r: &super::session::ToolCallRecord| !r.is_error && mutating.contains(&r.name),
+            Some(self.ctx.cwd.as_path()),
+        )
+    }
+
+    /// `ProgressWindowStart`: history index where the window ending at `iteration` begins.
+    fn progress_window_start(&self, s: &LoopState, iteration: i32) -> usize {
+        let first =
+            (iteration.max(0) as usize).saturating_sub(LongTaskMonitor::EXTENSION_ITERATIONS);
+        s.history_marks
+            .get(first)
+            .copied()
+            .unwrap_or(self.tool_call_history.len())
+    }
+
+    /// `TryExtendBudget`: more iterations (up to `agent.maxIterationsHardCap`) while the last
+    /// window shows measurable progress.
+    fn try_extend_budget(
+        &mut self,
+        s: &mut LoopState,
+        iteration: i32,
+        observer: &mut dyn AgentObserver,
+    ) -> bool {
+        let hard_cap = s
+            .iteration_budget
+            .max(self.config.agent.max_iterations_hard_cap);
+        if s.iteration_budget >= hard_cap {
+            s.exhaust_reason = (hard_cap > self.config.agent.main_loop_max_iterations.max(1))
+                .then(|| format!("hard cap agent.maxIterationsHardCap = {hard_cap}"));
+            return false;
         }
+        let start = self.progress_window_start(s, iteration);
+        let verdict = self
+            .long_task_monitor()
+            .assess_progress(&self.tool_call_history, start);
+        if !verdict.progress {
+            s.exhaust_reason = Some(format!(
+                "no measurable progress in the last {} iterations ({})",
+                LongTaskMonitor::EXTENSION_ITERATIONS,
+                verdict.reason
+            ));
+            return false;
+        }
+        let previous = s.iteration_budget;
+        s.iteration_budget = hard_cap.min(previous + LongTaskMonitor::EXTENSION_ITERATIONS as i32);
+        s.budget_advisory_injected = false;
+        observer.on_notice(&format!(
+            "Iteration budget {previous} reached, still progressing ({}) \u{2014} extended to {} (cap {hard_cap}).",
+            verdict.reason, s.iteration_budget
+        ));
+        if !s.summary_requested {
+            self.messages.push(ChatMessage::user(format!(
+                "[Budget] You are making progress ({}), so the iteration budget was extended from {previous} to {}. Continue with the original request. Further extensions are granted only while your changes measurably move the tests forward.",
+                verdict.reason, s.iteration_budget
+            )));
+        }
+        true
     }
 }
 

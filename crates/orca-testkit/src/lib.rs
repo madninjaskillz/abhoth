@@ -258,7 +258,10 @@ async fn chat(
         }
     }
     events.push(chunk(json!({}), Some(&finish)));
-    events.push(json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","model":model,"choices":[],"usage":usage}));
+    // A reply without token counts sends no usage chunk (an empty stream stays empty).
+    if reply.prompt_tokens + reply.completion_tokens > 0 {
+        events.push(json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","model":model,"choices":[],"usage":usage}));
+    }
     let mut sse = String::new();
     for e in events {
         sse.push_str("data: ");

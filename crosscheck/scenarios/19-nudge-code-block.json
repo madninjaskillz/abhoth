@@ -1,0 +1,10 @@
+{
+  "prompt": "Create hello.py that prints hi",
+  "replies": [
+    { "text": "I'll create hello.py with this content:\n```python\nprint('hi')\n```" },
+    { "tools": [ { "name": "write_file", "args": { "path": "hello.py", "content": "print('hi')\n" } } ] },
+    { "text": "I created hello.py, which prints hi when you run it with python." },
+    { "tools": [ { "name": "read_file", "args": { "path": "hello.py" } } ] },
+    { "text": "Verified." }
+  ]
+}
