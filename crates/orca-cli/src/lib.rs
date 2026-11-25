@@ -437,10 +437,17 @@ async fn run_bridge_prompt(
     let system = native.default_system_prompt();
     let registry = std::mem::take(&mut native.registry);
     let session_id = restored.as_ref().map(|r| r.id.clone());
+    let engine = restored
+        .as_ref()
+        .map(|r| r.engine.clone())
+        .unwrap_or_default();
     let mut conversation = orca_core::chat::Conversation::from_api_messages(
         restored.map(|r| r.messages).unwrap_or_default(),
         Default::default(),
     );
+    // A session the engine ran before resumes that CLI's own session (SessionToConversation).
+    conversation.engine_id = engine.engine;
+    conversation.engine_session_id = engine.engine_session_id;
     let outcome = orca_core::engines::run_print_turn(
         orca_core::engines::PrintTurnRequest {
             config: &config,
@@ -673,13 +680,16 @@ async fn run_interactive(
     session.startup_probes = !session.config.demo_mode;
     session.tool_hooks = tool_hooks;
     let mut session_id = None;
+    let mut engine = orca_core::session::EngineRef::default();
     if let Some(r) = restored {
         session.messages = r.messages;
         session.tool_hooks.session_id = Some(r.id.clone());
         session_id = Some(r.id);
+        engine = r.engine;
     }
     let console = ui::Console::stdout();
     let mut repl = repl::Repl::new(console, session, config_dir.to_path_buf(), session_id);
+    repl.state.engine = engine;
     repl.startup_notices = startup_notices;
     repl.active_profile = active_profile;
     let exit = repl.run().await;

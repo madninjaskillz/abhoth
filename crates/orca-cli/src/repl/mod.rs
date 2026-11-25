@@ -568,10 +568,11 @@ impl Repl {
         if !self.session.config.session.auto_save {
             return;
         }
-        match self.sessions.save(
+        match self.sessions.save_with_engine(
             &self.session.messages,
             None,
             self.state.current_session_id.as_deref(),
+            &self.state.engine,
         ) {
             Ok(id) => {
                 self.session.tool_hooks.session_id = Some(id.clone());

@@ -14,6 +14,8 @@ use crate::args::CliArgs;
 pub struct RestoredSession {
     pub id: String,
     pub messages: Vec<ChatMessage>,
+    /// The bridge engine that ran it and that CLI's session id (resumed when it runs again).
+    pub engine: orca_core::session::EngineRef,
 }
 
 pub enum Restore {
@@ -69,5 +71,31 @@ pub fn restore_from_args(args: &CliArgs, sessions: &SessionManager, cwd: &Path) 
     Restore::Resumed(RestoredSession {
         id: data.id.clone(),
         messages: session_to_messages(&data),
+        engine: orca_core::session::EngineRef::of(&data),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use orca_core::session::EngineRef;
+
+    #[test]
+    fn resume_carries_the_engine_and_its_session_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = SessionManager::with_dir(dir.path());
+        let engine = EngineRef {
+            engine: Some("codex".into()),
+            engine_session_id: Some("thread-1".into()),
+        };
+        let id = m
+            .save_with_engine(&[ChatMessage::user("hi")], None, None, &engine)
+            .unwrap();
+        let args = CliArgs::parse(&["--resume".to_string(), id.clone()], dir.path());
+        let Restore::Resumed(r) = restore_from_args(&args, &m, dir.path()) else {
+            panic!("not resumed");
+        };
+        assert_eq!(r.id, id);
+        assert_eq!(r.engine, engine);
+    }
 }
