@@ -1,0 +1,25 @@
+<!--meta {"title": "Documentation", "description": "Abhoth documentation: install, quick start, configuration, the web UI, the desktop app, self-hosting with Docker, local models and the router."} -->
+<h1>Abhoth documentation</h1>
+<p class="lead">Abhoth is an autonomous coding agent for the models you run. It comes as one <code>abhoth</code> binary that gives you a terminal session, one-shot runs for scripts, a web UI, a desktop app and an OpenAI-compatible router.</p>
+
+<div class="cards">
+  <a href="{{base}}docs/install/"><b>Install</b><span>Windows installer, Linux AppImage, Cargo or Docker.</span></a>
+  <a href="{{base}}docs/quick-start/"><b>Quick start</b><span>Connect a model and finish your first task in five minutes.</span></a>
+  <a href="{{base}}docs/configuration/"><b>Configuration</b><span>config.json, permissions, context, sessions and hooks.</span></a>
+  <a href="{{base}}docs/local-models/"><b>Local models</b><span>LM Studio, llama.cpp, vLLM, Ollama and inference slots.</span></a>
+  <a href="{{base}}docs/web-ui/"><b>Web UI</b><span><code>--hostui</code>: projects, chat, diffs, terminals and sign-in.</span></a>
+  <a href="{{base}}docs/desktop/"><b>Desktop app</b><span><code>--desktop</code>: a native window, a tray icon and auto-update.</span></a>
+  <a href="{{base}}docs/docker/"><b>Self-host with Docker</b><span>Run the web UI on your server, locked down.</span></a>
+  <a href="{{base}}docs/router/"><b>The router</b><span>One OpenAI-compatible endpoint in front of your engines.</span></a>
+</div>
+
+<h2>How it fits together</h2>
+<ul>
+  <li><strong>The agent</strong> runs a loop: it sends your request and the tool list to the model, runs the tools the model calls, feeds the results back, and repeats until the task is done. Risky tools ask first.</li>
+  <li><strong>State</strong> lives in <code>~/.abhoth</code>: <code>config.json</code>, sessions, prompts, projects and the web UI's account database. Set <code>ABHOTH_HOME</code> to put it somewhere else.</li>
+  <li><strong>Project instructions</strong> come from <code>ORCA.md</code>, <code>AGENTS.md</code> or <code>CLAUDE.md</code> in your project, so a repo that already has instructions for another agent works as it is.</li>
+  <li><strong>Models</strong> are reached over HTTP: any OpenAI-compatible server, native Ollama, or the Anthropic Messages API.</li>
+</ul>
+
+<h2>Getting help</h2>
+<p>Run <code>abhoth --help</code> for the common options, and type <code>/help</code> in a session for the slash commands. <code>/doctor</code> checks your setup. Bugs and ideas go to <a href="{{repo}}/issues">GitHub Issues</a>.</p>

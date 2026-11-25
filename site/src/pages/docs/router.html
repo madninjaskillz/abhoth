@@ -1,0 +1,58 @@
+<!--meta {"title": "The router", "description": "abhoth router: an OpenAI-compatible gateway in the Abhoth binary with model aliases, slot leases, Lead priority, session affinity, per-engine fixes, failover and metrics."} -->
+<h1>The router</h1>
+<p class="lead"><code>abhoth router</code> is an OpenAI-compatible gateway that lives in the same binary. Put it in front of your inference engines, and every client gets one URL and one model list.</p>
+
+<div class="note warn"><p><strong>New, and still on trial.</strong> The router was built to replace a LiteLLM plus nginx setup in front of a two-GPU inference server, and it's being shadow-tested against that setup. It works, but expect the configuration to change, and expect these docs to grow.</p></div>
+
+<h2>Why a router</h2>
+<p>With more than one engine, or more than one GPU, someone has to decide where each request goes. A generic proxy round-robins requests. That breaks prefix caches, lets a sub-agent take the lane the Lead needs, and passes every engine's quirks on to your clients. The router knows about coding agents:</p>
+<ul>
+  <li><strong>Names:</strong> a model name can mean the whole pool, one card (<code>-a</code>, <code>-b</code>, falling back to the other card if theirs is offline), a catalog model, or an on-demand model that gets switched in.</li>
+  <li><strong>Slot leases:</strong> Abhoth leases a slot for the Lead and each sub-agent. The router places leased requests on the lease's card and counts unleased traffic against the free lanes.</li>
+  <li><strong>Lead priority:</strong> the Lead never queues, and one lane on its card can be kept free for it. Agents and other traffic wait their turn instead of getting a 429 from the engine.</li>
+  <li><strong>Session affinity:</strong> requests with the same <code>prompt_cache_key</code> (or session header) stick to one card by rendezvous hashing, so its prefix cache keeps hitting.</li>
+  <li><strong>Per-engine fixes:</strong> it clamps <code>reasoning_effort</code> to what the engine supports, translates "thinking off", drops parameters an engine would reject, and adds each engine's API key from a file.</li>
+  <li><strong>Failover:</strong> one retry on another eligible upstream after a connect error, a timeout, a 502 or a 503, and only before the first byte is sent. A failing upstream cools down for 10 seconds.</li>
+  <li><strong>Visibility:</strong> Prometheus metrics, a JSON status, and a JSONL request log with no request bodies.</li>
+</ul>
+
+<h2>Run it</h2>
+<pre data-copy><code>abhoth router --config router.json --port 8020
+abhoth router check --config router.json          # validate a config</code></pre>
+<p>Then point clients at <code>http://&lt;host&gt;:8020/v1</code>. In Abhoth, set it as <code>lmStudio.baseUrl</code>. Abhoth sees a gateway with several models, and leaves the router's <code>/health</code> alone.</p>
+
+<h3>Coming from LiteLLM</h3>
+<p>If you already run LiteLLM, generate the router's config from it:</p>
+<pre data-copy><code>abhoth router import-litellm --litellm config.yaml --lb nginx.conf \
+  --key-file /run/secrets/engine-key --out router.json [--watch 10]</code></pre>
+<p>With <code>--watch</code>, it regenerates the config when the LiteLLM config changes and the router reloads it without dropping requests. That's how a shadow run follows your layout.</p>
+
+<h3>Placement</h3>
+<p>Placement is off by default, so the router behaves like a plain gateway until you turn it on:</p>
+<pre data-copy><code>{
+  "placement": {
+    "leaseAware": true,
+    "admission": true,
+    "affinity": true,
+    "leadReserve": 1,
+    "queueSeconds": 300
+  }
+}</code></pre>
+<p>A request is placed by its lease first, then by session affinity, then on the least-loaded card.</p>
+
+<h2>Endpoints</h2>
+<table>
+  <thead><tr><th>Endpoint</th><th>What</th></tr></thead>
+  <tbody>
+    <tr><td><code>POST /v1/chat/completions</code></td><td>Streaming (passed through chunk by chunk) and non-streaming.</td></tr>
+    <tr><td><code>GET /v1/models</code>, <code>GET /v1/model/info</code></td><td>The model list, and per-model details (never keys).</td></tr>
+    <tr><td><code>GET /health</code>, <code>/health/liveliness</code></td><td>Liveness. These never call a model.</td></tr>
+    <tr><td><code>GET /metrics</code>, <code>GET /status</code></td><td>Prometheus text, and a JSON status for dashboards.</td></tr>
+    <tr><td><code>POST /admin/cards/&lt;X&gt;/drain</code></td><td>Stop new requests to a card before you switch it. Loopback or admin key only.</td></tr>
+  </tbody>
+</table>
+<p>Responses carry <code>x-served-model</code>, <code>x-abhoth-card</code> and <code>x-abhoth-upstream</code>, so you can see where a request went.</p>
+
+<h2>What it doesn't do</h2>
+<p>There are no cloud-provider adapters, spend tracking, virtual keys or admin UI, and no embeddings, images or audio. It routes chat completions to engines you run. If you need the rest, put LiteLLM behind the router as one more upstream.</p>
+<p>The full design, survey and test results are in <a href="{{repo}}/blob/main/ROUTER.md">ROUTER.md</a>.</p>

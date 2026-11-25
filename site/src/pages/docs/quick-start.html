@@ -1,0 +1,51 @@
+<!--meta {"title": "Quick start", "description": "Connect Abhoth to a model server and run your first task: in the terminal, as a one-shot run, or in the web UI."} -->
+<h1>Quick start</h1>
+<p class="lead">Five minutes from install to your first finished task.</p>
+
+<h2>1. Start a model server</h2>
+<p>Any OpenAI-compatible server works. With <a href="https://lmstudio.ai">LM Studio</a>, load a coding model with tool support (a Qwen coder, for example) and start the local server on port 1234. With llama.cpp:</p>
+<pre data-copy><code>llama-server -m qwen3-coder-30b-q4_k_m.gguf --jinja -c 65536 --port 1234</code></pre>
+<p>More servers, and how to pick a model: <a href="{{base}}docs/local-models/">Local models</a>.</p>
+
+<h2>2. Point Abhoth at it</h2>
+<p>The first run creates <code>~/.abhoth/config.json</code>. Set the base URL and your model:</p>
+<pre data-copy><code>{
+  "lmStudio": {
+    "baseUrl": "http://localhost:1234/v1",
+    "models": ["qwen3-coder-30b"]
+  }
+}</code></pre>
+<p>You can also do this from a session with <code>/config</code>, or in the web UI under Settings, LLM Server. If <code>models</code> is empty, Abhoth uses the model the server has loaded.</p>
+
+<h2>3. Give it a task</h2>
+<p>Open a terminal in your project and start a session:</p>
+<pre data-copy><code>cd my-project
+abhoth</code></pre>
+<p>Type what you want, for example <em>"Add a DELETE /todos/:id endpoint, with a test"</em>. Abhoth reads the code, makes the change, runs the tests and tells you what it did. Read-only tools run straight away; anything that writes or runs commands asks first. Press <kbd>Ctrl</kbd>+<kbd>C</kbd> to cancel a turn.</p>
+
+<h3>Useful slash commands</h3>
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>/help</code></td><td>Lists every command.</td></tr>
+    <tr><td><code>/init</code></td><td>Creates an <code>ORCA.md</code> with instructions for this project.</td></tr>
+    <tr><td><code>/plan</code></td><td>Toggles plan mode: the agent plans first, using read-only tools.</td></tr>
+    <tr><td><code>/model</code></td><td>Lists or sets the model(s).</td></tr>
+    <tr><td><code>/diff</code>, <code>/undo</code></td><td>Shows uncommitted changes, or undoes the last edit from its checkpoint.</td></tr>
+    <tr><td><code>/agents</code></td><td>Lists and watches background agents (<kbd>Ctrl</kbd>+<kbd>G</kbd>).</td></tr>
+    <tr><td><code>/review</code></td><td>Runs a code review in a sub-agent.</td></tr>
+    <tr><td><code>/compact</code>, <code>/context</code></td><td>Summarises the conversation, or shows context-window use.</td></tr>
+    <tr><td><code>/session</code>, <code>/fork</code></td><td>Lists, loads and saves sessions, or branches the current one.</td></tr>
+    <tr><td><code>/config</code></td><td>Opens the settings editor.</td></tr>
+    <tr><td><code>/doctor</code></td><td>Checks your setup.</td></tr>
+  </tbody>
+</table>
+<p>Your own commands go in <code>.orca/commands/</code> as Markdown templates.</p>
+
+<h2>Other ways to run it</h2>
+<pre data-copy><code>abhoth -p "fix the failing test"            # one prompt, then exit
+abhoth -p "summarise src/" --output json    # machine-readable result
+abhoth -c                                   # continue the last session
+abhoth --sandbox                            # read-only tools, no shell
+abhoth --hostui                             # the web UI
+abhoth --desktop                            # the web UI in its own window</code></pre>

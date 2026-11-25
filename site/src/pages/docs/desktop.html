@@ -1,0 +1,26 @@
+<!--meta {"title": "Desktop app", "description": "abhoth --desktop: the Abhoth web UI in a native window with a tray icon, single instance, a native folder picker and background auto-update."} -->
+<h1>Desktop app</h1>
+<p class="lead">The web UI in its own window. It uses WebView2 on Windows and WebKitGTK on Linux, so there's no bundled browser.</p>
+
+<h2>Start it</h2>
+<ul>
+  <li><strong>Installed (Windows):</strong> the "Abhoth" Start-menu shortcut runs <code>abhoth-desktop.exe</code>, which has no console window.</li>
+  <li><strong>Linux:</strong> run <code>Abhoth.AppImage</code>.</li>
+  <li><strong>From a terminal:</strong> <code>abhoth --desktop</code>, in a build with the <code>desktop</code> feature (the release builds have it).</li>
+</ul>
+<p>The app starts the web server on loopback and signs you in by itself, without showing a token. The sign-in lasts while the app runs.</p>
+
+<h2>Window and tray</h2>
+<ul>
+  <li><strong>Closing the window hides it to the tray.</strong> The server, your sessions and running agents carry on. Use Show from the tray (or double-click the icon) to bring it back, and Quit to exit.</li>
+  <li>To quit on close instead, turn off <code>desktop.closeToTray</code> in Settings, Desktop. It applies at once.</li>
+  <li><strong>One instance:</strong> launching it again brings the existing window forward.</li>
+  <li>The folder picker uses your system's dialog, and links that leave the app open in your normal browser.</li>
+  <li>On Linux without a tray (no StatusNotifier host), closing the window quits.</li>
+</ul>
+
+<h2>Updates</h2>
+<p>The installed app checks GitHub Releases when it starts and every 6 hours. A new version is downloaded in the background, as a delta package when possible, and the tray menu offers <em>Update available: restart into &lt;version&gt;</em>. Otherwise it's applied the next time the app starts. Your <code>~/.abhoth</code> folder is never touched by updates.</p>
+
+<h2>First run</h2>
+<p>With no model configured, the app still opens. Go to Settings, LLM Server, set the base URL of your model server and its models, and your next prompt uses them. See <a href="{{base}}docs/local-models/">Local models</a>.</p>

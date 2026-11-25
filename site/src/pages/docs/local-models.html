@@ -1,0 +1,60 @@
+<!--meta {"title": "Local models", "description": "Run Abhoth with local models: LM Studio, llama.cpp, vLLM, Ollama and other OpenAI-compatible servers, plus backups, thinking control, sampling presets and inference slots."} -->
+<h1>Local models</h1>
+<p class="lead">Abhoth was built for models you run yourself. Give it a base URL and it adapts to the server it finds.</p>
+
+<h2>Servers</h2>
+<table>
+  <thead><tr><th>Server</th><th>Base URL</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>LM Studio</td><td><code>http://localhost:1234/v1</code></td><td>Start the local server. The context window is read from LM Studio.</td></tr>
+    <tr><td>llama.cpp (<code>llama-server</code>)</td><td><code>http://localhost:8080/v1</code></td><td>Use <code>--jinja</code> for native tool calls. Thinking levels map to its thinking switch and budget.</td></tr>
+    <tr><td>vLLM, ninfer and similar</td><td><code>http://host:8000/v1</code></td><td>The window is read from <code>max_model_len</code>.</td></tr>
+    <tr><td>Ollama</td><td><code>http://localhost:11434</code></td><td>Use a provider of type <code>ollama</code> (below) for the native API, so the context window is sent as <code>num_ctx</code>.</td></tr>
+    <tr><td>LiteLLM or <a href="{{base}}docs/router/">abhoth router</a></td><td>the gateway's <code>/v1</code></td><td>Detected as a gateway with several models.</td></tr>
+  </tbody>
+</table>
+
+<h2>Configure</h2>
+<pre data-copy><code>{
+  "lmStudio": {
+    "baseUrl": "http://localhost:8080/v1",
+    "apiKey": "none",
+    "models": ["qwen3-coder-30b", "qwen3-8b"],
+    "nativeToolCalling": true,
+    "sampling": { "preset": "qwen-thinking-coding" }
+  },
+  "thinking": { "level": "low" },
+  "context": { "contextWindowSize": 65536, "autoDetectContextWindow": true }
+}</code></pre>
+<ul>
+  <li><strong><code>models</code></strong> are in priority order. If the first fails (a timeout, an empty reply, or a refusal with <code>backupOnRefusal</code>), Abhoth retries and then moves to the next.</li>
+  <li><strong><code>nativeToolCalling</code></strong> sends tools through the API. If a server can't take them, Abhoth falls back to text tool calls for the rest of the session and rebuilds the prompt.</li>
+  <li><strong>Sampling presets</strong> (<code>qwen-thinking-coding</code>, <code>qwen-thinking-general</code>, <code>qwen-instruct</code>) fill in only the settings you leave unset. <code>modelSampling</code> overrides them per model.</li>
+  <li><strong>Vision:</strong> if a server refuses images, they're sent as file paths from then on, and you're told once.</li>
+</ul>
+
+<h2>Named providers</h2>
+<p>Add more servers under <code>providers</code> and use them for sub-agents, profiles or a project:</p>
+<pre data-copy><code>{
+  "providers": {
+    "ollama":  { "type": "ollama", "baseUrl": "http://localhost:11434",
+                 "models": ["qwen3-coder:30b"], "contextWindow": 65536 },
+    "claude":  { "type": "anthropic", "baseUrl": "https://api.anthropic.com",
+                 "apiKeyEnv": "ANTHROPIC_API_KEY", "models": ["claude-sonnet-4-5"] },
+    "gpu-box": { "type": "openai-compat", "baseUrl": "http://gpu-box:8000/v1",
+                 "models": ["qwen3-coder-30b"] }
+  }
+}</code></pre>
+<p>Anthropic providers get prompt caching, effort and signed thinking. Keep keys out of the file with <code>apiKeyEnv</code>.</p>
+
+<h2>Choosing a model</h2>
+<p>Tool calling matters more than raw benchmark scores. Recent Qwen coder models work well and are the most tested. As a rough guide, 30B-class models handle multi-file features well, and 7B-14B models are fine for focused edits with a careful prompt. Give the model as much context as your hardware allows; 32k is a practical minimum and 64k or more is comfortable.</p>
+
+<h2 id="slots">Inference slots and sub-agents</h2>
+<p>On a server with several parallel slots, or several copies of a model on different GPUs, Abhoth can lease a slot for the Lead and for each sub-agent:</p>
+<ul>
+  <li>The Lead keeps its slot, so its long prompt stays in the server's prefix cache between turns.</li>
+  <li>Sub-agents are placed on free copies and never share the Lead's copy, so delegated work runs in parallel without slowing the Lead.</li>
+  <li><code>agent.maxConcurrent</code> limits parallel agents. The Lead delegates only when there's spare capacity.</li>
+</ul>
+<p>Slots are configured under <code>slots</code> in <code>config.json</code>, or by a profile from a profile server (<code>--profile</code>). With several GPUs, put the <a href="{{base}}docs/router/">router</a> in front to handle leases, affinity and Lead priority on the server side.</p>

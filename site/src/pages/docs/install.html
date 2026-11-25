@@ -1,0 +1,41 @@
+<!--meta {"title": "Install", "description": "Install Abhoth on Windows with the one-click installer, on Linux with the AppImage, from source with Cargo on any platform, or as a Docker image."} -->
+<h1>Install</h1>
+<p class="lead">Releases are on <a href="{{repo}}/releases">GitHub Releases</a>, packaged with Velopack. The latest is <strong>v{{version}}</strong>.</p>
+
+<h2 id="windows">Windows</h2>
+<p>Download <a href="{{repo}}/releases/latest/download/Abhoth-win-Setup.exe"><code>Abhoth-win-Setup.exe</code></a> and run it. It doesn't need admin rights and doesn't ask questions:</p>
+<ul>
+  <li><code>abhoth.exe</code> and <code>abhoth-desktop.exe</code> go to <code>%LOCALAPPDATA%\Abhoth\current</code>;</li>
+  <li>that folder is added to your user PATH, so <code>abhoth</code> works in a new terminal;</li>
+  <li>an "Abhoth" Start-menu shortcut opens the desktop app, and the installer starts it.</li>
+</ul>
+<p>Uninstall from Settings, Apps; the PATH entry is removed too. Your state in <code>~/.abhoth</code> is never touched by install, update or uninstall.</p>
+<div class="note warn"><p><strong>SmartScreen.</strong> The builds aren't code-signed yet, so Windows may warn on the first run. Choose <em>More info</em>, then <em>Run anyway</em>. Each release has a <code>SHA256SUMS</code> file you can check the download against.</p></div>
+<p>To run Abhoth without installing it, download <a href="{{repo}}/releases/latest/download/Abhoth-win-Portable.zip"><code>Abhoth-win-Portable.zip</code></a>. Each release also has a versioned <code>abhoth-&lt;version&gt;-win-x64.zip</code> holding the two bare executables.</p>
+
+<h2 id="linux">Linux</h2>
+<p>Download <a href="{{repo}}/releases/latest/download/Abhoth.AppImage"><code>Abhoth.AppImage</code></a>, make it executable and run it. This is the desktop app, and it needs WebKitGTK 4.1.</p>
+<pre data-copy><code>chmod +x Abhoth.AppImage
+./Abhoth.AppImage</code></pre>
+<p>For a headless server, use <a href="{{base}}docs/docker/">Docker</a> or build the CLI from source.</p>
+
+<h2 id="updates">Updates</h2>
+<p>The installed desktop app checks for a new release in the background when it starts and then every 6 hours. When it finds one, it downloads it (a small delta package when there is one), and the tray menu shows <em>Update available: restart into &lt;version&gt;</em>. If you don't click it, the update is applied the next time the app starts.</p>
+
+<h2 id="source">From source (any platform, including macOS)</h2>
+<p>You need <a href="https://rustup.rs">rustup</a>; it installs the toolchain pinned in <code>rust-toolchain.toml</code>. The web client is prebuilt in <code>client/dist</code>, so you don't need Node.</p>
+<pre data-copy><code>git clone https://github.com/madninjaskillz/abhoth
+cd abhoth
+cargo build --release                      # target/release/abhoth
+cargo build --release --features desktop   # also abhoth-desktop and --desktop</code></pre>
+<p>On Linux, the <code>desktop</code> feature needs <code>libwebkit2gtk-4.1-dev</code>, <code>libgtk-3-dev</code>, <code>libdbus-1-dev</code>, <code>libwayland-dev</code> and <code>pkg-config</code>. There's no macOS installer yet, but CI builds and checks the desktop feature on macOS.</p>
+
+<h2 id="docker">Docker</h2>
+<p>The image runs the web UI with sign-in. Build it from the repo:</p>
+<pre data-copy><code>docker build -f deploy/docker/Dockerfile -t abhoth-web .</code></pre>
+<p>Then follow <a href="{{base}}docs/docker/">Self-host with Docker</a>.</p>
+
+<h2 id="check">Check it works</h2>
+<pre data-copy><code>abhoth --version
+abhoth --demo        # a scripted session that needs no model server</code></pre>
+<p>Next: <a href="{{base}}docs/quick-start/">connect a model</a>.</p>

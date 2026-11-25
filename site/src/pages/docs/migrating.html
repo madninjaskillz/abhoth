@@ -1,0 +1,35 @@
+<!--meta {"title": "Coming from OpenOrca", "description": "Abhoth is OpenOrca rewritten in Rust. Your ~/.openorca folder is copied to ~/.abhoth on the first run, file formats are unchanged and OPENORCA_* variables still work."} -->
+<h1>Coming from OpenOrca</h1>
+<p class="lead">Abhoth is OpenOrca, rewritten in Rust and renamed. The C# version is retired. Everything you set up carries over.</p>
+
+<h2>What happens on the first run</h2>
+<p>When Abhoth starts and neither <code>ABHOTH_HOME</code> nor <code>OPENORCA_HOME</code> is set, it looks for <code>~/.abhoth</code>. If that folder is missing, or holds nothing but logs, Abhoth copies <code>~/.openorca</code> into it once:</p>
+<ul>
+  <li><strong>Copied:</strong> <code>config.json</code>, sessions, prompts, projects and the web UI's sign-in data.</li>
+  <li><strong>Left behind:</strong> logs, file checkpoints and <code>config.json.bak*</code> files.</li>
+  <li><strong>Not changed:</strong> <code>~/.openorca</code> itself. Nothing is moved or deleted, so you can go back.</li>
+</ul>
+<p>The file formats are the same, so sessions saved by OpenOrca open in Abhoth, and the other way round.</p>
+
+<h2>Names</h2>
+<table>
+  <thead><tr><th>OpenOrca</th><th>Abhoth</th></tr></thead>
+  <tbody>
+    <tr><td><code>openorca</code></td><td><code>abhoth</code> (the same flags)</td></tr>
+    <tr><td><code>~/.openorca</code></td><td><code>~/.abhoth</code></td></tr>
+    <tr><td><code>OPENORCA_HOME</code>, <code>OPENORCA_*</code></td><td><code>ABHOTH_HOME</code>, <code>ABHOTH_*</code>. The old names are still read as a fallback.</td></tr>
+    <tr><td><code>openorca --hostui-set-password &lt;user&gt;</code></td><td><code>abhoth admin reset-password &lt;user&gt;</code> (the old flag still works)</td></tr>
+  </tbody>
+</table>
+<p>Some wire names keep "OpenOrca" for compatibility: the <code>X-OpenOrca-Token</code> header, the <code>openorca</code> MCP server name the bridges use, and the <code>OpenOrca.Usage</code> log category. <code>ORCA.md</code> project files and <code>.orca/commands/</code> are unchanged too.</p>
+
+<h2>Docker</h2>
+<p>The Abhoth image still honours <code>OPENORCA_HOME=/state/openorca</code>, so an existing OpenOrca container's state is used as it is, with no migration step. <code>/app/openorca</code> is a symlink to <code>/app/abhoth</code>, so old <code>docker exec</code> commands keep working.</p>
+<p>The old single sign-in account (<code>webui/account.json</code>) becomes the first admin of the new account system, with its password and two-factor setup. The file is left as it was.</p>
+
+<h2>What's different</h2>
+<ul>
+  <li>One native binary instead of a .NET install, with the same behaviour. Parity was checked by running identical scenarios through both builds and comparing the output, then by a <a href="{{repo}}/blob/main/docs/bench/BENCH-PARITY-2026-11-25.md">benchmark run</a>: both builds passed 49 of 50 tasks, Abhoth took 0.98× the C# wall-clock time per task, and it spent 330 s outside model calls against C#'s 511 s.</li>
+  <li>New since the port: the <a href="{{base}}docs/desktop/">desktop app</a> with auto-update, the Windows installer, <a href="{{base}}docs/router/">the router</a>, native Ollama and Anthropic clients, and multi-user accounts in the web UI.</li>
+  <li>Where the C# build had bugs, a few were fixed rather than copied. One example: Ollama now gets the provider's context window instead of its small default.</li>
+</ul>

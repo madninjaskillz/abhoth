@@ -1,0 +1,69 @@
+<!--meta {"title": "Self-host with Docker", "description": "Run the Abhoth web UI on your own server with Docker: build the image, set up volumes and secrets, create the admin and put it behind an HTTPS reverse proxy."} -->
+<h1>Self-host with Docker</h1>
+<p class="lead">Run Abhoth next to your GPUs and use it from any browser. The image runs the web UI in sign-in mode and keeps everything it writes in two folders.</p>
+
+<h2>What's in the image</h2>
+<p>A release build of <code>abhoth</code> (headless, without the desktop feature) on a Debian-based runtime. It also includes the .NET SDK, Node, Python, git, ripgrep and the Claude Code and Codex CLIs, so agents can build and test common projects, and you can switch a project's engine.</p>
+
+<h2>Build it</h2>
+<pre data-copy><code>git clone https://github.com/madninjaskillz/abhoth
+cd abhoth
+docker build -f deploy/docker/Dockerfile -t abhoth-web .</code></pre>
+
+<h2>Run it</h2>
+<pre data-copy><code>services:
+  abhoth:
+    image: abhoth-web
+    restart: unless-stopped
+    ports: ["8093:8093"]
+    environment:
+      PORT: "8093"
+      ADMIN_USER: admin                 # created on the first start
+      TRUSTED_PROXIES: "172.18.0.1"     # your reverse proxy; X-Forwarded-* only from it
+      REQUIRE_2FA: "0"                  # 1 = a code at every sign-in
+      BENCH: "0"                        # 1 = the Benchmarks page
+      OPENORCA_PROJECT_ROOTS: "Projects=/projects"
+    volumes:
+      - ./projects:/projects
+      - ./state:/state
+      - ./secrets/admin-password:/run/secrets/admin-password:ro
+      # - ./secrets/git-deploy-key:/run/secrets/git-deploy-key:ro
+      # - ./secrets/git-credentials:/run/secrets/git-credentials:ro
+    read_only: true
+    tmpfs: ["/tmp:size=2g,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 8g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8093/api/auth/state"]
+      interval: 30s</code></pre>
+<p>The repo's <code>deploy/docker/compose.yaml</code> is a fuller example, including an NFS projects share. Adapt the volumes, ports and secrets before you use it.</p>
+
+<h2>Folders and secrets</h2>
+<table>
+  <thead><tr><th>Path in the container</th><th>What</th></tr></thead>
+  <tbody>
+    <tr><td><code>/projects</code></td><td>Your projects; new ones go in <code>/projects/workspace</code> by default.</td></tr>
+    <tr><td><code>/state</code></td><td>Abhoth's state home in <code>/state/openorca</code> (config, sessions, accounts; the name is kept for compatibility) and the container user's home in <code>/state/home</code>.</td></tr>
+    <tr><td><code>/run/secrets/admin-password</code></td><td>With <code>ADMIN_USER</code>, creates that admin on the first start. It's ignored once accounts exist.</td></tr>
+    <tr><td><code>/run/secrets/git-deploy-key</code></td><td>Optional: an SSH key for git.</td></tr>
+    <tr><td><code>/run/secrets/git-credentials</code></td><td>Optional: a git credential-store file.</td></tr>
+  </tbody>
+</table>
+<p>The entrypoint never prints a secret. Set the model server's base URL and key in Settings after you sign in, or in <code>/state/openorca/config.json</code>.</p>
+<div class="note"><p>The container runs as UID 568, GID 568. Make <code>./projects</code> and <code>./state</code> writable by that user, for example with <code>sudo chown -R 568:568 projects state</code>.</p></div>
+
+<h2>Accounts from the command line</h2>
+<pre data-copy><code>docker exec -it &lt;container&gt; /app/entrypoint.sh admin create &lt;name&gt;
+docker exec -it &lt;container&gt; /app/entrypoint.sh admin reset-password &lt;name&gt;
+docker exec -it &lt;container&gt; /app/entrypoint.sh admin list</code></pre>
+
+<h2>HTTPS</h2>
+<p>The container speaks plain HTTP and refuses it from anywhere but itself, so put a reverse proxy in front (Caddy, nginx, Traefik) that terminates TLS and forwards websockets. Set <code>TRUSTED_PROXIES</code> to the proxy's address so the forwarded scheme and client IP are believed from that proxy only. Cookies are <code>__Host-</code> prefixed and <code>Secure</code> over HTTPS.</p>
+<pre data-copy><code># Caddyfile
+abhoth.example.com {
+  reverse_proxy 127.0.0.1:8093
+}</code></pre>
+
+<h2>Upgrading and rolling back</h2>
+<p>Rebuild the image from a newer checkout and recreate the container; the state formats are stable. An existing OpenOrca container's state works as it is, because <code>OPENORCA_HOME</code> is still honoured. To roll back, point the service at the previous image.</p>

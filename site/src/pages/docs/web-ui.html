@@ -1,0 +1,51 @@
+<!--meta {"title": "Web UI", "description": "abhoth --hostui: a browser UI with projects, chat, file tree with git status, diffs, terminals, HTML preview, settings, benchmarks and multi-user sign-in."} -->
+<h1>Web UI</h1>
+<p class="lead"><code>abhoth --hostui</code> serves a full web UI for your projects. Use it on your own machine, or on a server you reach from any browser.</p>
+
+<figure>
+  <img src="{{base}}img/shots/webui-chat-1600.webp" srcset="{{base}}img/shots/webui-chat-800.webp 800w, {{base}}img/shots/webui-chat-1600.webp 1600w" sizes="(max-width: 860px) 100vw, 780px" width="1600" height="1000" loading="lazy" decoding="async" alt="The Abhoth web UI with a finished task in the chat: reads, edits, a new test file and a passing npm test.">
+  <figcaption>A project tab: the file tree with git status on the left, and the chat with each tool call.</figcaption>
+</figure>
+
+<h2>Start it</h2>
+<pre data-copy><code>abhoth --hostui                       # http://127.0.0.1:8192, a link with a token is printed
+abhoth --hostui --hostui-open         # and open the browser
+abhoth --hostui=0.0.0.0:8093 --hostui-login   # on the network, with sign-in</code></pre>
+<p>On your own machine, the printed link signs you in. It carries a one-time launch token; keep it to yourself. On a fresh install without a model, the UI still starts: open Settings, LLM Server, and set the base URL and models.</p>
+
+<h2>What's in it</h2>
+<ul>
+  <li><strong>Projects as tabs.</strong> Add a folder, create one, or clone from GitHub. Each project has its own session, profile and agent mode.</li>
+  <li><strong>The chat</strong> shows thinking (collapsed), every tool call with its arguments, result and timing, and the final answer as Markdown. It also handles approvals and the agent's questions.</li>
+  <li><strong>Agents</strong> as bars or tabs: the Lead and each sub-agent, with progress and the model they run on.</li>
+  <li><strong>The file tree</strong> marks changed (<code>M</code>), new (<code>U</code>) and agent-touched files, and updates as files change.</li>
+  <li><strong>Editor tabs</strong> with syntax highlighting, side-by-side diffs against git, and Save.</li>
+  <li><strong>Terminals</strong> (real PTYs) and an <strong>HTML preview</strong> tab with back, forward and reload.</li>
+  <li><strong>Engines:</strong> switch a project between Native, Claude Code and Codex.</li>
+  <li><strong>Settings</strong> you can search, per project or as server defaults; most changes apply to the running session at once.</li>
+  <li><strong>Benchmarks</strong> (with <code>--hostui-bench</code>): queue runs across models and modes, watch them live, and compare the results.</li>
+</ul>
+
+<figure>
+  <img src="{{base}}img/shots/webui-diff-1600.webp" srcset="{{base}}img/shots/webui-diff-800.webp 800w, {{base}}img/shots/webui-diff-1600.webp 1600w" sizes="(max-width: 860px) 100vw, 780px" width="1600" height="1000" loading="lazy" decoding="async" alt="A side-by-side diff of server.js in the web UI with the added DELETE route highlighted.">
+  <figcaption>Diffs of the agent's edits against git.</figcaption>
+</figure>
+
+<h2 id="accounts">Accounts and sign-in</h2>
+<div class="note"><p>Multi-user accounts arrive in v0.16.2. Earlier versions have a single sign-in account, which becomes the first admin when you upgrade.</p></div>
+<p>The first time the UI starts, it asks you to create an admin, using the setup code from the printed link. On a headless server, create the admin from the command line instead:</p>
+<pre data-copy><code>abhoth admin create &lt;name&gt;           # asks for the password twice
+abhoth admin list
+abhoth admin reset-password &lt;name&gt;   # also ends that user's sessions
+abhoth admin reset-2fa &lt;name&gt;</code></pre>
+<ul>
+  <li><strong>Users</strong> have their own projects and chats. Admins manage users, server settings, the shared GitHub sign-in and the benchmarks, and read the audit log.</li>
+  <li><strong>Passwords</strong> are hashed with Argon2id and must be 12 to 1024 characters, with no composition rules. Repeated failures back off.</li>
+  <li><strong>Two-factor:</strong> TOTP with ten recovery codes. <code>--hostui-require-2fa</code> makes it mandatory.</li>
+  <li><strong>API keys</strong> (<code>abk_…</code>) for scripts, sent as <code>Authorization: Bearer</code>. They're shown once, stored hashed, and can be revoked.</li>
+  <li><strong>Sessions</strong> are server-side, with HttpOnly SameSite cookies. They end after 12 hours idle or 7 days.</li>
+</ul>
+<div class="note warn"><p>Accounts separate users inside the web UI, not in the operating system. Agents run shell commands as the server's OS user, so give accounts only to people you'd trust with a shell on that machine.</p></div>
+
+<h2>Exposing it safely</h2>
+<p><code>--hostui-login</code> marks a server as exposed. On an exposed server, the launch token only unlocks the first-run setup, and plain HTTP is refused except from the machine itself. Put it behind a reverse proxy that terminates HTTPS, and pass <code>--hostui-trust-proxy=&lt;proxy ip&gt;</code> so forwarded headers are trusted from that proxy only. The <a href="{{base}}docs/docker/">Docker image</a> does this for you.</p>

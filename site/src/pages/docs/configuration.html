@@ -1,0 +1,95 @@
+<!--meta {"title": "Configuration", "description": "Configure Abhoth with ~/.abhoth/config.json: the model server, providers, permissions, context management, sessions, hooks, MCP servers and environment variables."} -->
+<h1>Configuration</h1>
+<p class="lead">Settings live in <code>~/.abhoth/config.json</code>. Edit the file, use <code>/config</code> in a session, or open Settings in the web UI. All three write the same file.</p>
+
+<h2>Where things live</h2>
+<table>
+  <thead><tr><th>Path</th><th>What</th></tr></thead>
+  <tbody>
+    <tr><td><code>~/.abhoth/config.json</code></td><td>All settings.</td></tr>
+    <tr><td><code>~/.abhoth/sessions/</code></td><td>Saved conversations (<code>-c</code>, <code>-r &lt;id&gt;</code>, <code>/session</code>).</td></tr>
+    <tr><td><code>~/.abhoth/prompts/</code></td><td>System prompt templates; <code>default.md</code> is the one in use.</td></tr>
+    <tr><td><code>~/.abhoth/abhoth.db</code></td><td>Web UI accounts, sessions and API keys (SQLite).</td></tr>
+    <tr><td><code>ORCA.md</code>, <code>AGENTS.md</code>, <code>CLAUDE.md</code></td><td>Instructions for the agent in this project.</td></tr>
+    <tr><td><code>.orca/commands/*.md</code></td><td>Your own slash commands.</td></tr>
+  </tbody>
+</table>
+<p>Set <code>ABHOTH_HOME</code> to use another state folder (handy for a throwaway setup). <code>OPENORCA_HOME</code> is read as a fallback.</p>
+
+<h2>The model server (<code>lmStudio</code>)</h2>
+<p>The section keeps its historical name, but it works with any OpenAI-compatible server.</p>
+<table>
+  <thead><tr><th>Key</th><th>Default</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>baseUrl</code></td><td><code>http://localhost:1234/v1</code></td><td>The server's OpenAI-compatible endpoint.</td></tr>
+    <tr><td><code>apiKey</code></td><td><code>lm-studio</code></td><td>Sent as a bearer token. Local servers usually accept anything.</td></tr>
+    <tr><td><code>models</code></td><td><code>[]</code></td><td>Models in priority order: the first is used, and the rest are backups. When empty, the server's loaded model is used.</td></tr>
+    <tr><td><code>nativeToolCalling</code></td><td><code>false</code></td><td>Send tools through the OpenAI function-calling API. When it's off, tools are described in the prompt and parsed from text.</td></tr>
+    <tr><td><code>temperature</code></td><td><code>0.7</code></td><td>The sampling temperature. <code>sampling</code> and <code>modelSampling</code> give finer control and presets.</td></tr>
+    <tr><td><code>timeoutSeconds</code>, <code>streamingTimeoutSeconds</code></td><td><code>120</code></td><td>The request timeout, and the idle timeout while streaming.</td></tr>
+    <tr><td><code>backupOnRefusal</code>, <code>backupMinResponseLength</code></td><td>off</td><td>When to move on to the next model.</td></tr>
+    <tr><td><code>pairModelProgramming</code></td><td><code>false</code></td><td>Runs the models in parallel and lets them vote on the best response.</td></tr>
+    <tr><td><code>provider</code></td><td>OpenAI-compatible</td><td>Set it to <code>"anthropic"</code> to talk to the Anthropic Messages API.</td></tr>
+  </tbody>
+</table>
+<p>Extra servers go under <code>providers</code>, keyed by name, each with its own <code>type</code> (<code>openai-compat</code>, <code>anthropic</code> or <code>ollama</code>), <code>baseUrl</code>, <code>apiKey</code> or <code>apiKeyEnv</code>, <code>models</code> and <code>contextWindow</code>. See <a href="{{base}}docs/local-models/">Local models</a>.</p>
+
+<h2>Permissions (<code>permissions</code>)</h2>
+<p>Each tool has a risk level. Read-only tools run without asking by default; tools that write or run commands ask first.</p>
+<pre data-copy><code>{
+  "permissions": {
+    "autoApproveReadOnly": true,
+    "autoApproveModerate": false,
+    "autoApproveAll": false,
+    "alwaysApprove": ["edit_file"],
+    "disabledTools": [],
+    "allowPatterns": ["Bash(git status*)", "Bash(npm test*)"],
+    "denyPatterns": ["Bash(rm -rf *)"]
+  }
+}</code></pre>
+<p>Patterns are written <code>Tool(argGlob)</code>, and deny wins over allow. On the command line, <code>--allow &lt;tools&gt;</code> pre-approves tools, <code>--allow-dir &lt;dir&gt;</code> keeps file tools inside a folder, and <code>--sandbox</code> allows read-only tools only, with no shell.</p>
+
+<h2>Context (<code>context</code>)</h2>
+<ul>
+  <li><code>contextWindowSize</code>: the window size in tokens. With <code>autoDetectContextWindow</code> on (the default), the server's real window is read at startup. A smaller server value wins.</li>
+  <li><code>autoCompactEnabled</code> and <code>autoCompactThreshold</code>: summarise older turns before the window fills. If the server still reports an overflow, Abhoth compacts and retries once.</li>
+  <li><code>thinkingAwareCompaction</code>: takes the model's reasoning into account when it compacts.</li>
+</ul>
+
+<h2>Thinking (<code>thinking</code>)</h2>
+<p><code>level</code> (<code>off</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, <code>high</code>, <code>unlimited</code>) sends the matching thinking switch and budget to llama.cpp-style servers. <code>reasoningEffort</code> sends <code>reasoning_effort</code>. <code>runawayCapChunks</code> stops a generation that reasons for too long without acting.</p>
+
+<h2>Agents (<code>agent</code>)</h2>
+<p><code>maxIterations</code> caps the tool rounds in a turn, and the budget is extended while the turn keeps making progress. <code>maxConcurrent</code> limits how many sub-agents run at once. <code>engine</code> picks <code>native</code>, <code>claude</code> or <code>codex</code>, and the <code>--engine</code> flag does the same for one run.</p>
+
+<h2>Sessions, hooks and memory</h2>
+<ul>
+  <li><code>session.autoSave</code> and <code>session.maxSessions</code> control saved conversations.</li>
+  <li><code>hooks.preToolHooks</code> and <code>hooks.postToolHooks</code> run your commands around tool calls, for example a formatter after <code>edit_file</code>.</li>
+  <li><code>memory</code> turns on the optional auto-memory files that the agent can read in later sessions.</li>
+</ul>
+
+<h2>MCP servers (<code>mcpServers</code>)</h2>
+<pre data-copy><code>{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "env": {},
+      "enabled": true
+    }
+  }
+}</code></pre>
+<p>Their tools appear next to the built-in ones and follow the same permission rules.</p>
+
+<h2>Environment variables</h2>
+<table>
+  <thead><tr><th>Variable</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>ABHOTH_HOME</code></td><td>The state folder (default <code>~/.abhoth</code>).</td></tr>
+    <tr><td><code>ABHOTH_PROJECTS_ROOT</code>, <code>ABHOTH_PROJECT_ROOTS</code></td><td>Where the web UI creates and opens projects.</td></tr>
+    <tr><td><code>ABHOTH_ADMIN_USER</code>, <code>ABHOTH_ADMIN_PASSWORD_FILE</code></td><td>Create the first web UI admin without the setup page.</td></tr>
+    <tr><td><code>ABHOTH_GITHUB_APP_*</code></td><td>The GitHub App used for "Clone from GitHub".</td></tr>
+  </tbody>
+</table>
+<p>Every <code>ABHOTH_*</code> variable falls back to its <code>OPENORCA_*</code> name.</p>
