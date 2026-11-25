@@ -1,0 +1,9 @@
+{
+  "prompt": "Plan nothing, just answer",
+  "strict": true,
+  "config": {"toolProfile": "pi", "pi": {"appendSystemPrompt": "  Extra rule from config.  ", "bashTimeoutSeconds": 120}, "agent": {"maxAgents": 5}, "allowedDirectory": "C:\restricted", "sandboxMode": false},
+  "files": {"ORCA.md": "Project rules: keep it short.\n", "CLAUDE.md": "Second instruction file.\n"},
+  "replies": [
+    {"text": "Nothing needed changing, so here is the short answer you asked for, with no edits."}
+  ]
+}

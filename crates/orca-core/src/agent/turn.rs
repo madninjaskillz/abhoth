@@ -298,6 +298,11 @@ impl AgentSession {
         })
     }
 
+    /// `PiToolset.IsPiProfile(config.ToolProfile)`: Pi's wording for the loop's messages.
+    pub(super) fn is_pi_profile(&self) -> bool {
+        orca_tools_pi::is_pi_profile(&self.config.tool_profile)
+    }
+
     /// `ResolveNativeToolsForActiveModel`: native iff config wants it, there are tools, and
     /// this model hasn't already proven it can't do native calls (sticky).
     pub fn resolve_native_tools(&self) -> bool {
@@ -744,7 +749,7 @@ impl AgentSession {
             observer.on_notice("Tool call was truncated \u{2014} asking model to continue...");
             self.messages
                 .push(ChatMessage::user(prompts::platform_lines(
-                    msg::TRUNCATED_TOOL_CALL_MESSAGE,
+                    super::prompt_constants::get_truncated_tool_call_message(self.is_pi_profile()),
                 )));
             return true;
         }
@@ -759,7 +764,10 @@ impl AgentSession {
             observer.on_notice("Nudging model to use tool calls...");
             self.messages
                 .push(ChatMessage::user(prompts::platform_lines(
-                    msg::nudge_message(self.native_tools),
+                    super::prompt_constants::get_nudge_message(
+                        self.native_tools,
+                        self.is_pi_profile(),
+                    ),
                 )));
             return true;
         }
@@ -773,7 +781,7 @@ impl AgentSession {
                 s.pre_verification_epoch = self.mutation_epoch;
                 self.messages
                     .push(ChatMessage::user(prompts::platform_lines(
-                        prompts::VERIFICATION_MESSAGE,
+                        super::prompt_constants::get_verification_message(self.is_pi_profile()),
                     )));
                 return true;
             }
@@ -784,7 +792,9 @@ impl AgentSession {
                 s.verification_tools_used = true;
                 self.messages
                     .push(ChatMessage::user(prompts::platform_lines(
-                        prompts::VERIFICATION_RETRY_MESSAGE,
+                        super::prompt_constants::get_verification_retry_message(
+                            self.is_pi_profile(),
+                        ),
                     )));
                 return true;
             }
@@ -908,7 +918,7 @@ impl AgentSession {
             &streak.failure.key,
             &failure,
             &streak.recent_probes,
-            false,
+            self.is_pi_profile(),
         );
         self.add_harness_note(&note);
     }

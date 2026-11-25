@@ -9,6 +9,10 @@ use crate::client::ToolDefinition;
 #[derive(Default, Clone)]
 pub struct ToolRegistry {
     tools: Vec<Arc<dyn Tool>>,
+    /// The names sent to the model, in this order (C# `ToolExposure`, e.g. the Pi profile's
+    /// `FilterPiProfile`). `None` = every registered tool, in registration order. Tools left
+    /// out stay registered and callable.
+    advertised: Option<Vec<String>>,
 }
 
 impl ToolRegistry {
@@ -74,9 +78,33 @@ impl ToolRegistry {
             .map(|t| t.name().to_string())
     }
 
+    /// Limit (and order) the tools sent to the model; `None` advertises every tool.
+    pub fn set_advertised(&mut self, names: Option<Vec<String>>) {
+        self.advertised = names;
+    }
+
+    /// The tools sent to the model, in advertised order (names that resolve to no tool are
+    /// skipped).
+    pub fn advertised(&self) -> Vec<Arc<dyn Tool>> {
+        match &self.advertised {
+            None => self.tools.clone(),
+            Some(names) => {
+                let mut out: Vec<Arc<dyn Tool>> = Vec::new();
+                for n in names {
+                    if let Some(t) = self.resolve(n)
+                        && !out.iter().any(|o| o.name().eq_ignore_ascii_case(t.name()))
+                    {
+                        out.push(t);
+                    }
+                }
+                out
+            }
+        }
+    }
+
     /// The schemas sent for native function calling.
     pub fn definitions(&self) -> Vec<ToolDefinition> {
-        self.tools
+        self.advertised()
             .iter()
             .map(|t| ToolDefinition {
                 name: t.name().to_string(),

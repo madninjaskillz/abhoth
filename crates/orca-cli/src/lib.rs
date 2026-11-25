@@ -2,6 +2,7 @@
 //! interactive REPL/TUI and the web host follow in later phases (see PORTING.md).
 
 pub mod args;
+pub mod pi_profile;
 pub mod sessions;
 
 use std::io::Write;
@@ -39,6 +40,9 @@ pub fn build_registry(config: &OrcaConfig) -> ToolRegistry {
         config.shell.idle_timeout_seconds,
     ));
     // Disabled tools stay registered; the permission check refuses them (as in C#).
+    if orca_tools_pi::is_pi_profile(&config.tool_profile) {
+        pi_profile::register(&mut r, config);
+    }
     r
 }
 
@@ -113,6 +117,7 @@ pub async fn run_single_prompt_in_session(
         .tool_hooks
         .flush(std::time::Duration::from_secs(10))
         .await;
+    pi_profile::kill_jobs();
     result
 }
 

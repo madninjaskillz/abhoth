@@ -22,7 +22,8 @@
 //! Known, documented gaps are ignored by default: the advertised tool list (the `tools` array
 //! and the tool-derived parts of the system prompt: the AVAILABLE TOOLS lines and the
 //! lead_mode tool's LEAD MODE section), since Rust has only the core tools until phase 3. The
-//! rest of the system prompt is compared. `--strict` compares everything.
+//! rest of the system prompt is compared. `--strict` compares everything; a scenario with
+//! `"strict": true` (the Pi profile's) is always compared in full.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -49,6 +50,10 @@ struct Scenario {
     /// Extra config.json keys (merged over the harness defaults, one level deep).
     #[serde(default)]
     config: serde_json::Map<String, Value>,
+    /// Compare this scenario without the known-gap masks (`--strict` for one scenario): the
+    /// tool list and the whole system prompt (the Pi profile's tools are fully ported).
+    #[serde(default)]
+    strict: bool,
     replies: Vec<ScriptReply>,
 }
 
@@ -549,7 +554,7 @@ async fn main() -> Result<()> {
                 )?;
             }
         }
-        let diffs = compare(&cs, &rs, strict);
+        let diffs = compare(&cs, &rs, strict || scenario.strict);
         if diffs.is_empty() {
             passed += 1;
             println!("PASS  {}", scenario.name);

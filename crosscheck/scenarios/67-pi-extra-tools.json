@@ -1,0 +1,75 @@
+{
+  "prompt": "Search the project",
+  "strict": true,
+  "config": {
+    "toolProfile": "pi",
+    "pi": {
+      "extraTools": true,
+      "jobs": false,
+      "agentTools": false,
+      "batchCallsRule": false
+    }
+  },
+  "files": {
+    "src/a.py": "import os\nprint('TODO one')\n",
+    "src/b.py": "# TODO two\n",
+    "README.md": "readme\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "ls",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "find",
+          "args": {
+            "pattern": "*.py"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "grep",
+          "args": {
+            "pattern": "todo",
+            "ignoreCase": true,
+            "context": 1
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "grep",
+          "args": {
+            "pattern": "(",
+            "literal": true,
+            "path": "src"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "ls",
+          "args": {
+            "path": "missing"
+          }
+        }
+      ]
+    },
+    {
+      "text": "There are two Python files under src, and each one contains a TODO comment to address."
+    }
+  ]
+}

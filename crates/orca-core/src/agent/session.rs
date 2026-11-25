@@ -356,7 +356,15 @@ impl AgentSession {
         call: &ToolCall,
         observer: &mut dyn AgentObserver,
     ) -> ToolResult {
+        let pi_profile = orca_tools_pi::is_pi_profile(&self.config.tool_profile);
         let Some(tool) = self.registry.resolve(&call.name) else {
+            if pi_profile {
+                // Pi's agent-loop text.
+                return ToolResult::error_with(
+                    format!("Tool {} not found", call.name),
+                    orca_abstractions::ToolErrorCode::NotFound,
+                );
+            }
             let hint = self
                 .registry
                 .find_closest_match(&call.name)
@@ -371,27 +379,57 @@ impl AgentSession {
             );
         };
 
-        // Invalid JSON arguments run as `{}` (the required-argument check then explains).
-        let args: Value = match serde_json::from_str::<Value>(&call.arguments) {
-            Ok(v @ Value::Object(_)) => v,
-            _ => Value::Object(serde_json::Map::new()),
+        // `IArgumentPreparingTool`: the tool owns repair, coercion and validation (and its
+        // error text); hooks and the record see the prepared arguments.
+        // Arguments that are not a JSON object reach the tool as `{}` (as the C# client parses them).
+        let raw_arguments = match serde_json::from_str::<Value>(&call.arguments) {
+            Ok(Value::Object(_)) => call.arguments.as_str(),
+            _ => "{}",
         };
-        // The record shows the arguments re-serialized (indented, JavaScriptEncoder escaping),
-        // except the first of several calls in one response, which C# records compact.
-        let args_json = if self.record_raw_arguments {
-            call.arguments.clone()
-        } else {
-            crate::config::dotnet_json::to_string_dotnet(&args).unwrap_or_default()
+        let prepared = match tool.prepare_arguments(raw_arguments) {
+            Some(Err(error)) => {
+                return ToolResult::error_with(
+                    error,
+                    orca_abstractions::ToolErrorCode::InvalidArguments,
+                );
+            }
+            Some(Ok(json)) => Some(json),
+            None => None,
+        };
+        let prepares = prepared.is_some();
+        let (args, args_json, hook_args) = match prepared {
+            Some(json) => (
+                serde_json::from_str::<Value>(&json)
+                    .unwrap_or_else(|_| Value::Object(serde_json::Map::new())),
+                json.clone(),
+                json,
+            ),
+            None => {
+                // Invalid JSON arguments run as `{}` (the required-argument check then explains).
+                let args: Value = match serde_json::from_str::<Value>(&call.arguments) {
+                    Ok(v @ Value::Object(_)) => v,
+                    _ => Value::Object(serde_json::Map::new()),
+                };
+                // The record shows the arguments re-serialized (indented, JavaScriptEncoder
+                // escaping), except the first of several calls in one response, which C#
+                // records compact.
+                let args_json = if self.record_raw_arguments {
+                    call.arguments.clone()
+                } else {
+                    crate::config::dotnet_json::to_string_dotnet(&args).unwrap_or_default()
+                };
+                (args, args_json, call.arguments.clone())
+            }
         };
 
         if !self.check_permission(tool.as_ref(), &args) {
             return ToolResult::denied("Permission denied by user.");
         }
         // Hooks see the tool name the model used and its argument text.
-        if !self.tool_hooks.pre_hook(&call.name, &call.arguments).await {
+        if !self.tool_hooks.pre_hook(&call.name, &hook_args).await {
             return ToolResult::blocked("Tool blocked by hook.");
         }
-        if let Some(err) = validate_required_args(tool.as_ref(), &args) {
+        if !prepares && let Some(err) = validate_required_args(tool.as_ref(), &args) {
             return ToolResult::error_with(err, orca_abstractions::ToolErrorCode::InvalidArguments);
         }
         self.tool_hooks.snapshot(tool.as_ref(), &args, &self.ctx);
@@ -405,12 +443,8 @@ impl AgentSession {
         let started = Instant::now();
         let result = self.run_tool(&tool, &args, observer).await;
         let elapsed = started.elapsed().as_millis() as i64;
-        self.tool_hooks.post_hook(
-            &call.name,
-            &call.arguments,
-            &result.content,
-            result.is_error,
-        );
+        self.tool_hooks
+            .post_hook(&call.name, &hook_args, &result.content, result.is_error);
 
         if !result.is_error {
             self.track_file_access(tool.as_ref(), &args);
@@ -535,6 +569,11 @@ impl AgentSession {
         if !content_modifying {
             return None;
         }
+        let pi_profile = orca_tools_pi::is_pi_profile(&self.config.tool_profile);
+        if pi_profile && !self.config.pi.read_before_edit {
+            return None;
+        }
+        let read_tool = if pi_profile { "read" } else { "read_file" };
         for path in tool.affected_file_paths(args, &self.ctx) {
             let full = self.ctx.full_path(&path);
             if !full.is_file() {
@@ -542,13 +581,13 @@ impl AgentSession {
             }
             let Some(read_mtime) = self.files_read.get(&full) else {
                 return Some(format!(
-                    "ERROR: '{path}' exists but has not been read this session. Use read_file first so the edit is based on the file's actual content."
+                    "ERROR: '{path}' exists but has not been read this session. Use {read_tool} first so the edit is based on the file's actual content."
                 ));
             };
             let now = std::fs::metadata(&full).and_then(|m| m.modified()).ok();
             if now != *read_mtime {
                 return Some(format!(
-                    "ERROR: '{path}' has changed on disk since it was read. Use read_file again before editing to avoid clobbering the newer content."
+                    "ERROR: '{path}' has changed on disk since it was read. Use {read_tool} again before editing to avoid clobbering the newer content."
                 ));
             }
         }

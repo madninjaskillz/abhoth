@@ -142,9 +142,52 @@ impl ToolDefinition {
     pub fn to_wire(&self) -> Value {
         json!({
             "type": "function",
-            "function": {"description": self.description, "name": self.name, "parameters": self.parameters}
+            "function": {"description": self.description, "name": self.name, "parameters": wire_parameters(&self.parameters)}
         })
     }
+}
+
+/// The parameter schema as Microsoft.Extensions.AI's OpenAI client sends it (its `ToolJson`):
+/// `type` ("object"), `required` (default `[]`, duplicates dropped), `properties` (default
+/// `{}`), `additionalProperties` (default `false`), then any other top-level keys.
+pub fn wire_parameters(schema: &Value) -> Value {
+    let Some(obj) = schema.as_object() else {
+        return schema.clone();
+    };
+    let mut required: Vec<Value> = Vec::new();
+    if let Some(Value::Array(r)) = obj.get("required") {
+        for v in r {
+            if !required.contains(v) {
+                required.push(v.clone());
+            }
+        }
+    }
+    let mut out = serde_json::Map::new();
+    out.insert(
+        "type".into(),
+        obj.get("type").cloned().unwrap_or_else(|| json!("object")),
+    );
+    out.insert("required".into(), Value::Array(required));
+    out.insert(
+        "properties".into(),
+        obj.get("properties").cloned().unwrap_or_else(|| json!({})),
+    );
+    out.insert(
+        "additionalProperties".into(),
+        match obj.get("additionalProperties") {
+            Some(Value::Bool(b)) => Value::Bool(*b),
+            _ => Value::Bool(false),
+        },
+    );
+    for (k, v) in obj {
+        if !matches!(
+            k.as_str(),
+            "type" | "required" | "properties" | "additionalProperties"
+        ) {
+            out.insert(k.clone(), v.clone());
+        }
+    }
+    Value::Object(out)
 }
 
 /// Per-request options (`ChatOptions`). Non-standard fields go into `additional`, in order,
