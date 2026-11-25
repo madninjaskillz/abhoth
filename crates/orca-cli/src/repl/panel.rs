@@ -70,7 +70,9 @@ impl TerminalPanel {
     }
 
     fn supported(&self) -> bool {
-        self.console.is_terminal() && crate::ui::prompt::interactive() && self.console.height() >= 11
+        self.console.is_terminal()
+            && crate::ui::prompt::interactive()
+            && self.console.height() >= 11
     }
 
     /// `Setup`: the scroll region over the upper rows and the panel drawn under it.
@@ -249,7 +251,8 @@ pub fn build_status_line(state: &ReplState, info: Option<&StatusInfo>, width: us
     }
     if let Some(pct) = info.and_then(|i| i.context_percent) {
         const BAR: usize = 10;
-        let filled = ((pct as f64 / 100.0 * BAR as f64).round() as i64).clamp(0, BAR as i64) as usize;
+        let filled =
+            ((pct as f64 / 100.0 * BAR as f64).round() as i64).clamp(0, BAR as i64) as usize;
         let color = if pct >= 85 {
             203
         } else if pct >= 60 {
@@ -332,9 +335,15 @@ pub fn build_status_line(state: &ReplState, info: Option<&StatusInfo>, width: us
     let line = if right.is_empty() {
         format!("  {left_ansi}")
     } else {
-        let gap = budget.saturating_sub(measure(&left) + measure(&right)).max(2);
+        let gap = budget
+            .saturating_sub(measure(&left) + measure(&right))
+            .max(2);
         let right_ansi: Vec<&str> = right.iter().map(|s| s.2.as_str()).collect();
-        format!("  {left_ansi}{}{}", " ".repeat(gap), right_ansi.join(&sep_ansi))
+        format!(
+            "  {left_ansi}{}{}",
+            " ".repeat(gap),
+            right_ansi.join(&sep_ansi)
+        )
     };
     fit_width(&line, width.saturating_sub(1).max(1))
 }

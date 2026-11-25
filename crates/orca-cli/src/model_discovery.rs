@@ -43,7 +43,10 @@ pub async fn available_models(config: &OrcaConfig) -> Vec<String> {
         return Vec::new();
     };
     if !response.status().is_success() {
-        tracing::warn!("Failed to discover models from {url}: {}", response.status());
+        tracing::warn!(
+            "Failed to discover models from {url}: {}",
+            response.status()
+        );
         return Vec::new();
     }
     let Ok(body) = response.json::<Value>().await else {

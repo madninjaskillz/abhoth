@@ -51,7 +51,11 @@ pub fn configure(mode: &str, console_is_ansi: bool) {
 }
 
 /// The decision for a mode ("auto" / "on" / "off") in an environment.
-pub fn should_enable(mode: Option<&str>, env: &[(String, String)], output_redirected: bool) -> bool {
+pub fn should_enable(
+    mode: Option<&str>,
+    env: &[(String, String)],
+    output_redirected: bool,
+) -> bool {
     match mode.map(|m| m.trim().to_lowercase()).as_deref() {
         Some("on" | "true" | "always") => return true,
         Some("off" | "false" | "never") => return false,
@@ -62,11 +66,7 @@ pub fn should_enable(mode: Option<&str>, env: &[(String, String)], output_redire
 
 /// Terminals known to handle OSC 8 (and to ignore it safely when they don't).
 pub fn terminal_supports_links(env: &[(String, String)]) -> bool {
-    let get = |name: &str| {
-        env.iter()
-            .find(|(k, _)| k == name)
-            .map(|(_, v)| v.as_str())
-    };
+    let get = |name: &str| env.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
     let non_empty = |name: &str| get(name).is_some_and(|v| !v.is_empty());
     let term = get("TERM").unwrap_or("");
     if term == "dumb" {
@@ -255,7 +255,10 @@ mod tests {
         let full = dir.path().join("src").join("app.cs");
         assert_eq!(
             m,
-            format!("[link={}]src/app.cs[/]", to_file_uri(&full.to_string_lossy()))
+            format!(
+                "[link={}]src/app.cs[/]",
+                to_file_uri(&full.to_string_lossy())
+            )
         );
         let ansi = markup::render(&format!("see {m}"), true);
         assert!(ansi.contains("\x1b]8;;file://"));
@@ -267,8 +270,14 @@ mod tests {
     fn path_markup_missing_file_or_links_off_is_plain_text() {
         let dir = project();
         let cwd = dir.path().to_string_lossy().to_string();
-        assert_eq!(path_markup_in(true, &cwd, "src/none.cs", None), "src/none.cs");
-        assert_eq!(path_markup_in(false, &cwd, "src/app.cs", None), "src/app.cs");
+        assert_eq!(
+            path_markup_in(true, &cwd, "src/none.cs", None),
+            "src/none.cs"
+        );
+        assert_eq!(
+            path_markup_in(false, &cwd, "src/app.cs", None),
+            "src/app.cs"
+        );
     }
 
     #[test]

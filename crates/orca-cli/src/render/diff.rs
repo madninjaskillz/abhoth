@@ -101,10 +101,16 @@ mod tests {
 
     #[test]
     fn colorize_diff_text_multiple_line_types_all_colorized() {
-        let diff =
-            "diff --git a/f.cs b/f.cs\n--- a/f.cs\n+++ b/f.cs\n@@ -1,2 +1,3 @@\n context\n-old\n+new";
+        let diff = "diff --git a/f.cs b/f.cs\n--- a/f.cs\n+++ b/f.cs\n@@ -1,2 +1,3 @@\n context\n-old\n+new";
         let r = colorize_diff_text(diff);
-        for tag in ["[bold yellow]", "[bold]", "[cyan]", "[green]", "[red]", "[dim]"] {
+        for tag in [
+            "[bold yellow]",
+            "[bold]",
+            "[cyan]",
+            "[green]",
+            "[red]",
+            "[dim]",
+        ] {
             assert!(r.contains(tag), "{tag}");
         }
     }

@@ -14,20 +14,57 @@ pub fn interactive() -> bool {
     std::io::stdin().is_terminal()
 }
 
-/// Raw mode for the lifetime of the guard (restored on drop, even on panic).
-pub struct RawGuard(bool);
+/// How many raw-mode guards are alive (raw mode is on while any is), and how many of them
+/// belong to prompts reading keys (a background key watcher stands back while one does).
+static RAW_DEPTH: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
+static PROMPTS_READING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Raw mode for the lifetime of the guard (restored on drop, even on panic). Guards nest.
+pub struct RawGuard {
+    on: bool,
+    prompt: bool,
+}
 
 impl RawGuard {
+    /// Raw mode for a prompt that reads keys.
     pub fn enable() -> Self {
-        let on = crossterm::terminal::enable_raw_mode().is_ok();
-        Self(on)
+        Self::new(true)
     }
+
+    /// Raw mode for a background key watcher (which pauses while a prompt reads keys).
+    pub fn enable_for_watcher() -> Self {
+        Self::new(false)
+    }
+
+    fn new(prompt: bool) -> Self {
+        let mut depth = RAW_DEPTH.lock().unwrap_or_else(|e| e.into_inner());
+        let on = *depth > 0 || crossterm::terminal::enable_raw_mode().is_ok();
+        if on {
+            *depth += 1;
+        }
+        if prompt {
+            PROMPTS_READING.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        Self { on, prompt }
+    }
+}
+
+/// Whether a prompt is reading keys right now.
+pub fn prompt_reading() -> bool {
+    PROMPTS_READING.load(std::sync::atomic::Ordering::SeqCst) > 0
 }
 
 impl Drop for RawGuard {
     fn drop(&mut self) {
-        if self.0 {
-            let _ = crossterm::terminal::disable_raw_mode();
+        if self.prompt {
+            PROMPTS_READING.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        if self.on {
+            let mut depth = RAW_DEPTH.lock().unwrap_or_else(|e| e.into_inner());
+            *depth -= 1;
+            if *depth == 0 {
+                let _ = crossterm::terminal::disable_raw_mode();
+            }
         }
     }
 }
@@ -77,7 +114,10 @@ pub fn select(console: &Console, title: &str, choices: &[String]) -> Option<usiz
         for (i, c) in choices.iter().enumerate() {
             s.push_str("\r\n");
             if i == current {
-                s.push_str(&markup::render(&format!("[blue]> {c}[/]"), console.is_ansi()));
+                s.push_str(&markup::render(
+                    &format!("[blue]> {c}[/]"),
+                    console.is_ansi(),
+                ));
             } else {
                 s.push_str(&markup::render(&format!("  {c}"), console.is_ansi()));
             }
@@ -163,7 +203,10 @@ pub fn text(console: &Console, prompt: &str) -> Option<String> {
 /// `Confirm`: yes / no with a default (Enter).
 pub fn confirm(console: &Console, prompt: &str, default: bool) -> bool {
     let hint = if default { "[y/n] (y)" } else { "[y/n] (n)" };
-    let answer = text(console, &format!("{prompt} [blue]{}[/]", markup::escape(hint)));
+    let answer = text(
+        console,
+        &format!("{prompt} [blue]{}[/]", markup::escape(hint)),
+    );
     match answer.map(|a| a.trim().to_ascii_lowercase()) {
         Some(a) if a == "y" || a == "yes" => true,
         Some(a) if a == "n" || a == "no" => false,

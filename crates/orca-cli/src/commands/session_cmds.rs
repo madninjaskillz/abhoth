@@ -139,7 +139,8 @@ impl Command for RenameCommand {
     }
     async fn execute(&self, ctx: &mut CommandContext<'_>, args: &[String]) -> CommandResult {
         if args.is_empty() {
-            ctx.console.markup_line("[yellow]Usage: /rename <new name>[/]");
+            ctx.console
+                .markup_line("[yellow]Usage: /rename <new name>[/]");
             return CommandResult::Ok;
         }
         let Some(id) = ctx.state.current_session_id.clone() else {
@@ -154,10 +155,8 @@ impl Command for RenameCommand {
         {
             Ok(id) => {
                 ctx.state.current_session_id = Some(id);
-                ctx.console.markup_line(&format!(
-                    "[green]Session renamed to: {}[/]",
-                    escape(&title)
-                ));
+                ctx.console
+                    .markup_line(&format!("[green]Session renamed to: {}[/]", escape(&title)));
             }
             // C# lets the exception reach the REPL's error line.
             Err(e) => ctx
@@ -271,10 +270,8 @@ impl Command for SessionCommand {
                 let data = match ctx.sessions.load(id) {
                     Ok(Some(d)) => d,
                     Ok(None) | Err(_) => {
-                        ctx.console.markup_line(&format!(
-                            "[red]Session not found: {}[/]",
-                            escape(id)
-                        ));
+                        ctx.console
+                            .markup_line(&format!("[red]Session not found: {}[/]", escape(id)));
                         return CommandResult::Ok;
                     }
                 };
@@ -300,10 +297,8 @@ impl Command for SessionCommand {
                 if let Some(s) = system {
                     messages.insert(0, s);
                 }
-                let conversation = orca_core::chat::Conversation::from_api_messages(
-                    messages,
-                    Default::default(),
-                );
+                let conversation =
+                    orca_core::chat::Conversation::from_api_messages(messages, Default::default());
                 ctx.session.set_conversation(conversation);
                 ctx.state.current_session_id = Some(data.id.clone());
                 ctx.session.tool_hooks.session_id = Some(data.id.clone());
@@ -323,10 +318,8 @@ impl Command for SessionCommand {
                     ctx.console
                         .markup_line(&format!("[green]Session deleted: {id}[/]"));
                 } else {
-                    ctx.console.markup_line(&format!(
-                        "[red]Session not found: {}[/]",
-                        escape(id)
-                    ));
+                    ctx.console
+                        .markup_line(&format!("[red]Session not found: {}[/]", escape(id)));
                 }
             }
             "tree" => {

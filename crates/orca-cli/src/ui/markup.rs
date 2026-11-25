@@ -275,7 +275,10 @@ mod tests {
     #[test]
     fn render_nested_styles() {
         let s = render("[yellow]a [bold]b[/] c[/]", true);
-        assert_eq!(s, "\x1b[0m\x1b[93ma \x1b[0m\x1b[1;93mb\x1b[0m\x1b[93m c\x1b[0m");
+        assert_eq!(
+            s,
+            "\x1b[0m\x1b[93ma \x1b[0m\x1b[1;93mb\x1b[0m\x1b[93m c\x1b[0m"
+        );
     }
 
     #[test]

@@ -5,14 +5,14 @@
 
 mod agent;
 pub mod benchmark_cmd;
-pub mod config_editor;
-pub mod profile_cmd;
 mod config_cmds;
+pub mod config_editor;
 mod context_cmds;
 mod core_cmds;
 mod custom;
 mod fileops;
 mod memory;
+pub mod profile_cmd;
 mod session_cmds;
 pub mod uncensored;
 
@@ -104,7 +104,8 @@ impl CommandRegistry {
     pub fn register(&mut self, command: Arc<dyn Command>) {
         let name = command.name().to_lowercase();
         for a in command.aliases() {
-            self.aliases.insert(a.to_lowercase(), command.name().to_string());
+            self.aliases
+                .insert(a.to_lowercase(), command.name().to_string());
         }
         match self.by_name.get(&name) {
             Some(&i) => self.commands[i] = command,

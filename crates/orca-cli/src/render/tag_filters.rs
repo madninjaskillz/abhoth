@@ -222,7 +222,10 @@ mod tests {
 
     #[test]
     fn next_prompt_plain_text_passes_through() {
-        assert_eq!(NextPromptTagFilter::new().filter("Hello world"), "Hello world");
+        assert_eq!(
+            NextPromptTagFilter::new().filter("Hello world"),
+            "Hello world"
+        );
     }
 
     #[test]
@@ -240,14 +243,20 @@ mod tests {
     #[test]
     fn full_tag_single_token_captures_and_suppresses() {
         let mut f = NextPromptTagFilter::new();
-        assert_eq!(f.filter("visible<next-prompt>suggest this</next-prompt>"), "visible");
+        assert_eq!(
+            f.filter("visible<next-prompt>suggest this</next-prompt>"),
+            "visible"
+        );
         assert_eq!(f.captured_prompt().as_deref(), Some("suggest this"));
     }
 
     #[test]
     fn full_tag_single_token_with_trailing_text() {
         let mut f = NextPromptTagFilter::new();
-        assert_eq!(f.filter("before<next-prompt>prompt</next-prompt>after"), "beforeafter");
+        assert_eq!(
+            f.filter("before<next-prompt>prompt</next-prompt>after"),
+            "beforeafter"
+        );
         assert_eq!(f.captured_prompt().as_deref(), Some("prompt"));
     }
 
@@ -334,7 +343,10 @@ mod tests {
             shown.push_str(&f.filter(&c.to_string()));
         }
         assert_eq!(shown, "ok!");
-        assert_eq!(f.captured_prompt().as_deref(), Some("run the tests again — überall"));
+        assert_eq!(
+            f.captured_prompt().as_deref(),
+            Some("run the tests again — überall")
+        );
     }
 
     // ── ToolCallTagFilter ──
@@ -345,7 +357,10 @@ mod tests {
 
     #[test]
     fn tool_call_plain_text_passes_through() {
-        assert_eq!(ToolCallTagFilter::new().filter("Hello world"), "Hello world");
+        assert_eq!(
+            ToolCallTagFilter::new().filter("Hello world"),
+            "Hello world"
+        );
     }
 
     #[test]
@@ -400,7 +415,13 @@ mod tests {
         let mut f = ToolCallTagFilter::new();
         let out = feed(
             &mut f,
-            &["<", "tool_call", ">", "{\"name\":\"read_file\"}", "</tool_call>"],
+            &[
+                "<",
+                "tool_call",
+                ">",
+                "{\"name\":\"read_file\"}",
+                "</tool_call>",
+            ],
         );
         assert_eq!(out, "");
     }
@@ -448,12 +469,18 @@ mod tests {
     #[test]
     fn non_tool_call_angle_bracket_preserved() {
         let mut f = ToolCallTagFilter::new();
-        assert_eq!(feed(&mut f, &["x < y", " and ", "z > w"]), "x < y and z > w");
+        assert_eq!(
+            feed(&mut f, &["x < y", " and ", "z > w"]),
+            "x < y and z > w"
+        );
     }
 
     #[test]
     fn html_tags_preserved() {
-        assert_eq!(ToolCallTagFilter::new().filter("<div>hello</div>"), "<div>hello</div>");
+        assert_eq!(
+            ToolCallTagFilter::new().filter("<div>hello</div>"),
+            "<div>hello</div>"
+        );
     }
 
     #[test]

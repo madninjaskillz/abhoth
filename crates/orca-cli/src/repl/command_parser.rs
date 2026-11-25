@@ -343,7 +343,10 @@ mod tests {
         );
         assert_eq!(plugin(&p, "/review staged").args, ["staged"]);
         assert_eq!(plugin(&p, "/review abc123").args, ["abc123"]);
-        assert_eq!(plugin(&p, "/review src/Program.cs").args, ["src/Program.cs"]);
+        assert_eq!(
+            plugin(&p, "/review src/Program.cs").args,
+            ["src/Program.cs"]
+        );
     }
 
     #[test]

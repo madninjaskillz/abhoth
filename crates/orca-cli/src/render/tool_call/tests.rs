@@ -119,7 +119,12 @@ fn render_tool_result_error_shows_red_header_and_body_preview() {
         None,
     );
     let out = f.output();
-    for s in ["write_file", "File not found", "detail line 1", "detail line 2"] {
+    for s in [
+        "write_file",
+        "File not found",
+        "detail line 1",
+        "detail line 2",
+    ] {
         assert!(out.contains(s), "{s}");
     }
 }
@@ -160,7 +165,12 @@ fn render_tool_result_exactly_max_lines_no_truncation() {
 #[test]
 fn render_tool_result_single_more_line_singular_hint() {
     let mut f = Fixture::new();
-    f.result("glob", &numbered(TOOL_OUTPUT_PREVIEW_LINES + 1), false, None);
+    f.result(
+        "glob",
+        &numbered(TOOL_OUTPUT_PREVIEW_LINES + 1),
+        false,
+        None,
+    );
     assert!(f.output().contains("1 more line "));
 }
 
@@ -388,7 +398,10 @@ fn bash_failure_shows_output_then_exit_status_in_red_not_first_line_as_error() {
         tool.as_deref(),
         &f.state,
     );
-    let ansi: String = lines.iter().map(|l| markup::render(l, true) + "\n").collect();
+    let ansi: String = lines
+        .iter()
+        .map(|l| markup::render(l, true) + "\n")
+        .collect();
     let plain = crate::ui::console::strip_ansi(&ansi);
     assert!(plain.contains("⎿  PASS a"));
     assert!(plain.contains("✗ Command exited with code 1"));
@@ -513,7 +526,8 @@ fn permission_and_plan_lines() {
     let f = Fixture::new();
     f.renderer.render_permission_prompt("bash", "Dangerous");
     f.renderer.render_plan_mode_toggle(true);
-    f.renderer.render_plan_tool_blocked("write_file", "Moderate");
+    f.renderer
+        .render_plan_tool_blocked("write_file", "Moderate");
     let out = f.output();
     assert!(out.contains("  ⎿  ⚠ bash needs approval (risk: dangerous)"));
     assert!(out.contains("⏸ Plan mode enabled — the model will plan without making changes."));

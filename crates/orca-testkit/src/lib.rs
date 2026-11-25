@@ -47,6 +47,8 @@ pub struct Reply {
     /// Break the stream off after this many SSE events: the connection drops without the end
     /// of the chunked body (a server or proxy dying mid-response).
     pub die_after_events: Option<usize>,
+    /// Pause this long before each SSE event (a slow model: time to cancel mid-stream).
+    pub chunk_delay_ms: u64,
 }
 
 impl Reply {
@@ -570,6 +572,19 @@ async fn chat(
                 "fake server: stream broken off",
             ))
         }));
+        return builder.body(Body::from_stream(stream)).unwrap();
+    }
+    if reply.chunk_delay_ms > 0 {
+        let delay = Duration::from_millis(reply.chunk_delay_ms);
+        let lines: Vec<String> = events
+            .iter()
+            .map(|e| format!("data: {e}\n\n"))
+            .chain(std::iter::once("data: [DONE]\n\n".to_string()))
+            .collect();
+        let stream = futures_util::stream::iter(lines).then(move |line| async move {
+            tokio::time::sleep(delay).await;
+            Ok::<_, std::io::Error>(line)
+        });
         return builder.body(Body::from_stream(stream)).unwrap();
     }
     let mut sse = String::new();

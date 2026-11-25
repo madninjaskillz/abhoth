@@ -44,9 +44,8 @@ static SHELL_STATUS_LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(Command exited with code -?\d+|Command timed out.*|Command aborted.*)$")
         .expect("static regex")
 });
-static READ_CONTINUATION_NOTICE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\[Showing lines (\d+)-(\d+) of (\d+)").expect("static regex")
-});
+static READ_CONTINUATION_NOTICE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\[Showing lines (\d+)-(\d+) of (\d+)").expect("static regex"));
 
 pub struct ToolCallRenderer {
     console: Console,
@@ -222,7 +221,9 @@ impl ToolCallRenderer {
             .flatten();
 
         if is_error {
-            self.build_error_body(&mut body, tool_name, &display, had_header, max_lines, expanded);
+            self.build_error_body(
+                &mut body, tool_name, &display, had_header, max_lines, expanded,
+            );
         } else if let Some(diff) = pi_edit {
             let counts = format!("[green]+{}[/] [red]−{}[/]", diff.added, diff.removed);
             body.push(format!(
@@ -230,7 +231,12 @@ impl ToolCallRenderer {
                 links::path_markup(&diff.path, None)
             ));
             if !expanded && diff.lines.len() > MAX_COLLAPSED_DIFF_LINES {
-                add_diff_lines(&mut body, &diff.lines[..MAX_COLLAPSED_DIFF_LINES], max_lines, true);
+                add_diff_lines(
+                    &mut body,
+                    &diff.lines[..MAX_COLLAPSED_DIFF_LINES],
+                    max_lines,
+                    true,
+                );
                 body.push(more_lines_hint(diff.lines.len() - MAX_COLLAPSED_DIFF_LINES));
             } else {
                 add_diff_lines(&mut body, &diff.lines, max_lines, expanded);
@@ -456,7 +462,12 @@ fn more_lines_hint(remaining: usize) -> String {
     )
 }
 
-fn add_diff_lines<S: AsRef<str>>(body: &mut Vec<String>, lines: &[S], max_lines: usize, expanded: bool) {
+fn add_diff_lines<S: AsRef<str>>(
+    body: &mut Vec<String>,
+    lines: &[S],
+    max_lines: usize,
+    expanded: bool,
+) {
     if expanded {
         body.extend(lines.iter().map(|l| diff_line_markup(l.as_ref())));
         return;
@@ -589,9 +600,16 @@ fn pi_summary(tool_name: &str, root: &Map<String, Value>) -> String {
             } else {
                 format!("\"{pattern}\"")
             };
-            join_non_empty(&[quoted, try_get_string(root, "path"), try_get_string(root, "glob")])
+            join_non_empty(&[
+                quoted,
+                try_get_string(root, "path"),
+                try_get_string(root, "glob"),
+            ])
         }
-        "find" => join_non_empty(&[try_get_string(root, "pattern"), try_get_string(root, "path")]),
+        "find" => join_non_empty(&[
+            try_get_string(root, "pattern"),
+            try_get_string(root, "path"),
+        ]),
         _ => try_get_string(root, "path"),
     }
 }
@@ -673,7 +691,7 @@ pub fn summarize_read(display: &str) -> String {
     )
 }
 
-fn trim_blank_edges<'a, S: AsRef<str>>(lines: &'a [S]) -> &'a [S] {
+fn trim_blank_edges<S: AsRef<str>>(lines: &[S]) -> &[S] {
     let mut start = 0;
     let mut end = lines.len();
     while start < end && is_blank(lines[start].as_ref()) {

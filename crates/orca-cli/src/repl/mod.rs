@@ -71,6 +71,9 @@ pub struct Repl {
     last_interrupt: Option<Instant>,
     /// `/retry`: the position in `lmStudio.models` requests go to.
     retry_index: usize,
+    /// Pasted images and files waiting as chips in the prompt (`InputHandler.Attachments`).
+    tray: orca_core::attachments::AttachmentTray,
+    images_as_paths_notice_shown: bool,
     interactive: bool,
 }
 
@@ -110,6 +113,13 @@ impl Repl {
             saved_input: String::new(),
             last_interrupt: None,
             retry_index: 0,
+            tray: orca_core::attachments::AttachmentTray::new(
+                orca_core::attachments::AttachmentStore::new(
+                    orca_core::config::project_instructions::find_project_root(&cwd)
+                        .unwrap_or_else(|| cwd.clone()),
+                ),
+            ),
+            images_as_paths_notice_shown: false,
             interactive,
         }
     }
@@ -177,6 +187,18 @@ impl Repl {
             self.console.clone(),
         )));
         self.refresh_system_prompt();
+        // BrowserUncensored asks each chat server what it is (in the background) at start.
+        if !self.session.config.demo_mode {
+            let identity = orca_core::client::ServerIdentity::shared();
+            for (_, url, key) in crate::commands::uncensored::endpoints(&self.session.config) {
+                identity.warm(&url, key.as_deref());
+            }
+        }
+        crate::render::links::configure(&self.session.config.ui.hyperlinks, self.console.is_ansi());
+        let notice_console = self.console.clone();
+        orca_core::client::tool_images::set_on_vision_refused(Some(Arc::new(move |text: &str| {
+            notice_console.markup_line(&format!("[yellow]{}[/]", escape(text)));
+        })));
         let exit = self.input_loop().await;
         if exit == ReplExit::Quit {
             self.save_auto_memory().await;
@@ -244,7 +266,13 @@ impl Repl {
                     self.saved_input = text;
                 }
                 ReadOutcome::PasteRequested(text) => {
-                    self.saved_input = text;
+                    let reader = orca_core::attachments::clipboard::create_default();
+                    let cwd = self.session.ctx.cwd.to_string_lossy().to_string();
+                    let pasted = self.tray.paste_from(reader.as_ref(), &cwd).await;
+                    if let Some(n) = &pasted.notice {
+                        self.console.markup_line(&format!("[dim]{}[/]", escape(n)));
+                    }
+                    self.saved_input = format!("{text}{}", pasted.insert);
                 }
             }
         }
@@ -317,7 +345,13 @@ impl Repl {
                     ));
                 }
                 self.console.blank();
-                self.session.messages.push(ChatMessage::user(expanded));
+                let attachments = self.tray.take(&expanded);
+                let message = if attachments.is_empty() {
+                    ChatMessage::user(expanded)
+                } else {
+                    self.build_attachment_message(&expanded, &attachments).await
+                };
+                self.session.messages.push(message);
             }
             self.run_agent_turn().await;
             if self.state.plan_mode() {
@@ -334,7 +368,6 @@ impl Repl {
         let Some(last) = self.session.messages.pop() else {
             return TurnOutcome::Failed;
         };
-        let prompt = last.content.clone().unwrap_or_default();
         let started = Instant::now();
         let tokens_before = self.session.total_output_tokens;
         let mut observer = observer::TurnObserver::new(
@@ -342,14 +375,30 @@ impl Repl {
             self.state.clone(),
             self.session.registry.all(),
         );
+        // Ctrl+C cancels the turn: a key in raw mode at a terminal (the watcher), or the
+        // console signal.
+        let watcher = self.interactive.then(KeyWatcher::start);
         let result = {
-            let turn = self.session.run_turn(&prompt, &mut observer);
+            let turn = self.session.run_turn_with_message(last, &mut observer);
+            let key = async {
+                match &watcher {
+                    Some(w) => w.cancelled().await,
+                    None => std::future::pending::<()>().await,
+                }
+            };
             tokio::select! {
                 r = turn => Some(r),
                 _ = tokio::signal::ctrl_c() => None,
+                _ = key => None,
             }
         };
-        let suggestion = observer.finish();
+        drop(watcher);
+        let suggestion = if result.is_some() {
+            observer.finish()
+        } else {
+            observer.cancel();
+            None
+        };
         let outcome = match result {
             Some(Ok(_)) => {
                 self.state.total_turns += 1;
@@ -363,8 +412,15 @@ impl Repl {
                 TurnOutcome::Done
             }
             None => {
+                // AgentLoopRunner catches the cancel itself: the turn then ends normally.
                 self.session.close_dangling_tool_calls();
-                self.console.markup_line("\n[yellow]Cancelled.[/]");
+                self.console
+                    .markup_line("\n[yellow]Generation cancelled.[/]");
+                self.state.total_turns += 1;
+                self.console.markup_line(&format_turn_footer(
+                    started.elapsed(),
+                    self.session.total_output_tokens - tokens_before,
+                ));
                 TurnOutcome::Cancelled
             }
             Some(Err(e)) => {
@@ -388,6 +444,30 @@ impl Repl {
         self.console.blank();
     }
 
+    /// `BuildAttachmentMessageAsync`.
+    async fn build_attachment_message(
+        &mut self,
+        text: &str,
+        attachments: &[orca_core::attachments::PromptAttachment],
+    ) -> ChatMessage {
+        use orca_core::attachments::AttachmentKind;
+        let vision = if attachments.iter().any(|a| a.kind == AttachmentKind::Image) {
+            orca_core::client::tool_images::for_main_model(&self.session.config).await
+        } else {
+            false
+        };
+        let cwd = self.session.ctx.cwd.to_string_lossy().to_string();
+        let built = orca_core::attachments::message_builder::build(text, attachments, vision, &cwd);
+        if built.images_as_paths > 0 && !vision && !self.images_as_paths_notice_shown {
+            self.images_as_paths_notice_shown = true;
+            self.console.markup_line(
+                "[dim]  (This model doesn't take images, so attached images go as file paths for its tools. If it does, set [cyan]lmStudio.vision[/] to true.)[/]",
+            );
+            self.console.blank();
+        }
+        built.message
+    }
+
     fn render_loop_error(&self, error: &orca_core::agent::AgentError) {
         let (message, hint) = crate::render::friendly_errors::describe(
             error,
@@ -396,7 +476,8 @@ impl Repl {
         self.console
             .markup_line(&format!("\n[red]✗ {}[/]", escape(&message)));
         if let Some(h) = hint {
-            self.console.markup_line(&format!("  [dim]{}[/]", escape(&h)));
+            self.console
+                .markup_line(&format!("  [dim]{}[/]", escape(&h)));
         }
     }
 
@@ -434,9 +515,7 @@ impl Repl {
                     self.refresh_system_prompt();
                     let mut msg = "The plan is approved. Please execute it now. Make all the changes described in the plan above.".to_string();
                     if let Some(p) = artifact {
-                        msg.push_str(&format!(
-                            " The plan is also saved at {p} for reference."
-                        ));
+                        msg.push_str(&format!(" The plan is also saved at {p} for reference."));
                     }
                     self.session.messages.push(ChatMessage::user(msg));
                     self.run_agent_turn().await;
@@ -445,7 +524,10 @@ impl Repl {
                 Some(1) => {
                     let console = self.console.clone();
                     let note = tokio::task::block_in_place(|| {
-                        crate::ui::prompt::text(&console, "[yellow]What should change in the plan?[/]")
+                        crate::ui::prompt::text(
+                            &console,
+                            "[yellow]What should change in the plan?[/]",
+                        )
                     })
                     .unwrap_or_default();
                     if note.trim().is_empty() {
@@ -652,7 +734,8 @@ impl Repl {
 
     /// `/engine`: the bridge engines run only in `--print` mode in this build.
     fn handle_engine_command(&mut self, args: &[String]) {
-        let current = orca_core::engines::AgentEngines::display_name_of(&self.session.config.agent.engine);
+        let current =
+            orca_core::engines::AgentEngines::display_name_of(&self.session.config.agent.engine);
         if args.is_empty() {
             self.console.markup_line(&format!(
                 "[grey]Engine:[/] [cyan]{}[/] [dim]— /engine native | claude | codex[/]",
@@ -752,6 +835,72 @@ impl Repl {
     }
 }
 
+/// Watches the keyboard during a turn (raw mode) for Ctrl+C; stands back while a prompt
+/// (permission, plan approval) reads keys.
+struct KeyWatcher {
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    cancel: Arc<tokio::sync::Notify>,
+    fired: Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl KeyWatcher {
+    fn start() -> Self {
+        use std::sync::atomic::Ordering;
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cancel = Arc::new(tokio::sync::Notify::new());
+        let fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (s, c, f) = (stop.clone(), cancel.clone(), fired.clone());
+        let thread = std::thread::spawn(move || {
+            use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+            let _raw = crate::ui::prompt::RawGuard::enable_for_watcher();
+            let tick = Duration::from_millis(30);
+            while !s.load(Ordering::SeqCst) {
+                if crate::ui::prompt::prompt_reading() {
+                    std::thread::sleep(tick);
+                    continue;
+                }
+                if !crossterm::event::poll(tick).unwrap_or(false)
+                    || crate::ui::prompt::prompt_reading()
+                {
+                    continue;
+                }
+                if let Ok(Event::Key(k)) = crossterm::event::read()
+                    && k.kind != KeyEventKind::Release
+                    && k.code == KeyCode::Char('c')
+                    && k.modifiers.contains(KeyModifiers::CONTROL)
+                {
+                    f.store(true, Ordering::SeqCst);
+                    c.notify_one();
+                    break;
+                }
+            }
+        });
+        Self {
+            stop,
+            cancel,
+            fired,
+            thread: Some(thread),
+        }
+    }
+
+    async fn cancelled(&self) {
+        if self.fired.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        self.cancel.notified().await;
+    }
+}
+
+impl Drop for KeyWatcher {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
 enum Handled {
     Continue,
     Exit,
@@ -828,7 +977,10 @@ mod tests {
             format_turn_footer(Duration::from_secs(75), 1),
             "[dim]✻ 1m 15s · 1 token[/]"
         );
-        assert_eq!(format_turn_footer(Duration::from_secs(2), 0), "[dim]✻ 2.0s[/]");
+        assert_eq!(
+            format_turn_footer(Duration::from_secs(2), 0),
+            "[dim]✻ 2.0s[/]"
+        );
     }
 
     #[test]

@@ -46,10 +46,7 @@ pub fn sanitize(text: &str) -> String {
         // Carriage return: the terminal would overwrite from column 0 — keep the last
         // non-empty segment (a trailing \r alone leaves the line as it was).
         let line = if raw_line.contains('\r') {
-            raw_line
-                .split('\r')
-                .rfind(|s| !s.is_empty())
-                .unwrap_or("")
+            raw_line.split('\r').rfind(|s| !s.is_empty()).unwrap_or("")
         } else {
             raw_line
         };

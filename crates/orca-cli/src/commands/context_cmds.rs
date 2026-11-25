@@ -260,9 +260,10 @@ impl Command for ExportCommand {
     }
     async fn execute(&self, ctx: &mut CommandContext<'_>, args: &[String]) -> CommandResult {
         let now = chrono::Local::now();
-        let path = args.first().cloned().unwrap_or_else(|| {
-            format!("openorca-export-{}.md", now.format("%Y%m%d-%H%M%S"))
-        });
+        let path = args
+            .first()
+            .cloned()
+            .unwrap_or_else(|| format!("openorca-export-{}.md", now.format("%Y%m%d-%H%M%S")));
         let conversation = ctx.session.conversation();
         let text = export_markdown(
             conversation.system_prompt(),
@@ -333,8 +334,10 @@ impl Command for StatsCommand {
             "Context tokens".into(),
             format!(
                 "~{}",
-                n0(conversation.estimate_token_count(ctx.session.config.context.chars_per_token)
-                    as i64)
+                n0(
+                    conversation.estimate_token_count(ctx.session.config.context.chars_per_token)
+                        as i64
+                )
             ),
         ]);
         if turns > 0 {
@@ -352,10 +355,7 @@ mod tests {
 
     #[test]
     fn strip_think_blocks_removes_reasoning() {
-        assert_eq!(
-            strip_think_blocks("<THINK>x\ny</think> Answer "),
-            "Answer"
-        );
+        assert_eq!(strip_think_blocks("<THINK>x\ny</think> Answer "), "Answer");
     }
 
     #[test]

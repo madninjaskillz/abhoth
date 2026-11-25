@@ -106,9 +106,7 @@ impl Command for DocsCommand {
             "[green]Injected {} chars of documentation into context.[/]",
             n0(units.len() as i64)
         ));
-        let note = query
-            .map(|q| format!(" (query: {q})"))
-            .unwrap_or_default();
+        let note = query.map(|q| format!(" (query: {q})")).unwrap_or_default();
         ctx.session
             .messages
             .push(orca_core::client::ChatMessage::user(format!(
@@ -148,7 +146,8 @@ impl Command for ReviewCommand {
             ctx.console.markup_line(NO_AGENTS);
             return CommandResult::Ok;
         };
-        ctx.console.markup_line("[yellow]Spawning review agent...[/]");
+        ctx.console
+            .markup_line("[yellow]Spawning review agent...[/]");
         match host.spawn_agent(&task, "review").await {
             Ok(outcome) if outcome.completed => {
                 ctx.console.markup_line(&format!(
@@ -210,6 +209,9 @@ mod tests {
             review_task(&["src/a.rs".into()]),
             "Review the code in src/a.rs for quality, bugs, and suggestions."
         );
-        assert!(review_task(&["abc123".into()]).starts_with("Review the changes introduced by commit abc123."));
+        assert!(
+            review_task(&["abc123".into()])
+                .starts_with("Review the changes introduced by commit abc123.")
+        );
     }
 }

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use crate::ui::console::{cell_width, Console};
+use crate::ui::console::{Console, cell_width};
 use crate::ui::markup;
 use crate::ui::prompt::RawGuard;
 
@@ -81,7 +81,10 @@ pub fn complete_path(partial: &str, cwd: &Path) -> Vec<String> {
             continue;
         }
         let is_dir = e.file_type().is_ok_and(|t| t.is_dir());
-        out.push(format!("@{dir_part}{name}{}", if is_dir { "/" } else { "" }));
+        out.push(format!(
+            "@{dir_part}{name}{}",
+            if is_dir { "/" } else { "" }
+        ));
         if out.len() >= 200 {
             break;
         }
@@ -179,7 +182,15 @@ impl LineEditor {
             if key.code != KeyCode::Tab {
                 cycle = None;
             }
-            match self.handle_key(key, &mut buf, &mut hist_pos, &mut stash, &mut cycle, ghost, completion) {
+            match self.handle_key(
+                key,
+                &mut buf,
+                &mut hist_pos,
+                &mut stash,
+                &mut cycle,
+                ghost,
+                completion,
+            ) {
                 Some(outcome) => break outcome,
                 None => self.render(prompt, &buf, ghost),
             }
@@ -420,7 +431,13 @@ mod tests {
 
     #[test]
     fn prompt_shows_mode() {
-        assert_eq!(markup::remove(prompt_markup(InputMode::Plan, false)), "[plan] ❯ ");
-        assert_eq!(markup::remove(prompt_markup(InputMode::Normal, false)), "❯ ");
+        assert_eq!(
+            markup::remove(prompt_markup(InputMode::Plan, false)),
+            "[plan] ❯ "
+        );
+        assert_eq!(
+            markup::remove(prompt_markup(InputMode::Normal, false)),
+            "❯ "
+        );
     }
 }

@@ -3,11 +3,11 @@
 pub mod backend;
 pub mod context_overflow;
 pub mod context_window_detector;
+pub mod demo;
 pub mod max_tokens_negotiator;
 pub mod openai;
 pub mod request_parameters;
 pub mod served_models;
-pub mod demo;
 pub mod server_identity;
 pub mod tool_images;
 pub mod types;

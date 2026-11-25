@@ -95,10 +95,7 @@ impl Command for DoctorCommand {
         table.row(&[
             "Model configured",
             &if config.lm_studio.primary_model().is_some() {
-                format!(
-                    "[green]{}[/]",
-                    escape(&config.lm_studio.models.join(" > "))
-                )
+                format!("[green]{}[/]", escape(&config.lm_studio.models.join(" > ")))
             } else {
                 "[yellow]Auto-detect[/]".to_string()
             },
@@ -248,7 +245,11 @@ pub struct HelpCommand;
 /// Commands the REPL handles itself (not in the registry).
 const BUILT_INS: [(&str, &[&str], &str); 5] = [
     ("config", &[], "View or edit configuration"),
-    ("retry", &["r!"], "Retry the last turn with the backup model"),
+    (
+        "retry",
+        &["r!"],
+        "Retry the last turn with the backup model",
+    ),
     (
         "engine",
         &[],
@@ -288,14 +289,7 @@ const GROUPS: [(&str, &[&str]); 5] = [
     ),
     (
         "Agents & tools",
-        &[
-            "agent",
-            "agents",
-            "review",
-            "workflow",
-            "docs",
-            "benchmark",
-        ],
+        &["agent", "agents", "review", "workflow", "docs", "benchmark"],
     ),
 ];
 
@@ -416,7 +410,10 @@ impl Command for HelpCommand {
                 "Ctrl+C",
                 "Cancel the running turn · press twice quickly to exit",
             ),
-            key("!cmd", "Run a shell command directly (not sent to the model)"),
+            key(
+                "!cmd",
+                "Run a shell command directly (not sent to the model)",
+            ),
             key("@path", "Attach a file's contents to your message"),
             key(
                 "Alt+V",

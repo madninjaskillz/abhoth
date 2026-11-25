@@ -89,7 +89,10 @@ pub fn apply(
         && servers.is_some_and(|s| {
             !s.is_empty()
                 && !s.iter().any(|s| {
-                    is_sent_to(uncensored, s.info.as_ref().map_or(ServerKind::Unknown, |i| i.kind))
+                    is_sent_to(
+                        uncensored,
+                        s.info.as_ref().map_or(ServerKind::Unknown, |i| i.kind),
+                    )
                 })
         });
     let f = esc(field.as_deref().unwrap_or("(no field)"));
@@ -160,7 +163,9 @@ fn image_line(
         None => "the server's default model".into(),
     };
     let Some(im) = u.image_model.as_deref().filter(|m| !m.trim().is_empty()) else {
-        return format!("[dim]Images are not covered (agent.uncensored.imageModel is blank): generate_image stays on[/] {normal}[dim].[/]");
+        return format!(
+            "[dim]Images are not covered (agent.uncensored.imageModel is blank): generate_image stays on[/] {normal}[dim].[/]"
+        );
     };
     let model = format!("[cyan]{}[/]", esc(im.trim()));
     if on {
@@ -176,7 +181,7 @@ fn image_line(
 }
 
 /// `Endpoints`: lmStudio.baseUrl (unless Anthropic), each slot copy and the Lead endpoint.
-fn endpoints(config: &OrcaConfig) -> Vec<(String, String, Option<String>)> {
+pub fn endpoints(config: &OrcaConfig) -> Vec<(String, String, Option<String>)> {
     let mut list = Vec::new();
     let mut add = |label: String, url: &str, key: Option<String>| {
         if !url.trim().is_empty() {
@@ -210,7 +215,9 @@ fn endpoints(config: &OrcaConfig) -> Vec<(String, String, Option<String>)> {
                 .or_else(|| lead.api_key.clone())
                 .or_else(|| key.clone());
             add(
-                format!("the Lead endpoint {}", lead.name).trim_end().to_string(),
+                format!("the Lead endpoint {}", lead.name)
+                    .trim_end()
+                    .to_string(),
                 &lead.base_url,
                 lead_key,
             );
@@ -302,7 +309,10 @@ mod tests {
     use super::*;
 
     fn a(s: &str) -> Vec<String> {
-        s.split(' ').filter(|x| !x.is_empty()).map(String::from).collect()
+        s.split(' ')
+            .filter(|x| !x.is_empty())
+            .map(String::from)
+            .collect()
     }
 
     #[test]

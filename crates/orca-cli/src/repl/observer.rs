@@ -9,6 +9,7 @@ use orca_abstractions::{Tool, ToolResult};
 use orca_core::agent::AgentObserver;
 use orca_core::client::ToolCall;
 
+use crate::render::markdown::MarkdownStreamRenderer;
 use crate::render::tag_filters::{NextPromptTagFilter, ToolCallTagFilter};
 use crate::render::tool_call::ToolCallRenderer;
 use crate::ui::Console;
@@ -23,8 +24,10 @@ pub struct TurnObserver {
     /// The tools by name (for summaries), taken from the session's registry.
     registry: HashMap<String, Arc<dyn Tool>>,
     started: HashMap<String, Instant>,
+    think: orca_core::agent::think_tag_filter::ThinkTagFilter,
     tag_filter: ToolCallTagFilter,
     next_prompt: NextPromptTagFilter,
+    markdown: MarkdownStreamRenderer,
     /// Text streamed since the last line break (to end the line before a tool header).
     mid_line: bool,
     in_reasoning: bool,
@@ -34,6 +37,7 @@ impl TurnObserver {
     pub fn new(console: Console, state: ReplState, tools: &[Arc<dyn Tool>]) -> Self {
         Self {
             tools: ToolCallRenderer::new(console.clone()),
+            markdown: MarkdownStreamRenderer::new(console.clone()),
             console,
             state,
             registry: tools
@@ -41,6 +45,7 @@ impl TurnObserver {
                 .map(|t| (t.name().to_string(), t.clone()))
                 .collect(),
             started: HashMap::new(),
+            think: orca_core::agent::think_tag_filter::ThinkTagFilter::new(),
             tag_filter: ToolCallTagFilter::new(),
             next_prompt: NextPromptTagFilter::new(),
             mid_line: false,
@@ -49,6 +54,7 @@ impl TurnObserver {
     }
 
     fn end_line(&mut self) {
+        self.markdown.finish();
         if self.in_reasoning {
             self.console.raw("\x1b[0m");
             self.in_reasoning = false;
@@ -56,6 +62,15 @@ impl TurnObserver {
         if self.mid_line {
             self.console.raw("\n");
             self.mid_line = false;
+        }
+    }
+
+    /// The turn was cancelled: the partial reply stays as it is on screen.
+    pub fn cancel(&mut self) {
+        self.markdown.clear();
+        if self.in_reasoning {
+            self.console.raw("[0m");
+            self.in_reasoning = false;
         }
     }
 
@@ -72,13 +87,19 @@ impl AgentObserver for TurnObserver {
         if self.in_reasoning {
             self.end_line();
         }
-        let shown = self.tag_filter.filter(text);
+        let (thinking, visible) = self.think.process(text);
+        if !thinking.is_empty() {
+            self.on_reasoning(&thinking);
+            if self.in_reasoning {
+                self.end_line();
+            }
+        }
+        let shown = self.tag_filter.filter(&visible);
         let shown = self.next_prompt.filter(&shown);
         if shown.is_empty() {
             return;
         }
-        self.console.raw(&shown);
-        self.mid_line = !shown.ends_with('\n');
+        self.markdown.append(&shown);
     }
 
     fn on_reasoning(&mut self, text: &str) {

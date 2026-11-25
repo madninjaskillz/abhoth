@@ -544,7 +544,10 @@ async fn run_interactive(
     match exit {
         repl::ReplExit::Quit => Ok(0),
         // The C# build restarts in-process; here the caller re-runs with the new profile.
-        repl::ReplExit::Restart { profile, session_id } => {
+        repl::ReplExit::Restart {
+            profile,
+            session_id,
+        } => {
             let mut next = vec!["--profile".to_string(), profile];
             if let Some(id) = session_id {
                 next.push("--resume".into());

@@ -13,8 +13,7 @@ use orca_core::agent::AgentError;
 use orca_core::client::ChatError;
 use regex::Regex;
 
-const NETWORK_HINT: &str =
-    "Check the server is running and the baseUrl in /config is right — /doctor runs a connection check.";
+const NETWORK_HINT: &str = "Check the server is running and the baseUrl in /config is right — /doctor runs a connection check.";
 
 static HTTP_STATUS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^HTTP (\d{3}) from ").expect("static regex"));
@@ -96,11 +95,21 @@ fn network_reason(detail: &str) -> Option<String> {
     let lower = detail.to_lowercase();
     let known = [
         (
-            &["connection refused", "actively refused", "os error 10061", "os error 111"][..],
+            &[
+                "connection refused",
+                "actively refused",
+                "os error 10061",
+                "os error 111",
+            ][..],
             "connection refused",
         ),
         (
-            &["timed out", "os error 10060", "os error 110", "operation timed out"][..],
+            &[
+                "timed out",
+                "os error 10060",
+                "os error 110",
+                "operation timed out",
+            ][..],
             "connection timed out",
         ),
         (
@@ -114,11 +123,21 @@ fn network_reason(detail: &str) -> Option<String> {
             "host not found",
         ),
         (
-            &["host unreachable", "network unreachable", "network is unreachable", "no route to host"][..],
+            &[
+                "host unreachable",
+                "network unreachable",
+                "network is unreachable",
+                "no route to host",
+            ][..],
             "host unreachable",
         ),
         (
-            &["connection reset", "forcibly closed", "os error 10054", "os error 104"][..],
+            &[
+                "connection reset",
+                "forcibly closed",
+                "os error 10054",
+                "os error 104",
+            ][..],
             "connection reset by the server",
         ),
     ];

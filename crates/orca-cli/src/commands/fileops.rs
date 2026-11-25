@@ -63,7 +63,11 @@ pub fn add_matches(pattern: &str, cwd: &Path) -> Vec<std::path::PathBuf> {
         out
     } else {
         let full = orca_abstractions::full_path(cwd, pattern);
-        if full.is_file() { vec![full] } else { Vec::new() }
+        if full.is_file() {
+            vec![full]
+        } else {
+            Vec::new()
+        }
     }
 }
 
@@ -112,10 +116,8 @@ impl Command for AddCommand {
                 }
             }
             if files.is_empty() {
-                ctx.console.markup_line(&format!(
-                    "[yellow]No files matched: {}[/]",
-                    escape(pattern)
-                ));
+                ctx.console
+                    .markup_line(&format!("[yellow]No files matched: {}[/]", escape(pattern)));
             }
         }
         if !parts.is_empty() {
@@ -236,9 +238,9 @@ impl Command for CheckpointCommand {
                 ctx.console
                     .markup_line("[green]All checkpoints cleared for this session.[/]");
             }
-            _ => ctx.console.markup_line(
-                "[yellow]Usage: /checkpoint list|diff <file>|restore <file>|clear[/]",
-            ),
+            _ => ctx
+                .console
+                .markup_line("[yellow]Usage: /checkpoint list|diff <file>|restore <file>|clear[/]"),
         }
         CommandResult::Ok
     }

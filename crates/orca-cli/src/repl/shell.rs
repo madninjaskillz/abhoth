@@ -186,6 +186,9 @@ mod tests {
             .iter()
             .map(|l| crate::ui::markup::remove(l))
             .collect();
-        assert_eq!(failed, ["  ● $ x", "  ⎿  (no output)", "     ✗ exit code 2"]);
+        assert_eq!(
+            failed,
+            ["  ● $ x", "  ⎿  (no output)", "     ✗ exit code 2"]
+        );
     }
 }

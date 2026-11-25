@@ -6,6 +6,7 @@
 pub mod diff;
 pub mod friendly_errors;
 pub mod links;
+pub mod markdown;
 pub mod tag_filters;
 pub mod text;
 pub mod thinking;

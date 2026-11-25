@@ -32,10 +32,8 @@ pub fn expand_file_references(input: &str, base_directory: &Path) -> (String, Ve
         if orca_tools_common::utf16_len(&content) > MAX_FILE_CHARS {
             content = format!("{}\n... (truncated)", take_utf16(&content, MAX_FILE_CHARS));
         }
-        let display = orca_core::engines::paths::get_relative_path(
-            &cwd,
-            &full.display().to_string(),
-        );
+        let display =
+            orca_core::engines::paths::get_relative_path(&cwd, &full.display().to_string());
         let replacement = format!("[File: {display}]\n{content}\n[/File]");
         result.replace_range(start..end, &replacement);
         expanded.push(display);
