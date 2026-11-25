@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
+use fancy_regex::RegexBuilder;
 use orca_abstractions::{
     Tool, ToolCapabilities, ToolContext, ToolRenderHints, ToolResult, ToolRiskLevel,
 };
 use orca_tools_common::{
     NEWLINE, append_line, decode_text, get_bool_lenient, get_i32_lenient, required_str, split_lines,
 };
-use regex::RegexBuilder;
 use serde_json::Value;
 
 use crate::util::{glob_matcher, name_key, rel_native, rel_slash, schema};
@@ -187,6 +187,8 @@ impl Tool for GrepTool {
         let max_results = get_i32_lenient(args.get("max_results"), 500).max(0) as usize;
         let full = ctx.full_path(path);
 
+        // fancy-regex (D112): lookaround and backreferences as in .NET; plain patterns still run
+        // on the regex crate underneath.
         let regex = match RegexBuilder::new(pattern)
             .case_insensitive(case_insensitive)
             .build()
@@ -217,7 +219,8 @@ impl Tool for GrepTool {
                 if match_count >= max_results {
                     break;
                 }
-                if !regex.is_match(lines[i]) {
+                // A pattern that backtracks too far on a line counts as no match there.
+                if !regex.is_match(lines[i]).unwrap_or(false) {
                     continue;
                 }
                 match_count += 1;

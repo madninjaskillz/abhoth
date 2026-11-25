@@ -640,3 +640,43 @@ async fn grep_default_extensions_case_insensitive_and_errors() {
         .await;
     assert_eq!(r.content, "No matches found.");
 }
+
+#[tokio::test]
+async fn grep_takes_lookaround_and_backreferences_like_dotnet() {
+    let e = Env::new();
+    e.write("a.cs", "var fooBar = 1;\nvar fooBaz = 2;\nlet same = aa;\n");
+    let r = e
+        .run(
+            &GrepTool,
+            json!({"pattern": "foo(?!Bar)", "path": e.root(), "glob": "*.cs", "output_mode": "count"}),
+        )
+        .await;
+    ok(&r);
+    assert!(
+        r.content.starts_with("1 files with 1 total matches"),
+        "{}",
+        r.content
+    );
+    let r = e
+        .run(
+            &GrepTool,
+            json!({"pattern": r"(?<=var )foo\w+", "path": e.root(), "glob": "*.cs", "output_mode": "count"}),
+        )
+        .await;
+    assert!(
+        r.content.starts_with("1 files with 2 total matches"),
+        "{}",
+        r.content
+    );
+    let r = e
+        .run(
+            &GrepTool,
+            json!({"pattern": r"(\w)\1;", "path": e.root(), "glob": "*.cs", "output_mode": "count"}),
+        )
+        .await;
+    assert!(
+        r.content.starts_with("1 files with 1 total matches"),
+        "{}",
+        r.content
+    );
+}

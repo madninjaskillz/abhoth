@@ -174,7 +174,7 @@ worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
 - Sessions: check `engine` / `engineSessionId` round-trip in the parity sweep (dropped on save before the engines port).
 - Numbers inside re-serialized tool arguments use serde's shortest form (`1.0` -> `1`), C#
   keeps the model's digits.
-- grep: Rust regex syntax (no lookaround/backreferences); files in sorted order.
+- grep: files in sorted order; regex error texts differ from .NET (lookaround/backreferences work, D112).
 - Console output decoding is lossy UTF-8 rather than the OEM code page; hook stdin is UTF-8.
 - list_directory ordering approximates .NET culture-aware sorting.
 - Error texts from OS / transport / JSON parser failures (web, network, MCP, slots) differ from

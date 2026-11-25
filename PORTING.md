@@ -434,3 +434,6 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   calls). qwen3.8-27b (Pi-tuned) answers with `{"name": "bash", "args": {...}}` as plain text
   now and then; C# treats that as the final answer and ends the turn (seen in the live smoke on
   both builds). Fixing it in Rust rather than copying it; no cross-check scenario sends `args`.
+- **D112** grep compiles patterns with fancy-regex 0.20.2: lookahead/lookbehind and
+  backreferences work as in .NET; patterns without them run on the regex crate as before. A line
+  that hits the backtracking limit counts as no match.
