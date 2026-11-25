@@ -1,7 +1,7 @@
 //! The Pi tool profile (`toolProfile: "pi"`): `PiProfileWiring.Register`,
 //! `AgentWiring.RegisterPiAgentTools` and `ToolExposure.FilterPiProfile`. Pi's tools replace
 //! the OpenOrca tools of the same name ("bash", "grep"); every other OpenOrca tool stays
-//! registered (callable) but is not advertised.
+//! registered (callable) but is not advertised (`orca_core::agent::tool_exposure`).
 
 use std::sync::Arc;
 
@@ -98,36 +98,24 @@ pub fn register(r: &mut ToolRegistry, config: &OrcaConfig) {
         }
     }
 
-    let mut advertised: Vec<String> =
-        orca_tools_pi::advertised_names(config.pi.extra_tools, config.pi.jobs)
-            .into_iter()
-            .map(str::to_string)
-            .collect();
-    if config.pi.agent_tools {
-        advertised.extend(
-            [
-                subagent::TOOL_NAME,
-                progress::TOOL_NAME,
-                lead_mode::TOOL_NAME,
-            ]
-            .map(str::to_string),
-        );
-    }
+    // What is advertised is `tool_exposure::is_advertised` (FilterPiProfile); its order is the
+    // registration order, so MCP tools and `tools.extraTools` names move behind the Pi tools
+    // (MCP servers started later register theirs after them anyway).
     for name in r.names() {
-        if advertised.iter().any(|a| a.eq_ignore_ascii_case(&name)) {
-            continue;
-        }
-        if name.to_ascii_lowercase().starts_with("mcp_")
+        if (name.to_ascii_lowercase().starts_with("mcp_")
             || config
                 .tools
                 .extra_tools
                 .iter()
-                .any(|e| e.eq_ignore_ascii_case(&name))
+                .any(|e| e.eq_ignore_ascii_case(&name)))
+            && !orca_tools_pi::advertised_names(config.pi.extra_tools, config.pi.jobs)
+                .iter()
+                .any(|n| n.eq_ignore_ascii_case(&name))
+            && let Some(tool) = r.resolve(&name)
         {
-            advertised.push(name);
+            r.register(tool);
         }
     }
-    r.set_advertised(Some(advertised));
 }
 
 /// Kills the Pi background jobs this process started (session end).

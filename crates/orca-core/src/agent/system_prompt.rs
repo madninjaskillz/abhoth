@@ -44,7 +44,6 @@ impl PromptTool {
     pub fn from_registry(registry: &ToolRegistry) -> Vec<PromptTool> {
         registry
             .advertised()
-            .iter()
             .map(|t| PromptTool::new(t.name(), t.description(), t.parameter_schema()))
             .collect()
     }

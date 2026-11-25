@@ -16,7 +16,7 @@ fn fixture(rel: &str) -> PathBuf {
 
 fn write_config(home: &Path, base_url: &str, extra: Value) {
     let mut config = json!({
-        "lmStudio": {"baseUrl": base_url, "apiKey": "test-key", "models": ["fake-model"], "nativeToolCalling": true},
+        "lmStudio": {"baseUrl": base_url, "apiKey": "test-key", "models": ["fake-model"], "nativeToolCalling": true, "maxTokens": 4096},
         "permissions": {"autoApproveAll": true},
     });
     if let (Some(c), Some(e)) = (config.as_object_mut(), extra.as_object()) {

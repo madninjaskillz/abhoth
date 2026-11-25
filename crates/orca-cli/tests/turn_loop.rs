@@ -32,7 +32,7 @@ fn session_with(config: OrcaConfig, work: &std::path::Path) -> AgentSession {
 }
 
 fn empty() -> Reply {
-    Reply::default()
+    Reply::empty()
 }
 
 fn last_user_text(body: &Value) -> String {
@@ -156,27 +156,30 @@ async fn second_identical_failure_gets_a_warning() {
 
 #[tokio::test]
 async fn empty_replies_retry_the_same_model_then_fail_over() {
-    let server = FakeOpenAi::start(vec![
-        empty(),
-        empty(),
-        empty(),
-        empty(),
-        Reply::text("Hello from the backup model, answering your greeting now."),
-    ])
-    .await;
+    // Each empty stream is followed by the server error probe (a plain request that answers
+    // 200 here, so it reports nothing).
+    let mut script = vec![empty(); 7];
+    script.push(Reply::text(
+        "Hello from the backup model, answering your greeting now.",
+    ));
+    let server = FakeOpenAi::start(script).await;
     let work = tempfile::tempdir().unwrap();
     let mut s = session(&server, work.path(), true);
     let end = s.run_turn("hi", &mut NullObserver).await.unwrap();
     assert_eq!(end, TurnEnd::Done);
     let reqs = server.requests();
-    assert_eq!(reqs.len(), 5);
+    assert_eq!(reqs.len(), 8);
     assert!(reqs[0].body.get("tools").is_some());
     assert!(
         reqs[1].body.get("tools").is_none(),
         "an empty native reply is retried without tools"
     );
-    assert_eq!(reqs[3].body["model"], "model-a");
-    assert_eq!(reqs[4].body["model"], "model-b");
+    for probe in [2, 4, 6] {
+        assert_eq!(reqs[probe].body["stream"], false, "request {probe}");
+        assert!(reqs[probe].body.get("max_tokens").is_some());
+    }
+    assert_eq!(reqs[5].body["model"], "model-a");
+    assert_eq!(reqs[7].body["model"], "model-b");
     assert_eq!(
         s.last_assistant_response.as_deref(),
         Some("Hello from the backup model, answering your greeting now.")

@@ -1,0 +1,156 @@
+{
+  "prompt": "Ask me, then handle the archives",
+  "files": {
+    "data/a.txt": "a\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "ask_user",
+          "args": {
+            "question": "Which approach?",
+            "options": [
+              "Fast",
+              "Safe"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "ask_user",
+          "args": {
+            "question": "Which approach?",
+            "options": "[\"Fast\", \"Safe\"]"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "ask_user",
+          "args": {
+            "question": "Only one?",
+            "options": [
+              "Lonely"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "ask_user",
+          "args": {
+            "question": "Bad?",
+            "options": "not json"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "ask_user",
+          "args": {
+            "question": "Too many?",
+            "options": [
+              "0",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "7",
+              "8",
+              "9",
+              "10"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "archive",
+          "args": {
+            "action": "list",
+            "archive_path": "missing.zip"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "archive",
+          "args": {
+            "action": "extract",
+            "archive_path": "missing.zip"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "archive",
+          "args": {
+            "action": "create",
+            "archive_path": "out.zip"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "archive",
+          "args": {
+            "action": "create",
+            "archive_path": "out.zip",
+            "source_path": "nope"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "archive",
+          "args": {
+            "action": "frob",
+            "archive_path": "out.zip"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "network_diagnostics",
+          "args": {
+            "action": "frob",
+            "target": "example.invalid"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    }
+  ]
+}

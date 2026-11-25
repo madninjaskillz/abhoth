@@ -147,47 +147,35 @@ impl ToolDefinition {
     }
 }
 
-/// The parameter schema as Microsoft.Extensions.AI's OpenAI client sends it (its `ToolJson`):
-/// `type` ("object"), `required` (default `[]`, duplicates dropped), `properties` (default
-/// `{}`), `additionalProperties` (default `false`), then any other top-level keys.
+/// The parameter schema as the Microsoft.Extensions.AI OpenAI adapter sends it: re-read into
+/// its `ToolJson` shape, so the top level is exactly `type` (default "object"), `required`
+/// (default `[]`), `properties` (default `{}`) and `additionalProperties` (default false), in
+/// that order; other top-level keys are dropped and nested schemas pass through unchanged.
 pub fn wire_parameters(schema: &Value) -> Value {
-    let Some(obj) = schema.as_object() else {
-        return schema.clone();
-    };
-    let mut required: Vec<Value> = Vec::new();
-    if let Some(Value::Array(r)) = obj.get("required") {
-        for v in r {
-            if !required.contains(v) {
-                required.push(v.clone());
-            }
-        }
-    }
-    let mut out = serde_json::Map::new();
-    out.insert(
-        "type".into(),
-        obj.get("type").cloned().unwrap_or_else(|| json!("object")),
-    );
-    out.insert("required".into(), Value::Array(required));
-    out.insert(
-        "properties".into(),
-        obj.get("properties").cloned().unwrap_or_else(|| json!({})),
-    );
-    out.insert(
-        "additionalProperties".into(),
-        match obj.get("additionalProperties") {
-            Some(Value::Bool(b)) => Value::Bool(*b),
-            _ => Value::Bool(false),
-        },
-    );
-    for (k, v) in obj {
-        if !matches!(
-            k.as_str(),
-            "type" | "required" | "properties" | "additionalProperties"
-        ) {
-            out.insert(k.clone(), v.clone());
-        }
-    }
-    Value::Object(out)
+    let type_ = schema
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("object");
+    let required = schema
+        .get("required")
+        .filter(|r| r.is_array())
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let properties = schema
+        .get("properties")
+        .filter(|p| p.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let additional = schema
+        .get("additionalProperties")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    json!({
+        "type": type_,
+        "required": required,
+        "properties": properties,
+        "additionalProperties": additional
+    })
 }
 
 /// Per-request options (`ChatOptions`). Non-standard fields go into `additional`, in order,
@@ -229,6 +217,20 @@ pub enum StreamEvent {
         name: String,
     },
     Usage(Usage),
+    /// One streamed update (an SSE chunk) has been fully reported. `tool_call_delta`: the chunk
+    /// carried a tool-call fragment (the C# client only surfaces tool calls at the end of the
+    /// stream, but its reasoning cap counts the first fragment as the answer starting).
+    UpdateEnd {
+        tool_call_delta: bool,
+    },
+}
+
+/// What a streaming caller wants after an event: go on, or stop the request now (the stream
+/// is dropped, which ends the request; the response so far is returned with `stopped` set).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamControl {
+    Continue,
+    Stop,
 }
 
 /// The whole response, assembled from the stream.
@@ -245,6 +247,16 @@ pub struct ChatResponse {
     pub served_model: Option<String>,
     /// See [`ChatMessage::leading_empty_part`].
     pub leading_empty_part: bool,
+    /// Content items as Microsoft.Extensions.AI reports them: each `content` string (an empty
+    /// one too), each reasoning piece, each usage report and each finished tool call. A stream
+    /// with none is the C# client's "empty response".
+    pub content_items: usize,
+    /// Text content items (each `content` string, empty ones included).
+    pub text_parts: usize,
+    /// Streamed updates (SSE chunks with data) received.
+    pub updates: usize,
+    /// The caller stopped the stream ([`StreamControl::Stop`]).
+    pub stopped: bool,
 }
 
 impl ChatResponse {

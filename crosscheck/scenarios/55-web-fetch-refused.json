@@ -1,0 +1,18 @@
+{
+  "prompt": "Fetch a page from a server that is down",
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "web_fetch",
+          "args": {
+            "url": "http://<CLOSED>/page"
+          }
+        }
+      ]
+    },
+    {
+      "text": "The server refused the connection, so the page could not be fetched."
+    }
+  ]
+}

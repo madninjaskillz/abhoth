@@ -136,7 +136,29 @@ impl ToolResult {
     pub fn blocked(reason: impl Into<String>) -> Self {
         Self::error_with(reason, ToolErrorCode::Blocked)
     }
+
+    /// Asks the host to change the working directory for later tool calls (the `cd` tool; C#
+    /// changes the process-wide current directory instead).
+    pub fn with_cwd_change(mut self, new_cwd: &Path) -> Self {
+        self.metadata.get_or_insert_with(Default::default).insert(
+            META_SET_CWD.into(),
+            Value::String(new_cwd.to_string_lossy().into_owned()),
+        );
+        self
+    }
+
+    /// The working directory this result asks the host to switch to, if any.
+    pub fn cwd_change(&self) -> Option<PathBuf> {
+        self.metadata
+            .as_ref()?
+            .get(META_SET_CWD)?
+            .as_str()
+            .map(PathBuf::from)
+    }
 }
+
+/// [`ToolResult::metadata`] key: the new working directory after a `cd`.
+pub const META_SET_CWD: &str = "set_cwd";
 
 /// Display hints for the terminal UI (`IToolRenderHints`).
 #[derive(Debug, Clone, PartialEq)]

@@ -1,0 +1,19 @@
+{
+  "prompt": "Say hello.",
+  "config": {
+    "lmStudio": {
+      "maxTokens": null
+    }
+  },
+  "replies": [
+    {
+      "error": [
+        400,
+        "{\"error\":{\"message\":\"max_tokens must be less than or equal to `8192`\",\"type\":\"invalid_request_error\"}}"
+      ]
+    },
+    {
+      "text": "Hello! How can I help you with your project today?"
+    }
+  ]
+}

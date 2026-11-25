@@ -28,6 +28,8 @@ use crate::config::OrcaConfig;
 pub const TOOL_RESULT_MAX_CHARS: usize = 30_000;
 /// `CliConstants.ToolResultHistoryMaxChars`: cap for the recorded history copy.
 pub const TOOL_RESULT_HISTORY_MAX_CHARS: usize = 10_000;
+/// `CliConstants.HttpProbeTimeoutSeconds`.
+pub const HTTP_PROBE_TIMEOUT_SECONDS: u64 = 15;
 /// `CliConstants.ToolExecutionTimeoutSeconds`.
 pub const TOOL_EXECUTION_TIMEOUT_SECONDS: u64 = 120;
 
@@ -135,6 +137,15 @@ pub struct AgentSession {
     /// What compaction told the user (console lines in C#); a UI drains it.
     pub compaction_notices: Vec<String>,
     // ---- end context management ----
+    /// Run the startup probes (`MaxTokensNegotiator`, context-window detection) before the
+    /// first turn. Off by default for library use; the CLI turns it on, as C# always runs them.
+    pub startup_probes: bool,
+    /// The startup probes already ran this session.
+    pub max_tokens_negotiated: bool,
+    /// Identifies servers for the context-window probe (the process-wide one by default).
+    pub server_identity: crate::client::ServerIdentity,
+    /// HTTP client for the startup probes and the server error probe (15 s timeout).
+    pub probe_http: reqwest::Client,
 }
 
 impl AgentSession {
@@ -177,6 +188,13 @@ impl AgentSession {
             context_usage: Default::default(),
             overflow_recovery_used: false,
             compaction_notices: Vec::new(),
+            startup_probes: false,
+            max_tokens_negotiated: false,
+            server_identity: crate::client::ServerIdentity::shared(),
+            probe_http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(HTTP_PROBE_TIMEOUT_SECONDS))
+                .build()
+                .expect("reqwest client builds with static settings"),
         }
     }
 
@@ -192,7 +210,8 @@ impl AgentSession {
     /// (`SystemPromptBuilder.GetSystemPromptAsync`); `native_tools` decides the tool-calling
     /// protocol section (text when no tools are registered).
     pub fn default_system_prompt(&self) -> String {
-        let tools = PromptTool::from_registry(&self.registry);
+        let mut tools = PromptTool::from_registry(&self.registry);
+        tools.retain(|t| super::tool_exposure::is_advertised(&t.name, &self.config));
         let native = self.native_tools && !tools.is_empty();
         self.prompt_builder.get_system_prompt_for_mode(
             &self.config,
@@ -234,16 +253,39 @@ impl AgentSession {
     }
 
     pub(super) fn build_options(&self) -> ChatOptions {
+        self.build_options_for(false, false)
+    }
+
+    /// `BuildChatOptions(useNativeTools, runawayRecovery, skipThinking)`: the cold
+    /// (temperature 0.2) recovery attempt after runaway thinking keeps its temperature, and a
+    /// step adaptive reasoning skips sends thinking off.
+    pub(super) fn build_options_for(
+        &self,
+        runaway_recovery: bool,
+        skip_thinking: bool,
+    ) -> ChatOptions {
         let mut options = ChatOptions::default();
         let model = self.active_model();
         if self.model_index > 0 {
             options.model = model.clone();
         }
-        request_parameters::apply(&mut options, &self.config, model.as_deref(), false);
+        if runaway_recovery {
+            options.temperature = Some(0.2);
+        }
+        request_parameters::apply(
+            &mut options,
+            &self.config,
+            model.as_deref(),
+            runaway_recovery,
+        );
         request_parameters::apply_effort(
             &mut options,
             self.config.agent.reasoning.effort_for(true).as_deref(),
         );
+        if skip_thinking {
+            request_parameters::skip_thinking(&mut options);
+            tracing::debug!("adaptive reasoning: no thinking for this step");
+        }
         options.max_output_tokens = self.config.lm_studio.max_tokens;
         if self.native_tools {
             options.tools = self.tools_for_mode();
@@ -259,6 +301,7 @@ impl AgentSession {
         self.registry
             .definitions()
             .into_iter()
+            .filter(|d| super::tool_exposure::is_advertised(&d.name, &self.config))
             .filter(|d| !super::policies::is_denied_for_lead(&self.config, &d.name))
             .filter(|d| {
                 !read_only
@@ -442,6 +485,11 @@ impl AgentSession {
 
         let started = Instant::now();
         let result = self.run_tool(&tool, &args, observer).await;
+        // `cd`: later tool calls resolve paths against the new directory (C# changes the
+        // process-wide current directory).
+        if let Some(dir) = result.cwd_change().filter(|_| !result.is_error) {
+            self.ctx.cwd = dir;
+        }
         let elapsed = started.elapsed().as_millis() as i64;
         self.tool_hooks
             .post_hook(&call.name, &hook_args, &result.content, result.is_error);
@@ -503,7 +551,10 @@ impl AgentSession {
         args: &Value,
         observer: &mut dyn AgentObserver,
     ) -> ToolResult {
-        let long_running = tool.capabilities().contains(ToolCapabilities::LONG_RUNNING);
+        // Interactive tools (ask_user) wait on a human and long-running ones keep their own
+        // time budget: neither gets the pipeline timeout.
+        let long_running = tool.capabilities().contains(ToolCapabilities::LONG_RUNNING)
+            || tool.capabilities().contains(ToolCapabilities::INTERACTIVE);
         // Lines stream through a channel so the observer (not Sync) stays on this task.
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let on_output = move |line: &str| {

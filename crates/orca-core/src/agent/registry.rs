@@ -6,13 +6,13 @@ use orca_abstractions::{Tool, ToolCapabilities};
 
 use crate::client::ToolDefinition;
 
+/// Decides which registered tools are advertised to the model (`ToolExposure`).
+pub type AdvertiseFilter = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
 #[derive(Default, Clone)]
 pub struct ToolRegistry {
     tools: Vec<Arc<dyn Tool>>,
-    /// The names sent to the model, in this order (C# `ToolExposure`, e.g. the Pi profile's
-    /// `FilterPiProfile`). `None` = every registered tool, in registration order. Tools left
-    /// out stay registered and callable.
-    advertised: Option<Vec<String>>,
+    advertise: Option<AdvertiseFilter>,
 }
 
 impl ToolRegistry {
@@ -50,6 +50,19 @@ impl ToolRegistry {
         &self.tools
     }
 
+    /// Advertise only the tools `filter` accepts (by name); all stay executable. Without a
+    /// filter every tool is advertised.
+    pub fn set_advertise_filter(&mut self, filter: AdvertiseFilter) {
+        self.advertise = Some(filter);
+    }
+
+    /// The tools offered to the model (native tool definitions and the system prompt list).
+    pub fn advertised(&self) -> impl Iterator<Item = &Arc<dyn Tool>> {
+        self.tools
+            .iter()
+            .filter(|t| self.advertise.as_ref().is_none_or(|f| f(t.name())))
+    }
+
     pub fn names(&self) -> Vec<String> {
         self.tools.iter().map(|t| t.name().to_string()).collect()
     }
@@ -78,34 +91,9 @@ impl ToolRegistry {
             .map(|t| t.name().to_string())
     }
 
-    /// Limit (and order) the tools sent to the model; `None` advertises every tool.
-    pub fn set_advertised(&mut self, names: Option<Vec<String>>) {
-        self.advertised = names;
-    }
-
-    /// The tools sent to the model, in advertised order (names that resolve to no tool are
-    /// skipped).
-    pub fn advertised(&self) -> Vec<Arc<dyn Tool>> {
-        match &self.advertised {
-            None => self.tools.clone(),
-            Some(names) => {
-                let mut out: Vec<Arc<dyn Tool>> = Vec::new();
-                for n in names {
-                    if let Some(t) = self.resolve(n)
-                        && !out.iter().any(|o| o.name().eq_ignore_ascii_case(t.name()))
-                    {
-                        out.push(t);
-                    }
-                }
-                out
-            }
-        }
-    }
-
-    /// The schemas sent for native function calling.
+    /// The schemas sent for native function calling (the advertised tools).
     pub fn definitions(&self) -> Vec<ToolDefinition> {
         self.advertised()
-            .iter()
             .map(|t| ToolDefinition {
                 name: t.name().to_string(),
                 description: t.description().to_string(),

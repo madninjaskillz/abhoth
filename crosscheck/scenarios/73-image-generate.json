@@ -1,0 +1,14 @@
+{
+  "prompt": "Generate and edit an image",
+  "config": {
+    "imageGen": {"enabled": true, "baseUrl": "<IMAGE_URL>", "apiKey": "img-key", "model": "fake-image", "timeoutSeconds": 20}
+  },
+  "replies": [
+    {"tools": [{"name": "generate_image", "args": {"prompt": "a <cat> & 'dog' + café", "size": "1x1", "save_path": "art/pet.png"}}]},
+    {"tools": [{"name": "generate_image", "args": {"prompt": "please FAIL now", "model": "other-model", "save_path": "art/fail.png"}}]},
+    {"tools": [{"name": "edit_image", "args": {"image_path": "art/pet.png", "prompt": "make it blue", "size": "1x1", "save_path": "art/blue.png"}}]},
+    {"tools": [{"name": "edit_image", "args": {"image_path": "art/pet.png", "prompt": "masked", "mask_path": "art/missing-mask.png", "save_path": "art/x.png"}}]},
+    {"tools": [{"name": "edit_image", "args": {"image_path": "art/nope.png", "prompt": "nothing", "save_path": "art/y.png"}}]},
+    {"text": "Generated a pet image, the failing request was reported and the edit made a blue copy."}
+  ]
+}

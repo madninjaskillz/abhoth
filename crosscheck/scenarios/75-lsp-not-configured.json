@@ -1,0 +1,14 @@
+{
+  "prompt": "Use the LSP tools",
+  "files": {"main.rs": "fn main() {}\n"},
+  "replies": [
+    {"tools": [{"name": "lsp_hover", "args": {"path": "main.rs", "line": 1, "character": 3}}]},
+    {"tools": [{"name": "lsp_go_to_definition", "args": {"path": "main.rs", "line": 1, "character": 3}}]},
+    {"tools": [{"name": "lsp_find_references", "args": {"path": "main.rs", "line": 1, "character": 3}}]},
+    {"tools": [{"name": "lsp_diagnostics", "args": {"path": "main.rs"}}]},
+    {"tools": [{"name": "lsp_document_symbols", "args": {"path": "main.rs"}}]},
+    {"tools": [{"name": "lsp_call_hierarchy", "args": {"path": "main.rs", "line": 1, "character": 3}}]},
+    {"tools": [{"name": "lsp_workspace_symbols", "args": {"query": "main", "language": "rust"}}]},
+    {"text": "LSP is not configured, so none of the language server tools could answer anything."}
+  ]
+}

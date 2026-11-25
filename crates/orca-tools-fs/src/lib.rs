@@ -1,5 +1,6 @@
-//! File tools (port of `OpenOrca.Tools.FileSystem`). Phase 1 has the six core tools; the
-//! rest of the plugin (multi_edit, apply_patch, copy/move/rename/delete, mkdir, cd) is phase 2.
+//! File tools (port of `OpenOrca.Tools.FileSystem`): read/write/edit, multi_edit, apply_patch,
+//! list/glob/grep, and the file-management tools (cd, mkdir, create_directory, copy, move,
+//! rename, delete).
 //!
 //! Output text follows the C# tools line for line, including `Environment.NewLine` line breaks
 //! where C# uses `AppendLine`, so the cross-check harness can compare tool results directly.
@@ -8,30 +9,49 @@ use std::sync::Arc;
 
 use orca_abstractions::Tool;
 
+mod apply_patch;
 mod edit_file;
+mod fs_ops;
 mod glob;
 mod grep;
 mod list_directory;
+mod multi_edit;
 mod read_file;
 mod util;
 mod write_file;
 
+pub use apply_patch::{ApplyPatchTool, unified_diff};
 pub use edit_file::EditFileTool;
+pub use fs_ops::{
+    CdTool, CopyFileTool, CreateDirectoryTool, DeleteFileTool, MkdirTool, MoveFileTool,
+    RenameFileTool,
+};
 pub use glob::GlobTool;
 pub use grep::GrepTool;
 pub use list_directory::ListDirectoryTool;
+pub use multi_edit::MultiEditTool;
 pub use read_file::ReadFileTool;
 pub use write_file::WriteFileTool;
 
-/// Every tool in this crate, in the C# registration order.
+/// Every tool in this crate, in the C# registration order (reflection lists the plugin's
+/// types sorted by class name).
 pub fn all_tools() -> Vec<Arc<dyn Tool>> {
     vec![
-        Arc::new(ReadFileTool),
-        Arc::new(WriteFileTool),
+        Arc::new(ApplyPatchTool),
+        Arc::new(CdTool),
+        Arc::new(CopyFileTool),
+        Arc::new(CreateDirectoryTool),
+        Arc::new(DeleteFileTool),
         Arc::new(EditFileTool),
-        Arc::new(ListDirectoryTool),
         Arc::new(GlobTool),
         Arc::new(GrepTool),
+        Arc::new(ListDirectoryTool),
+        Arc::new(MkdirTool),
+        Arc::new(MoveFileTool),
+        Arc::new(MultiEditTool),
+        Arc::new(ReadFileTool),
+        Arc::new(RenameFileTool),
+        Arc::new(WriteFileTool),
     ]
 }
 

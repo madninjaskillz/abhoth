@@ -218,7 +218,7 @@ impl Tool for FakeTool {
 }
 
 /// C# registers fakes plus `PiToolset.Create` and filters with `ToolExposure`; here
-/// `pi_profile::register` does both. `pi.agentTools` is off because the C# test's registry
+/// `pi_profile::register` plus `tool_exposure::is_advertised` (as `build_registry` wires it). `pi.agentTools` is off because the C# test's registry
 /// has no agent tools, and the bash default timeout is 0 as in `PiToolsetOptions`.
 fn advertised_names(config: &OrcaConfig) -> (ToolRegistry, Vec<String>) {
     let mut r = ToolRegistry::new();
@@ -235,11 +235,11 @@ fn advertised_names(config: &OrcaConfig) -> (ToolRegistry, Vec<String>) {
         r.register(Arc::new(FakeTool(name)));
     }
     orca_cli::pi_profile::register(&mut r, config);
-    let names = r
-        .advertised()
-        .iter()
-        .map(|t| t.name().to_string())
-        .collect();
+    let exposure = config.clone();
+    r.set_advertise_filter(Arc::new(move |name: &str| {
+        orca_core::agent::tool_exposure::is_advertised(name, &exposure)
+    }));
+    let names = r.advertised().map(|t| t.name().to_string()).collect();
     (r, names)
 }
 
@@ -279,11 +279,7 @@ fn exposure_pi_profile_advertises_only_pi_tools_in_pi_order_plus_mcp() {
 #[test]
 fn exposure_default_profile_unchanged() {
     let r = orca_cli::build_registry(&OrcaConfig::default());
-    let names: Vec<String> = r
-        .advertised()
-        .iter()
-        .map(|t| t.name().to_string())
-        .collect();
+    let names: Vec<String> = r.advertised().map(|t| t.name().to_string()).collect();
     assert!(names.contains(&"read_file".to_string()));
     assert!(!names.contains(&"find".to_string()));
 }

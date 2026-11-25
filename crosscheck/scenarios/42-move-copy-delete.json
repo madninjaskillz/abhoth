@@ -1,0 +1,226 @@
+{
+  "prompt": "Reorganise the project files",
+  "files": {
+    "src/main.txt": "main\n",
+    "src/util/helper.txt": "helper\n",
+    "notes.txt": "notes\n",
+    "old.txt": "old\n",
+    "keep.txt": "keep\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "mkdir",
+          "args": {
+            "path": "build/out"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "create_directory",
+          "args": {
+            "path": "build/out"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "copy_file",
+          "args": {
+            "source": "notes.txt",
+            "destination": "backup/notes.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "copy_file",
+          "args": {
+            "source": "notes.txt",
+            "destination": "backup/notes.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "copy_file",
+          "args": {
+            "source": "notes.txt",
+            "destination": "backup/notes.txt",
+            "overwrite": true
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "copy_file",
+          "args": {
+            "source": "src",
+            "destination": "src_copy"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "copy_file",
+          "args": {
+            "source": "src",
+            "destination": "src_copy",
+            "recursive": true
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "copy_file",
+          "args": {
+            "source": "nothing.txt",
+            "destination": "x.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "move_file",
+          "args": {
+            "source": "old.txt",
+            "destination": "archive/old.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "move_file",
+          "args": {
+            "source": "keep.txt",
+            "destination": "notes.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "move_file",
+          "args": {
+            "source": "src_copy",
+            "destination": "moved_src"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "move_file",
+          "args": {
+            "source": "ghost.txt",
+            "destination": "y.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "rename_file",
+          "args": {
+            "source": "notes.txt",
+            "destination": "NOTES.md"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "rename_file",
+          "args": {
+            "source": "moved_src",
+            "destination": "src"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "delete_file",
+          "args": {
+            "path": "src"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "delete_file",
+          "args": {
+            "path": "build/out"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "delete_file",
+          "args": {
+            "path": "moved_src",
+            "recursive": true
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "delete_file",
+          "args": {
+            "path": "NOTES.md"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "delete_file",
+          "args": {
+            "path": "NOTES.md"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    }
+  ]
+}

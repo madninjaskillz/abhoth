@@ -1,0 +1,18 @@
+{
+  "prompt": "Try the failing MCP tools",
+  "config": {
+    "mcpServers": {
+      "fake": {"command": "<FAKE_MCP>"},
+      "broken": {"command": "<FAKE_MCP>", "args": ["--exit"]},
+      "off": {"command": "<FAKE_MCP>", "enabled": false}
+    }
+  },
+  "replies": [
+    {"tools": [{"name": "mcp_fake_fail", "args": {}}]},
+    {"tools": [{"name": "mcp_fake_mixed", "args": {}}]},
+    {"tools": [{"name": "mcp_broken_echo", "args": {"text": "x"}}]},
+    {"tools": [{"name": "mcp_off_echo", "args": {"text": "x"}}]},
+    {"tools": [{"name": "mcp_fake_echo", "args": {"text": "still works"}}]},
+    {"text": "The fail tool reported an error, the broken and disabled servers have no tools, and echo still works."}
+  ]
+}

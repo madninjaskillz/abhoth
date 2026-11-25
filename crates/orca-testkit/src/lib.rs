@@ -3,15 +3,24 @@
 //! Each `POST /v1/chat/completions` gets the next scripted reply (the last one repeats once
 //! the script runs out), streamed as SSE when the request asks for it. Every request body and
 //! its headers are recorded for assertions.
+//!
+//! A reply can also stream its reasoning in many small chunks, open with a role chunk whose
+//! `content` is null (no empty text part), or break off mid-stream (the connection drops
+//! without the end of the chunked body). Every other request (`GET /v1/models`, `GET /health`,
+//! LM Studio's `/api/v0/models`, Ollama's `/api/show`, ...) is recorded as a probe and answered
+//! from [`ServerOptions::routes`] (404 when not listed; `/v1/models` has a default list).
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::State;
+use axum::extract::{Request, State};
 use axum::http::{HeaderMap, Response, StatusCode};
-use axum::routing::{get, post};
+use axum::routing::post;
+use futures_util::StreamExt;
 use serde_json::{Value, json};
 
 /// One scripted model turn.
@@ -30,6 +39,14 @@ pub struct Reply {
     pub error: Option<(u16, String)>,
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
+    /// Stream the reasoning in chunks of this many characters (0: one chunk).
+    pub reasoning_chunk_chars: usize,
+    /// The opening role chunk carries `"content": null` (as llama.cpp sends it) instead of
+    /// `""`, so the stream has no empty text part.
+    pub null_role_content: bool,
+    /// Break the stream off after this many SSE events: the connection drops without the end
+    /// of the chunked body (a server or proxy dying mid-response).
+    pub die_after_events: Option<usize>,
 }
 
 impl Reply {
@@ -72,6 +89,54 @@ impl Reply {
             ..Self::default()
         }
     }
+
+    /// A stream with no content at all: a bare role chunk, the finish chunk, no usage.
+    pub fn empty() -> Self {
+        Self {
+            null_role_content: true,
+            ..Self::default()
+        }
+    }
+
+    /// Reasoning streamed `chars` characters per chunk.
+    pub fn with_reasoning_chunks(mut self, chars: usize) -> Self {
+        self.reasoning_chunk_chars = chars;
+        self
+    }
+
+    /// The role chunk's `content` is null.
+    pub fn with_null_role_content(mut self) -> Self {
+        self.null_role_content = true;
+        self
+    }
+
+    /// Break the stream off after `events` SSE events.
+    pub fn dying_after(mut self, events: usize) -> Self {
+        self.die_after_events = Some(events);
+        self
+    }
+}
+
+/// Answers for requests other than chat completions, by `"METHOD /path"` (e.g.
+/// `"GET /health"`): `(status, body)`.
+#[derive(Debug, Clone, Default)]
+pub struct ServerOptions {
+    pub routes: BTreeMap<String, (u16, String)>,
+    /// Routes that answer only a `Bearer` with this key (401 `invalid_api_key` otherwise).
+    pub keyed: BTreeMap<String, String>,
+}
+
+impl ServerOptions {
+    pub fn route(mut self, key: &str, status: u16, body: impl Into<String>) -> Self {
+        self.routes.insert(key.to_string(), (status, body.into()));
+        self
+    }
+
+    /// `key` (e.g. `"GET /v1/models"`) answers only requests carrying `Bearer {api_key}`.
+    pub fn requiring_key(mut self, key: &str, api_key: &str) -> Self {
+        self.keyed.insert(key.to_string(), api_key.to_string());
+        self
+    }
 }
 
 /// A request the server received.
@@ -95,6 +160,14 @@ struct Inner {
     script: Vec<Reply>,
     next: usize,
     requests: Vec<Recorded>,
+    routes: BTreeMap<String, (u16, String)>,
+    keyed: BTreeMap<String, String>,
+    /// Every other endpoint answers 503 (a server that is down or still loading).
+    down: bool,
+    /// `"METHOD /path"` of every request other than a chat completion, with its
+    /// `Authorization` header.
+    probes: Vec<(String, Option<String>)>,
+    image_requests: Vec<Value>,
 }
 
 pub struct FakeOpenAi {
@@ -106,13 +179,22 @@ pub struct FakeOpenAi {
 impl FakeOpenAi {
     /// Start on an ephemeral 127.0.0.1 port.
     pub async fn start(script: Vec<Reply>) -> Self {
+        Self::start_with(script, ServerOptions::default()).await
+    }
+
+    /// Start with answers for the other endpoints.
+    pub async fn start_with(script: Vec<Reply>, options: ServerOptions) -> Self {
         let inner = Arc::new(Mutex::new(Inner {
             script,
+            routes: options.routes,
+            keyed: options.keyed,
             ..Inner::default()
         }));
         let app = Router::new()
             .route("/v1/chat/completions", post(chat))
-            .route("/v1/models", get(models))
+            .route("/v1/images/generations", post(image_generations))
+            .route("/v1/images/edits", post(image_edits))
+            .fallback(other)
             .with_state(inner.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -141,12 +223,204 @@ impl FakeOpenAi {
     pub fn requests(&self) -> Vec<Recorded> {
         self.inner.lock().unwrap().requests.clone()
     }
+
+    /// `"METHOD /path"` of every request other than a chat completion, in order.
+    pub fn probes(&self) -> Vec<String> {
+        self.inner
+            .lock()
+            .unwrap()
+            .probes
+            .iter()
+            .map(|(p, _)| p.clone())
+            .collect()
+    }
+
+    /// Answer every endpoint other than chat completions with 503 (or normally again).
+    pub fn set_down(&self, down: bool) {
+        self.inner.lock().unwrap().down = down;
+    }
+
+    /// The `Authorization` header of each probe (None when absent).
+    pub fn probe_auth(&self) -> Vec<Option<String>> {
+        self.inner
+            .lock()
+            .unwrap()
+            .probes
+            .iter()
+            .map(|(_, a)| a.clone())
+            .collect()
+    }
+    /// The images API requests: `{"path", "authorization", "body"}` with the raw JSON body
+    /// text for generations and the form parts (`name`, `filename`, `content_type`, `text` or
+    /// `bytes`) for edits.
+    pub fn image_requests(&self) -> Vec<Value> {
+        self.inner.lock().unwrap().image_requests.clone()
+    }
 }
 
-async fn models() -> axum::Json<Value> {
-    axum::Json(
-        json!({"object":"list","data":[{"id":"fake-model","object":"model","owned_by":"fake"}]}),
-    )
+/// A 1x1 PNG, the "image" every images API call returns.
+pub const TINY_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+/// The images answer: the tiny PNG, or a 500 when the prompt asks for a failure (`FAIL`).
+fn image_reply(prompt_fails: bool) -> Response<Body> {
+    if prompt_fails {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from("image backend exploded"))
+            .unwrap();
+    }
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({"data": [{"b64_json": TINY_PNG_BASE64}]}).to_string(),
+        ))
+        .unwrap()
+}
+
+fn header_value(headers: &HeaderMap, name: &str) -> String {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string()
+}
+
+async fn image_generations(
+    State(inner): State<Arc<Mutex<Inner>>>,
+    headers: HeaderMap,
+    body: String,
+) -> Response<Body> {
+    let fails = body.contains("FAIL");
+    inner.lock().unwrap().image_requests.push(json!({
+        "path": "/v1/images/generations",
+        "authorization": header_value(&headers, "authorization"),
+        "body": body,
+    }));
+    image_reply(fails)
+}
+
+async fn image_edits(
+    State(inner): State<Arc<Mutex<Inner>>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response<Body> {
+    let content_type = header_value(&headers, "content-type");
+    let parts = parse_multipart(&content_type, &body);
+    let fails = parts
+        .iter()
+        .any(|p| p["text"].as_str().is_some_and(|t| t.contains("FAIL")));
+    inner.lock().unwrap().image_requests.push(json!({
+        "path": "/v1/images/edits",
+        "authorization": header_value(&headers, "authorization"),
+        "body": parts,
+    }));
+    image_reply(fails)
+}
+
+/// Splits a `multipart/form-data` body into its parts (enough for tests: no nested parts).
+fn parse_multipart(content_type: &str, body: &[u8]) -> Vec<Value> {
+    let Some(boundary) = content_type.split(';').find_map(|p| {
+        p.trim()
+            .strip_prefix("boundary=")
+            .map(|b| b.trim_matches('"').to_string())
+    }) else {
+        return Vec::new();
+    };
+    let delim = format!("--{boundary}");
+    let mut out = Vec::new();
+    let mut rest = body;
+    while let Some(start) = find(rest, delim.as_bytes()) {
+        rest = &rest[start + delim.len()..];
+        if rest.starts_with(b"--") {
+            break;
+        }
+        let Some(end) = find(rest, delim.as_bytes()) else {
+            break;
+        };
+        const CRLF: &[u8] = &[13, 10];
+        let part = rest[..end].strip_prefix(CRLF).unwrap_or(&rest[..end]);
+        let part = part.strip_suffix(CRLF).unwrap_or(part);
+        let Some(split) = find(part, &[13, 10, 13, 10]) else {
+            continue;
+        };
+        let head = String::from_utf8_lossy(&part[..split]).to_string();
+        let data = &part[split + 4..];
+        let mut name = String::new();
+        let mut filename = Value::Null;
+        let mut ctype = Value::Null;
+        for line in head.lines() {
+            let lower = line.to_ascii_lowercase();
+            if lower.starts_with("content-disposition:") {
+                for attr in line.split(';').skip(1) {
+                    let (k, v) = attr.trim().split_once('=').unwrap_or(("", ""));
+                    let v = v.trim_matches('"').to_string();
+                    match k {
+                        "name" => name = v,
+                        "filename" => filename = json!(v),
+                        _ => {}
+                    }
+                }
+            } else if lower.starts_with("content-type:") {
+                ctype = json!(line["content-type:".len()..].trim());
+            }
+        }
+        // Text parts' content types differ by client (.NET labels them text/plain): not kept.
+        if filename.is_null() {
+            ctype = Value::Null;
+        }
+        let mut v = json!({"name": name, "filename": filename, "content_type": ctype});
+        if filename.is_null() {
+            v["text"] = json!(String::from_utf8_lossy(data));
+        } else {
+            v["bytes"] = json!(data.len());
+        }
+        out.push(v);
+    }
+    out
+}
+
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+/// The default `GET /v1/models` answer.
+pub const DEFAULT_MODELS: &str =
+    r#"{"object":"list","data":[{"id":"fake-model","object":"model","owned_by":"fake"}]}"#;
+
+async fn other(State(inner): State<Arc<Mutex<Inner>>>, request: Request) -> Response<Body> {
+    let key = format!("{} {}", request.method(), request.uri().path());
+    let auth = request
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let answer = {
+        let mut g = inner.lock().unwrap();
+        let refused = g
+            .keyed
+            .get(&key)
+            .is_some_and(|k| auth.as_deref() != Some(format!("Bearer {k}").as_str()));
+        let down = g.down;
+        g.probes.push((key.clone(), auth));
+        if down {
+            Some((503, String::new()))
+        } else if refused {
+            Some((401, r#"{"error":{"code":"invalid_api_key"}}"#.to_string()))
+        } else {
+            g.routes.get(&key).cloned()
+        }
+    };
+    let (status, body) = match answer {
+        Some(a) => a,
+        None if key == "GET /v1/models" => (200, DEFAULT_MODELS.to_string()),
+        None => (404, String::new()),
+    };
+    Response::builder()
+        .status(StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap()
 }
 
 async fn chat(
@@ -228,9 +502,27 @@ async fn chat(
         json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","model":model,
             "choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
     };
-    let mut events: Vec<Value> = vec![chunk(json!({"role":"assistant","content":""}), None)];
+    let role_content = if reply.null_role_content {
+        Value::Null
+    } else {
+        json!("")
+    };
+    let mut events: Vec<Value> = vec![chunk(
+        json!({"role":"assistant","content":role_content}),
+        None,
+    )];
     if !reply.reasoning.is_empty() {
-        events.push(chunk(json!({"reasoning_content": reply.reasoning}), None));
+        if reply.reasoning_chunk_chars == 0 {
+            events.push(chunk(json!({"reasoning_content": reply.reasoning}), None));
+        } else {
+            let chars: Vec<char> = reply.reasoning.chars().collect();
+            for piece in chars.chunks(reply.reasoning_chunk_chars) {
+                events.push(chunk(
+                    json!({"reasoning_content": piece.iter().collect::<String>()}),
+                    None,
+                ));
+            }
+        }
     }
     // Text in a few pieces, as a real server sends it.
     let chars: Vec<char> = reply.text.chars().collect();
@@ -262,6 +554,24 @@ async fn chat(
     if reply.prompt_tokens + reply.completion_tokens > 0 {
         events.push(json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","model":model,"choices":[],"usage":usage}));
     }
+    let builder = builder.header("content-type", "text/event-stream");
+    if let Some(n) = reply.die_after_events {
+        // Send the first n events, give the client a moment to read them, then fail the body:
+        // hyper drops the connection without the final chunk.
+        let sent: Vec<Result<String, std::io::Error>> = events
+            .iter()
+            .take(n)
+            .map(|e| Ok(format!("data: {e}\n\n")))
+            .collect();
+        let stream = futures_util::stream::iter(sent).chain(futures_util::stream::once(async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionReset,
+                "fake server: stream broken off",
+            ))
+        }));
+        return builder.body(Body::from_stream(stream)).unwrap();
+    }
     let mut sse = String::new();
     for e in events {
         sse.push_str("data: ");
@@ -269,8 +579,118 @@ async fn chat(
         sse.push_str("\n\n");
     }
     sse.push_str("data: [DONE]\n\n");
-    builder
-        .header("content-type", "text/event-stream")
-        .body(Body::from(sse))
-        .unwrap()
+    builder.body(Body::from(sse)).unwrap()
+}
+
+/// One page a [`StaticServer`] serves.
+#[derive(Debug, Clone)]
+pub struct Page {
+    pub status: u16,
+    pub content_type: String,
+    pub body: Vec<u8>,
+}
+
+impl Page {
+    pub fn new(status: u16, content_type: impl Into<String>, body: impl Into<Vec<u8>>) -> Self {
+        Self {
+            status,
+            content_type: content_type.into(),
+            body: body.into(),
+        }
+    }
+
+    pub fn html(body: impl Into<Vec<u8>>) -> Self {
+        Self::new(200, "text/html; charset=utf-8", body)
+    }
+}
+
+/// A local web server with fixed pages (keyed by path, query ignored; anything else is a
+/// 404), for the web tools' tests and the cross-check. It records each request's path and
+/// query.
+pub struct StaticServer {
+    pub addr: SocketAddr,
+    requests: Arc<Mutex<Vec<String>>>,
+    _shutdown: tokio::sync::oneshot::Sender<()>,
+}
+
+impl StaticServer {
+    /// Start on an ephemeral 127.0.0.1 port.
+    pub async fn start(pages: impl IntoIterator<Item = (String, Page)>) -> Self {
+        let pages: Arc<std::collections::HashMap<String, Page>> =
+            Arc::new(pages.into_iter().collect());
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = requests.clone();
+        let app = Router::new().fallback(move |uri: axum::http::Uri| {
+            let pages = pages.clone();
+            let recorded = recorded.clone();
+            async move {
+                recorded.lock().unwrap().push(uri.to_string());
+                match pages.get(uri.path()) {
+                    Some(p) => Response::builder()
+                        .status(StatusCode::from_u16(p.status).unwrap_or(StatusCode::OK))
+                        .header("content-type", p.content_type.as_str())
+                        .body(Body::from(p.body.clone()))
+                        .unwrap(),
+                    None => Response::builder()
+                        .status(StatusCode::NOT_FOUND)
+                        .body(Body::empty())
+                        .unwrap(),
+                }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind static server");
+        let addr = listener.local_addr().expect("local addr");
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app)
+                .with_graceful_shutdown(async {
+                    let _ = rx.await;
+                })
+                .await;
+        });
+        Self {
+            addr,
+            requests,
+            _shutdown: tx,
+        }
+    }
+
+    /// `http://127.0.0.1:port`
+    pub fn base_url(&self) -> String {
+        format!("http://{}", self.addr)
+    }
+
+    /// The path and query of every request so far.
+    pub fn requests(&self) -> Vec<String> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+/// The path of one of this crate's helper programs (`fake-mcp-server`, `fake-lsp-server`):
+/// the nearest `target/<profile>/<name>` above the running test executable. `cargo test
+/// --workspace` builds them before any test runs; a narrower `cargo test -p <crate>` builds
+/// them here on first use.
+pub fn fake_bin(name: &str) -> std::path::PathBuf {
+    static BUILD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    let exe = std::env::current_exe().expect("current exe");
+    let find = || {
+        exe.ancestors()
+            .skip(1)
+            .map(|d| d.join(&file))
+            .find(|p| p.is_file())
+    };
+    let _guard = BUILD.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(p) = find() {
+        return p;
+    }
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let status = std::process::Command::new(cargo)
+        .args(["build", "-p", "orca-testkit", "--bin", name])
+        .status()
+        .expect("running cargo build for a fake server");
+    assert!(status.success(), "building {name} failed");
+    find().unwrap_or_else(|| panic!("{file} not found above {}", exe.display()))
 }

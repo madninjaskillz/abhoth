@@ -1,0 +1,176 @@
+{
+  "prompt": "Rename the greeting in both files",
+  "files": {
+    "a.txt": "Hello World\nHello again\n",
+    "b.txt": "alpha beta gamma\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "multi_edit",
+          "args": {
+            "edits": [
+              {
+                "path": "a.txt",
+                "old_string": "World",
+                "new_string": "Orca"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "a.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "b.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "multi_edit",
+          "args": {
+            "edits": [
+              {
+                "path": "a.txt",
+                "old_string": "World",
+                "new_string": "Orca"
+              },
+              {
+                "path": "b.txt",
+                "old_string": "beta",
+                "new_string": "BETA"
+              },
+              {
+                "path": "b.txt",
+                "old_string": "gamma",
+                "new_string": "GAMMA"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "multi_edit",
+          "args": {
+            "edits": [
+              {
+                "path": "a.txt",
+                "old_string": "Hello",
+                "new_string": "Hi"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "multi_edit",
+          "args": {
+            "edits": [
+              {
+                "path": "a.txt",
+                "old_string": "Hello",
+                "new_string": "Hi",
+                "replace_all": true
+              },
+              {
+                "path": "b.txt",
+                "old_string": "NOPE",
+                "new_string": "x"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "multi_edit",
+          "args": {
+            "edits": [
+              {
+                "path": "a.txt",
+                "old_string": "Hello",
+                "new_string": "Hi",
+                "replace_all": "true"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "multi_edit",
+          "args": {
+            "edits": [
+              {
+                "path": "missing.txt",
+                "old_string": "a",
+                "new_string": "b"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "multi_edit",
+          "args": {
+            "edits": []
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "multi_edit",
+          "args": {
+            "edits": [
+              {
+                "path": "a.txt",
+                "old_string": "x"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    }
+  ]
+}

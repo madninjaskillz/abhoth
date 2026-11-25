@@ -1,0 +1,127 @@
+{
+  "prompt": "Work in a sub folder",
+  "files": {
+    "top.txt": "top\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "cd",
+          "args": {
+            "path": "app"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "mkdir",
+          "args": {
+            "path": "app/src"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "cd",
+          "args": {
+            "path": "app"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "src/main.txt",
+            "content": "inside app"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "list_directory",
+          "args": {
+            "path": "."
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "cd",
+          "args": {
+            "path": ".."
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "top.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "list_processes",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "start_background_process",
+          "args": {
+            "command": "echo hi",
+            "working_directory": "no_such_dir"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "get_process_output",
+          "args": {
+            "process_id": "zzzz"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "stop_process",
+          "args": {
+            "process_id": "zzzz"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    }
+  ]
+}

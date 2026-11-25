@@ -1,0 +1,15 @@
+{
+  "prompt": "Crop and resize the images",
+  "binary_files": {
+    "pattern.png": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAYAAAD+Bd/7AAAAmUlEQVR4nA3KkRLDQBAG4LNaLJapVHZitcDN1MILocNarLjUJ4h15nixVrlHKCzfu5T//vDZl1JKOFOmQkaVGnVKSRjkhCwDiowwmVDlgiYzulwZlEEHZJ1QdIbpgqormm7oemcwBhuRbUaxG8w2VNvR7IluLwZn8AnZFxTfYP5A9QPN3+j+ZQiGuCDHihI7LA7U+KBFR48f/mC+Yb0+rpeDAAAAAElFTkSuQmCC",
+    "solid.png": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAEklEQVR4nGM4IWfzHx9mGBkKAC3CiEEiqWH5AAAAAElFTkSuQmCC"
+  },
+  "replies": [
+    {"tools": [{"name": "crop_image", "args": {"path": "pattern.png", "x": 2, "y": 1, "width": 4, "height": 3, "save_path": "out/cropped.png"}}]},
+    {"tools": [{"name": "crop_image", "args": {"path": "pattern.png", "x": "1", "y": 0, "width": 5, "height": 5, "save_path": "out/cropped.bmp"}}]},
+    {"tools": [{"name": "resize_image", "args": {"path": "solid.png", "width": 4, "height": 2, "save_path": "out/small.png"}}]},
+    {"tools": [{"name": "resize_image", "args": {"path": "solid.png", "width": 3, "height": 3}}]},
+    {"tools": [{"name": "crop_image", "args": {"path": "pattern.png", "x": 0, "y": 0, "width": 2, "height": 2, "save_path": "out/tile.jpg"}}]},
+    {"text": "Cropped the pattern twice, resized the solid image twice and saved a JPEG tile."}
+  ]
+}
