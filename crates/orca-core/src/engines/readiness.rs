@@ -340,15 +340,26 @@ mod tests {
         }
 
         async fn check(&self, engine: &str) -> EngineReadiness {
-            check_with(
-                engine,
-                &OrcaConfig::default(),
-                &CancelToken::new(),
-                None,
-                Some(&self.path()),
-            )
-            .await
-            .unwrap()
+            // Linux: running a script just written can fail with ETXTBSY ("Text file busy",
+            // os error 26) while another test's fork still holds the write descriptor, between
+            // its fork and exec. Busier with more test threads (16 on the CI runners); retry.
+            for _ in 0..20 {
+                match check_with(
+                    engine,
+                    &OrcaConfig::default(),
+                    &CancelToken::new(),
+                    None,
+                    Some(&self.path()),
+                )
+                .await
+                {
+                    Err(e) if format!("{e:?}").contains("os error 26") => {
+                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    }
+                    r => return r.unwrap(),
+                }
+            }
+            panic!("{engine}: the fake CLI stayed busy (ETXTBSY)");
         }
     }
 

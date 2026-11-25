@@ -5,7 +5,8 @@
 # - Linux jobs on the self-hosted runners on deepthought (`abhoth-ci`, label `abhoth`): fmt,
 #   clippy and tests (default features and the desktop feature), the React client, and
 #   `package`, which cross-compiles abhoth.exe / abhoth-desktop.exe with cargo-xwin, runs
-#   clippy for the Windows target, and packs a Velopack Setup.exe and a Linux AppImage.
+#   clippy for the Windows target, and packs a Velopack Setup.exe and a Linux AppImage
+#   (kept on deepthought; an artifact on workflow_dispatch and tags; a Release on tags).
 # - Windows (GitHub-hosted): the tests only, because they exercise Windows behaviour
 #   (ConPTY, paths, the shell tool); clippy for Windows is the cross job's.
 # - macOS (GitHub-hosted, 10x minutes): the desktop feature only on workflow_dispatch or a tag.
@@ -112,7 +113,8 @@ jobs:
 
   # The Windows exes cross-compiled on Linux (cargo-xwin, x86_64-pc-windows-msvc), clippy for
   # the Windows target, the Linux release build, and Velopack packages of both: a Windows
-  # Setup.exe and a Linux AppImage. Artifacts on every run; a GitHub Release on a tag.
+  # Setup.exe and a Linux AppImage. Kept on deepthought (builds/); an artifact by hand or on
+  # a tag; a GitHub Release on a tag.
   package:
     runs-on: [self-hosted, linux, abhoth]
     timeout-minutes: 60
@@ -158,10 +160,10 @@ jobs:
           file "$out/win/"*.exe "$out/linux/"*
 
           vpk '[win]' pack --packId Abhoth --packVersion "$VERSION" --packTitle Abhoth \
-            --packAuthors Abhoth --packDir "$out/win" --mainExe abhoth-desktop.exe \
+            --packAuthors Abhoth --runtime win-x64 --packDir "$out/win" --mainExe abhoth-desktop.exe \
             --icon assets/abhoth/icons/abhoth.ico --outputDir "$out/vpk-win"
           vpk '[linux]' pack --packId Abhoth --packVersion "$VERSION" --packTitle Abhoth \
-            --packAuthors Abhoth --packDir "$out/linux" --mainExe abhoth-desktop \
+            --packAuthors Abhoth --runtime linux-x64 --packDir "$out/linux" --mainExe abhoth-desktop \
             --icon assets/abhoth/icons/abhoth-256.png --outputDir "$out/vpk-linux"
 
           # Found by glob: vpk's file names carry the channel and can change with a release.
@@ -179,9 +181,10 @@ jobs:
           cp -r "$out/dist" "$keep/$GITHUB_RUN_NUMBER-${GITHUB_SHA::8}"
           ls -1dt "$keep"/*/ | tail -n +6 | xargs -r rm -rf
 
-      # Short retention and non-fatal: the account's artifact storage quota is small, and the
-      # builds are also kept on deepthought.
+      # Only by hand or on a tag (~110 MB each), short retention and non-fatal: the account's
+      # artifact storage quota is small. Every push's build is kept on deepthought (above).
       - uses: actions/upload-artifact@v7
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
         with:
           name: abhoth-${{ steps.version.outputs.version }}

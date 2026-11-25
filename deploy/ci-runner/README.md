@@ -31,7 +31,8 @@ storage on Apps.
   under the other's build. The target dir lives here rather than in the workspace, so builds
   are warm while `actions/checkout` still gives every job a clean tree.
 - `$ABHOTH_CI_ROOT/builds/` — the last five `package` outputs (Setup.exe, AppImage,
-  the zipped exes, SHA256SUMS), a fallback for the small artifact storage quota.
+  the zipped exes, SHA256SUMS) from every run. GitHub artifacts are uploaded only on
+  workflow_dispatch and tags (~110 MB each; the account's artifact storage quota is small).
 
 The caches are capped at 14 GB per runner (~30 GB in all with the work folders):
 `job-started.sh` removes the target dir first, then the cargo registry and npm cache, when a
