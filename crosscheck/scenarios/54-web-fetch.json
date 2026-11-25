@@ -1,0 +1,116 @@
+{
+  "prompt": "Read the docs page",
+  "web": {
+    "/docs": {
+      "body": "<!doctype html>\n<html>\n<head>\n  <title>Orca Docs</title>\n  <style>body { color: red; }</style>\n  <script type=\"text/javascript\">var x = \"<p>not text</p>\";</script>\n</head>\n<body>\n  <h1>Orca &amp; Friends</h1>\n  <p>Caf&eacute; &lt;menu&gt; &#8212; &#x263A;   tabs\t\there</p>\n\n\n\n  <ul><li>One</li><li>Two</li></ul>\n</body>\n</html>\n"
+    },
+    "/data.json": {
+      "content_type": "application/json",
+      "body": "{\"a\": \"<b>&amp;</b>\"}"
+    },
+    "/gone": {
+      "status": 410,
+      "content_type": "text/plain",
+      "body": "gone"
+    }
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "web_fetch",
+          "args": {
+            "url": "<WEB>/docs"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "web_fetch",
+          "args": {
+            "url": "<WEB>/docs",
+            "raw": true
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "web_fetch",
+          "args": {
+            "url": "<WEB>/docs",
+            "max_length": 30
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "web_fetch",
+          "args": {
+            "url": "<WEB>/data.json",
+            "raw": "true"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "web_fetch",
+          "args": {
+            "url": "<WEB>/gone"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "web_fetch",
+          "args": {
+            "url": "<WEB>/missing"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "web_fetch",
+          "args": {
+            "url": "not-a-url"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "web_fetch",
+          "args": {
+            "url": "ftp://example.com/file.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "web_fetch",
+          "args": {
+            "url": "<WEB>/docs",
+            "max_length": 0
+          }
+        }
+      ]
+    },
+    {
+      "text": "The docs page is titled Orca Docs and lists One and Two; the other URLs failed."
+    }
+  ]
+}

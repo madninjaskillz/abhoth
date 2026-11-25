@@ -19,6 +19,16 @@
 //! `<WORK_JSON>` in them becomes the work folder as a JSON string body) and pass extra
 //! arguments (`args`, e.g. `["-r", "s1"]`).
 //!
+//! For the git tools a scenario can run `setup` commands in the work folder after its files
+//! are written (e.g. `["git", "init"]`) with extra environment variables (`env`, also given to
+//! both runs; `<HOME>` in a value becomes the config home), so fixed author/committer dates
+//! give the same commit hashes in both runs. `.git/` is left out of the file comparison.
+//!
+//! For the web tools a scenario can serve pages from a local server (`web`: path -> status,
+//! content type, body); `<WEB>` in the prompt and the scripted tool arguments becomes its base
+//! URL, and `<CLOSED>` becomes `127.0.0.1:<port>` of a port nothing listens on. Both are
+//! normalised back in the results.
+//!
 //! Known, documented gaps are ignored by default: the advertised tool list (the `tools` array
 //! and the tool-derived parts of the system prompt: the AVAILABLE TOOLS lines and the
 //! lead_mode tool's LEAD MODE section), since Rust has only the core tools until phase 3. The
@@ -29,7 +39,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
-use orca_testkit::{FakeOpenAi, Reply};
+use orca_testkit::{FakeOpenAi, Page, Reply, StaticServer};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -49,7 +59,34 @@ struct Scenario {
     /// Extra config.json keys (merged over the harness defaults, one level deep).
     #[serde(default)]
     config: serde_json::Map<String, Value>,
+    /// Commands (program and arguments) run in the work folder before the prompt.
+    #[serde(default)]
+    setup: Vec<Vec<String>>,
+    /// Environment variables for the setup commands and both runs (`<HOME>`: config home).
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+    /// Pages served at `<WEB>` (path -> page).
+    #[serde(default)]
+    web: BTreeMap<String, WebPage>,
     replies: Vec<ScriptReply>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WebPage {
+    #[serde(default = "ok_status")]
+    status: u16,
+    #[serde(default = "html_type")]
+    content_type: String,
+    #[serde(default)]
+    body: String,
+}
+
+fn ok_status() -> u16 {
+    200
+}
+
+fn html_type() -> String {
+    "text/html; charset=utf-8".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,7 +116,7 @@ struct ScriptTool {
 }
 
 impl ScriptReply {
-    fn to_reply(&self) -> Reply {
+    fn to_reply(&self, subst: &dyn Fn(&str) -> String) -> Reply {
         Reply {
             text: self.text.clone(),
             reasoning: self.reasoning.clone(),
@@ -89,7 +126,7 @@ impl ScriptReply {
                 .map(|t| {
                     (
                         t.name.clone(),
-                        t.raw.clone().unwrap_or_else(|| t.args.to_string()),
+                        subst(&t.raw.clone().unwrap_or_else(|| t.args.to_string())),
                     )
                 })
                 .collect(),
@@ -136,8 +173,27 @@ fn merge(base: &mut Value, extra: &serde_json::Map<String, Value>) {
 }
 
 async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
-    let server =
-        FakeOpenAi::start(scenario.replies.iter().map(ScriptReply::to_reply).collect()).await;
+    let web = StaticServer::start(scenario.web.iter().map(|(path, p)| {
+        (
+            path.clone(),
+            Page::new(p.status, p.content_type.clone(), p.body.clone()),
+        )
+    }))
+    .await;
+    let web_url = web.base_url();
+    let closed = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0")?;
+        format!("127.0.0.1:{}", l.local_addr()?.port())
+    };
+    let subst = |s: &str| s.replace("<WEB>", &web_url).replace("<CLOSED>", &closed);
+    let server = FakeOpenAi::start(
+        scenario
+            .replies
+            .iter()
+            .map(|r| r.to_reply(&subst))
+            .collect(),
+    )
+    .await;
     let home = tempfile::tempdir()?;
     let work = tempfile::tempdir()?;
     let mut config = base_config(&server.base_url());
@@ -170,11 +226,34 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
             .set_modified(base + std::time::Duration::from_secs(i as u64))?;
     }
 
+    let home_str = home.path().display().to_string();
+    let env: Vec<(String, String)> = scenario
+        .env
+        .iter()
+        .map(|(k, v)| (k.clone(), v.replace("<HOME>", &home_str)))
+        .collect();
+    for argv in &scenario.setup {
+        let (program, rest) = argv.split_first().context("empty setup command")?;
+        let out = Command::new(program)
+            .args(rest)
+            .current_dir(work.path())
+            .envs(env.iter().cloned())
+            .output()
+            .with_context(|| format!("setup: {argv:?}"))?;
+        if !out.status.success() {
+            bail!(
+                "setup {argv:?} failed: {}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+    }
+
     let (exe_owned, work_path, home_path, prompt, extra) = (
         exe.to_path_buf(),
         work.path().to_path_buf(),
         home.path().to_path_buf(),
-        scenario.prompt.clone(),
+        subst(&scenario.prompt),
         scenario.args.clone(),
     );
     let out = tokio::task::spawn_blocking(move || {
@@ -183,6 +262,7 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
             .args(&extra)
             .current_dir(&work_path)
             .env("OPENORCA_HOME", &home_path)
+            .envs(env)
             .env_remove("RUST_LOG")
             .output()
     })
@@ -203,11 +283,21 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
     };
 
     let work_str = work.path().display().to_string();
-    let home_str = home.path().display().to_string();
-    let norm = |v: Value| normalize(v, &[(&work_str, "<WORK>"), (&home_str, "<HOME>")]);
+    let norm = |v: Value| {
+        normalize(
+            v,
+            &[
+                (&work_str, "<WORK>"),
+                (&home_str, "<HOME>"),
+                (&web_url, "<WEB>"),
+                (&closed, "<CLOSED>"),
+            ],
+        )
+    };
     let mut files = BTreeMap::new();
     for e in walkdir::WalkDir::new(work.path())
         .into_iter()
+        .filter_entry(|e| e.file_name() != ".git")
         .filter_map(Result::ok)
     {
         if e.file_type().is_file() {
