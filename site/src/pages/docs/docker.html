@@ -22,7 +22,7 @@ docker build -f deploy/docker/Dockerfile -t abhoth-web .</code></pre>
       TRUSTED_PROXIES: "172.18.0.1"     # your reverse proxy; X-Forwarded-* only from it
       REQUIRE_2FA: "0"                  # 1 = a code at every sign-in
       BENCH: "0"                        # 1 = the Benchmarks page
-      OPENORCA_PROJECT_ROOTS: "Projects=/projects"
+      ABHOTH_PROJECT_ROOTS: "Projects=/projects"
     volumes:
       - ./projects:/projects
       - ./state:/state
@@ -44,13 +44,13 @@ docker build -f deploy/docker/Dockerfile -t abhoth-web .</code></pre>
   <thead><tr><th>Path in the container</th><th>What</th></tr></thead>
   <tbody>
     <tr><td><code>/projects</code></td><td>Your projects; new ones go in <code>/projects/workspace</code> by default.</td></tr>
-    <tr><td><code>/state</code></td><td>Abhoth's state home in <code>/state/openorca</code> (config, sessions, accounts; the name is kept for compatibility) and the container user's home in <code>/state/home</code>.</td></tr>
+    <tr><td><code>/state</code></td><td>Abhoth's state (config, sessions, accounts) and the container user's home.</td></tr>
     <tr><td><code>/run/secrets/admin-password</code></td><td>With <code>ADMIN_USER</code>, creates that admin on the first start. It's ignored once accounts exist.</td></tr>
     <tr><td><code>/run/secrets/git-deploy-key</code></td><td>Optional: an SSH key for git.</td></tr>
     <tr><td><code>/run/secrets/git-credentials</code></td><td>Optional: a git credential-store file.</td></tr>
   </tbody>
 </table>
-<p>The entrypoint never prints a secret. Set the model server's base URL and key in Settings after you sign in, or in <code>/state/openorca/config.json</code>.</p>
+<p>The entrypoint never prints a secret. Set the model server's base URL and key in Settings after you sign in, or in the <code>config.json</code> under <code>/state</code>.</p>
 <div class="note"><p>The container runs as UID 568, GID 568. Make <code>./projects</code> and <code>./state</code> writable by that user, for example with <code>sudo chown -R 568:568 projects state</code>.</p></div>
 
 <h2>Accounts from the command line</h2>
@@ -66,4 +66,4 @@ abhoth.example.com {
 }</code></pre>
 
 <h2>Upgrading and rolling back</h2>
-<p>Rebuild the image from a newer checkout and recreate the container; the state formats are stable. An existing OpenOrca container's state works as it is, because <code>OPENORCA_HOME</code> is still honoured. To roll back, point the service at the previous image.</p>
+<p>Rebuild the image from a newer checkout and recreate the container; the state in <code>/state</code> carries over. To roll back, point the service at the previous image.</p>
