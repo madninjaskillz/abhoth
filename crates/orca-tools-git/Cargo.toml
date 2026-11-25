@@ -1,0 +1,21 @@
+[package]
+name = "orca-tools-git"
+description = "Git tools (git_status, git_diff, git_log, git_commit, git_branch, git_checkout, git_pull, git_push, git_stash) and the github tool (port of OpenOrca.Tools.Git and OpenOrca.Tools.GitHub)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+orca-abstractions.workspace = true
+orca-tools-common.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
