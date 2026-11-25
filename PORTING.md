@@ -107,6 +107,38 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
    projects, profiles, settings, serving the built React client. XL.
 6. **Parity sweep**: run the whole cross-check set and the ported test suites, bench runs
    side by side, then a decision on replacing the C# build (not part of this port). M.
+7. **Desktop app** (user request 2026-11-26; after everything else is ported):
+   `openorca --desktop` runs the web UI as a native desktop app. M-L.
+   - **Shape:** start the Rust web host (`orca-webui`) in-process on a loopback port
+     (`127.0.0.1:0`) with a random per-launch token, then open the existing React client in a
+     native window pointed at it. No second UI codebase: the window is just another client.
+   - **Crate choice:** `wry` (webview) + `tao` (windowing/event loop) directly, behind a
+     `desktop` Cargo feature of `orca-cli`, rather than full Tauri v2. Both are the Tauri
+     project's own building blocks (WebView2 on Windows, WKWebView on macOS, WebKitGTK on
+     Linux) but need no `tauri.conf`, build script, bundler or IPC layer, which this design
+     doesn't use (everything goes over the existing HTTP/websocket API). `tray-icon` (same
+     project) for the tray, `rfd` for native folder dialogs. Pin exact versions when added;
+     revisit Tauri only if installers/auto-update are wanted later.
+   - **Auth:** reuse the host's local token auth; the window loads `/?token=...` (the host's
+     query-token redirect sets the cookie), so the login page never shows. The token never
+     leaves the process; the listener binds loopback only.
+   - **Window and tray:** single instance (a second `--desktop` focuses the running window,
+     via a named lock/pipe in the config home); title "OpenOrca"; the orca icon from the
+     client's `brand/` assets; tray menu Show / Quit; closing the window either quits or hides
+     to tray (config `ui.desktopCloseToTray`, default quit). Quit cancels running turns, stops
+     the host and releases slot leases like Ctrl+C does under `--hostui`.
+   - **Desktop extras:** "Open a folder" uses a native dialog (`rfd`) through a small host
+     endpoint enabled only for the desktop window; other features stay browser-identical.
+   - **Platforms:** Windows first (WebView2 runtime is present on Windows 11; detect a missing
+     runtime and print a clear message). Linux (WebKitGTK dev packages in CI) and macOS build
+     in CI where feasible; the `desktop` feature is off for headless builds.
+   - **Risks:** webview differences from Chrome (the client targets evergreen browsers;
+     WebView2 is Chromium, WebKitGTK may need CSS/JS checks); `unsafe` is forbidden in our
+     crates but wry/tao use it internally (acceptable: well-known, pinned third-party code);
+     binary size grows (feature-gated); event-loop ownership (tao must own the main thread, so
+     the tokio runtime and host run on worker threads); single-instance handling across
+     platforms; tests need a display (CI smoke runs only the host + a headless check that the
+     window URL and token are built correctly).
 
 ## Parity strategy
 
