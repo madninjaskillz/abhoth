@@ -62,7 +62,9 @@ pub fn migrate_home(
     legacy: &std::path::Path,
     home: &std::path::Path,
 ) -> std::io::Result<Migration> {
-    if home.exists() || !legacy.is_dir() {
+    // A home holding nothing but `logs` was made by a run that logged before migrating (or
+    // without a config); it still gets the copy, and keeps its logs (D133).
+    if (home.exists() && !only_logs(home)) || !legacy.is_dir() {
         return Ok(Migration::NotNeeded);
     }
     // Copy into a sibling first so a failed copy leaves no half-made home behind.
@@ -76,8 +78,24 @@ pub fn migrate_home(
         staging.join(MIGRATION_MARKER),
         format!("Copied from {} by {PRODUCT_NAME}.\n", legacy.display()),
     )?;
+    if home.exists() {
+        let logs = home.join("logs");
+        if logs.exists() {
+            std::fs::rename(&logs, staging.join("logs"))?;
+        }
+        std::fs::remove_dir_all(home)?;
+    }
     std::fs::rename(&staging, home)?;
     Ok(Migration::Copied(copied))
+}
+
+/// True when `dir` holds no entries other than a `logs` folder.
+fn only_logs(dir: &std::path::Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries
+            .flatten()
+            .all(|e| e.file_name() == "logs" && e.path().is_dir())
+    })
 }
 
 fn copy_tree(
@@ -154,6 +172,29 @@ mod tests {
             std::fs::read_to_string(new.join("config.json")).unwrap(),
             "{\"changed\":1}"
         );
+    }
+
+    #[test]
+    fn a_home_with_only_logs_still_gets_the_copy_and_keeps_its_logs() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join(".openorca");
+        let new = root.path().join(".abhoth");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("config.json"), "{}").unwrap();
+        std::fs::create_dir_all(new.join("logs")).unwrap();
+        std::fs::write(new.join("logs").join("early.log"), "e").unwrap();
+        assert_eq!(migrate_home(&old, &new).unwrap(), Migration::Copied(1));
+        assert!(new.join("config.json").is_file());
+        assert!(new.join(MIGRATION_MARKER).is_file());
+        assert_eq!(
+            std::fs::read_to_string(new.join("logs").join("early.log")).unwrap(),
+            "e"
+        );
+        // Anything besides logs means the home is in use: no copy.
+        let other = root.path().join(".abhoth2");
+        std::fs::create_dir_all(other.join("logs")).unwrap();
+        std::fs::write(other.join("projects.json"), "[]").unwrap();
+        assert_eq!(migrate_home(&old, &other).unwrap(), Migration::NotNeeded);
     }
 
     #[test]

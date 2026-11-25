@@ -600,3 +600,8 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   workflow `rust-port-linux.yml` runs clippy and the tests on ubuntu for `feature/rust-port` and
   `rust-port/**`, and `tools/linux-check.sh` runs `cargo check --workspace --all-targets` in WSL
   (rustup per-user, its own target dir) before a merge or deploy. It caught the bug above.
+- **D133** The `~/.openorca` copy (D89) also runs when `~/.abhoth` holds nothing but `logs`:
+  `abhoth-desktop` opened its file log before migrating, and the `version_flag` test ran
+  `abhoth --version` with the default home, so the user's `~/.abhoth` already had a `logs`
+  folder and the migration would have been skipped. `abhoth-desktop` now migrates first, that
+  test uses a temp home, and a logs-only home gets the copy and keeps its logs.

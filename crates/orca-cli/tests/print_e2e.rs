@@ -181,8 +181,11 @@ async fn print_write_then_denied_bash_reports_files_and_failure() {
 
 #[test]
 fn version_flag() {
+    // A temp home: without one, every run created the user's ~/.abhoth/logs (D133).
+    let home = tempfile::tempdir().unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_abhoth"))
         .arg("--version")
+        .env("ABHOTH_HOME", home.path())
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).starts_with("Abhoth v"));
