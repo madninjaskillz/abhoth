@@ -1,0 +1,19 @@
+{
+  "prompt": "What does f.txt say?",
+  "config": {
+    "lmStudio": {
+      "nativeToolCalling": false
+    }
+  },
+  "files": {
+    "f.txt": "alpha\n"
+  },
+  "replies": [
+    {
+      "text": "<think>I should read it.</think>\n<tool_call>\n{\"name\": \"read_file\", \"arguments\": {\"path\": \"f.txt\"}}\n</tool_call>"
+    },
+    {
+      "text": "The file f.txt contains a single line with the word alpha in it."
+    }
+  ]
+}

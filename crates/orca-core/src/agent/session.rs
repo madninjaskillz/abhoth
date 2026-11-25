@@ -16,10 +16,10 @@ use orca_abstractions::{Tool, ToolCapabilities, ToolContext, ToolResult};
 use orca_tools_common::keep_head_and_tail;
 
 use super::permissions;
-use super::prompts::{self, MAX_SUMMARY_CONTINUATIONS, SUMMARY_CONTINUE_MESSAGE};
+use super::prompts;
 use super::registry::ToolRegistry;
 use crate::client::{
-    ChatError, ChatMessage, ChatOptions, OpenAiClient, StreamEvent, ToolCall, request_parameters,
+    ChatError, ChatMessage, ChatOptions, OpenAiClient, ToolCall, request_parameters,
 };
 use crate::config::OrcaConfig;
 
@@ -49,6 +49,8 @@ pub trait AgentObserver: Send {
     fn on_tool_start(&mut self, _call: &ToolCall) {}
     fn on_tool_output(&mut self, _line: &str) {}
     fn on_tool_end(&mut self, _call: &ToolCall, _result: &ToolResult) {}
+    /// A one-line status message (retries, nudges, loop guards) the console shows in yellow.
+    fn on_notice(&mut self, _message: &str) {}
 }
 
 pub struct NullObserver;
@@ -86,30 +88,32 @@ pub struct AgentSession {
     /// (case-insensitive set in C#; insertion order kept here).
     pub files_modified: Vec<String>,
     pub total_output_tokens: i64,
+    /// Text chunks of the last streamed reply (token fallback when the server sends no usage).
+    pub(super) last_chunk_count: i64,
     pub last_assistant_response: Option<String>,
     /// Files read (or written) this session with their mtime then: read-before-edit.
     pub files_read: std::collections::HashMap<std::path::PathBuf, Option<std::time::SystemTime>>,
     /// The current call is the first of several in one response: C# records its argument
     /// text compact (the rest indented).
-    record_raw_arguments: bool,
+    pub(super) record_raw_arguments: bool,
     /// Successful file modifications so far (`MutationEpoch`).
     pub mutation_epoch: u64,
-    turn_history_start: usize,
+    pub(super) turn_history_start: usize,
+    /// Identical-failure tracking (`_recentToolErrors`): `tool::args` -> (error, count, epoch).
+    pub(super) recent_tool_errors: std::collections::HashMap<String, (String, u32, u64)>,
+    /// Calls this turn for doom-loop detection: (name, args, mutation epoch).
+    pub(super) recent_call_history: Vec<(String, String, u64)>,
+    /// Index into `lmStudio.models` of the model in use (failover moves it on).
+    pub model_index: usize,
+    /// Models that proved they can't do native tool calls (`NativeToolsSupport`).
+    pub native_tools_support: std::collections::HashMap<String, bool>,
+    /// Base delay of the same-model retry backoff (2 s; tests shorten it).
+    pub retry_base_delay: Duration,
+    /// Pause before a failover request (2 s; tests shorten it).
+    pub failover_delay: Duration,
     /// The wrap-up a turn ended on when it is not the last response text (verification
     /// changed nothing and the model then answered "Verified.").
     pub final_prose: Option<String>,
-}
-
-/// Per-turn wind-down state (`AgentLoopState`).
-#[derive(Default)]
-struct WindDown {
-    tools_executed: bool,
-    verification_requested: bool,
-    verification_tools_used: bool,
-    summary_requested: bool,
-    summary_continuations: u32,
-    pre_verification_wrap_up: Option<String>,
-    pre_verification_epoch: u64,
 }
 
 impl AgentSession {
@@ -130,11 +134,18 @@ impl AgentSession {
             tool_call_history: Vec::new(),
             files_modified: Vec::new(),
             total_output_tokens: 0,
+            last_chunk_count: 0,
             last_assistant_response: None,
             files_read: Default::default(),
             record_raw_arguments: false,
             mutation_epoch: 0,
             turn_history_start: 0,
+            recent_tool_errors: Default::default(),
+            recent_call_history: Vec::new(),
+            model_index: 0,
+            native_tools_support: Default::default(),
+            retry_base_delay: Duration::from_secs(2),
+            failover_delay: Duration::from_secs(2),
             final_prose: None,
         }
     }
@@ -156,9 +167,23 @@ impl AgentSession {
         )
     }
 
-    fn build_options(&self) -> ChatOptions {
+    /// The model requests go to: the failover position in `lmStudio.models`, else the
+    /// client's default.
+    pub fn active_model(&self) -> Option<String> {
+        if self.model_index > 0
+            && let Some(m) = self.config.lm_studio.models.get(self.model_index)
+        {
+            return Some(m.clone());
+        }
+        self.client.settings().default_model.clone()
+    }
+
+    pub(super) fn build_options(&self) -> ChatOptions {
         let mut options = ChatOptions::default();
-        let model = self.client.settings().default_model.clone();
+        let model = self.active_model();
+        if self.model_index > 0 {
+            options.model = model.clone();
+        }
         request_parameters::apply(&mut options, &self.config, model.as_deref(), false);
         request_parameters::apply_effort(
             &mut options,
@@ -171,135 +196,8 @@ impl AgentSession {
         options
     }
 
-    /// Run one user turn to the end.
-    pub async fn run_turn(
-        &mut self,
-        user_message: &str,
-        observer: &mut dyn AgentObserver,
-    ) -> Result<TurnEnd, AgentError> {
-        self.messages.push(ChatMessage::user(user_message));
-        self.turn_history_start = self.tool_call_history.len();
-        self.final_prose = None;
-        let max_iterations = self.config.agent.main_loop_max_iterations.max(1);
-        let mut w = WindDown::default();
-
-        for _ in 0..max_iterations {
-            let options = self.build_options();
-            let mut chunks = 0i64;
-            let response = {
-                let mut on_event = |e: StreamEvent| match e {
-                    StreamEvent::Text(t) => {
-                        chunks += 1;
-                        observer.on_text(&t);
-                    }
-                    StreamEvent::Reasoning(r) => observer.on_reasoning(&r),
-                    _ => {}
-                };
-                self.client
-                    .stream(&self.actor, &self.messages, &options, &mut on_event)
-                    .await?
-            };
-            self.total_output_tokens += response.usage.completion_tokens.unwrap_or(chunks);
-            self.last_assistant_response = Some(prompts::strip_next_prompt_tag(&response.text));
-
-            if !response.tool_calls.is_empty() {
-                // A native call without arguments for a tool that needs some: the server lost
-                // the payload. Drop the response and fall back to text tool calling.
-                if self.native_tools && self.has_missing_required_args(&response.tool_calls) {
-                    tracing::warn!(
-                        "native tool call(s) have empty args; downgrading to text-based calling"
-                    );
-                    self.native_tools = false;
-                    continue;
-                }
-                self.messages.push(response.to_message());
-                let several = response.tool_calls.len() > 1;
-                for (i, call) in response.tool_calls.iter().enumerate() {
-                    self.record_raw_arguments = several && i == 0;
-                    observer.on_tool_start(call);
-                    let result = self.execute_tool_call(call, observer).await;
-                    observer.on_tool_end(call, &result);
-                    self.messages
-                        .push(ChatMessage::tool_result(call.id.clone(), result.content));
-                }
-                w.tools_executed = true;
-                if w.verification_requested {
-                    w.verification_tools_used = true;
-                }
-                continue;
-            }
-
-            self.messages.push(response.to_message());
-            if self.handle_no_tool_call_response(&response, &mut w) {
-                continue;
-            }
-            return Ok(TurnEnd::Done);
-        }
-        Ok(TurnEnd::IterationLimit)
-    }
-
-    /// `ToolCallDispatcher.HandleNoToolCallResponse` (verification and summary wind-down).
-    /// True when a follow-up message was added and the loop goes on.
-    fn handle_no_tool_call_response(
-        &mut self,
-        response: &crate::client::ChatResponse,
-        w: &mut WindDown,
-    ) -> bool {
-        if w.tools_executed && !w.verification_requested {
-            w.verification_requested = true;
-            if self.should_request_verification() {
-                let wrap_up = prompts::extract_final_prose(&response.text);
-                w.pre_verification_wrap_up =
-                    prompts::is_substantive_final_message(&wrap_up).then_some(wrap_up);
-                w.pre_verification_epoch = self.mutation_epoch;
-                self.messages
-                    .push(ChatMessage::user(prompts::platform_lines(
-                        prompts::VERIFICATION_MESSAGE,
-                    )));
-                return true;
-            }
-            w.verification_tools_used = true;
-        }
-        if w.tools_executed && w.verification_requested && !w.summary_requested {
-            if !w.verification_tools_used {
-                w.verification_tools_used = true;
-                self.messages
-                    .push(ChatMessage::user(prompts::platform_lines(
-                        prompts::VERIFICATION_RETRY_MESSAGE,
-                    )));
-                return true;
-            }
-            let mut prose = prompts::extract_final_prose(&response.text);
-            if !prompts::is_substantive_final_message(&prose)
-                && self.mutation_epoch == w.pre_verification_epoch
-                && let Some(wrap_up) = w.pre_verification_wrap_up.take()
-            {
-                prose = wrap_up;
-            }
-            w.pre_verification_wrap_up = None;
-            if prompts::is_substantive_final_message(&prose) {
-                self.final_prose = Some(prose);
-                return false;
-            }
-            w.summary_requested = true;
-            self.messages
-                .push(ChatMessage::user(prompts::summary_request_message()));
-            return true;
-        }
-        if w.summary_requested
-            && response.finish_reason.as_deref() == Some("length")
-            && w.summary_continuations < MAX_SUMMARY_CONTINUATIONS
-        {
-            w.summary_continuations += 1;
-            self.messages
-                .push(ChatMessage::user(SUMMARY_CONTINUE_MESSAGE));
-            return true;
-        }
-        false
-    }
-
     /// `ToolCallExecutor.HasMissingRequiredArgs`.
-    fn has_missing_required_args(&self, calls: &[ToolCall]) -> bool {
+    pub(super) fn has_missing_required_args(&self, calls: &[ToolCall]) -> bool {
         calls.iter().any(|c| {
             let empty = match serde_json::from_str::<Value>(&c.arguments) {
                 Ok(Value::Object(o)) => o.is_empty(),
@@ -317,7 +215,7 @@ impl AgentSession {
     }
 
     /// `ShouldRequestVerification` for `agent.verificationMode`.
-    fn should_request_verification(&self) -> bool {
+    pub(super) fn should_request_verification(&self) -> bool {
         match self
             .config
             .agent
@@ -332,11 +230,11 @@ impl AgentSession {
         }
     }
 
-    fn turn_history(&self) -> &[ToolCallRecord] {
+    pub(super) fn turn_history(&self) -> &[ToolCallRecord] {
         &self.tool_call_history[self.turn_history_start.min(self.tool_call_history.len())..]
     }
 
-    fn is_successful_mutation(&self, r: &ToolCallRecord) -> bool {
+    pub(super) fn is_successful_mutation(&self, r: &ToolCallRecord) -> bool {
         !r.is_error
             && self
                 .registry
@@ -344,7 +242,7 @@ impl AgentSession {
                 .is_some_and(|t| t.capabilities().contains(ToolCapabilities::MODIFIES_FILES))
     }
 
-    fn turn_modified_files(&self) -> bool {
+    pub(super) fn turn_modified_files(&self) -> bool {
         self.turn_history()
             .iter()
             .any(|r| self.is_successful_mutation(r))
@@ -352,7 +250,7 @@ impl AgentSession {
 
     /// The latest command run this turn passed and nothing was modified after it. (C# also
     /// keeps the pass when the turn deletes a scratch file it created; no delete tool yet.)
-    fn has_recent_test_pass_evidence(&self) -> bool {
+    pub(super) fn has_recent_test_pass_evidence(&self) -> bool {
         use super::run_evidence::{RunOutcome, classify};
         for r in self.turn_history().iter().rev() {
             if self.is_successful_mutation(r) {

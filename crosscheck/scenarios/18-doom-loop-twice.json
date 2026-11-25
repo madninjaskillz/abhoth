@@ -1,0 +1,13 @@
+{
+  "prompt": "Check f.txt",
+  "files": {
+    "f.txt": "x\n"
+  },
+  "replies": [
+    { "tools": [ { "name": "read_file", "args": { "path": "f.txt" } } ] },
+    { "tools": [ { "name": "read_file", "args": { "path": "f.txt" } } ] },
+    { "tools": [ { "name": "read_file", "args": { "path": "f.txt" } } ] },
+    { "tools": [ { "name": "read_file", "args": { "path": "f.txt" } } ] },
+    { "text": "unreachable" }
+  ]
+}

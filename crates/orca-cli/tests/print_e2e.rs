@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 fn write_config(home: &std::path::Path, base_url: &str, extra: Value) {
     let mut config = json!({
-        "lmStudio": {"baseUrl": base_url, "apiKey": "test-key", "models": ["fake-model"], "temperature": 0.7},
+        "lmStudio": {"baseUrl": base_url, "apiKey": "test-key", "models": ["fake-model"], "nativeToolCalling": true, "temperature": 0.7},
     });
     if let (Some(c), Some(e)) = (config.as_object_mut(), extra.as_object()) {
         for (k, v) in e {
