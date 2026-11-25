@@ -1,0 +1,13 @@
+{
+  "prompt": "Fix the greeting",
+  "strict": true,
+  "config": {"toolProfile": "pi"},
+  "files": {"app.py": "def greet():\n    print(\"helo\")\n\ndef bye():\n    print(\"bye\")\n"},
+  "replies": [
+    {"tools": [{"name": "edit", "args": {"path": "app.py", "edits": [{"oldText": "print(\"helo\")", "newText": "print(\"hello\")"}, {"oldText": "print(\"bye\")", "newText": "print(\"goodbye\")"}]}}]},
+    {"tools": [{"name": "edit", "args": {"path": "app.py", "edits": [{"oldText": "not there", "newText": "x"}]}}]},
+    {"tools": [{"name": "edit", "args": {"path": "app.py", "edits": []}}]},
+    {"tools": [{"name": "edit", "args": {"path": "nope.py", "edits": [{"oldText": "a", "newText": "b"}]}}]},
+    {"text": "I fixed the greeting typo and changed the farewell message in app.py as requested."}
+  ]
+}

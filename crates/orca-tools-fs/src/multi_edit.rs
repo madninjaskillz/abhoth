@@ -68,7 +68,11 @@ impl Tool for MultiEditTool {
             | ToolCapabilities::HAS_DIFF_OUTPUT
     }
 
-    fn affected_file_paths(&self, args: &Value) -> Vec<String> {
+    fn affected_file_paths(
+        &self,
+        args: &Value,
+        _ctx: &orca_abstractions::ToolContext,
+    ) -> Vec<String> {
         args.get("edits")
             .and_then(Value::as_array)
             .map(|edits| {

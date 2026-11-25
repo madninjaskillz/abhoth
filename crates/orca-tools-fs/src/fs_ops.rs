@@ -568,7 +568,11 @@ impl Tool for MoveFileTool {
     }
 
     /// The source, and `path` (which the schema does not have; C# reads it anyway).
-    fn affected_file_paths(&self, args: &Value) -> Vec<String> {
+    fn affected_file_paths(
+        &self,
+        args: &Value,
+        _ctx: &orca_abstractions::ToolContext,
+    ) -> Vec<String> {
         ["source", "path"]
             .iter()
             .filter_map(|k| args.get(*k).and_then(Value::as_str))

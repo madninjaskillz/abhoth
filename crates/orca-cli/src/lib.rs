@@ -2,6 +2,7 @@
 //! interactive REPL/TUI and the web host follow in later phases (see PORTING.md).
 
 pub mod args;
+pub mod pi_profile;
 pub mod prompter;
 pub mod sessions;
 
@@ -77,6 +78,9 @@ pub fn build_registry_in(config: &OrcaConfig, cwd: &Path) -> (ToolRegistry, Tool
     r.register_all(orca_tools_utility::utility_tools());
     r.register_all(orca_tools_web::all_tools());
     // Disabled tools stay registered; the permission check refuses them (as in C#).
+    if orca_tools_pi::is_pi_profile(&config.tool_profile) {
+        pi_profile::register(&mut r, config);
+    }
     let exposure = config.clone();
     r.set_advertise_filter(Arc::new(move |name: &str| {
         orca_core::agent::tool_exposure::is_advertised(name, &exposure)
@@ -239,6 +243,7 @@ pub async fn run_single_prompt_in_session(
         .flush(std::time::Duration::from_secs(10))
         .await;
     services.shutdown().await;
+    pi_profile::kill_jobs();
     result
 }
 

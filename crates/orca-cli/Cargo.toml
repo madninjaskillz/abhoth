@@ -19,6 +19,7 @@ orca-abstractions.workspace = true
 orca-core.workspace = true
 orca-tools-fs.workspace = true
 orca-tools-shell.workspace = true
+orca-tools-pi.workspace = true
 orca-tools-git.workspace = true
 orca-tools-web.workspace = true
 orca-tools-utility.workspace = true
@@ -47,6 +48,8 @@ image = ["dep:orca-tools-image"]
 [dev-dependencies]
 orca-testkit.workspace = true
 tempfile.workspace = true
+async-trait.workspace = true
+regex.workspace = true
 
 [lints]
 workspace = true

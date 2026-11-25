@@ -1,11 +1,7 @@
 //! Port of `SystemPromptBuilder.cs` (OpenOrca tool profile): the system prompt from the prompt
 //! template, tool signatures, project instructions, opted-in memory and the mode additions
 //! (peer / orchestrator, plan mode, thinking budget, sandbox, directory restriction, Context7,
-//! next-prompt instruction).
-//!
-//! TODO(phase 3): the Pi tool profile (`BuildPiPromptAsync`: Pi's own system prompt with
-//! `<project_context>`, Pi addenda and the subagent/lead-mode instructions) needs the Pi toolset
-//! (`orca-tools-pi`). Until then a Pi-profile config gets the OpenOrca prompt (with a warning).
+//! next-prompt instruction), and the Pi tool profile's prompt (`BuildPiPromptAsync`).
 
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -15,8 +11,8 @@ use std::sync::Mutex;
 use serde_json::Value;
 
 use super::prompt_constants::{
-    CONTEXT7_SYSTEM_PROMPT_ADDITION, NEXT_PROMPT_INSTRUCTION, PLAN_MODE_SYSTEM_PROMPT_ADDITION,
-    platform_lines,
+    CONTEXT7_SYSTEM_PROMPT_ADDITION, NEXT_PROMPT_INSTRUCTION, PI_PLAN_MODE_SYSTEM_PROMPT_ADDITION,
+    PLAN_MODE_SYSTEM_PROMPT_ADDITION, platform_lines,
 };
 use super::prompts::format_signature;
 use super::registry::ToolRegistry;
@@ -44,7 +40,7 @@ impl PromptTool {
         }
     }
 
-    /// Every tool of `registry`, in registration order.
+    /// Every advertised tool of `registry`, in advertised order.
     pub fn from_registry(registry: &ToolRegistry) -> Vec<PromptTool> {
         registry
             .advertised()
@@ -165,11 +161,13 @@ impl SystemPromptBuilder {
         plan_mode: bool,
         native_tool_calling: bool,
     ) -> String {
-        if config.tool_profile.eq_ignore_ascii_case("pi") {
-            // TODO(phase 3): BuildPiPromptAsync (needs orca-tools-pi).
-            tracing::warn!(
-                "the Pi tool profile's system prompt is not ported yet; using the OpenOrca prompt"
-            );
+        if orca_tools_pi::is_pi_profile(&config.tool_profile) {
+            let pi_prompt = self.build_pi_prompt(config, tools, plan_mode);
+            self.prompt_modes
+                .lock()
+                .unwrap()
+                .insert(text_key(&pi_prompt), native_tool_calling);
+            return pi_prompt;
         }
 
         let has_tool =
@@ -296,6 +294,122 @@ impl SystemPromptBuilder {
         result
     }
 }
+
+impl SystemPromptBuilder {
+    /// `BuildPiPromptAsync`: Pi's own system prompt (`PiSystemPrompt.Build`) with the project
+    /// instructions (and opted-in memory) as `<project_context>` and OpenOrca's addenda.
+    fn build_pi_prompt(
+        &self,
+        config: &OrcaConfig,
+        tools: Option<&[PromptTool]>,
+        plan_mode: bool,
+    ) -> String {
+        use orca_tools_pi::{PiContextFile, lead_mode, subagent, system_prompt};
+
+        let cwd = self.cwd.display().to_string();
+        let names: Vec<String> = tools
+            .map(|t| t.iter().map(|x| x.name.clone()).collect())
+            .unwrap_or_default();
+        let has = |n: &str| names.iter().any(|x| x == n);
+
+        let mut context_files: Vec<PiContextFile> = project_instructions::load_all(&self.cwd)
+            .into_iter()
+            .map(|f| PiContextFile {
+                path: f.full_path.display().to_string(),
+                content: f.content,
+            })
+            .collect();
+        // Opted-in memory stays Pi-shaped: one more <project_instructions> entry per memory dir.
+        if let Some(memory) = &self.memory_manager
+            && config.memory.include_in_prompt
+        {
+            for (dir, content) in memory.load_memory_sources() {
+                context_files.push(PiContextFile {
+                    path: dir.display().to_string(),
+                    content,
+                });
+            }
+        }
+
+        let agent = &config.agent;
+        let mut addenda: Vec<String> = Vec::new();
+        let peer = agent.peer_mode && has(subagent::TOOL_NAME);
+        if peer {
+            addenda.push(subagent::peer_instructions(agent.peer_background));
+        } else if has(subagent::TOOL_NAME) {
+            addenda.push(if super::policies::is_orchestrator_lead(config) {
+                subagent::orchestrator_instructions(has("bash"))
+            } else if has(lead_mode::TOOL_NAME) {
+                platform_lines(lead_mode::AUTO_INSTRUCTIONS)
+                    .trim()
+                    .to_string()
+            } else {
+                platform_lines(&subagent::LEAD_INSTRUCTIONS)
+            });
+        }
+        let is_swarm = agent
+            .provider_schedule
+            .as_ref()
+            .is_some_and(|s| !s.is_empty())
+            || agent.max_agents > 0;
+        if !peer && has(subagent::TOOL_NAME) && is_swarm {
+            addenda.push(subagent::swarm_instructions(agent.max_agents));
+        }
+        if let Some(append) = config.pi.append_system_prompt.as_deref()
+            && !append.trim().is_empty()
+        {
+            addenda.push(append.trim().to_string());
+        }
+        if plan_mode {
+            addenda.push(platform_lines(PI_PLAN_MODE_SYSTEM_PROMPT_ADDITION));
+        }
+        if config.sandbox_mode {
+            addenda.push("SANDBOX MODE: You only have read-only tools available. You cannot modify files, run commands, or make changes.".into());
+        }
+        if let Some(dir) = &config.allowed_directory {
+            addenda.push(format!(
+                "DIRECTORY RESTRICTION: File operations are restricted to: {dir}"
+            ));
+        }
+        // Adaptive reasoning runs the thinking steps at medium effort; this is the low effort's sentence.
+        if agent.reasoning.is_adaptive(true) && agent.reasoning.adaptive_brief_rule {
+            addenda.push(ADAPTIVE_BRIEF_RULE.into());
+        }
+
+        let mut snippets = orca_tools_pi::prompt_snippets();
+        let mut guidelines = orca_tools_pi::prompt_guidelines();
+        if peer {
+            // The subagent tool's peer wording in <tools> and <rules>.
+            use orca_tools_pi::PiToolInfo;
+            let peer_tool = subagent::PiSubagentTool::new(subagent::PiSubagentSettings {
+                peer_mode: true,
+                ..Default::default()
+            });
+            snippets.insert(subagent::TOOL_NAME.into(), peer_tool.prompt_snippet());
+            guidelines.insert(subagent::TOOL_NAME.into(), peer_tool.prompt_guidelines());
+        }
+
+        let addendum = (!addenda.is_empty()).then(|| {
+            addenda.join(
+                "
+
+",
+            )
+        });
+        system_prompt::build(
+            &names,
+            &snippets,
+            &guidelines,
+            &context_files,
+            &cwd,
+            addendum.as_deref(),
+            config.pi.batch_calls_rule,
+        )
+    }
+}
+
+/// `AdaptiveReasoning.BriefRule`.
+pub const ADAPTIVE_BRIEF_RULE: &str = "Keep your thinking brief and focused, moving directly to the conclusion without unnecessary elaboration.";
 
 fn text_key(text: &str) -> u64 {
     let mut h = DefaultHasher::new();

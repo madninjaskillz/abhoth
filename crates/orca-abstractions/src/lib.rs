@@ -243,7 +243,10 @@ pub trait Tool: Send + Sync {
     }
 
     /// File paths this call changes (checkpoints, files_modified). Default: `args.path`.
-    fn affected_file_paths(&self, args: &Value) -> Vec<String> {
+    /// `ctx` lets a tool resolve them the way it resolves them itself (the Pi tools return
+    /// absolute paths, as C# `PiToolBase.GetAffectedFilePaths` does).
+    fn affected_file_paths(&self, args: &Value, ctx: &ToolContext) -> Vec<String> {
+        let _ = ctx;
         args.get("path")
             .and_then(Value::as_str)
             .map(|s| vec![s.to_string()])
@@ -251,6 +254,15 @@ pub trait Tool: Send + Sync {
     }
 
     fn render_hints(&self) -> Option<ToolRenderHints> {
+        None
+    }
+
+    /// `IArgumentPreparingTool.PrepareArguments`: a tool that owns argument repair, coercion
+    /// and validation (and its error text) returns `Some(Ok(arguments_json))` with the prepared
+    /// arguments or `Some(Err(message))`. `None` (the default): the host parses, alias-resolves
+    /// and checks required arguments itself.
+    fn prepare_arguments(&self, arguments_json: &str) -> Option<Result<String, String>> {
+        let _ = arguments_json;
         None
     }
 

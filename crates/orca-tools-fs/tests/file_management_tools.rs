@@ -274,7 +274,10 @@ async fn move_file_tool_overwrites_directory_with_backup() {
 #[tokio::test]
 async fn move_file_affected_paths_are_source_and_path() {
     let args = json!({"source": "a.txt", "destination": "b.txt"});
-    assert_eq!(MoveFileTool.affected_file_paths(&args), vec!["a.txt"]);
+    assert_eq!(
+        MoveFileTool.affected_file_paths(&args, &orca_abstractions::ToolContext::new(".")),
+        vec!["a.txt"]
+    );
 }
 
 #[tokio::test]
@@ -518,7 +521,10 @@ async fn multi_edit_errors_on_missing_file() {
 #[tokio::test]
 async fn multi_edit_affected_paths_list_every_edit() {
     let args = json!({"edits": [{"path": "a"}, {"path": "b"}, {}]});
-    assert_eq!(MultiEditTool.affected_file_paths(&args), vec!["a", "b"]);
+    assert_eq!(
+        MultiEditTool.affected_file_paths(&args, &orca_abstractions::ToolContext::new(".")),
+        vec!["a", "b"]
+    );
 }
 
 // ── ApplyPatchTool ──

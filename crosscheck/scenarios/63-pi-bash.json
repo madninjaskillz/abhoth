@@ -1,0 +1,13 @@
+{
+  "prompt": "Run the checks",
+  "strict": true,
+  "config": {"toolProfile": "pi"},
+  "files": {"data.txt": "one\ntwo\n"},
+  "replies": [
+    {"tools": [{"name": "bash", "args": {"command": "cat data.txt && echo done"}}]},
+    {"tools": [{"name": "bash", "args": {"command": "echo failing >&2; exit 3"}}]},
+    {"tools": [{"name": "bash", "args": {"command": "true"}}]},
+    {"tools": [{"name": "bash", "args": {"command": "echo hi", "timeout": -1}}]},
+    {"text": "The data file has two lines; the failing command exited with code 3 as expected."}
+  ]
+}

@@ -45,10 +45,12 @@ pub const CORE_TOOLS: &[&str] = &[
 /// `PiLeadModeTool.ToolName`: registered only in `agent.leadMode` "auto", then advertised.
 const LEAD_MODE_TOOL: &str = "lead_mode";
 
-/// Whether the tool `name` is advertised under `config` (the OpenOrca profile; the Pi
-/// profile's own list is not ported yet, so it advertises everything).
+/// Whether the tool `name` is advertised under `config`.
 pub fn is_advertised(name: &str, config: &OrcaConfig) -> bool {
-    if config.tool_profile.eq_ignore_ascii_case("pi") || config.tools.extended_tools {
+    if orca_tools_pi::is_pi_profile(&config.tool_profile) {
+        return is_advertised_pi(name, config);
+    }
+    if config.tools.extended_tools {
         return true;
     }
     if CORE_TOOLS.iter().any(|n| n.eq_ignore_ascii_case(name))
@@ -77,6 +79,37 @@ pub fn is_advertised(name: &str, config: &OrcaConfig) -> bool {
         return config.image_gen.enabled;
     }
     false
+}
+
+/// `FilterPiProfile`: exactly Pi's tools (read, bash, edit, write [, grep, find, ls] [, job]),
+/// the Pi-style agent tools (`pi.agentTools`), then MCP tools and `tools.extraTools` names.
+/// The order the model sees is the registration order: the Pi wiring registers its tools in
+/// Pi's order after the OpenOrca ones (re-registering extra tools after them).
+fn is_advertised_pi(name: &str, config: &OrcaConfig) -> bool {
+    use orca_tools_pi::{lead_mode, progress, subagent};
+    if orca_tools_pi::advertised_names(config.pi.extra_tools, config.pi.jobs)
+        .iter()
+        .any(|n| n.eq_ignore_ascii_case(name))
+    {
+        return true;
+    }
+    if config.pi.agent_tools
+        && [
+            subagent::TOOL_NAME,
+            progress::TOOL_NAME,
+            lead_mode::TOOL_NAME,
+        ]
+        .iter()
+        .any(|n| n.eq_ignore_ascii_case(name))
+    {
+        return true;
+    }
+    name.to_ascii_lowercase().starts_with("mcp_")
+        || config
+            .tools
+            .extra_tools
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case(name))
 }
 
 #[cfg(test)]

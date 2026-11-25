@@ -1,0 +1,14 @@
+{
+  "prompt": "Look around",
+  "strict": true,
+  "config": {"toolProfile": "pi"},
+  "files": {"a.txt": "a\n"},
+  "replies": [
+    {"tools": [{"name": "read", "args": {}}]},
+    {"tools": [{"name": "read_file", "args": {"path": "a.txt"}}]},
+    {"tools": [{"name": "nonexistent_tool", "args": {"x": 1}}]},
+    {"tools": [{"name": "read", "args": {"path": "a.txt", "limit": "two"}}]},
+    {"tools": [{"name": "read", "raw": "{\"path\": \"a.txt\""}]},
+    {"text": "a.txt holds a single line with the letter a; the other calls were mistakes I corrected."}
+  ]
+}
