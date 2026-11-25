@@ -1,6 +1,7 @@
 //! The `openorca` program. Phase 1: one-shot prompts (`--print` / `--prompt`); the
 //! interactive REPL and the `--hostui` web host.
 
+pub mod agent_host;
 pub mod args;
 pub mod commands;
 pub mod custom_commands;
@@ -684,8 +685,23 @@ async fn run_interactive(
         session.tool_hooks.session_id = Some(r.id.clone());
         session_id = Some(r.id);
     }
+    // Sub-agents (ToolWiring): the agent tools, /review, /workflow, /agent and the planner.
+    let manager = wire_agents(
+        &mut session,
+        &services.agent_tools,
+        Some(config_dir),
+        false,
+        slots.as_ref(),
+    )?;
+    let planner = session
+        .orchestrator
+        .clone()
+        .filter(|_| planner_enabled(&session.config))
+        .map(|o| PlannerPhase::new(session.config.clone(), o, session.ctx.cwd.clone()));
     let console = ui::Console::stdout();
     let mut repl = repl::Repl::new(console, session, config_dir.to_path_buf(), session_id);
+    repl.agents = Some(Box::new(agent_host::ReplAgentHost::new(manager)));
+    repl.planner = planner;
     repl.startup_notices = startup_notices;
     repl.active_profile = active_profile;
     let exit = repl.run().await;

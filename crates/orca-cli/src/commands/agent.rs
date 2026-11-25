@@ -189,10 +189,93 @@ impl Command for WorkflowCommand {
     fn aliases(&self) -> &'static [&'static str] {
         &["wf"]
     }
-    async fn execute(&self, ctx: &mut CommandContext<'_>, _args: &[String]) -> CommandResult {
-        // Workflows (WorkflowLoader / WorkflowRunner) belong to the orchestration port; they
-        // are wired in when it merges.
-        ctx.console.markup_line(NO_AGENTS);
+    async fn execute(&self, ctx: &mut CommandContext<'_>, args: &[String]) -> CommandResult {
+        use orca_core::orchestration::workflow::WorkflowLoader;
+        let Some(manager) = ctx.agents.and_then(|h| h.manager()) else {
+            ctx.console.markup_line(NO_AGENTS);
+            return CommandResult::Ok;
+        };
+        let cwd = ctx.cwd();
+        let console = ctx.console;
+        let workflows = WorkflowLoader::discover(ctx.config_dir, &cwd, &mut |w| {
+            console.markup_line(&format!("[yellow]\u{26a0} {}[/]", escape(&w)));
+        });
+
+        let Some(name) = args.first() else {
+            let mut table = crate::ui::widgets::Table::new()
+                .column("Workflow")
+                .column("Stages")
+                .column("Description");
+            let mut all: Vec<_> = workflows.values().collect();
+            all.sort_by(|a, b| a.name.cmp(&b.name));
+            for wf in all {
+                table.row(&[
+                    wf.name.clone(),
+                    wf.stages.len().to_string(),
+                    escape(wf.description.as_deref().unwrap_or("")),
+                ]);
+            }
+            table.write(ctx.console);
+            ctx.console.markup_line(
+                "[grey]Run one with /workflow <name> [[input...]]. Define your own in .orca/workflows/*.json.[/]",
+            );
+            return CommandResult::Ok;
+        };
+        let Some(workflow) = workflows
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, w)| w.clone())
+        else {
+            ctx.console.markup_line(&format!(
+                "[red]Unknown workflow: {}[/] [grey](/workflow lists available)[/]",
+                escape(name)
+            ));
+            return CommandResult::Ok;
+        };
+        let input = args[1..].join(" ");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let on_status = move |s: &str| {
+            let _ = tx.send(s.to_string());
+        };
+        let o = manager.orchestrator().clone();
+        let ct = orca_core::orchestration::CancelToken::new();
+        let run = orca_core::orchestration::workflow_runner::run_workflow(
+            &o,
+            &workflow,
+            &input,
+            Some(&on_status),
+            &ct,
+        );
+        tokio::pin!(run);
+        // Stage lines print as they come.
+        let result = loop {
+            tokio::select! {
+                r = &mut run => break r,
+                Some(line) = rx.recv() => {
+                    ctx.console.markup_line(&format!("[blue]{}[/]", escape(&line)));
+                }
+            }
+        };
+        while let Ok(line) = rx.try_recv() {
+            ctx.console
+                .markup_line(&format!("[blue]{}[/]", escape(&line)));
+        }
+        match result {
+            Ok(result) => {
+                ctx.console.blank();
+                ctx.console.markup_line(&format!(
+                    "[green]Workflow '{}' complete:[/]",
+                    escape(&workflow.name)
+                ));
+                ctx.console.write_line(&result);
+            }
+            Err(_) if ct.is_cancelled() => {
+                ctx.console.markup_line("[yellow]Workflow cancelled.[/]");
+            }
+            Err(e) => ctx
+                .console
+                .markup_line(&format!("[red]Workflow failed: {}[/]", escape(&e))),
+        }
         CommandResult::Ok
     }
 }

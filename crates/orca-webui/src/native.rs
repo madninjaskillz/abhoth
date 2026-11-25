@@ -214,7 +214,17 @@ pub struct AgentLiveSession {
 
 impl AgentLiveSession {
     /// Start the worker for `session`; its approvals go to the browser.
-    pub fn start(mut session: AgentSession, bus: Arc<LiveEventBus>, mode: &str) -> Arc<Self> {
+    pub fn start(session: AgentSession, bus: Arc<LiveEventBus>, mode: &str) -> Arc<Self> {
+        Self::start_with_agents(session, bus, mode, None)
+    }
+
+    /// [`Self::start`] with the session's sub-agents (agent tabs and bars).
+    pub fn start_with_agents(
+        mut session: AgentSession,
+        bus: Arc<LiveEventBus>,
+        mode: &str,
+        agents: Option<Arc<dyn AgentHost>>,
+    ) -> Arc<Self> {
         let permissions = Arc::new(PermissionBroker::new(bus.clone()));
         session.prompter = Some(Box::new(BrowserPrompter(permissions.clone())));
         let shared = Arc::new(Shared {
@@ -242,7 +252,7 @@ impl AgentLiveSession {
             model,
             uncensored,
             session_id: None,
-            agents: None,
+            agents,
             thread: Mutex::new(Some(thread)),
         })
     }
@@ -254,7 +264,9 @@ impl AgentLiveSession {
 }
 
 fn worker_loop(mut session: AgentSession, shared: Arc<Shared>) {
-    let rt = match tokio::runtime::Builder::new_current_thread()
+    // Background sub-agents (/agent, a message from an agent tab) keep running between turns.
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
         .enable_all()
         .build()
     {
