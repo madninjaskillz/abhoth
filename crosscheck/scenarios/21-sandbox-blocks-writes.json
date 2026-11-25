@@ -1,0 +1,9 @@
+{
+  "prompt": "Create a.txt",
+  "args": ["--sandbox"],
+  "replies": [
+    { "tools": [ { "name": "write_file", "args": { "path": "a.txt", "content": "x" } } ] },
+    { "tools": [ { "name": "list_directory", "args": { "path": "." } } ] },
+    { "text": "Sandbox mode only allows reading, so I could not create a.txt for you." }
+  ]
+}

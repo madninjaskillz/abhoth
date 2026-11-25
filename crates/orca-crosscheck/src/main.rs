@@ -35,6 +35,9 @@ struct Scenario {
     #[serde(default)]
     config: serde_json::Map<String, Value>,
     replies: Vec<ScriptReply>,
+    /// Extra command-line arguments after `--print <prompt>` (e.g. `--sandbox`).
+    #[serde(default)]
+    args: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,9 +149,11 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         home.path().to_path_buf(),
         scenario.prompt.clone(),
     );
+    let extra_args = scenario.args.clone();
     let out = tokio::task::spawn_blocking(move || {
         Command::new(exe_owned)
             .args(["--print", &prompt])
+            .args(&extra_args)
             .current_dir(&work_path)
             .env("OPENORCA_HOME", &home_path)
             .env_remove("RUST_LOG")

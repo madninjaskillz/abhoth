@@ -1,6 +1,6 @@
-//! Tool permissions (`PermissionManager`, `PermissionPattern`). Interactive prompting is phase
-//! 2; until then a call that needs approval is refused (fail closed), as the C# manager does
-//! when it has no prompter.
+//! Tool permissions (`PermissionManager`, `PermissionPattern`, `IPermissionPrompter`). A call
+//! that needs approval asks the session's prompter; without one (or in a non-interactive run)
+//! it is refused (fail closed), as the C# manager does.
 
 use std::sync::LazyLock;
 
@@ -124,20 +124,56 @@ pub fn build_scope_key(tool_name: &str, arg_name: &str, relevant_arg: Option<&st
     format!("{tool_name}::{scope}")
 }
 
-/// `PermissionManager.CheckPermissionAsync` without a prompter.
-pub fn check_permission(
+/// `PermissionDecision`: the answer to an approval prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionDecision {
+    Approved,
+    Denied,
+    /// Approve this tool for this argument scope for the rest of the session.
+    ApproveAll,
+}
+
+/// `IPermissionPrompter`: asks the user whether a tool call may run.
+pub trait PermissionPrompter: Send {
+    /// `risk` is the C# risk level name ("ReadOnly", "Moderate", "Dangerous").
+    fn prompt(&mut self, tool_name: &str, risk: &str) -> PermissionDecision;
+}
+
+/// The outcome of the configured rules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PermissionVerdict {
+    Allow,
+    Deny,
+    /// Needs interactive approval; an "approve all" answer is remembered under this key.
+    Ask {
+        scope_key: String,
+    },
+}
+
+pub fn risk_name(risk: ToolRiskLevel) -> &'static str {
+    match risk {
+        ToolRiskLevel::ReadOnly => "ReadOnly",
+        ToolRiskLevel::Moderate => "Moderate",
+        ToolRiskLevel::Dangerous => "Dangerous",
+    }
+}
+
+/// `PermissionManager.CheckPermissionAsync` up to the prompt. `session_approved` holds the
+/// scope keys approved with "yes to all" this session (lowercase: the C# set ignores case).
+pub fn evaluate_permission(
     config: &PermissionsConfig,
     tool_name: &str,
     risk: ToolRiskLevel,
     permission_arg_name: &str,
     args: &Value,
-) -> bool {
+    session_approved: &std::collections::HashSet<String>,
+) -> PermissionVerdict {
     if config
         .disabled_tools
         .iter()
         .any(|t| t.eq_ignore_ascii_case(tool_name))
     {
-        return false;
+        return PermissionVerdict::Deny;
     }
     let relevant = extract_relevant_arg(permission_arg_name, args);
     for p in &config.deny_patterns {
@@ -145,16 +181,20 @@ pub fn check_permission(
             // A deny rule we can't parse must fail CLOSED.
             None => {
                 tracing::warn!(pattern = %p, "malformed deny permission pattern: denying");
-                return false;
+                return PermissionVerdict::Deny;
             }
-            Some(pattern) if pattern.matches(tool_name, relevant.as_deref()) => return false,
+            Some(pattern) if pattern.matches(tool_name, relevant.as_deref()) => {
+                return PermissionVerdict::Deny;
+            }
             Some(_) => {}
         }
     }
     for p in &config.allow_patterns {
         match PermissionPattern::parse(p) {
             None => tracing::warn!(pattern = %p, "malformed allow permission pattern ignored"),
-            Some(pattern) if pattern.matches(tool_name, relevant.as_deref()) => return true,
+            Some(pattern) if pattern.matches(tool_name, relevant.as_deref()) => {
+                return PermissionVerdict::Allow;
+            }
             Some(_) => {}
         }
     }
@@ -164,14 +204,35 @@ pub fn check_permission(
             .iter()
             .any(|t| t.eq_ignore_ascii_case(tool_name))
     {
-        return true;
+        return PermissionVerdict::Allow;
+    }
+    let scope_key = build_scope_key(tool_name, permission_arg_name, relevant.as_deref());
+    if session_approved.contains(&scope_key.to_lowercase()) {
+        return PermissionVerdict::Allow;
     }
     match risk {
-        ToolRiskLevel::ReadOnly if config.auto_approve_read_only => true,
-        ToolRiskLevel::Moderate if config.auto_approve_moderate => true,
-        // Needs interactive approval: no prompter yet, so fail closed.
-        _ => false,
+        ToolRiskLevel::ReadOnly if config.auto_approve_read_only => PermissionVerdict::Allow,
+        ToolRiskLevel::Moderate if config.auto_approve_moderate => PermissionVerdict::Allow,
+        _ => PermissionVerdict::Ask { scope_key },
     }
+}
+
+/// `PermissionManager.CheckPermissionAsync` without a prompter: approval needed means denied.
+pub fn check_permission(
+    config: &PermissionsConfig,
+    tool_name: &str,
+    risk: ToolRiskLevel,
+    permission_arg_name: &str,
+    args: &Value,
+) -> bool {
+    evaluate_permission(
+        config,
+        tool_name,
+        risk,
+        permission_arg_name,
+        args,
+        &Default::default(),
+    ) == PermissionVerdict::Allow
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@ pub mod llm_tags;
 pub mod long_task;
 pub mod loop_messages;
 pub mod permissions;
+pub mod policies;
 pub mod prompts;
 pub mod registry;
 pub mod response_quality;

@@ -594,7 +594,7 @@ impl AgentSession {
         let several = calls.len() > 1;
         for (i, call) in calls.iter().enumerate() {
             self.record_raw_arguments = several && i == 0;
-            let result = self.run_one_call(call, observer).await;
+            let result = self.run_one_call(call, true, observer).await;
             self.messages
                 .push(ChatMessage::tool_result(call.id.clone(), result));
         }
@@ -605,14 +605,32 @@ impl AgentSession {
     async fn execute_text_calls(&mut self, calls: &[ToolCall], observer: &mut dyn AgentObserver) {
         let mut parts = Vec::new();
         for call in calls {
-            let result = self.run_one_call(call, observer).await;
+            let result = self.run_one_call(call, false, observer).await;
             parts.push((call.name.clone(), result));
         }
         self.messages
             .push(ChatMessage::user(msg::text_tool_results_message(&parts)));
     }
 
-    async fn run_one_call(&mut self, call: &ToolCall, observer: &mut dyn AgentObserver) -> String {
+    /// Policies, then the tool pipeline and retry detection. Returns the model-visible result.
+    async fn run_one_call(
+        &mut self,
+        call: &ToolCall,
+        native: bool,
+        observer: &mut dyn AgentObserver,
+    ) -> String {
+        if let Some(block) = super::policies::check_blocked(
+            &self.config,
+            &self.registry,
+            self.plan_mode,
+            native,
+            &call.name,
+            &call.arguments,
+        ) {
+            tracing::info!("blocked tool {}: {}", call.name, block.message);
+            observer.on_notice(&block.message);
+            return block.message;
+        }
         let call = ToolCall {
             arguments: strip_reason(&call.arguments),
             ..call.clone()

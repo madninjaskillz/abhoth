@@ -82,6 +82,12 @@ pub struct AgentSession {
     pub actor: String,
     /// Advertise tools via native function calling (phase 1 always does).
     pub native_tools: bool,
+    /// Plan mode: only read-only tools are advertised and run.
+    pub plan_mode: bool,
+    /// Asks the user about calls that need approval (none: they are refused).
+    pub prompter: Option<Box<dyn permissions::PermissionPrompter>>,
+    /// Scopes approved with "yes to all" this session (lowercase keys).
+    pub approved_scopes: std::collections::HashSet<String>,
 
     pub tool_call_history: Vec<ToolCallRecord>,
     /// Paths changed by successful file-modifying calls, as the model passed them
@@ -131,6 +137,9 @@ impl AgentSession {
             messages: Vec::new(),
             actor: "lead".into(),
             native_tools: true,
+            plan_mode: false,
+            prompter: None,
+            approved_scopes: Default::default(),
             tool_call_history: Vec::new(),
             files_modified: Vec::new(),
             total_output_tokens: 0,
@@ -191,9 +200,27 @@ impl AgentSession {
         );
         options.max_output_tokens = self.config.lm_studio.max_tokens;
         if self.native_tools {
-            options.tools = self.registry.definitions();
+            options.tools = self.tools_for_mode();
         }
         options
+    }
+
+    /// `GetToolsForMode` + `LeadModePolicy.FilterForLead`: the advertised tools. Plan and
+    /// sandbox mode advertise only read-only tools; the orchestrator Lead loses the tools it
+    /// may not use.
+    pub fn tools_for_mode(&self) -> Vec<crate::client::ToolDefinition> {
+        let read_only = self.plan_mode || self.config.sandbox_mode;
+        self.registry
+            .definitions()
+            .into_iter()
+            .filter(|d| !super::policies::is_denied_for_lead(&self.config, &d.name))
+            .filter(|d| {
+                !read_only
+                    || self.registry.resolve(&d.name).is_some_and(|t| {
+                        t.risk_level() == orca_abstractions::ToolRiskLevel::ReadOnly
+                    })
+            })
+            .collect()
     }
 
     /// `ToolCallExecutor.HasMissingRequiredArgs`.
@@ -311,13 +338,7 @@ impl AgentSession {
             crate::config::dotnet_json::to_string_dotnet(&args).unwrap_or_default()
         };
 
-        if !permissions::check_permission(
-            &self.config.permissions,
-            tool.name(),
-            tool.risk_level(),
-            tool.permission_arg_name(),
-            &args,
-        ) {
+        if !self.check_permission(tool.as_ref(), &args) {
             return ToolResult::denied("Permission denied by user.");
         }
         if let Some(err) = validate_required_args(tool.as_ref(), &args) {
@@ -412,6 +433,34 @@ impl AgentSession {
             observer.on_tool_output(&line);
         }
         result
+    }
+
+    /// `PermissionManager.CheckPermissionAsync`: the configured rules, then the prompter.
+    fn check_permission(&mut self, tool: &dyn Tool, args: &Value) -> bool {
+        match permissions::evaluate_permission(
+            &self.config.permissions,
+            tool.name(),
+            tool.risk_level(),
+            tool.permission_arg_name(),
+            args,
+            &self.approved_scopes,
+        ) {
+            permissions::PermissionVerdict::Allow => true,
+            permissions::PermissionVerdict::Deny => false,
+            permissions::PermissionVerdict::Ask { scope_key } => {
+                let Some(prompter) = self.prompter.as_mut() else {
+                    return false;
+                };
+                match prompter.prompt(tool.name(), permissions::risk_name(tool.risk_level())) {
+                    permissions::PermissionDecision::Approved => true,
+                    permissions::PermissionDecision::ApproveAll => {
+                        self.approved_scopes.insert(scope_key.to_lowercase());
+                        true
+                    }
+                    permissions::PermissionDecision::Denied => false,
+                }
+            }
+        }
     }
 
     /// `CheckReadBeforeEdit`: a content-modifying tool may not touch an existing file that was
