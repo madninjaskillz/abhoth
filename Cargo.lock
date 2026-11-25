@@ -881,6 +881,7 @@ dependencies = [
  "orca-testkit",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
  "walkdir",

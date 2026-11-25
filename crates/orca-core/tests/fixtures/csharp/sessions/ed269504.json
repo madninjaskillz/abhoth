@@ -1,0 +1,77 @@
+{
+  "id": "ed269504",
+  "title": "Fork \u0022one\u0022",
+  "createdAt": "2026-11-25T02:01:22.3373815Z",
+  "updatedAt": "2026-11-25T02:01:22.3373821Z",
+  "workingDirectory": "C:\\work\\project",
+  "systemPrompt": "You are Orca.\nBe brief \u0026 exact \u003Cok\u003E.",
+  "messages": [
+    {
+      "role": "user",
+      "text": "Fix the \u0027bug\u0027 in a\u002Bb \u003Cnow\u003E \u2014 caf\u00E9 \uD83D\uDE00\r\nplease"
+    },
+    {
+      "role": "assistant",
+      "text": "I\u0027ll read it first.",
+      "reasoning": "Need to look at main.py.",
+      "toolCalls": [
+        {
+          "callId": "call_1",
+          "name": "read_file",
+          "arguments": "{\r\n  \u0022path\u0022: \u0022main.py\u0022,\r\n  \u0022offset\u0022: 1,\r\n  \u0022limit\u0022: 2.5,\r\n  \u0022flags\u0022: [\r\n    true,\r\n    null\r\n  ],\r\n  \u0022opt\u0022: {\r\n    \u0022x\u0022: \u0022\\u003Cy\\u003E\u0022\r\n  }\r\n}"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "text": "",
+      "toolResults": [
+        {
+          "callId": "call_1",
+          "result": "1: print(\u0027hi\u0027)\n2: x = a\u002Bb"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "text": "",
+      "toolCalls": [
+        {
+          "callId": "call_2",
+          "name": "bash",
+          "arguments": "{\r\n  \u0022command\u0022: \u0022echo \\u0022a\\u0026b\\u0022\u0022\r\n}"
+        },
+        {
+          "callId": "call_3",
+          "name": "list_directory"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "text": "",
+      "toolResults": [
+        {
+          "callId": "call_2",
+          "result": "a\u0026b"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "text": "",
+      "toolResults": [
+        {
+          "callId": "call_3",
+          "result": "main.py"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "text": "Done: fixed a\u002Bb."
+    }
+  ],
+  "parentSessionId": "csharp01",
+  "forkPointMessageIndex": 3
+}

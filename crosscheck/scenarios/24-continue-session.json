@@ -1,0 +1,15 @@
+{
+  "prompt": "Carry on",
+  "args": [
+    "-c"
+  ],
+  "home_files": {
+    "sessions/aaaa1111.json": "{\n  \"id\": \"aaaa1111\",\n  \"title\": \"From this folder\",\n  \"createdAt\": \"2026-01-01T00:00:00Z\",\n  \"updatedAt\": \"2026-01-01T00:00:00Z\",\n  \"workingDirectory\": \"<WORK_JSON>\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"From this folder\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"text\": \"Noted.\",\n      \"reasoning\": \"short\"\n    }\n  ]\n}",
+    "sessions/bbbb2222.json": "{\n  \"id\": \"bbbb2222\",\n  \"title\": \"From elsewhere\",\n  \"createdAt\": \"2026-06-01T00:00:00.5Z\",\n  \"updatedAt\": \"2026-06-01T00:00:00.5Z\",\n  \"workingDirectory\": \"C:\\\\elsewhere\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"From elsewhere\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"text\": \"Noted.\",\n      \"reasoning\": \"short\"\n    }\n  ]\n}"
+  },
+  "replies": [
+    {
+      "text": "Continuing where we left off."
+    }
+  ]
+}

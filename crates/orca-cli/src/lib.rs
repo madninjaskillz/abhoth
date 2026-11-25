@@ -2,6 +2,7 @@
 //! interactive REPL/TUI and the web host follow in later phases (see PORTING.md).
 
 pub mod args;
+pub mod sessions;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -80,10 +81,46 @@ pub async fn run_single_prompt(
     prompt: &str,
     quiet: bool,
 ) -> Result<SinglePromptResult> {
+    run_single_prompt_in_session(config, cwd, prompt, quiet, None, None).await
+}
+
+/// [`run_single_prompt`] with the CLI's session wiring: checkpoints and hooks from
+/// `config_dir` (none when `None`), and a restored session (`-c` / `-r`) to continue.
+pub async fn run_single_prompt_in_session(
+    config: OrcaConfig,
+    cwd: PathBuf,
+    prompt: &str,
+    quiet: bool,
+    config_dir: Option<&Path>,
+    restored: Option<sessions::RestoredSession>,
+) -> Result<SinglePromptResult> {
     let served = Arc::new(ServedModels::new());
     let client = client_from_config(&config, served)?;
     let registry = build_registry(&config);
+    let tool_hooks = config_dir.map(|d| orca_core::agent::ToolHooks::from_config(&config, d));
     let mut session = AgentSession::new(config, client, registry, ToolContext::new(cwd));
+    if let Some(hooks) = tool_hooks {
+        session.tool_hooks = hooks;
+    }
+    if let Some(r) = restored {
+        // The restored conversation; its system prompt is replaced with the current one below.
+        session.messages = r.messages;
+        session.tool_hooks.session_id = Some(r.id);
+    }
+    let result = run_prepared(&mut session, prompt, quiet).await;
+    // Post-hooks run in the background; give them a moment before the process exits.
+    session
+        .tool_hooks
+        .flush(std::time::Duration::from_secs(10))
+        .await;
+    result
+}
+
+async fn run_prepared(
+    session: &mut AgentSession,
+    prompt: &str,
+    quiet: bool,
+) -> Result<SinglePromptResult> {
     session.native_tools = session.resolve_native_tools();
     let system = session.default_system_prompt();
     session.set_system_prompt(system);
@@ -133,7 +170,33 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
     {
         tracing::warn!("could not write the default prompt template: {e}");
     }
-    let result = run_single_prompt(config, cwd, &prompt, args.json_output).await?;
+
+    let config_dir = orca_core::config::default_config_dir();
+    // Sweep checkpoint snapshots older than a week (best effort, in the background).
+    let sweeper = orca_core::session::CheckpointManager::new(config_dir.join("checkpoints"));
+    tokio::task::spawn_blocking(move || {
+        sweeper.cleanup_older_than(std::time::Duration::from_secs(7 * 24 * 3600))
+    });
+    let restored = match sessions::restore_from_args(
+        &args,
+        &orca_core::session::SessionManager::new(&config_dir),
+        &cwd,
+    ) {
+        sessions::Restore::Fresh => None,
+        sessions::Restore::Resumed(r) => Some(r),
+        sessions::Restore::NotFound => return Ok(0),
+        sessions::Restore::Unreadable => return Ok(1),
+    };
+    // --print does not auto-save (only the interactive loop does, after each turn).
+    let result = run_single_prompt_in_session(
+        config,
+        cwd,
+        &prompt,
+        args.json_output,
+        Some(&config_dir),
+        restored,
+    )
+    .await?;
     if args.json_output {
         println!(
             "{}",

@@ -1,0 +1,70 @@
+{
+  "prompt": "Update a.txt and run a command",
+  "files": {
+    "a.txt": "old\n"
+  },
+  "config": {
+    "hooks": {
+      "preToolHooks": {
+        "bash": "exit 1",
+        "write_file": "echo pre>> hooks.log"
+      }
+    },
+    "formatter": {
+      "enabled": true,
+      "commands": {
+        ".txt": "echo formatted {file}"
+      }
+    }
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "a.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "a.txt",
+            "content": "new\n"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "b.txt",
+            "content": "b\n"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "bash",
+          "args": {
+            "command": "echo hi"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Done."
+    },
+    {
+      "text": "Summary: I rewrote a.txt, created b.txt, and the bash call was blocked by a hook."
+    }
+  ]
+}

@@ -13,7 +13,9 @@ pub mod run_evidence;
 pub mod session;
 pub mod system_prompt;
 pub mod tool_call_parser;
+pub mod tool_hooks;
 mod turn;
 
 pub use registry::ToolRegistry;
 pub use session::{AgentError, AgentObserver, AgentSession, NullObserver, ToolCallRecord, TurnEnd};
+pub use tool_hooks::ToolHooks;
