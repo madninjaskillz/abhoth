@@ -114,14 +114,14 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 - Anthropic Messages API and Ollama clients (D92, D93): named providers of those types and
   `lmStudio.provider: "anthropic"`; prompt caching, effort, signed thinking, tool results with
   images, cache read/write usage; tested against fake local servers only.
+- Tool-call arguments keep the model's number digits in history and `--print` records (D94).
 
 ## Next
 
-1. Tool-argument number formatting.
-2. Bridge engines under `--hostui` and in the REPL; sub-agent approval prompter; `lead_mode` for
+1. Bridge engines under `--hostui` and in the REPL; sub-agent approval prompter; `lead_mode` for
    `leadMode: auto`.
-3. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).
-4. Phase 7: `abhoth --desktop`.
+2. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).
+3. Phase 7: `abhoth --desktop`.
 
 ## Known gaps
 
@@ -133,8 +133,6 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   409, ask_user questions not forwarded, generated images only via the raw-file endpoint.
 - Bench runs in the Rust host are native-engine only; kit timeouts kill only the process.
 - Sessions: check `engine` / `engineSessionId` round-trip in the parity sweep (dropped on save before the engines port).
-- Numbers inside re-serialized tool arguments use serde's shortest form (`1.0` -> `1`), C#
-  keeps the model's digits.
 - grep: Rust regex syntax (no lookaround/backreferences); files in sorted order.
 - Console output decoding is lossy UTF-8 rather than the OEM code page; hook stdin is UTF-8.
 - list_directory ordering approximates .NET culture-aware sorting.

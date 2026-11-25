@@ -416,19 +416,204 @@ impl ChatResponse {
 }
 
 /// Tool-call arguments as the C# client sends them back in history: parsed and re-serialized
-/// indented (platform line breaks), or `null` when they were not valid JSON.
+/// indented (platform line breaks), or `null` when they were not valid JSON. Numbers keep the
+/// model's digits (`1.0`, `2.50`, `1e3`), as C#'s `JsonElement` does; strings and key order
+/// are normalized as a `serde_json::Value` would be (a repeated key keeps its first place and
+/// its last value).
 pub fn echo_arguments(raw: &str) -> String {
-    match serde_json::from_str::<Value>(raw) {
-        Ok(v) => {
-            let s = serde_json::to_string_pretty(&v).unwrap_or_default();
-            let s = if cfg!(windows) {
-                s.replace('\n', "\r\n")
-            } else {
-                s
-            };
-            escape_non_bmp(&s)
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return "null".into();
+    };
+    let s = match RawJson::parse(raw) {
+        Some(node) => serde_json::to_string_pretty(&node),
+        None => serde_json::to_string_pretty(&value),
+    }
+    .unwrap_or_default();
+    let s = if cfg!(windows) {
+        s.replace('\n', "\r\n")
+    } else {
+        s
+    };
+    escape_non_bmp(&s)
+}
+
+/// JSON with each number's source text kept (serde_json without `arbitrary_precision` keeps
+/// only the parsed value; that feature is not used because it breaks `#[serde(flatten)]`).
+enum RawJson {
+    /// A number, `true`, `false` or `null`, as written.
+    Literal(String),
+    Str(String),
+    Array(Vec<RawJson>),
+    Object(IndexMap<String, RawJson>),
+}
+
+impl RawJson {
+    /// Parse text that serde_json accepts; `None` if this reader disagrees.
+    fn parse(text: &str) -> Option<Self> {
+        let mut p = RawParser {
+            s: text.as_bytes(),
+            i: 0,
+        };
+        let v = p.value()?;
+        p.ws();
+        (p.i == p.s.len()).then_some(v)
+    }
+}
+
+impl serde::Serialize for RawJson {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{Error, SerializeMap, SerializeSeq};
+        match self {
+            // Written as it came (the formatter's raw fragment).
+            RawJson::Literal(t) => serde_json::value::RawValue::from_string(t.clone())
+                .map_err(S::Error::custom)?
+                .serialize(ser),
+            RawJson::Str(t) => ser.serialize_str(t),
+            RawJson::Array(items) => {
+                let mut seq = ser.serialize_seq(Some(items.len()))?;
+                for i in items {
+                    seq.serialize_element(i)?;
+                }
+                seq.end()
+            }
+            RawJson::Object(map) => {
+                let mut m = ser.serialize_map(Some(map.len()))?;
+                for (k, v) in map {
+                    m.serialize_entry(k, v)?;
+                }
+                m.end()
+            }
         }
-        Err(_) => "null".into(),
+    }
+}
+
+/// Tool-call arguments (a JSON object) that serialize with each number's digits as the model
+/// wrote them (C# records and echoes `JsonElement`s, which keep them). `None`: not an object.
+pub struct RawArguments(RawJson);
+
+impl RawArguments {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match RawJson::parse(raw)? {
+            o @ RawJson::Object(_) => Some(Self(o)),
+            _ => None,
+        }
+    }
+}
+
+impl serde::Serialize for RawArguments {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(ser)
+    }
+}
+
+struct RawParser<'a> {
+    s: &'a [u8],
+    i: usize,
+}
+
+impl RawParser<'_> {
+    fn ws(&mut self) {
+        while self
+            .s
+            .get(self.i)
+            .is_some_and(|c| matches!(c, b' ' | b'\t' | b'\n' | b'\r'))
+        {
+            self.i += 1;
+        }
+    }
+
+    fn value(&mut self) -> Option<RawJson> {
+        self.ws();
+        match *self.s.get(self.i)? {
+            b'{' => {
+                self.i += 1;
+                let mut map = IndexMap::new();
+                self.ws();
+                if self.s.get(self.i) == Some(&b'}') {
+                    self.i += 1;
+                    return Some(RawJson::Object(map));
+                }
+                loop {
+                    self.ws();
+                    let key = self.string()?;
+                    self.ws();
+                    if self.s.get(self.i) != Some(&b':') {
+                        return None;
+                    }
+                    self.i += 1;
+                    let v = self.value()?;
+                    map.insert(key, v);
+                    self.ws();
+                    match self.s.get(self.i)? {
+                        b',' => self.i += 1,
+                        b'}' => {
+                            self.i += 1;
+                            return Some(RawJson::Object(map));
+                        }
+                        _ => return None,
+                    }
+                }
+            }
+            b'[' => {
+                self.i += 1;
+                let mut items = Vec::new();
+                self.ws();
+                if self.s.get(self.i) == Some(&b']') {
+                    self.i += 1;
+                    return Some(RawJson::Array(items));
+                }
+                loop {
+                    items.push(self.value()?);
+                    self.ws();
+                    match self.s.get(self.i)? {
+                        b',' => self.i += 1,
+                        b']' => {
+                            self.i += 1;
+                            return Some(RawJson::Array(items));
+                        }
+                        _ => return None,
+                    }
+                }
+            }
+            b'"' => self.string().map(RawJson::Str),
+            _ => {
+                let start = self.i;
+                while self.s.get(self.i).is_some_and(|c| {
+                    !matches!(c, b',' | b']' | b'}' | b' ' | b'\t' | b'\n' | b'\r')
+                }) {
+                    self.i += 1;
+                }
+                let t = std::str::from_utf8(&self.s[start..self.i]).ok()?;
+                // A number, true, false or null, as serde_json reads it.
+                match serde_json::from_str::<Value>(t).ok()? {
+                    Value::Number(_) | Value::Bool(_) | Value::Null => {
+                        Some(RawJson::Literal(t.to_string()))
+                    }
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    /// A string token, decoded by serde_json.
+    fn string(&mut self) -> Option<String> {
+        if self.s.get(self.i) != Some(&b'"') {
+            return None;
+        }
+        let start = self.i;
+        self.i += 1;
+        while let Some(&c) = self.s.get(self.i) {
+            match c {
+                b'\\' => self.i += 2,
+                b'"' => {
+                    self.i += 1;
+                    let t = std::str::from_utf8(self.s.get(start..self.i)?).ok()?;
+                    return serde_json::from_str::<String>(t).ok();
+                }
+                _ => self.i += 1,
+            }
+        }
+        None
     }
 }
 
@@ -449,4 +634,47 @@ fn escape_non_bmp(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unix(s: String) -> String {
+        s.replace("\r\n", "\n")
+    }
+
+    #[test]
+    fn echo_keeps_the_models_number_digits() {
+        assert_eq!(
+            unix(echo_arguments(
+                r#"{"scale": 1.0, "price":2.50, "n": 1e3, "neg": -0.0, "big": 12345678901234567890123}"#
+            )),
+            "{\n  \"scale\": 1.0,\n  \"price\": 2.50,\n  \"n\": 1e3,\n  \"neg\": -0.0,\n  \"big\": 12345678901234567890123\n}"
+        );
+        assert_eq!(
+            unix(echo_arguments(
+                r#" { "a" : [ 1.10 , {"b": [] , "c": {}} , true, null ] } "#
+            )),
+            "{\n  \"a\": [\n    1.10,\n    {\n      \"b\": [],\n      \"c\": {}\n    },\n    true,\n    null\n  ]\n}"
+        );
+    }
+
+    #[test]
+    fn echo_matches_serde_for_everything_but_numbers() {
+        for raw in [
+            "{\"path\": \"a\\/b\", \"text\": \"caf\\u00e9 \\\"q\\\" \\\\ \\n\", \"emoji\": \"\u{1F600}\"}",
+            r#"{"a": 1, "b": 2, "a": 3}"#,
+            r#"["x", 1, false]"#,
+            r#""just a string""#,
+            "{}",
+            "42",
+        ] {
+            let v: Value = serde_json::from_str(raw).unwrap();
+            let expected = escape_non_bmp(&serde_json::to_string_pretty(&v).unwrap());
+            assert_eq!(unix(echo_arguments(raw)), expected, "{raw}");
+        }
+        assert_eq!(echo_arguments("{not json"), "null");
+        assert_eq!(echo_arguments(r#"{"a": 1,}"#), "null");
+    }
 }

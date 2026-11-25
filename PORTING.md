@@ -445,3 +445,11 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   `contextWindow` goes as `num_ctx` unless the request sets one (C# sends none, so Ollama
   truncated prompts to its small default window). An unknown provider type is refused with
   C#'s message; agents scheduled on it run on the local model as before (D50a).
+- **D94** (`rust-port/ghapp`) Tool-call arguments keep the model's number digits (`1.0`, `2.50`,
+  `1e3`) where they are re-serialized: the echo into history (`echo_arguments`) and the
+  `--print` tool-call record. A small reader (`RawArguments`) keeps each number's source text
+  and writes it through serde_json's `RawValue` (the `raw_value` feature, now on); strings and
+  key order still go through serde_json. serde_json's `arbitrary_precision` was not used: it
+  breaks `#[serde(flatten)]` (`OrcaConfig.extra`) and changes `Number` equality workspace-wide.
+  The Anthropic and Ollama clients send arguments as parsed objects (digits normalized; those
+  APIs read values). Cross-check scenario 119.
