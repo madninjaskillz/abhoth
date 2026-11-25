@@ -48,9 +48,13 @@ static TAG_PATTERNS: LazyLock<[Regex; 4]> = LazyLock::new(|| {
 static CODE_FENCE_JSON: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?s)```(?:json)?\s*\n?\s*(\{.*?\})\s*\n?\s*```"));
 static UNCLOSED_TOOL_CALL: LazyLock<Regex> = LazyLock::new(|| re(r"(?is)<tool_call>\s*(.*?)\s*$"));
-/// One level of nested braces in the arguments (e.g. `{"opts": {"key": "val"}}`).
+/// One level of nested braces in the arguments (e.g. `{"opts": {"key": "val"}}`). `args` is
+/// accepted as well as `arguments` (D111: Pi-tuned models write `{"name": .., "args": {..}}`;
+/// C# ends the turn on such a reply).
 static BARE_JSON_TOOL_CALL: LazyLock<Regex> = LazyLock::new(|| {
-    re(r#"(?s)\{\s*"name"\s*:\s*"[^"]+"[^{}]*"arguments"\s*:\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\}"#)
+    re(
+        r#"(?s)\{\s*"name"\s*:\s*"[^"]+"[^{}]*"(?:arguments|args)"\s*:\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\}"#,
+    )
 });
 static WRAPPED_TOOL_CALL: LazyLock<Regex> =
     LazyLock::new(|| re(r#"(?s)\{\s*"tool_call"\s*:\s*(\{.*?\})\s*\}"#));
@@ -175,6 +179,9 @@ fn try_parse_tool_call(json: &str, results: &mut Vec<ParsedToolCall>) {
             arguments = Some(args);
         } else if let Some(Value::Object(params)) = root.get("parameters") {
             arguments = Some(params);
+        } else if let Some(Value::Object(args)) = root.get("args") {
+            // D111: the Pi schema's key (C# leaves the arguments empty).
+            arguments = Some(args);
         }
     } else if let Some(Value::Object(func)) = root.get("function") {
         name = func.get("name").and_then(Value::as_str);
@@ -576,6 +583,20 @@ mod tests {
     }
 
     // ── Pattern 5: Bare JSON ──
+
+    #[test]
+    fn bare_json_with_args_key_is_a_tool_call_too() {
+        // D111: what qwen3.8 (Pi-tuned) writes when it answers in text.
+        let results = parse(
+            "<think>look first</think>{\"name\": \"bash\", \"args\": {\"command\": \"ls -la\"}}",
+        );
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "bash");
+        assert_eq!(results[0].arguments["command"], "ls -la");
+        let tagged =
+            parse(r#"<tool_call>{"name": "read_file", "args": {"path": "a.txt"}}</tool_call>"#);
+        assert_eq!(tagged[0].arguments["path"], "a.txt");
+    }
 
     #[test]
     fn parse_bare_json_with_name_and_arguments_extracts_tool_call() {

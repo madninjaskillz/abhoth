@@ -430,3 +430,7 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   app open in the system browser. WebView2 data lives in `<home>/webview`. A second binary,
   `abhoth-desktop` (Windows GUI subsystem, no console), is the shortcut target. CI builds and
   unit-tests the feature on Windows only.
+- **D111** The text tool-call parser also takes `args` for the arguments (bare JSON and tagged
+  calls). qwen3.8-27b (Pi-tuned) answers with `{"name": "bash", "args": {...}}` as plain text
+  now and then; C# treats that as the final answer and ends the turn (seen in the live smoke on
+  both builds). Fixing it in Rust rather than copying it; no cross-check scenario sends `args`.

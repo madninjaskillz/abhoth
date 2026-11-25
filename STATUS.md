@@ -119,6 +119,17 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 3. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).
 4. Phase 7 follow-ups: close-to-tray setting, Linux/macOS desktop builds in CI, installer.
 
+### Live smoke 2026-11-25 (third run)
+
+- `abhoth --output json -p` with `leadMode: auto` and auto-approve, against LiteLLM
+  `qwen3.8-27b`: spawn an explore sub-agent to read a file, fix a bug, and run the test. Before
+  D111, 0 of 4 runs succeeded: the model's first reply was a text `{"name", "args"}` call, and
+  the turn ended. The C# build failed 1 of 2 runs the same way. After D111, 3 of 3 runs
+  succeeded: a sub-agent answered, the edit was made and the test passed. In one run a sub-agent
+  hit a LiteLLM 500, and the Lead retried it.
+- The React client was checked against the Rust `--hostui` (token, sign-in and main pages) and
+  the `--desktop` window. Screenshots are in the scratchpad (`shots/abhoth-*.png`).
+
 ## Bench parity run (to be scheduled with the user; not run by agents)
 
 What it must show: on the same model, slots and tasks, `abhoth` is no slower per task and no
