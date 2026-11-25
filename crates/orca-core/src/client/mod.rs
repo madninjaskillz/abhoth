@@ -1,10 +1,12 @@
 //! The OpenAI-compatible chat client and request shaping.
 
+pub mod anthropic;
 pub mod backend;
 pub mod context_overflow;
 pub mod context_window_detector;
 pub mod demo;
 pub mod max_tokens_negotiator;
+pub mod ollama;
 pub mod openai;
 pub mod request_parameters;
 pub mod served_models;
@@ -60,7 +62,11 @@ pub fn client_for_model(
 ) -> OpenAiClient {
     let lm = &config.lm_studio;
     let model = model.to_string();
-    let mut settings = ClientSettings::new(lm.base_url.clone(), lm.resolve_api_key(), Some(model));
+    let mut settings = ClientSettings::new(
+        lm.base_url.clone(),
+        lm.resolve_api_key(),
+        Some(model.clone()),
+    );
     settings.request_timeout = std::time::Duration::from_secs(lm.timeout_seconds.max(1) as u64);
     settings.idle_timeout =
         std::time::Duration::from_secs(lm.streaming_timeout_seconds.max(1) as u64);
@@ -71,7 +77,63 @@ pub fn client_for_model(
         Some(lm.resolve_api_key()),
     ));
     settings.vision = lm.vision;
-    OpenAiClient::new(settings, served)
+    let client = OpenAiClient::new(settings, served);
+    if lm.is_anthropic() {
+        // `LmStudioClientFactory`: lmStudio.provider "anthropic" speaks the Messages API.
+        tracing::info!("Creating Anthropic client: {}, model: {model}", lm.base_url);
+        let mut a =
+            anthropic::AnthropicSettings::new(Some(&lm.base_url), &lm.resolve_api_key(), &model);
+        if let Some(m) = lm.max_tokens.filter(|m| *m > 0) {
+            a.max_output_tokens = m;
+        }
+        a.request_timeout = std::time::Duration::from_secs(lm.timeout_seconds.max(1) as u64);
+        a.idle_timeout = std::time::Duration::from_secs(lm.streaming_timeout_seconds.max(1) as u64);
+        return client.with_router(std::sync::Arc::new(anthropic::AnthropicClient::new(a)));
+    }
+    client
+}
+
+/// `ChatClientRegistry.CreateClient` for a named provider of the Anthropic or Ollama kind
+/// (`None` for the OpenAI-compatible kind, which [`client_for_provider`] builds). `Err`: an
+/// unknown kind, worded as C# words it.
+pub fn native_provider_backend(
+    config: &crate::config::OrcaConfig,
+    provider_name: &str,
+    provider: &crate::config::ProviderConfig,
+    model: &str,
+) -> Result<Option<std::sync::Arc<dyn ChatBackend>>, String> {
+    let kind = provider.kind.trim();
+    let timeout = std::time::Duration::from_secs(config.lm_studio.timeout_seconds.max(1) as u64);
+    let base_url = Some(provider.base_url.as_str()).filter(|u| !u.trim().is_empty());
+    if kind.is_empty() || kind.eq_ignore_ascii_case("openai-compat") {
+        return Ok(None);
+    }
+    if kind.eq_ignore_ascii_case("anthropic") {
+        let mut a = anthropic::AnthropicSettings::new(base_url, &provider_api_key(provider), model);
+        if let Some(m) = provider
+            .max_tokens
+            .or(config.lm_studio.max_tokens)
+            .filter(|m| *m > 0)
+        {
+            a.max_output_tokens = m;
+        }
+        a.request_timeout = timeout;
+        a.idle_timeout = timeout;
+        return Ok(Some(std::sync::Arc::new(anthropic::AnthropicClient::new(
+            a,
+        ))));
+    }
+    if kind.eq_ignore_ascii_case("ollama") {
+        let mut o = ollama::OllamaSettings::new(base_url, model);
+        o.num_ctx = provider.context_window;
+        o.request_timeout = timeout;
+        o.idle_timeout = timeout;
+        return Ok(Some(std::sync::Arc::new(ollama::OllamaClient::new(o))));
+    }
+    Err(format!(
+        "Unknown provider type '{}' for provider '{provider_name}'. Expected 'openai-compat', 'anthropic', or 'ollama'.",
+        provider.kind
+    ))
 }
 
 /// A client for a named OpenAI-compatible provider (`ChatClientRegistry.CreateOpenAiCompatClient`):
@@ -110,7 +172,7 @@ pub fn client_for_provider(
 
 /// `ChatClientRegistry.ResolveApiKey`: the provider's env variable, else its key, else
 /// "not-needed".
-fn provider_api_key(provider: &crate::config::ProviderConfig) -> String {
+pub fn provider_api_key(provider: &crate::config::ProviderConfig) -> String {
     provider
         .api_key_env
         .as_deref()

@@ -56,6 +56,7 @@ impl FixedClient {
                 completion_tokens: Some(2_000),
                 cached_tokens: None,
                 reasoning_tokens: None,
+                cache_creation_tokens: None,
             },
             usage_reported: true,
             content_items: 1,

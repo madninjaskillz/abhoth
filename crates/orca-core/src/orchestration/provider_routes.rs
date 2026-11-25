@@ -63,8 +63,8 @@ impl ProviderRoutes {
             .find(|(k, _)| k.eq_ignore_ascii_case(name))
     }
 
-    /// `ChatClientRegistry.ResolveProvider` + `CreateClient` (the OpenAI-compatible kind; the
-    /// Anthropic and Ollama clients are not ported).
+    /// `ChatClientRegistry.ResolveProvider` + `CreateClient` (OpenAI-compatible, Anthropic or
+    /// Ollama).
     fn build(&self, name: &str) -> Result<BuiltProvider, String> {
         let found = self.provider_config(name).map(|(_, p)| p.clone());
         if let Some(factory) = &self.factory
@@ -93,16 +93,15 @@ impl ProviderRoutes {
             .ok_or_else(|| {
                 format!("Provider '{name}' has no model (set \"model\" or \"models\").")
             })?;
-        let kind = provider.kind.trim();
-        if !(kind.is_empty() || kind.eq_ignore_ascii_case("openai-compat")) {
-            return Err(format!(
-                "provider type '{kind}' has no client in this build"
-            ));
-        }
         tracing::info!(
             "Creating chat client for provider '{name}' ({}), model '{model}'",
             provider.kind
         );
+        if let Some(native) =
+            crate::client::native_provider_backend(&self.config, name, &provider, &model)?
+        {
+            return Ok((native, Some(provider), model));
+        }
         let base_url = if provider.base_url.trim().is_empty() {
             self.config.lm_studio.base_url.clone()
         } else {

@@ -111,10 +111,13 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   (60 s cache, search, paging), branches, clone linked to the sign-in so fetch/pull/push get a
   fresh token through the credential helper. C# tests ported against a fake GitHub (API and
   `git http-backend`).
+- Anthropic Messages API and Ollama clients (D92, D93): named providers of those types and
+  `lmStudio.provider: "anthropic"`; prompt caching, effort, signed thinking, tool results with
+  images, cache read/write usage; tested against fake local servers only.
 
 ## Next
 
-1. Anthropic/Ollama clients; tool-argument number formatting.
+1. Tool-argument number formatting.
 2. Bridge engines under `--hostui` and in the REPL; sub-agent approval prompter; `lead_mode` for
    `leadMode: auto`.
 3. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).
@@ -124,7 +127,6 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 - Sub-agent tool calls that need approval are refused, also in foreground agents (C# asks the
   user): the sub-agent pipeline has no prompter.
-- No Anthropic or Ollama clients (named providers of those kinds fall back to the local model).
 - `lead_mode` is not registered for the OpenOrca profile with `leadMode: auto`; agent badges are
   not coloured in note lines; `/agents` is a plain list, not the interactive picker.
 - WebUi: no settings schema passed yet (settings page empty), profile/mode switching answers

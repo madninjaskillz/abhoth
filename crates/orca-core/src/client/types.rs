@@ -88,6 +88,10 @@ pub struct ChatMessage {
     /// The reasoning channel (`reasoning_content`), kept so it can be echoed back for
     /// preserve-thinking templates.
     pub reasoning: Option<String>,
+    /// The signature Anthropic gave the reasoning (a thinking block's `signature`, C#
+    /// `TextReasoningContent.ProtectedData`): only signed reasoning is sent back to Anthropic.
+    /// Not saved in sessions; dropped with the reasoning.
+    pub reasoning_signature: Option<String>,
     pub tool_calls: Vec<ToolCall>,
     /// For `Role::Tool`: the call this answers.
     pub tool_call_id: Option<String>,
@@ -111,6 +115,7 @@ impl ChatMessage {
             role,
             content: Some(content.into()),
             reasoning: None,
+            reasoning_signature: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
             leading_empty_part: false,
@@ -305,6 +310,9 @@ pub struct Usage {
     pub cached_tokens: Option<i64>,
     /// `completion_tokens_details.reasoning_tokens` (`UsageDetails.ReasoningTokenCount`).
     pub reasoning_tokens: Option<i64>,
+    /// Tokens written to the prompt cache (Anthropic `cache_creation_input_tokens`, C#
+    /// `AdditionalCounts["CacheCreationInputTokens"]`); part of `prompt_tokens`.
+    pub cache_creation_tokens: Option<i64>,
 }
 
 /// A streamed piece of a response.
@@ -350,6 +358,8 @@ pub enum StreamControl {
 pub struct ChatResponse {
     pub text: String,
     pub reasoning: String,
+    /// See [`ChatMessage::reasoning_signature`].
+    pub reasoning_signature: Option<String>,
     pub tool_calls: Vec<ToolCall>,
     pub finish_reason: Option<String>,
     pub usage: Usage,
@@ -392,6 +402,10 @@ impl ChatResponse {
             } else {
                 Some(self.reasoning.clone())
             },
+            reasoning_signature: self
+                .reasoning_signature
+                .clone()
+                .filter(|_| !self.reasoning.is_empty()),
             tool_calls: self.tool_calls.clone(),
             tool_call_id: None,
             leading_empty_part: self.leading_empty_part,

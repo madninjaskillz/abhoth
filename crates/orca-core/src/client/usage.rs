@@ -236,7 +236,11 @@ impl RequestStats {
             .usage
             .and_then(|u| u.completion_tokens)
             .unwrap_or(reasoning + content + tool);
-        // Cache writes are Anthropic's (CacheCreationInputTokens); no Rust client reports them.
+        // Cache writes are Anthropic's (CacheCreationInputTokens).
+        let cache_write = self
+            .usage
+            .and_then(|u| u.cache_creation_tokens)
+            .unwrap_or(0);
         self.ledger
             .clone()
             .unwrap_or_else(ProviderUsageLedger::shared)
@@ -245,7 +249,7 @@ impl RequestStats {
                 self.model.as_deref(),
                 prompt,
                 cached,
-                0,
+                cache_write,
                 output,
             );
         if let Some(sink) = sink {
@@ -268,6 +272,14 @@ impl RequestStats {
         if let Some(e) = self.effort.as_deref().filter(|e| !e.is_empty()) {
             s.push_str(" effort=");
             s.push_str(e);
+        }
+        // Anthropic: tokens written to the prompt cache (billed at a premium; reads are "cached").
+        if let Some(w) = self
+            .usage
+            .and_then(|u| u.cache_creation_tokens)
+            .filter(|w| *w > 0)
+        {
+            s.push_str(&format!(" cache_write={w}"));
         }
         if let Some(p) = self.provider.as_deref().filter(|p| !p.is_empty()) {
             s.push_str(" provider=");

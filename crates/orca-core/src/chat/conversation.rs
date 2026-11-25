@@ -272,8 +272,7 @@ impl Conversation {
         let mut input = usage.prompt_tokens?;
         let cached = usage.cached_tokens.unwrap_or(0);
         if cached > input {
-            // C# also adds cache-creation tokens; the Rust usage does not report them.
-            input += cached;
+            input += cached + usage.cache_creation_tokens.unwrap_or(0);
         }
         (input > 0).then(|| input.min(i64::from(i32::MAX)) as i32)
     }
@@ -385,6 +384,7 @@ impl Conversation {
             if let Some(r) = m.reasoning.take() {
                 reclaimed += len16(&r);
             }
+            m.reasoning_signature = None;
         }
         for m in &mut self.messages[..end] {
             reclaimed += shrink_tool_results(m, stub_max_chars, |text, text_mode| {
@@ -721,6 +721,7 @@ fn light_pass(m: &mut ChatMessage, cpt: f32, apply: bool) -> (f64, bool) {
         tokens += len16(r) as f64 / f64::from(cpt);
         if apply {
             m.reasoning = None;
+            m.reasoning_signature = None;
         }
         changed = true;
     }
