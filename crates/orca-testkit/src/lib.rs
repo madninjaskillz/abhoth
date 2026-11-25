@@ -95,6 +95,7 @@ struct Inner {
     script: Vec<Reply>,
     next: usize,
     requests: Vec<Recorded>,
+    image_requests: Vec<Value>,
 }
 
 pub struct FakeOpenAi {
@@ -113,6 +114,8 @@ impl FakeOpenAi {
         let app = Router::new()
             .route("/v1/chat/completions", post(chat))
             .route("/v1/models", get(models))
+            .route("/v1/images/generations", post(image_generations))
+            .route("/v1/images/edits", post(image_edits))
             .with_state(inner.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -141,6 +144,136 @@ impl FakeOpenAi {
     pub fn requests(&self) -> Vec<Recorded> {
         self.inner.lock().unwrap().requests.clone()
     }
+
+    /// The images API requests: `{"path", "authorization", "body"}` with the raw JSON body
+    /// text for generations and the form parts (`name`, `filename`, `content_type`, `text` or
+    /// `bytes`) for edits.
+    pub fn image_requests(&self) -> Vec<Value> {
+        self.inner.lock().unwrap().image_requests.clone()
+    }
+}
+
+/// A 1x1 PNG, the "image" every images API call returns.
+pub const TINY_PNG_BASE64: &str =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+/// The images answer: the tiny PNG, or a 500 when the prompt asks for a failure (`FAIL`).
+fn image_reply(prompt_fails: bool) -> Response<Body> {
+    if prompt_fails {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from("image backend exploded"))
+            .unwrap();
+    }
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({"data": [{"b64_json": TINY_PNG_BASE64}]}).to_string(),
+        ))
+        .unwrap()
+}
+
+fn header_value(headers: &HeaderMap, name: &str) -> String {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string()
+}
+
+async fn image_generations(
+    State(inner): State<Arc<Mutex<Inner>>>,
+    headers: HeaderMap,
+    body: String,
+) -> Response<Body> {
+    let fails = body.contains("FAIL");
+    inner.lock().unwrap().image_requests.push(json!({
+        "path": "/v1/images/generations",
+        "authorization": header_value(&headers, "authorization"),
+        "body": body,
+    }));
+    image_reply(fails)
+}
+
+async fn image_edits(
+    State(inner): State<Arc<Mutex<Inner>>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response<Body> {
+    let content_type = header_value(&headers, "content-type");
+    let parts = parse_multipart(&content_type, &body);
+    let fails = parts
+        .iter()
+        .any(|p| p["text"].as_str().is_some_and(|t| t.contains("FAIL")));
+    inner.lock().unwrap().image_requests.push(json!({
+        "path": "/v1/images/edits",
+        "authorization": header_value(&headers, "authorization"),
+        "body": parts,
+    }));
+    image_reply(fails)
+}
+
+/// Splits a `multipart/form-data` body into its parts (enough for tests: no nested parts).
+fn parse_multipart(content_type: &str, body: &[u8]) -> Vec<Value> {
+    let Some(boundary) = content_type.split(';').find_map(|p| {
+        p.trim()
+            .strip_prefix("boundary=")
+            .map(|b| b.trim_matches('"').to_string())
+    }) else {
+        return Vec::new();
+    };
+    let delim = format!("--{boundary}");
+    let mut out = Vec::new();
+    let mut rest = body;
+    while let Some(start) = find(rest, delim.as_bytes()) {
+        rest = &rest[start + delim.len()..];
+        if rest.starts_with(b"--") {
+            break;
+        }
+        let Some(end) = find(rest, delim.as_bytes()) else {
+            break;
+        };
+        const CRLF: &[u8] = &[13, 10];
+        let part = rest[..end].strip_prefix(CRLF).unwrap_or(&rest[..end]);
+        let part = part.strip_suffix(CRLF).unwrap_or(part);
+        let Some(split) = find(part, &[13, 10, 13, 10]) else {
+            continue;
+        };
+        let head = String::from_utf8_lossy(&part[..split]).to_string();
+        let data = &part[split + 4..];
+        let mut name = String::new();
+        let mut filename = Value::Null;
+        let mut ctype = Value::Null;
+        for line in head.lines() {
+            let lower = line.to_ascii_lowercase();
+            if lower.starts_with("content-disposition:") {
+                for attr in line.split(';').skip(1) {
+                    let (k, v) = attr.trim().split_once('=').unwrap_or(("", ""));
+                    let v = v.trim_matches('"').to_string();
+                    match k {
+                        "name" => name = v,
+                        "filename" => filename = json!(v),
+                        _ => {}
+                    }
+                }
+            } else if lower.starts_with("content-type:") {
+                ctype = json!(line["content-type:".len()..].trim());
+            }
+        }
+        let mut v = json!({"name": name, "filename": filename, "content_type": ctype});
+        if filename.is_null() {
+            v["text"] = json!(String::from_utf8_lossy(data));
+        } else {
+            v["bytes"] = json!(data.len());
+        }
+        out.push(v);
+    }
+    out
+}
+
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
 }
 
 async fn models() -> axum::Json<Value> {

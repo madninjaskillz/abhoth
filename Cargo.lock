@@ -1154,6 +1154,8 @@ name = "orca-crosscheck"
 version = "0.15.0"
 dependencies = [
  "anyhow",
+ "base64",
+ "image",
  "orca-testkit",
  "serde",
  "serde_json",
