@@ -1,0 +1,128 @@
+{
+  "_comment": "Interactive: /compact sends the summary request and replaces the older turns with the summary; the next request starts from it.",
+  "config": {
+    "context": {
+      "contextWindowSize": 32768,
+      "keepRecentTokens": 60,
+      "keepFirstTokens": 0,
+      "thinkingAwareCompaction": false
+    }
+  },
+  "replies": [
+    {
+      "text": "This is a fairly long answer that repeats itself so the conversation has enough tokens to compact. This is a fairly long answer that repeats itself so the conversation has enough tokens to compact. This is a fairly long answer that repeats itself so the conversation has enough tokens to compact. This is a fairly long answer that repeats itself so the conversation has enough tokens to compact. C1-DONE"
+    },
+    {
+      "text": "Short. C2-DONE"
+    },
+    {
+      "text": "## Original Request\nTwo questions.\n\n## Progress So Far\n- Both answered."
+    },
+    {
+      "text": "After compaction. C3-DONE"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "first long question"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "C1-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "second question"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "C2-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/compact"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "Compacted"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "go on"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "C3-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!",
+      "Compacted: \\d+ messages -> \\d+ messages",
+      "Not enough messages to compact."
+    ]
+  }
+}

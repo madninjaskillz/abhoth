@@ -11,7 +11,7 @@ pub mod cli_locator;
 pub mod codex;
 mod event;
 pub(crate) mod json;
-pub(crate) mod paths;
+pub mod paths;
 pub mod print;
 pub mod readiness;
 pub mod transport;

@@ -1,0 +1,12 @@
+{
+  "prompt": "What colour is solid.png?",
+  "strict": true,
+  "config": {"toolProfile": "pi"},
+  "binary_files": {
+    "solid.png": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAEklEQVR4nGM4IWfzHx9mGBkKAC3CiEEiqWH5AAAAAElFTkSuQmCC"
+  },
+  "replies": [
+    {"tools": [{"name": "read", "args": {"path": "solid.png"}}]},
+    {"text": "The model server could not show me the picture, so I only know solid.png is an image."}
+  ]
+}

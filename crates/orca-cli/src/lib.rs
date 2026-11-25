@@ -1,11 +1,18 @@
 //! The `openorca` program. Phase 1: one-shot prompts (`--print` / `--prompt`); the
-//! interactive REPL/TUI and the web host follow in later phases (see PORTING.md).
+//! interactive REPL and the `--hostui` web host.
 
 pub mod args;
+pub mod commands;
+pub mod custom_commands;
 pub mod hostui;
+pub mod input_preprocessor;
+pub mod model_discovery;
 pub mod pi_profile;
 pub mod prompter;
+pub mod render;
+pub mod repl;
 pub mod sessions;
+pub mod ui;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -235,13 +242,16 @@ pub async fn run_single_prompt_in_session(
     if let Some(rt) = &slots {
         client = client.with_router(rt.lead_client());
     }
+    if config.demo_mode {
+        client = client.with_router(Arc::new(orca_core::client::demo::DemoChatClient));
+    }
     let (mut registry, mut services) = build_registry_in(&config, &cwd);
     services.start_mcp(&config, &cwd, &mut registry).await;
     let tool_hooks = config_dir.map(|d| orca_core::agent::ToolHooks::from_config(&config, d));
     let mut session = AgentSession::new(config, client, registry, ToolContext::new(cwd));
     // C# runs the startup probes (max_tokens negotiation, context-window detection) before
     // the first turn.
-    session.startup_probes = true;
+    session.startup_probes = !session.config.demo_mode;
     if let Some(hooks) = tool_hooks {
         session.tool_hooks = hooks;
     }
@@ -370,12 +380,6 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         eprintln!("openorca: {e}");
         return Ok(2);
     }
-    if args.single_prompt.is_none() && hostui_args.is_none() {
-        eprintln!(
-            "The interactive mode is not ported to Rust yet. Use --print \"<prompt>\" (JSON output), --prompt \"<prompt>\" or --hostui."
-        );
-        return Ok(2);
-    }
     let mut manager = ConfigManager::new(None);
     manager
         .load()
@@ -444,7 +448,6 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         }
         return hostui::run(h, config, cwd).await;
     }
-    let prompt = args.single_prompt.clone().unwrap_or_default();
 
     // Sweep checkpoint snapshots older than a week (best effort, in the background).
     let sweeper = orca_core::session::CheckpointManager::new(config_dir.join("checkpoints"));
@@ -461,8 +464,10 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         sessions::Restore::NotFound => return Ok(0),
         sessions::Restore::Unreadable => return Ok(1),
     };
-    for notice in &profile_notices {
-        eprintln!("{notice}");
+    if args.single_prompt.is_some() {
+        for notice in &profile_notices {
+            eprintln!("{notice}");
+        }
     }
     // A bridge engine must be ready (installed, logged in) before the turn.
     match orca_core::engines::prepare_engine_non_interactive(
@@ -481,6 +486,9 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
             return Ok(2);
         }
     }
+    let Some(prompt) = args.single_prompt.clone() else {
+        return run_interactive(config, cwd, &config_dir, restored, profile_notices).await;
+    };
     // --print does not auto-save (only the interactive loop does, after each turn).
     let result = run_single_prompt_in_session(
         config,
@@ -500,4 +508,70 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         println!();
     }
     Ok(0)
+}
+
+/// The interactive REPL (`ReplLoop.RunAsync`), with the same session wiring as `--print`.
+async fn run_interactive(
+    config: OrcaConfig,
+    cwd: PathBuf,
+    config_dir: &Path,
+    restored: Option<sessions::RestoredSession>,
+    startup_notices: Vec<String>,
+) -> Result<i32> {
+    let served = Arc::new(ServedModels::new());
+    let mut client = client_from_config(&config, served)?;
+    let slots = if config.demo_mode {
+        None
+    } else {
+        orca_core::slots::SlotRuntime::create(&config, Arc::new(client.clone()))
+    };
+    if let Some(rt) = &slots {
+        client = client.with_router(rt.lead_client());
+    }
+    if config.demo_mode {
+        // `--demo`: canned answers, no server (DemoChatClient).
+        client = client.with_router(Arc::new(orca_core::client::demo::DemoChatClient));
+    }
+    let (mut registry, mut services) = build_registry_in(&config, &cwd);
+    services.start_mcp(&config, &cwd, &mut registry).await;
+    let tool_hooks = orca_core::agent::ToolHooks::from_config(&config, config_dir);
+    let active_profile = config.active_profile.clone();
+    let mut session = AgentSession::new(config, client, registry, ToolContext::new(cwd));
+    session.startup_probes = !session.config.demo_mode;
+    session.tool_hooks = tool_hooks;
+    let mut session_id = None;
+    if let Some(r) = restored {
+        session.messages = r.messages;
+        session.tool_hooks.session_id = Some(r.id.clone());
+        session_id = Some(r.id);
+    }
+    let console = ui::Console::stdout();
+    let mut repl = repl::Repl::new(console, session, config_dir.to_path_buf(), session_id);
+    repl.startup_notices = startup_notices;
+    repl.active_profile = active_profile;
+    let exit = repl.run().await;
+    if let Some(rt) = &slots {
+        rt.shutdown().await;
+    }
+    repl.session
+        .tool_hooks
+        .flush(std::time::Duration::from_secs(10))
+        .await;
+    services.shutdown().await;
+    pi_profile::kill_jobs();
+    match exit {
+        repl::ReplExit::Quit => Ok(0),
+        // The C# build restarts in-process; here the caller re-runs with the new profile.
+        repl::ReplExit::Restart {
+            profile,
+            session_id,
+        } => {
+            let mut next = vec!["--profile".to_string(), profile];
+            if let Some(id) = session_id {
+                next.push("--resume".into());
+                next.push(id);
+            }
+            Box::pin(main_with_args(next)).await
+        }
+    }
 }

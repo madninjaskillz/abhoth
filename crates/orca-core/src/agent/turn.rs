@@ -94,7 +94,18 @@ impl AgentSession {
         user_message: &str,
         observer: &mut dyn AgentObserver,
     ) -> Result<TurnEnd, AgentError> {
-        self.messages.push(ChatMessage::user(user_message));
+        self.run_turn_with_message(ChatMessage::user(user_message), observer)
+            .await
+    }
+
+    /// [`Self::run_turn`] with a prepared user message (a prompt with attachments:
+    /// `attachments::message_builder::build`).
+    pub async fn run_turn_with_message(
+        &mut self,
+        user_message: ChatMessage,
+        observer: &mut dyn AgentObserver,
+    ) -> Result<TurnEnd, AgentError> {
+        self.messages.push(user_message);
         self.begin_turn();
         self.overflow_recovery_used = false;
         let mut s = LoopState {
@@ -712,6 +723,7 @@ impl AgentSession {
             // C# starts the first call early while the response streams (and records its raw
             // arguments) only when it is one of the ReadOnlyCommand tools.
             self.record_raw_arguments = several && i == 0 && early_start_tool(&call.name);
+            self.last_tool_images.clear();
             let mut result = self.run_one_call(call, true, observer).await;
             if self.config.agent.repeat_call_notes
                 && let Some(note) =
@@ -719,8 +731,10 @@ impl AgentSession {
             {
                 result.push_str(&note);
             }
+            // The client sends these as C# does (ToolImagesChatClient).
+            let images = std::mem::take(&mut self.last_tool_images);
             self.messages
-                .push(ChatMessage::tool_result(call.id.clone(), result));
+                .push(ChatMessage::tool_result(call.id.clone(), result).with_images(images));
         }
         self.record_raw_arguments = false;
     }
@@ -762,6 +776,8 @@ impl AgentSession {
         observer.on_tool_start(&call);
         let result = self.execute_tool_call(&call, observer).await;
         observer.on_tool_end(&call, &result);
+        self.last_tool_images =
+            crate::client::tool_images::tool_result_images(&result, &self.config);
         self.apply_retry_detection(&call, &result)
     }
 

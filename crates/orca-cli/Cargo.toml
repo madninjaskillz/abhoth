@@ -24,6 +24,7 @@ orca-tools-git.workspace = true
 orca-tools-web.workspace = true
 orca-tools-utility.workspace = true
 orca-webui.workspace = true
+orca-tools-common.workspace = true
 orca-tools-archive = { workspace = true, optional = true }
 orca-tools-network = { workspace = true, optional = true }
 async-trait.workspace = true
@@ -36,6 +37,11 @@ serde_json.workspace = true
 tokio = { workspace = true, features = ["signal"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
+crossterm.workspace = true
+chrono.workspace = true
+unicode-width.workspace = true
+regex.workspace = true
+reqwest.workspace = true
 
 [features]
 # Optional tool groups (PORTING.md "Plugins"): on by default, like the C# plugin folder.

@@ -50,6 +50,50 @@
 //! lead_mode tool's LEAD MODE section), since Rust has only the core tools until phase 3. The
 //! rest of the system prompt is compared. `--strict` compares everything; a scenario with
 //! `"strict": true` (the Pi profile's) is always compared in full.
+//!
+//! ## Interactive scenarios
+//!
+//! A scenario with `"interactive": {...}` runs each binary without `--print` (with `args`, the
+//! same environment and work folder) inside a pseudo-terminal (ConPTY on Windows), with a
+//! `vt100` screen model as the terminal (it answers the cursor-position query `ESC[6n`):
+//!
+//! ```text
+//! "interactive": {
+//!   "cols": 100, "rows": 32,           // terminal size (defaults)
+//!   "exitTimeoutMs": 10000,            // after the last step: wait this long, then kill
+//!   "compareScreen": ["Goodbye!", "Compacted: \\d+ messages"],
+//!   "steps": [
+//!     {"action": "waitFor", "text": "❯", "timeoutMs": 45000},  // visible screen contains it
+//!     {"action": "waitGone", "text": "..."},                     // ... no longer contains it
+//!     {"action": "type", "text": "say hello"},                   // `<WEB>` is substituted
+//!     {"action": "key", "name": "enter", "count": 1},  // enter esc tab shift-tab up down left
+//!                                       // right home end pgup pgdn backspace delete
+//!                                       // ctrl-c/d/g/o/r/t alt-v
+//!     {"action": "wait", "ms": 300},
+//!     {"action": "waitQuiet", "ms": 600},          // no output for this long (timeoutMs)
+//!     {"action": "snap", "label": "after"},        // the screen, written with --out
+//!     {"action": "expect", "text": "..."},         // screen or scrollback contains it
+//!     {"action": "expectNot", "text": "..."},
+//!     {"action": "exit", "timeoutMs": 15000}       // the process exits (e.g. after /exit)
+//!   ]
+//! }
+//! ```
+//!
+//! `timeoutMs` defaults to 30 s. A failed step is reported for that binary (`step N: timed out
+//! waiting for ...`), and every failed step makes the scenario differ. Compared: the steps, the
+//! request bodies, work files and checkpoints as above, the exit code (none when killed), and
+//! the saved sessions (`sessions/*.json`): sessions the run created get the ids `<S1>`, `<S2>`,
+//! ... in creation order (in the file names, `id`, `parentSessionId` and the screen text),
+//! `createdAt` / `updatedAt` are masked and the system prompt is masked like the requests'.
+//! The rendering differs by design, so the screen is compared only where `compareScreen`
+//! says: a line containing one of the texts is compared whole; otherwise a pattern that
+//! matches a line as a regex compares just the matched part. With `--out`, each binary's
+//! semantic screen (scrollback + final screen, trimmed, blank lines dropped) is written as
+//! `<name>.<side>.screen.txt`, with its snaps and the raw VT stream. A reply can stream
+//! slowly (`chunk_delay_ms` before each event), e.g. to cancel it with Ctrl+C.
+
+mod ctrl_c;
+mod pty;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -64,7 +108,12 @@ use serde_json::{Value, json};
 struct Scenario {
     #[serde(default)]
     name: String,
+    /// The `--print` prompt (unused by interactive scenarios).
+    #[serde(default)]
     prompt: String,
+    /// Run without `--print` in a pseudo-terminal, driven by these steps.
+    #[serde(default)]
+    interactive: Option<pty::Interactive>,
     #[serde(default)]
     files: BTreeMap<String, String>,
     /// Files to create in the config home (relative paths), e.g. `sessions/<id>.json`.
@@ -142,6 +191,9 @@ struct ScriptReply {
     /// `[status, body]`: answer with an HTTP error instead.
     #[serde(default)]
     error: Option<(u16, String)>,
+    /// Pause before each streamed event (a slow reply, e.g. to cancel with Ctrl+C).
+    #[serde(default)]
+    chunk_delay_ms: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -184,6 +236,7 @@ impl ScriptReply {
             null_role_content: self.null_role_content,
             die_after_events: self.die_after_events,
             error: self.error.clone(),
+            chunk_delay_ms: self.chunk_delay_ms,
             ..Reply::default()
         }
     }
@@ -199,6 +252,13 @@ struct RunResult {
     notices: Vec<String>,
     probes: Vec<String>,
     stderr: String,
+    /// Interactive runs: the failed steps (empty when every step passed).
+    steps: Vec<String>,
+    /// Interactive runs: the semantic screen (scrollback + screen, trimmed lines).
+    screen: Vec<String>,
+    /// Interactive runs: `snap` steps' screens, and the raw VT stream.
+    snaps: Vec<(String, String)>,
+    raw: Vec<u8>,
 }
 
 fn base_config(base_url: &str) -> Value {
@@ -339,19 +399,48 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         subst(&scenario.prompt),
         scenario.args.clone(),
     );
-    let out = tokio::task::spawn_blocking(move || {
-        Command::new(exe_owned)
-            .args(["--print", &prompt])
-            .args(&extra)
-            .current_dir(&work_path)
-            .env("OPENORCA_HOME", &home_path)
-            .envs(env)
-            .env_remove("RUST_LOG")
-            .output()
-    })
-    .await??;
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    let mut pty_run = None;
+    let (stdout, stderr, exit_code) = if let Some(inter) = &scenario.interactive {
+        // The steps' typed text can name the web server too.
+        let steps = inter
+            .steps
+            .iter()
+            .map(|s| pty::Step {
+                text: s.text.as_deref().map(subst),
+                ..s.clone()
+            })
+            .collect();
+        let inter = pty::Interactive {
+            steps,
+            ..inter.clone()
+        };
+        let mut env = env.clone();
+        env.push(("OPENORCA_HOME".into(), home_str.clone()));
+        let run = tokio::task::spawn_blocking(move || {
+            pty::run(&exe_owned, &extra, &work_path, &env, &inter)
+        })
+        .await??;
+        let code = run.exit_code;
+        pty_run = Some(run);
+        (String::new(), String::new(), code)
+    } else {
+        let out = tokio::task::spawn_blocking(move || {
+            Command::new(exe_owned)
+                .args(["--print", &prompt])
+                .args(&extra)
+                .current_dir(&work_path)
+                .env("OPENORCA_HOME", &home_path)
+                .envs(env)
+                .env_remove("RUST_LOG")
+                .output()
+        })
+        .await??;
+        (
+            String::from_utf8_lossy(&out.stdout).to_string(),
+            String::from_utf8_lossy(&out.stderr).to_string(),
+            out.status.code(),
+        )
+    };
     // A run that stops early (an unknown --resume id) prints nothing to stdout.
     let output: Value = if stdout.trim().is_empty() {
         Value::Null
@@ -456,6 +545,63 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         };
         home_files.insert(key, value);
     }
+    // Interactive runs: the saved sessions, with new session ids (not the scenario's planted
+    // ones) renamed `<S1>`, `<S2>`, ... in creation order and the times masked.
+    let mut session_ids: Vec<(String, String)> = Vec::new();
+    if scenario.interactive.is_some() {
+        let mut sessions: Vec<(String, Value)> = Vec::new();
+        for e in std::fs::read_dir(home.path().join("sessions"))
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+        {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let Some(id) = name.strip_suffix(".json") else {
+                continue;
+            };
+            let v: Value = serde_json::from_slice(&std::fs::read(e.path())?)
+                .with_context(|| format!("{} wrote a bad sessions/{name}", exe.display()))?;
+            sessions.push((id.to_string(), v));
+        }
+        let planted = |id: &str| {
+            scenario
+                .home_files
+                .contains_key(&format!("sessions/{id}.json"))
+        };
+        let mut fresh: Vec<&(String, Value)> =
+            sessions.iter().filter(|(id, _)| !planted(id)).collect();
+        fresh.sort_by_key(|(id, v)| {
+            (
+                v["createdAt"].as_str().unwrap_or_default().to_string(),
+                v["title"].as_str().unwrap_or_default().to_string(),
+                id.clone(),
+            )
+        });
+        session_ids = fresh
+            .iter()
+            .enumerate()
+            .map(|(i, (id, _))| (id.clone(), format!("<S{}>", i + 1)))
+            .collect();
+        let rename = |id: &str| {
+            session_ids
+                .iter()
+                .find(|(from, _)| from == id)
+                .map_or_else(|| id.to_string(), |(_, to)| to.clone())
+        };
+        for (id, mut v) in sessions {
+            for key in ["id", "parentSessionId"] {
+                if let Some(s) = v[key].as_str() {
+                    v[key] = json!(rename(s));
+                }
+            }
+            for key in ["createdAt", "updatedAt"] {
+                if v.get(key).is_some() {
+                    v[key] = json!("<TIME>");
+                }
+            }
+            home_files.insert(format!("sessions/{}.json", rename(&id)), norm(v));
+        }
+    }
     let notices = stderr
         .lines()
         .map(str::trim)
@@ -480,10 +626,25 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         })
         .collect();
 
+    let (steps, screen, snaps, raw) = match pty_run {
+        Some(r) => {
+            // Paths and new session ids in the screen text, as in the files.
+            let fix = |l: &str| {
+                let mut l = norm(json!(l)).as_str().unwrap_or_default().to_string();
+                for (from, to) in &session_ids {
+                    l = l.replace(from.as_str(), to);
+                }
+                l
+            };
+            let screen = r.screen.iter().map(|l| fix(l)).collect();
+            (r.failures, screen, r.snaps, r.raw)
+        }
+        None => Default::default(),
+    };
     Ok(RunResult {
         output: norm(output),
         home_files,
-        exit_code: out.status.code(),
+        exit_code,
         notices,
         probes: server.probes(),
         requests: server
@@ -494,6 +655,10 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         image_requests: server.image_requests().into_iter().map(norm).collect(),
         files,
         stderr,
+        steps,
+        screen,
+        snaps,
+        raw,
     })
 }
 
@@ -709,8 +874,48 @@ fn short(v: &Value) -> String {
     }
 }
 
-fn compare(cs: &RunResult, rs: &RunResult, strict: bool) -> Vec<String> {
+/// The screen text an interactive scenario compares: each line that contains one of the
+/// patterns (the whole line), or else matches one as a regex (only the matched part, so a
+/// pattern can leave out numbers that legitimately differ).
+fn screen_lines(screen: &[String], patterns: &[String]) -> Vec<String> {
+    let regexes: Vec<regex::Regex> = patterns
+        .iter()
+        .filter_map(|p| regex::Regex::new(p).ok())
+        .collect();
+    screen
+        .iter()
+        .filter_map(|l| {
+            if patterns.iter().any(|p| l.contains(p.as_str())) {
+                return Some(l.clone());
+            }
+            regexes
+                .iter()
+                .find_map(|r| r.find(l).map(|m| m.as_str().to_string()))
+        })
+        .collect()
+}
+
+fn compare(
+    cs: &RunResult,
+    rs: &RunResult,
+    strict: bool,
+    interactive: Option<&pty::Interactive>,
+) -> Vec<String> {
     let mut out = Vec::new();
+    if let Some(inter) = interactive {
+        // Every step must pass on both sides (a step failing on both sides still fails).
+        for (side, r) in [("C#", cs), ("Rust", rs)] {
+            for f in &r.steps {
+                out.push(format!("{side}: {f}"));
+            }
+        }
+        diff(
+            "screen",
+            &json!(screen_lines(&cs.screen, &inter.compare_screen)),
+            &json!(screen_lines(&rs.screen, &inter.compare_screen)),
+            &mut out,
+        );
+    }
     diff("output", &cs.output, &rs.output, &mut out);
     if cs.requests.len() != rs.requests.len() {
         out.push(format!(
@@ -735,7 +940,19 @@ fn compare(cs: &RunResult, rs: &RunResult, strict: bool) -> Vec<String> {
     );
     let files = |r: &RunResult| serde_json::to_value(&r.files).unwrap();
     diff("files", &files(cs), &files(rs), &mut out);
-    let home = |r: &RunResult| serde_json::to_value(&r.home_files).unwrap();
+    let home = |r: &RunResult| {
+        let mut v = serde_json::to_value(&r.home_files).unwrap();
+        // Saved sessions carry the system prompt: masked like the requests' one.
+        for (key, session) in v.as_object_mut().into_iter().flatten() {
+            if !strict
+                && key.starts_with("sessions/")
+                && let Some(text) = session["systemPrompt"].as_str()
+            {
+                session["systemPrompt"] = json!(mask_tool_derived_prompt(text));
+            }
+        }
+        v
+    };
     diff("home", &home(cs), &home(rs), &mut out);
     if cs.exit_code != rs.exit_code {
         out.push(format!(
@@ -757,6 +974,7 @@ fn arg_value(args: &[String], name: &str) -> Option<String> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    ctrl_c::stop_ignoring();
     let csharp =
         PathBuf::from(arg_value(&args, "--csharp").context("--csharp <openorca.exe> is required")?);
     let rust = PathBuf::from(arg_value(&args, "--rust").context("--rust <openorca> is required")?);
@@ -793,14 +1011,35 @@ async fn main() -> Result<()> {
         if let Some(out) = &out_dir {
             std::fs::create_dir_all(out)?;
             for (tag, r) in [("csharp", &cs), ("rust", &rs)] {
-                let dump = json!({"output": r.output, "requests": r.requests, "files": r.files, "home_files": r.home_files, "exit_code": r.exit_code, "image_requests": r.image_requests, "notices": r.notices, "probes": r.probes, "stderr": r.stderr});
+                let mut dump = json!({"output": r.output, "requests": r.requests, "files": r.files, "home_files": r.home_files, "exit_code": r.exit_code, "image_requests": r.image_requests, "notices": r.notices, "probes": r.probes, "stderr": r.stderr});
+                if scenario.interactive.is_some() {
+                    dump["failed_steps"] = json!(r.steps);
+                    // The semantic screen, each `snap`, and the raw VT stream.
+                    let base = format!("{}.{tag}", scenario.name);
+                    std::fs::write(
+                        out.join(format!("{base}.screen.txt")),
+                        r.screen.join("\n") + "\n",
+                    )?;
+                    for (i, (label, shown)) in r.snaps.iter().enumerate() {
+                        std::fs::write(
+                            out.join(format!("{base}.snap{:02}-{label}.txt", i + 1)),
+                            shown,
+                        )?;
+                    }
+                    std::fs::write(out.join(format!("{base}.raw.ansi")), &r.raw)?;
+                }
                 std::fs::write(
                     out.join(format!("{}.{tag}.json", scenario.name)),
                     serde_json::to_string_pretty(&dump)?,
                 )?;
             }
         }
-        let diffs = compare(&cs, &rs, strict || scenario.strict);
+        let diffs = compare(
+            &cs,
+            &rs,
+            strict || scenario.strict,
+            scenario.interactive.as_ref(),
+        );
         if diffs.is_empty() {
             passed += 1;
             println!("PASS  {}", scenario.name);

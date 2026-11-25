@@ -1,0 +1,167 @@
+{
+  "_comment": "Interactive: with autoApproveAll off, write_file asks 'Allow this tool call?': Yes (once), No (denied), then Yes to all (the last call, in the same folder, runs without asking: session approvals are scoped to the parent folder; a bare file name would be its own scope).",
+  "config": {
+    "permissions": {
+      "autoApproveAll": false
+    }
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "out/a.txt",
+            "content": "one\n"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "out/b.txt",
+            "content": "two\n"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "out/c.txt",
+            "content": "three\n"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "out/d.txt",
+            "content": "four\n"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Wrote what I was allowed to. PERM-DONE"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "write some files"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "a.txt"
+      },
+      {
+        "action": "waitFor",
+        "text": "Allow this tool call?"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "b.txt"
+      },
+      {
+        "action": "waitFor",
+        "text": "Allow this tool call?"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "key",
+        "name": "down"
+      },
+      {
+        "action": "key",
+        "name": "down"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "c.txt"
+      },
+      {
+        "action": "waitFor",
+        "text": "Allow this tool call?"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "key",
+        "name": "down"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "PERM-DONE"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!"
+    ]
+  }
+}

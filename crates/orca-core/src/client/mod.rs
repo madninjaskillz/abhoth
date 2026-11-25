@@ -3,11 +3,13 @@
 pub mod backend;
 pub mod context_overflow;
 pub mod context_window_detector;
+pub mod demo;
 pub mod max_tokens_negotiator;
 pub mod openai;
 pub mod request_parameters;
 pub mod served_models;
 pub mod server_identity;
+pub mod tool_images;
 pub mod types;
 
 pub use backend::{ChatBackend, is_transport_failure};
@@ -46,5 +48,6 @@ pub fn client_from_config(
     settings.idle_timeout =
         std::time::Duration::from_secs(lm.streaming_timeout_seconds.max(1) as u64);
     settings.session_field = config.agent.uncensored.field();
+    settings.vision = lm.vision;
     Ok(OpenAiClient::new(settings, served))
 }

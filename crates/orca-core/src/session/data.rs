@@ -208,6 +208,7 @@ pub fn session_to_messages(session: &SessionData) -> Vec<ChatMessage> {
             tool_calls,
             tool_call_id: None,
             leading_empty_part: false,
+            parts: Vec::new(),
         };
         // Tool results on a non-tool message (not written by C#, but readable): keep them
         // as tool messages after it so no call is left unanswered.
