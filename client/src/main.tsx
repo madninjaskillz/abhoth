@@ -7,6 +7,7 @@ import { loadAuth } from "@/lib/auth";
 import { loadBranding } from "@/lib/brand";
 import { SignIn } from "@/features/auth/SignIn";
 import { Setup } from "@/features/auth/Setup";
+import { WindowFrame } from "@/components/TitleBar";
 import App from "./App";
 import "./index.css";
 
@@ -23,7 +24,9 @@ void Promise.all([loadAuth(), loadBranding()]).then(([auth]) => {
     if (location.pathname !== "/setup") history.replaceState(null, "", "/setup");
     root.render(
       <React.StrictMode>
-        <Setup state={auth} onDone={done} />
+        <WindowFrame>
+          <Setup state={auth} onDone={done} />
+        </WindowFrame>
       </React.StrictMode>,
     );
     return;
@@ -31,7 +34,9 @@ void Promise.all([loadAuth(), loadBranding()]).then(([auth]) => {
   if (auth.stage !== "ok") {
     root.render(
       <React.StrictMode>
-        <SignIn state={auth} onDone={done} />
+        <WindowFrame>
+          <SignIn state={auth} onDone={done} />
+        </WindowFrame>
       </React.StrictMode>,
     );
     return;
@@ -42,7 +47,9 @@ void Promise.all([loadAuth(), loadBranding()]).then(([auth]) => {
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <App />
+          <WindowFrame>
+            <App />
+          </WindowFrame>
         </TooltipProvider>
       </QueryClientProvider>
     </React.StrictMode>,

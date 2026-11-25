@@ -13,7 +13,7 @@ export const DialogClose = DialogPrimitive.Close;
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, onPointerDownOutside, onInteractOutside, ...props }, ref) => (
   <DialogPrimitive.Portal>
     <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
     <DialogPrimitive.Content
@@ -22,6 +22,15 @@ export const DialogContent = React.forwardRef<
         "fixed left-1/2 top-1/2 z-50 grid grid-cols-[minmax(0,1fr)] max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-3 overflow-hidden rounded-lg border bg-panel p-4 shadow-xl",
         className,
       )}
+      // The desktop app's title bar (move, minimise, close) works with a dialog open and leaves it open.
+      onPointerDownOutside={(e) => {
+        if (onWindowChrome(e.target)) e.preventDefault();
+        onPointerDownOutside?.(e);
+      }}
+      onInteractOutside={(e) => {
+        if (onWindowChrome(e.target)) e.preventDefault();
+        onInteractOutside?.(e);
+      }}
       {...props}
     >
       {children}
@@ -32,6 +41,10 @@ export const DialogContent = React.forwardRef<
   </DialogPrimitive.Portal>
 ));
 DialogContent.displayName = DialogPrimitive.Content.displayName;
+
+function onWindowChrome(target: EventTarget | null): boolean {
+  return target instanceof Element && !!target.closest("[data-window-chrome]");
+}
 
 export function DialogTitle({ className, ...props }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>) {
   return <DialogPrimitive.Title className={cn("pr-8 text-sm font-semibold", className)} {...props} />;

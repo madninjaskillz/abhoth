@@ -11,17 +11,19 @@ import { Field, errorText } from "./parts";
 
 const small = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
 
-/** Admins: the users of this server (create, disable, roles, password and 2FA resets, delete) and the audit log. */
-export function UsersDialog({ onClose }: { onClose: () => void }) {
+/**
+ * Admins: the users of this server (create, disable, roles, password and 2FA resets, delete) and
+ * the audit log. The settings dialog's Users tab (D143; the account menu opens it there).
+ */
+export function UsersPane() {
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="flex h-[min(86vh,780px)] max-w-3xl flex-col gap-0 p-0" data-testid="users-dialog">
-        <div className="space-y-1 border-b p-4 pb-3">
-          <DialogTitle className="flex items-center gap-2"><Users className="size-4 text-muted-foreground" /> Users</DialogTitle>
-          <DialogDescription>
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="users-dialog">
+        <div className="space-y-1 border-b px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-semibold"><Users className="size-4 text-muted-foreground" /> Users</div>
+          <p className="text-sm text-muted-foreground">
             Each user has their own projects, sessions and API keys. Admins also manage users and the server's settings.
             Everyone's agents and terminals run as this server's operating-system account: only add people you trust with it.
-          </DialogDescription>
+          </p>
         </div>
         <Tabs defaultValue="users" className="flex min-h-0 flex-1 flex-col">
           <div className="border-b px-4 py-2">
@@ -39,8 +41,7 @@ export function UsersDialog({ onClose }: { onClose: () => void }) {
             </TabsContent>
           </div>
         </Tabs>
-      </DialogContent>
-    </Dialog>
+    </div>
   );
 }
 

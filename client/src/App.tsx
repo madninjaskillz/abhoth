@@ -2,9 +2,9 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { brandName } from "@/lib/brand";
 import { authState, isAdmin, signOut } from "@/lib/auth";
 import { Check, LogOut, Menu, UserRound, Users } from "lucide-react";
-import { AccountDialog } from "@/features/auth/AccountDialog";
-import { UsersDialog } from "@/features/auth/UsersDialog";
-import { SettingsButton } from "@/features/settings/SettingsDialog";
+import { SettingsButton, SettingsHost } from "@/features/settings/SettingsDialog";
+import { openSettings } from "@/features/settings/settingsNav";
+import { setWindowSubtitle, useDesktopState } from "@/lib/desktop";
 import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { FlaskConical, FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
@@ -69,6 +69,13 @@ export default function App() {
       setActive(pick.id);
     }
   }, [list, active, ensure, setActive]);
+
+  // The desktop title bar (and the tab's title) name the open project.
+  const activeName = list.find((p) => p.id === active)?.name ?? "";
+  useEffect(() => {
+    setWindowSubtitle(activeName);
+    document.title = activeName ? `${activeName} · ${brandName()}` : brandName();
+  }, [activeName]);
 
   useEffect(() => {
     if (!active) return;
@@ -217,6 +224,7 @@ function Header({
   profilesOn: boolean;
 }) {
   const qc = useQueryClient();
+  const framed = !!useDesktopState()?.frameless;
   const connection = useConnection((s) => s.connection);
   const active = useWorkspace((s) => s.active);
   const setActive = useWorkspace((s) => s.setActive);
@@ -327,8 +335,9 @@ function Header({
   return (
     <header ref={headerRef} className="relative flex h-10 shrink-0 items-stretch gap-2 border-b bg-panel pl-3 pr-2" data-collapsed={collapsed}>
       <div ref={brandRef} className="flex shrink-0 items-center gap-2 font-semibold">
-        <MascotBadge />
-        {!narrow && <span className="tracking-tight text-primary">{brandName()}</span>}
+        {/* The desktop's own title bar shows the mascot and name already. */}
+        {!framed && <MascotBadge />}
+        {!narrow && !framed && <span className="tracking-tight text-primary">{brandName()}</span>}
       </div>
       <nav ref={navRef} className="flex min-w-0 flex-1 items-end gap-px overflow-x-auto pt-1.5" role="tablist" data-testid="project-tabs">
         {projects.map((p) => (
@@ -441,9 +450,10 @@ function Header({
               </button>
             </Tip>
           ))}
-        <SettingsButton project={projects.find((p) => p.id === active)} narrow={narrow} menu={collapsed} />
+        <SettingsButton narrow={narrow} menu={collapsed} />
         <AccountMenu narrow={narrow} menu={collapsed} />
       </div>
+      <SettingsHost project={projects.find((p) => p.id === active)} />
       <AddProjectDialog
         open={adding}
         onOpenChange={setAdding}
@@ -548,10 +558,12 @@ function NoProjects({ canAdd, onAdded }: { canAdd: boolean; onAdded: (id: string
   );
 }
 
-/** Who is signed in, their account, the users page (admins) and sign out. `menu`: labelled rows of the header's menu. */
+/**
+ * Who is signed in, their account and the users page (admins), which open the settings on their
+ * tab, and sign out. `menu`: labelled rows of the header's menu.
+ */
 function AccountMenu({ narrow, menu }: { narrow: boolean; menu?: boolean }) {
   const auth = authState();
-  const [dialog, setDialog] = useState<"account" | "users" | null>(null);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -567,20 +579,14 @@ function AccountMenu({ narrow, menu }: { narrow: boolean; menu?: boolean }) {
       document.removeEventListener("keydown", onKey, true);
     };
   }, [open]);
-  const dialogs = (
-    <>
-      {dialog === "account" && <AccountDialog onClose={() => setDialog(null)} />}
-      {dialog === "users" && <UsersDialog onClose={() => setDialog(null)} />}
-    </>
-  );
   const rows = (
     <>
-      <button role="menuitem" className={menuRow} onClick={() => { setOpen(false); setDialog("account"); }} data-testid="account-open">
+      <button role="menuitem" className={menuRow} onClick={() => { setOpen(false); openSettings("account"); }} data-testid="account-open">
         <UserRound className="size-4 shrink-0 text-muted-foreground" />
         <span>Account</span>
       </button>
       {auth.admin && (
-        <button role="menuitem" className={menuRow} onClick={() => { setOpen(false); setDialog("users"); }} data-testid="users-open">
+        <button role="menuitem" className={menuRow} onClick={() => { setOpen(false); openSettings("users"); }} data-testid="users-open">
           <Users className="size-4 shrink-0 text-muted-foreground" />
           <span>Users</span>
         </button>
@@ -600,7 +606,6 @@ function AccountMenu({ narrow, menu }: { narrow: boolean; menu?: boolean }) {
           {auth.admin && <span className="ml-auto rounded border px-1 text-[9px] uppercase">admin</span>}
         </div>
         {rows}
-        {dialogs}
       </div>
     );
   }
@@ -623,7 +628,6 @@ function AccountMenu({ narrow, menu }: { narrow: boolean; menu?: boolean }) {
           {rows}
         </div>
       )}
-      {dialogs}
     </span>
   );
 }

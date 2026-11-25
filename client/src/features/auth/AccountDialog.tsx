@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Laptop, Loader2, LogOut, Plus, ShieldCheck, ShieldOff, Trash2, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Badge, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/misc";
 import { accountApi, authState, type ApiKey, type NewApiKey, type TotpSetup, type WebSessionInfo } from "@/lib/auth";
 import { MIN_PASSWORD, ago, when, describeAgent, passwordProblem } from "./authHelpers";
@@ -10,23 +10,25 @@ import { CodeForm, CopyButton, RecoveryCodes, TotpQr, errorText } from "./parts"
 
 const small = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
 
-/** The signed-in user's account: password, two-factor sign-in, API keys and sessions. */
-export function AccountDialog({ onClose }: { onClose: () => void }) {
+/**
+ * The signed-in user's account: password, two-factor sign-in, API keys and sessions. The
+ * settings dialog's Account tab (D143; the account menu opens it there).
+ */
+export function AccountPane() {
   const account = useQuery({ queryKey: ["account"], queryFn: accountApi.get });
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="flex h-[min(86vh,760px)] max-w-2xl flex-col gap-0 p-0" data-testid="account-dialog">
-        <div className="space-y-1 border-b p-4 pb-3">
-          <DialogTitle className="flex items-center gap-2">
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="account-dialog">
+        <div className="space-y-1 border-b px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-semibold">
             <UserRound className="size-4 text-muted-foreground" /> Account
             {account.data && <span className="font-normal text-muted-foreground">· {account.data.username}</span>}
             {account.data?.admin && <Badge>admin</Badge>}
-          </DialogTitle>
-          <DialogDescription>
+          </div>
+          <p className="text-sm text-muted-foreground">
             {account.data
               ? <>Created {ago(account.data.created)}{account.data.lastLogin && <> · last sign-in {ago(account.data.lastLogin)}</>}</>
               : "Your password, two-factor sign-in, API keys and signed-in sessions."}
-          </DialogDescription>
+          </p>
         </div>
         <Tabs defaultValue="security" className="flex min-h-0 flex-1 flex-col">
           <div className="border-b px-4 py-2">
@@ -50,8 +52,7 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
             </TabsContent>
           </div>
         </Tabs>
-      </DialogContent>
-    </Dialog>
+    </div>
   );
 }
 

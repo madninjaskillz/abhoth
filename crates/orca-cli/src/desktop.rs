@@ -6,6 +6,7 @@
 //! Closing the window hides it to the tray (agents keep running; tray Quit exits), or quits with
 //! `desktop.closeToTray` off (D113). Installed with Velopack, it checks GitHub Releases in the
 //! background and the tray offers "Restart to update" once a new version is downloaded (D136).
+//! On Windows the window is frameless and the web UI draws its title bar (D143, `desktop_chrome`).
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
@@ -17,6 +18,8 @@ use tao::dpi::LogicalSize;
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::window::{Icon, WindowBuilder};
+
+use crate::desktop_chrome::{self as chrome, WindowCommand, WindowState};
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem};
 use tray_icon::{TrayIcon, TrayIconBuilder, TrayIconEvent};
 
@@ -38,6 +41,8 @@ enum UserEvent {
     TrayClick,
     /// A newer release has been downloaded (its version); the tray offers to restart into it.
     UpdateReady(String),
+    /// The page's title bar asks the window for something (D143).
+    Window(WindowCommand),
 }
 
 /// What closing the window does.
@@ -63,14 +68,7 @@ pub fn on_close_requested(close_to_tray: bool, has_tray: bool) -> CloseAction {
 /// the settings applies at once. A missing or unreadable file means the default (on); the file
 /// is never written here.
 pub fn close_to_tray(home: &Path) -> bool {
-    let default = orca_core::config::DesktopConfig::default().close_to_tray;
-    let Ok(bytes) = std::fs::read(home.join("config.json")) else {
-        return default;
-    };
-    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
-    serde_json::from_slice::<orca_core::config::OrcaConfig>(bytes)
-        .map(|c| c.desktop.close_to_tray)
-        .unwrap_or(default)
+    chrome::desktop_config(home).close_to_tray
 }
 
 /// Why the app stops, on stderr and in a native error box: `abhoth-desktop.exe` has no console,
@@ -370,13 +368,20 @@ pub fn run(raw: Vec<String>) -> i32 {
     }
 
     let (rgba, w, h) = icon_rgba();
-    let window = match WindowBuilder::new()
+    let mut frameless = chrome::frameless(chrome::desktop_config(&home).system_title_bar);
+    let builder = WindowBuilder::new()
         .with_title(orca_core::brand::PRODUCT_NAME)
         .with_inner_size(LogicalSize::new(1360.0, 860.0))
         .with_min_inner_size(LogicalSize::new(480.0, 360.0))
         .with_window_icon(Icon::from_rgba(rgba.clone(), w, h).ok())
-        .build(&event_loop)
-    {
+        .with_decorations(!frameless);
+    // Frameless keeps the DWM shadow, the Windows 11 rounded corners and the resize borders.
+    #[cfg(windows)]
+    let builder = {
+        use tao::platform::windows::WindowBuilderExtWindows;
+        builder.with_undecorated_shadow(true)
+    };
+    let window = match builder.build(&event_loop) {
         Ok(w) => w,
         Err(e) => {
             report_error(&format!("Could not open a window: {e}"));
@@ -398,6 +403,8 @@ pub fn run(raw: Vec<String>) -> i32 {
     let mut tray: Option<TrayIcon> = None;
     let mut webview: Option<wry::WebView> = None;
     let mut web_context = wry::WebContext::new(Some(home.join("webview")));
+    let nonce = orca_webui::util::new_token();
+    let mut last_state: Option<WindowState> = None;
     let mut stop = Some(stop_tx);
     let mut host = Some(host);
     let mut lock = Some(lock);
@@ -437,8 +444,26 @@ pub fn run(raw: Vec<String>) -> i32 {
             }
             Event::UserEvent(UserEvent::Ready(url)) => {
                 let origin = url.split("/?").next().unwrap_or(&url).to_string();
+                let app_origin = chrome::origin_of(&url);
+                let state = window_state(&window, frameless);
+                let ipc_proxy = proxy.clone();
+                let ipc_origin = app_origin.clone();
+                let ipc_nonce = nonce.clone();
                 let builder = wry::WebViewBuilder::new_with_web_context(&mut web_context)
                     .with_url(&url)
+                    .with_initialization_script_for_main_only(
+                        chrome::bridge_script(&app_origin, &nonce, state),
+                        true,
+                    )
+                    .with_ipc_handler(move |req: wry::http::Request<String>| {
+                        // Only the app's own page (its origin, with the per-launch nonce).
+                        if !chrome::sender_allowed(&req.uri().to_string(), &ipc_origin) {
+                            return;
+                        }
+                        if let Some(cmd) = chrome::parse_command(req.body(), &ipc_nonce) {
+                            let _ = ipc_proxy.send_event(UserEvent::Window(cmd));
+                        }
+                    })
                     .with_navigation_handler(move |to: String| {
                         // Links out of the app open in the system browser.
                         if to.starts_with(&origin) || to.starts_with("about:") {
@@ -539,10 +564,48 @@ pub fn run(raw: Vec<String>) -> i32 {
                     finish(code);
                 }
             }
+            Event::UserEvent(UserEvent::Window(cmd)) if cmd != WindowCommand::Close => {
+                match cmd {
+                    WindowCommand::State => {
+                        // A (re)loaded page: pick up a title bar setting changed elsewhere.
+                        let want =
+                            chrome::frameless(chrome::desktop_config(&home).system_title_bar);
+                        if want != frameless {
+                            frameless = want;
+                            window.set_decorations(!frameless);
+                        }
+                        last_state = None;
+                    }
+                    WindowCommand::Minimize => window.set_minimized(true),
+                    WindowCommand::ToggleMaximize => window.set_maximized(!window.is_maximized()),
+                    WindowCommand::Drag => {
+                        let _ = window.drag_window();
+                    }
+                    WindowCommand::Resize(dir) => {
+                        if frameless && !window.is_maximized() {
+                            let _ = window.drag_resize_window(dir);
+                        }
+                    }
+                    WindowCommand::SystemTitleBar(on) => {
+                        let want = chrome::frameless(on);
+                        if want != frameless {
+                            frameless = want;
+                            window.set_decorations(!frameless);
+                        }
+                    }
+                    WindowCommand::Close => {}
+                }
+                push_state(webview.as_ref(), &window, frameless, &mut last_state);
+            }
+            Event::WindowEvent {
+                event: WindowEvent::Resized(_) | WindowEvent::Focused(_),
+                ..
+            } => push_state(webview.as_ref(), &window, frameless, &mut last_state),
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
-            } => match on_close_requested(close_to_tray(&home), tray.is_some()) {
+            }
+            | Event::UserEvent(UserEvent::Window(WindowCommand::Close)) => match on_close_requested(close_to_tray(&home), tray.is_some()) {
                 CloseAction::Hide => window.set_visible(false),
                 CloseAction::Quit => {
                     drop(webview.take());
@@ -555,6 +618,29 @@ pub fn run(raw: Vec<String>) -> i32 {
             _ => {}
         }
     })
+}
+
+fn window_state(window: &tao::window::Window, frameless: bool) -> WindowState {
+    WindowState {
+        frameless,
+        maximized: window.is_maximized(),
+        focused: window.is_focused(),
+    }
+}
+
+/// Tells the page's title bar how the window is now (only when that changed).
+fn push_state(
+    webview: Option<&wry::WebView>,
+    window: &tao::window::Window,
+    frameless: bool,
+    last: &mut Option<WindowState>,
+) {
+    let Some(webview) = webview else { return };
+    let state = window_state(window, frameless);
+    if *last != Some(state) {
+        *last = Some(state);
+        let _ = webview.evaluate_script(&chrome::state_script(state));
+    }
 }
 
 /// What `main` does after a run: the provider usage lines, the background processes, exit.

@@ -795,3 +795,38 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     403, and the launch token opens nothing. The setup screen names the local admin
     (`setupUser`) and sets its password, with the setup code as usual, instead of making a
     second admin. `abhoth admin reset-password <name>` does the same from the command line.
+- **D143** (user requests 2026-11-25) Settings in tabs, and the desktop app's own title bar.
+  - **Tabs.** The settings dialog groups the server's settings by topic, from one list of tabs
+    with visibility rules (`client/src/features/settings/settingsTabs.ts`): General (Session,
+    default profile), Models (LLM Server, Context), Agent & tools (Permissions), Images (Image
+    Generation), Desktop, then Account (everyone) and Users (admins). The server settings tabs
+    are admin-only, as the server already enforces; a section the client doesn't know lands in
+    Advanced, so a new schema section never disappears. The account menu's Account and Users
+    rows open their tab (the D140 dialogs became the tabs' panes). One search covers all tabs and
+    labels each match with its tab; `#settings/<tab>` in the URL opens and names the tab; the
+    tab list follows the ARIA tabs pattern (arrows, Home/End) and is a dropdown at phone width.
+    Settings still save one at a time, so "unsaved" only marks a typed value not yet committed
+    (a tab dot, a count, a question before closing).
+  - **Title bar.** On Windows the window is frameless (`with_decorations(false)` plus tao's
+    undecorated shadow, which keeps WS_CAPTION/WS_THICKFRAME: DWM shadow, Windows 11 rounded
+    corners, Aero Snap with Win+arrows and edge drags, native resizing on the left, right and
+    bottom; tao fits a maximised window to the monitor's work area, taskbar included). The page
+    draws the bar (mascot, app and project name, minimise, maximise/restore, close) only when
+    the desktop bridge says the window is frameless; it stays clickable over dialogs. Close
+    does what the OS close button does (to the tray with `desktop.closeToTray`). The top edge
+    and corners resize from a thin strip in the bar (`drag_resize_window`), because the webview
+    covers the frame there. Double-click is counted in the page: the drag's move loop eats the
+    first click's release, so the browser's dblclick is unreliable.
+  - **IPC.** `crates/orca-cli/src/desktop_chrome.rs`: the bridge (`window.abhothDesktop`) is
+    injected into the app origin's top frame only, keeps a per-launch nonce in a closure and
+    posts JSON commands over wry IPC; the handler checks the sender's origin and the nonce and
+    accepts a fixed command list. The HTML preview's sandboxed frame has an opaque origin and
+    no bridge.
+  - **"Use system title bar"** (`desktop.systemTitleBar`, default off) switches at once (the
+    page tells the window after saving it) and is re-read on each page load.
+  - **Not done.** The Windows 11 snap-layouts flyout on hovering maximise: it needs
+    `WM_NCHITTEST` to answer `HTMAXBUTTON` on the top-level window, but the mouse over the button
+    is in WebView2's child window, so the parent never sees the hit test. The workarounds (a
+    native overlay window over the button, or faking Win+Z) are fragile; Win+Z and edge snapping
+    work. Linux and macOS keep the OS title bar (frameless there is untested); the bridge is
+    still there and the setting has no effect.

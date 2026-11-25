@@ -7,6 +7,8 @@ pub mod commands;
 pub mod custom_commands;
 #[cfg(feature = "desktop")]
 pub mod desktop;
+#[cfg(feature = "desktop")]
+pub mod desktop_chrome;
 pub mod file_log;
 pub mod hostui;
 pub mod hostui_password;

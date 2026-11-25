@@ -865,12 +865,16 @@ pub struct DesktopConfig {
     /// Closing the window hides it to the tray instead of quitting; agents keep running and the
     /// tray's Quit exits. On by default (user decision, D113); off: closing quits.
     pub close_to_tray: bool,
+    /// Use the OS title bar instead of the app's own (D143). Off by default: the window is
+    /// frameless on Windows and the web UI draws the title bar. Linux and macOS always use the OS one.
+    pub system_title_bar: bool,
 }
 
 impl Default for DesktopConfig {
     fn default() -> Self {
         Self {
             close_to_tray: true,
+            system_title_bar: false,
         }
     }
 }

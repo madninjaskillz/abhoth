@@ -841,6 +841,15 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
             |c| V::Bool(c.desktop.close_to_tray),
             |c, v| c.desktop.close_to_tray = v.as_bool(),
         ),
+        SettingDef::new(
+            DESKTOP,
+            "desktop.systemTitleBar",
+            "Use system title bar",
+            T::Bool,
+            "Desktop app (Windows): the OS title bar and frame instead of the app's own title bar. Applies at once.",
+            |c| V::Bool(c.desktop.system_title_bar),
+            |c, v| c.desktop.system_title_bar = v.as_bool(),
+        ),
     ]
 });
 

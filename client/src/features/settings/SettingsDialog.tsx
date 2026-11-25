@@ -1,206 +1,412 @@
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, KeyRound, Layers, RotateCcw, Search, Settings } from "lucide-react";
-import { api, settingsApi, type Project, type Setting } from "@/lib/api";
+import { api, settingsApi, type Project, type Setting, type SettingsDoc } from "@/lib/api";
 import { ProfilePicker, useProfiles } from "@/features/profiles/Profiles";
+import { AccountPane } from "@/features/auth/AccountDialog";
+import { UsersPane } from "@/features/auth/UsersDialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Tip, menuRow } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
 import { isAdmin } from "@/lib/auth";
+import { inDesktop, windowCommands } from "@/lib/desktop";
+import { openSettings, useSettingsNav } from "./settingsNav";
+import { nextTabIndex, pickTab, searchTabs, sectionsOfTab, unsavedByTab, visibleTabs, type SearchHit, type TabDef } from "./settingsTabs";
 
 const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
 
 /** The gear in the header: opens the settings (the web's /config). `menu`: a labelled row of the header's menu. */
-export function SettingsButton({ project, narrow, menu }: { project: Project | undefined; narrow: boolean; menu?: boolean }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      {menu ? (
-        <button role="menuitem" className={menuRow} onClick={() => setOpen(true)} data-testid="settings-open">
-          <Settings className="size-4 shrink-0 text-muted-foreground" />
-          <span>Settings</span>
-        </button>
-      ) : (
-        <Tip label="Settings (/config)">
-          <button
-            className="flex shrink-0 items-center gap-1 self-center rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-            onClick={() => setOpen(true)}
-            aria-label="Settings"
-            data-testid="settings-open"
-          >
-            <Settings className="size-4" />
-            {!narrow && <span className="sr-only">Settings</span>}
-          </button>
-        </Tip>
-      )}
-      {open && <SettingsDialog project={project} onClose={() => setOpen(false)} />}
-    </>
+export function SettingsButton({ narrow, menu }: { narrow: boolean; menu?: boolean }) {
+  return menu ? (
+    <button role="menuitem" className={menuRow} onClick={() => openSettings()} data-testid="settings-open">
+      <Settings className="size-4 shrink-0 text-muted-foreground" />
+      <span>Settings</span>
+    </button>
+  ) : (
+    <Tip label="Settings (/config)">
+      <button
+        className="flex shrink-0 items-center gap-1 self-center rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+        onClick={() => openSettings()}
+        aria-label="Settings"
+        data-testid="settings-open"
+      >
+        <Settings className="size-4" />
+        {!narrow && <span className="sr-only">Settings</span>}
+      </button>
+    </Tip>
   );
+}
+
+/** The settings dialog while it is open (the gear, the account menu or a #settings/<tab> link opens it). Rendered once. */
+export function SettingsHost({ project }: { project: Project | undefined }) {
+  const tab = useSettingsNav((s) => s.tab);
+  const close = useSettingsNav((s) => s.close);
+  if (tab === null) return null;
+  return <SettingsDialog project={project} requested={tab} onClose={close} />;
 }
 
 type Scope = "project" | "server";
 
+/** Setting keys with an edit typed but not saved yet (a text box, a list), per dialog. */
+const DirtyContext = createContext<(key: string, dirty: boolean) => void>(() => {});
+
 /**
- * The settings /config edits, in its sections, from the server's schema. Two scopes: the
- * current project's running session (as /config in its terminal: live where it can be, and
- * saved), or the server's defaults (its config.json; running projects keep theirs until they
- * restart).
+ * The settings, in tabs (D143): the server's settings /config edits (admins: the server refuses
+ * the rest), grouped by topic from the schema's sections, then the user's Account and the admins'
+ * Users. One search covers every tab and says which tab each match is on; the URL hash names the
+ * tab. Two scopes for the server settings: the current project's running session (as /config in
+ * its terminal: live where it can be, and saved), or the server's defaults (its config.json;
+ * running projects keep theirs until they restart).
  */
-export function SettingsDialog({ project, onClose }: { project: Project | undefined; onClose: () => void }) {
-  // Settings are saved to the server's shared config.json: admins only (the server refuses the rest).
-  if (!isAdmin()) return <SettingsAdminOnly onClose={onClose} />;
-  return <AdminSettingsDialog project={project} onClose={onClose} />;
-}
-
-function SettingsAdminOnly({ onClose }: { onClose: () => void }) {
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md" data-testid="settings-dialog">
-        <DialogTitle>Settings</DialogTitle>
-        <DialogDescription data-testid="settings-admin-only">
-          Settings are saved to this server's shared configuration, so only an admin can change them. A project's profile and
-          mode are picked in the chat footer.
-        </DialogDescription>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AdminSettingsDialog({ project, onClose }: { project: Project | undefined; onClose: () => void }) {
+export function SettingsDialog({ project, requested, onClose }: { project: Project | undefined; requested: string; onClose: () => void }) {
+  const admin = isAdmin();
+  const show = useSettingsNav((s) => s.show);
   const canProject = !!project && !project.readOnly && project.exists;
-  // The server's defaults (config.json) are the admins' to change.
   const [scope, setScope] = useState<Scope>(canProject ? "project" : "server");
   const pid = scope === "project" && project ? project.id : null;
   const [query, setQuery] = useState("");
-  const doc = useQuery({ queryKey: ["settings", pid ?? "server"], queryFn: () => settingsApi.get(pid) });
-  const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: 60000 });
-  const profiles = useProfiles(!!info.data?.profiles);
+  const doc = useQuery({ queryKey: ["settings", pid ?? "server"], queryFn: () => settingsApi.get(pid), enabled: admin });
+  const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: 60000, enabled: admin });
+  const profiles = useProfiles(admin && !!info.data?.profiles);
   const haveProfiles = !!profiles.data?.available && !!profiles.data.profiles;
-  const chosen = pid ? (profiles.data?.projects[pid] ?? null) : null;
-  // The TUI's own session (the primary project) takes its profile from --profile or /profile, not the picker.
-  const primary = !!pid && info.data?.primary === pid;
-  const pending = scope === "project" && haveProfiles && !primary && doc.isSuccess && (doc.data.profile ?? null) !== chosen;
 
-  const q = query.trim().toLowerCase();
-  const sections = useMemo(
-    () =>
-      (doc.data?.sections ?? [])
-        .map((s) => ({
-          ...s,
-          settings: s.settings.filter(
-            // The default profile is picked in the slot above (server scope); a project picks its own there.
-            (x) =>
-              !(x.key === PROFILES_ACTIVE && (scope === "project" || haveProfiles)) &&
-              (!q || [x.label, x.key, x.description, s.name, x.profile ?? ""].some((t) => t.toLowerCase().includes(q))),
-          ),
-        }))
-        .filter((s) => s.settings.length > 0),
-    [doc.data, q, scope, haveProfiles],
-  );
-  const modified = (doc.data?.sections ?? []).reduce((n, s) => n + s.settings.filter((x) => x.modified).length, 0);
+  const all = useMemo(() => doc.data?.sections ?? [], [doc.data]);
+  const tabs = useMemo(() => visibleTabs({ admin, desktop: inDesktop() }, doc.data ? all : undefined), [admin, all, doc.data]);
+  const active = pickTab(requested, tabs) ?? "account";
+  const activeTab = tabs.find((t) => t.id === active) ?? tabs[0];
+  // The URL says which tab is open (and the first one when it asked for none or one this user can't see).
+  useEffect(() => {
+    if (requested !== active) show(active);
+  }, [requested, active, show]);
+
+  // The default profile is picked in the profile slot (server scope); a project picks its own there.
+  const hide = useCallback((x: { key: string }) => x.key === PROFILES_ACTIVE && (scope === "project" || haveProfiles), [scope, haveProfiles]);
+  const q = query.trim();
+  const hits = useMemo(() => (q ? searchTabs(tabs, all, q, hide) : []), [tabs, all, q, hide]);
+  const modified = all.reduce((n, s) => n + s.settings.filter((x) => x.modified).length, 0);
+
+  // Unsaved edits: a dot on their tab, a count in the header, and a question before closing.
+  const [dirty, setDirty] = useState<Set<string>>(() => new Set());
+  const markDirty = useCallback((key: string, d: boolean) => {
+    setDirty((prev) => {
+      if (prev.has(key) === d) return prev;
+      const next = new Set(prev);
+      if (d) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
+  const unsaved = useMemo(() => unsavedByTab(dirty, all), [dirty, all]);
+  const [askClose, setAskClose] = useState(false);
+  const tryClose = () => (dirty.size > 0 ? setAskClose(true) : onClose());
+
+  const onTab = (id: string) => {
+    setQuery("");
+    show(id);
+  };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="flex h-[min(86vh,820px)] max-w-3xl flex-col gap-0 p-0" data-testid="settings-dialog">
-        <div className="space-y-2.5 border-b p-4 pb-3">
+    <Dialog open onOpenChange={(o) => !o && tryClose()}>
+      <DialogContent className="flex h-[min(88vh,860px)] max-w-4xl flex-col gap-0 p-0" data-testid="settings-dialog">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b p-4 pb-3 pr-12">
           <DialogTitle>Settings</DialogTitle>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-md border p-0.5 text-xs" role="tablist" aria-label="Which settings">
-              <button
-                role="tab"
-                aria-selected={scope === "project"}
-                disabled={!canProject}
-                onClick={() => setScope("project")}
-                className={cn("rounded px-2.5 py-1", scope === "project" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground", !canProject && "opacity-50")}
-                data-testid="settings-scope-project"
-              >
-                Project{project ? `: ${project.name}` : ""}
-              </button>
-              <button
-                role="tab"
-                aria-selected={scope === "server"}
-                onClick={() => setScope("server")}
-                className={cn("rounded px-2.5 py-1", scope === "server" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}
-                data-testid="settings-scope-server"
-              >
-                Server defaults
-              </button>
-            </div>
-            <ProfileSlot
-              scope={scope}
-              project={project}
-              primary={primary}
-              running={doc.data?.profile ?? null}
-              defaultSetting={findSetting(doc.data?.sections, PROFILES_ACTIVE)}
-              enabled={haveProfiles}
+          <DialogDescription className="sr-only">The server's settings, your account and the users, in tabs.</DialogDescription>
+          <div className="relative min-w-[12rem] flex-1">
+            <Search className="absolute left-2 top-2 size-4 text-muted-foreground" />
+            <input
+              className={cn(field, "pl-8")}
+              placeholder="Search all settings…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search all settings"
+              data-testid="settings-search"
             />
           </div>
-          <DialogDescription data-testid="settings-scope-note">
-            {scope === "project" ? (
-              <>
-                Editing <b className="text-foreground">{project?.name}</b>'s running session, as <code>/config</code> in its terminal would: most changes apply at once,
-                the rest when a session starts. Saved to <code>{doc.data?.configFile ?? "config.json"}</code> too.
-                {doc.data?.profile && (
-                  <>
-                    {" "}It runs with profile <b className="text-foreground">{doc.data.profile}</b>: the settings that profile sets are shown as its own, and change
-                    with the profile.
-                  </>
-                )}
-                {pending && (
-                  <span className="text-warning" data-testid="settings-profile-pending">
-                    {" "}Profile change pending: the session restarts with {chosen ?? "the config's own settings"} on your next prompt, and these settings follow.
-                  </span>
-                )}
-              </>
-            ) : (
-              <>
-                Editing the server's <code>{doc.data?.configFile ?? "config.json"}</code>: new sessions use it. Open projects keep their current settings until they restart.
-                {doc.data?.profile && (
-                  <>
-                    {" "}Sessions on the default profile <b className="text-foreground">{doc.data.profile}</b> take its values for the settings marked with it;
-                    the values here are for sessions without it.
-                  </>
-                )}
-              </>
-            )}
-          </DialogDescription>
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-2 top-2 size-4 text-muted-foreground" />
-              <input
-                className={cn(field, "pl-8")}
-                placeholder="Search settings…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                autoFocus
-                data-testid="settings-search"
-              />
+          {dirty.size > 0 && (
+            <span className="shrink-0 text-xs text-warning" data-testid="settings-unsaved">
+              {dirty.size} unsaved
+            </span>
+          )}
+          {admin && doc.isSuccess && <span className="shrink-0 text-xs text-muted-foreground">{modified} changed from default</span>}
+        </div>
+        <DirtyContext.Provider value={markDirty}>
+          <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+            <TabList tabs={tabs} active={active} unsaved={unsaved} searching={!!q} onSelect={onTab} admin={admin} />
+            <div className="min-h-0 flex-1 overflow-y-auto" id="settings-panel" role="tabpanel" aria-labelledby={q ? undefined : `settings-tab-${active}`}>
+              {q ? (
+                <SearchResults hits={hits} query={query} onOpen={onTab} render={(s) => <SettingRow key={s.key} setting={s} pid={pid} scope={scope} />} loading={admin && doc.isLoading} />
+              ) : activeTab?.kind === "pane" ? (
+                <Pane id={activeTab.id} />
+              ) : activeTab ? (
+                <div className="px-4 pb-4">
+                  <ScopeBar
+                    scope={scope}
+                    setScope={setScope}
+                    canProject={canProject}
+                    project={project}
+                    doc={doc.data}
+                    haveProfiles={haveProfiles}
+                    profileChosen={pid ? (profiles.data?.projects[pid] ?? null) : null}
+                    primary={!!pid && info.data?.primary === pid}
+                  />
+                  <p className="pt-2 text-xs text-muted-foreground">{activeTab.blurb}</p>
+                  {doc.isLoading && <div className="py-6 text-sm text-muted-foreground">Loading…</div>}
+                  {doc.isError && <div className="py-6 text-sm text-destructive">{(doc.error as Error).message}</div>}
+                  {sectionsOfTab(activeTab, all).map((s) => (
+                    <section key={s.name} className="py-2" data-testid="settings-section">
+                      <h3 className="sticky top-0 z-10 bg-panel py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{s.name}</h3>
+                      <div className="divide-y">
+                        {s.settings.filter((x) => !hide(x)).map((x) => (
+                          <SettingRow key={x.key} setting={x} pid={pid} scope={scope} />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : null}
             </div>
-            <span className="shrink-0 text-xs text-muted-foreground">{modified} changed from default</span>
           </div>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
-          {doc.isLoading && <div className="py-6 text-sm text-muted-foreground">Loading…</div>}
-          {doc.isError && <div className="py-6 text-sm text-destructive">{(doc.error as Error).message}</div>}
-          {doc.isSuccess && sections.length === 0 && <div className="py-6 text-sm text-muted-foreground">No setting matches "{query}".</div>}
-          {sections.map((s) => (
-            <section key={s.name} className="py-2" data-testid="settings-section">
-              <h3 className="sticky top-0 z-10 bg-panel py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{s.name}</h3>
-              <div className="divide-y">
-                {s.settings.map((x) => (
-                  <SettingRow key={x.key} setting={x} pid={pid} scope={scope} />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        </DirtyContext.Provider>
+        <ConfirmDialog
+          open={askClose}
+          title="Discard unsaved changes?"
+          body={`${dirty.size} setting${dirty.size === 1 ? " has" : "s have"} an edit that isn't saved yet (press Enter in a box, or Save under a list, to save it).`}
+          confirm="Discard"
+          destructive
+          onConfirm={() => {
+            setAskClose(false);
+            onClose();
+          }}
+          onCancel={() => setAskClose(false)}
+        />
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * The tabs: a vertical list (ARIA tabs: arrows, Home/End, the focused tab opens) beside the
+ * page, or a dropdown at phone width.
+ */
+function TabList({
+  tabs,
+  active,
+  unsaved,
+  searching,
+  onSelect,
+  admin,
+}: {
+  tabs: TabDef[];
+  active: string;
+  unsaved: Record<string, number>;
+  searching: boolean;
+  onSelect: (id: string) => void;
+  admin: boolean;
+}) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  return (
+    <>
+      <div className="border-b px-4 py-2 sm:hidden">
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          Section
+          <select
+            className="h-8 flex-1 rounded-md border bg-background px-2 text-sm text-foreground"
+            value={active}
+            onChange={(e) => onSelect(e.target.value)}
+            data-testid="settings-tab-select"
+          >
+            {tabs.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+                {unsaved[t.id] ? " •" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="hidden w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r p-2 sm:flex">
+        <div role="tablist" aria-orientation="vertical" aria-label="Settings" className="flex flex-col gap-0.5" data-testid="settings-tabs">
+          {tabs.map((t, i) => {
+            const selected = !searching && t.id === active;
+            return (
+              <button
+                key={t.id}
+                ref={(el) => {
+                  refs.current[i] = el;
+                }}
+                id={`settings-tab-${t.id}`}
+                role="tab"
+                aria-selected={selected}
+                aria-controls="settings-panel"
+                tabIndex={t.id === active ? 0 : -1}
+                onClick={() => onSelect(t.id)}
+                onKeyDown={(e) => {
+                  const to = nextTabIndex(i, tabs.length, e.key);
+                  if (to === i) return;
+                  e.preventDefault();
+                  refs.current[to]?.focus();
+                  onSelect(tabs[to].id);
+                }}
+                className={cn(
+                  "flex items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  selected ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                )}
+                data-testid={`settings-tab-${t.id}`}
+              >
+                <span>{t.label}</span>
+                {!!unsaved[t.id] && <span className="size-1.5 rounded-full bg-warning" title="Unsaved edits" aria-label="unsaved edits" />}
+              </button>
+            );
+          })}
+        </div>
+        {!admin && (
+          <p className="mt-3 px-2.5 text-[11px] leading-snug text-muted-foreground" data-testid="settings-admin-only">
+            The server's settings are shared, so only an admin can change them. A project's profile and mode are picked in the chat footer.
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+
+function Pane({ id }: { id: string }) {
+  if (id === "account") return <div className="flex h-full flex-col"><AccountPane /></div>;
+  if (id === "users") return <div className="flex h-full flex-col"><UsersPane /></div>;
+  return null;
+}
+
+/** The search across all tabs: matches grouped under their tab, each with a way to open it. */
+function SearchResults({
+  hits,
+  query,
+  onOpen,
+  render,
+  loading,
+}: {
+  hits: SearchHit<{ name: string; settings: Setting[] }>[];
+  query: string;
+  onOpen: (tab: string) => void;
+  render: (s: Setting) => React.ReactNode;
+  loading: boolean;
+}) {
+  if (loading) return <div className="p-4 text-sm text-muted-foreground">Loading…</div>;
+  if (hits.length === 0) return <div className="p-4 text-sm text-muted-foreground">No setting matches "{query}".</div>;
+  return (
+    <div className="px-4 pb-4" data-testid="settings-results">
+      {hits.map((h) => (
+        <section key={h.tab.id} className="py-2" data-testid="settings-result" data-tab={h.tab.id}>
+          <div className="sticky top-0 z-10 flex items-center gap-2 bg-panel py-1.5">
+            <span className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-medium text-foreground">{h.tab.label}</span>
+            <button className="text-xs text-primary hover:underline" onClick={() => onOpen(h.tab.id)} data-testid="settings-result-open">
+              Open tab
+            </button>
+          </div>
+          {h.pane ? (
+            <p className="py-1 text-xs text-muted-foreground">{h.tab.blurb}</p>
+          ) : (
+            h.sections.map((s) => (
+              <div key={s.name}>
+                <h3 className="pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{s.name}</h3>
+                <div className="divide-y">{s.settings.map(render)}</div>
+              </div>
+            ))
+          )}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** Which settings are edited (the project's running session or the server's defaults), and the profile. */
+function ScopeBar({
+  scope,
+  setScope,
+  canProject,
+  project,
+  doc,
+  haveProfiles,
+  profileChosen,
+  primary,
+}: {
+  scope: Scope;
+  setScope: (s: Scope) => void;
+  canProject: boolean;
+  project: Project | undefined;
+  doc: SettingsDoc | undefined;
+  haveProfiles: boolean;
+  profileChosen: string | null;
+  primary: boolean;
+}) {
+  const pending = scope === "project" && haveProfiles && !primary && !!doc && (doc.profile ?? null) !== profileChosen;
+  return (
+    <div className="space-y-2 border-b pb-3 pt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex rounded-md border p-0.5 text-xs" role="radiogroup" aria-label="Which settings">
+          <button
+            role="radio"
+            aria-checked={scope === "project"}
+            disabled={!canProject}
+            onClick={() => setScope("project")}
+            className={cn("rounded px-2.5 py-1", scope === "project" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground", !canProject && "opacity-50")}
+            data-testid="settings-scope-project"
+          >
+            Project{project ? `: ${project.name}` : ""}
+          </button>
+          <button
+            role="radio"
+            aria-checked={scope === "server"}
+            onClick={() => setScope("server")}
+            className={cn("rounded px-2.5 py-1", scope === "server" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}
+            data-testid="settings-scope-server"
+          >
+            Server defaults
+          </button>
+        </div>
+        <ProfileSlot
+          scope={scope}
+          project={project}
+          primary={primary}
+          running={doc?.profile ?? null}
+          defaultSetting={findSetting(doc?.sections, PROFILES_ACTIVE)}
+          enabled={haveProfiles}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground" data-testid="settings-scope-note">
+        {scope === "project" ? (
+          <>
+            Editing <b className="text-foreground">{project?.name}</b>'s running session, as <code>/config</code> in its terminal would: most changes apply at once,
+            the rest when a session starts. Saved to <code>{doc?.configFile ?? "config.json"}</code> too.
+            {doc?.profile && (
+              <>
+                {" "}It runs with profile <b className="text-foreground">{doc.profile}</b>: the settings that profile sets are shown as its own, and change
+                with the profile.
+              </>
+            )}
+            {pending && (
+              <span className="text-warning" data-testid="settings-profile-pending">
+                {" "}Profile change pending: the session restarts with {profileChosen ?? "the config's own settings"} on your next prompt, and these settings follow.
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            Editing the server's <code>{doc?.configFile ?? "config.json"}</code>: new sessions use it. Open projects keep their current settings until they restart.
+            {doc?.profile && (
+              <>
+                {" "}Sessions on the default profile <b className="text-foreground">{doc.profile}</b> take its values for the settings marked with it;
+                the values here are for sessions without it.
+              </>
+            )}
+          </>
+        )}
+      </p>
+    </div>
   );
 }
 
 const PROFILES_ACTIVE = "profiles.active";
+const SYSTEM_TITLE_BAR = "desktop.systemTitleBar";
 
 function findSetting(sections: { settings: Setting[] }[] | undefined, key: string) {
   for (const s of sections ?? []) for (const x of s.settings) if (x.key === key) return x;
@@ -291,9 +497,11 @@ function SettingRow({ setting: s, pid, scope }: { setting: Setting; pid: string 
   const [confirm, setConfirm] = useState<{ value: unknown } | null>(null);
   const save = useMutation({
     mutationFn: ({ value, reset }: { value: unknown; reset?: boolean }) => settingsApi.set(pid, s.key, value, reset),
-    onSuccess: (r) => {
+    onSuccess: (r, v) => {
       if (!r.ok) return setError(r.error ?? "Refused.");
       setError(null);
+      // The desktop window switches its title bar at once.
+      if (s.key === SYSTEM_TITLE_BAR && inDesktop()) windowCommands.systemTitleBar(v.reset ? false : v.value === true);
       setSaved(true);
       setTimeout(() => setSaved(false), 1600);
       void qc.invalidateQueries({ queryKey: ["settings"] });
@@ -382,6 +590,16 @@ function Editor({ setting: s, busy, onCommit, onRemove }: { setting: Setting; bu
   const [text, setText] = useState(initial);
   const [replacing, setReplacing] = useState(false);
   useEffect(() => setText(initial), [initial]);
+  // Typed but not saved yet: the dialog marks the tab and asks before closing.
+  const markDirty = useContext(DirtyContext);
+  const listChanged =
+    s.type === "list" &&
+    JSON.stringify(text.split(/[\n,]/).map((t) => t.trim()).filter(Boolean)) !== JSON.stringify(s.value ?? []);
+  const isDirty = s.type === "bool" ? false : s.type === "secret" ? replacing && !!text.trim() : s.type === "list" ? listChanged : text !== initial;
+  useEffect(() => {
+    markDirty(s.key, isDirty);
+  }, [markDirty, s.key, isDirty]);
+  useEffect(() => () => markDirty(s.key, false), [markDirty, s.key]);
 
   if (s.type === "bool") {
     const on = s.value === true;
