@@ -87,10 +87,10 @@ pub fn is_bridge(profile: Option<&ProfileDefinition>) -> bool {
 
 /// The mode of a results.jsonl row: peer when its sets turned peer mode on, else its lead mode.
 pub fn of_result(lead_mode: Option<&str>, sets: &[&str]) -> &'static str {
-    if sets
-        .iter()
-        .any(|s| s.replace(' ', "").eq_ignore_ascii_case("agent.peerMode=true"))
-    {
+    if sets.iter().any(|s| {
+        s.replace(' ', "")
+            .eq_ignore_ascii_case("agent.peerMode=true")
+    }) {
         return PEER;
     }
     normalize(lead_mode).unwrap_or(LEAD_MODE_AUTO)

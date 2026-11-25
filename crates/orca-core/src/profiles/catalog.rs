@@ -104,7 +104,11 @@ impl ProfileCatalog {
             if let Some(key) = find_key(&self.profiles, &name) {
                 return Some(key.clone());
             }
-            name = self.aliases.as_ref().and_then(|a| get_ci(a, &name))?.clone();
+            name = self
+                .aliases
+                .as_ref()
+                .and_then(|a| get_ci(a, &name))?
+                .clone();
         }
         None
     }

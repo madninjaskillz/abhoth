@@ -71,8 +71,8 @@ impl CliArgs {
         }
     }
 
-    /// `CliArgs.ApplyTo`.
-    pub fn apply_to(&self, config: &mut OrcaConfig) {
+    /// `CliArgs.ApplyTo`. An unknown `--engine` is an error (the message to print).
+    pub fn apply_to(&self, config: &mut OrcaConfig) -> Result<(), String> {
         if self.demo_mode {
             config.demo_mode = true;
             config.lm_studio.native_tool_calling = false;
@@ -87,12 +87,18 @@ impl CliArgs {
                 .always_approve
                 .extend(tools.iter().cloned());
         }
+        if let Some(engine) = &self.engine {
+            config.agent.engine = orca_core::engines::AgentEngines::normalize(Some(engine))
+                .ok_or_else(|| format!("Unknown --engine '{engine}' (native, claude or codex)."))?
+                .to_string();
+        }
         if self.sandbox_mode {
             config.sandbox_mode = true;
         }
         if let Some(dir) = &self.allowed_directory {
             config.allowed_directory = Some(dir.clone());
         }
+        Ok(())
     }
 }
 

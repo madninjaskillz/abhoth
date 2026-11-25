@@ -775,9 +775,12 @@ async fn free_whole_copies_registry_down_counts_only_our_own_leases() {
 
 // ---- HttpSlotRegistryTests ----
 
+/// (path, JSON body, Content-Length header) of each request.
+type Seen = Arc<Mutex<Vec<(String, Value, Option<String>)>>>;
+
 #[tokio::test]
 async fn speaks_the_pig_slots_protocol_with_buffered_bodies() {
-    let seen: Arc<Mutex<Vec<(String, Value, Option<String>)>>> = Arc::default();
+    let seen: Seen = Arc::default();
     let s = seen.clone();
     let app = axum::Router::new().fallback(move |req: axum::extract::Request| {
         let s = s.clone();

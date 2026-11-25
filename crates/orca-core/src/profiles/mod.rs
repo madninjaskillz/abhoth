@@ -84,10 +84,7 @@ pub async fn apply_at_startup(
     let service = ProfileService::from_config(&manager.config, config_dir);
     let (catalog, error) = service.get_catalog().await;
     let Some(catalog) = catalog else {
-        return Some(format!(
-            "Profile '{name}': {}",
-            error.unwrap_or_default()
-        ));
+        return Some(format!("Profile '{name}': {}", error.unwrap_or_default()));
     };
     let Some(profile) = catalog.find(name).cloned() else {
         return Some(format!(

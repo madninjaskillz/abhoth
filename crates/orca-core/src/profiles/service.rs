@@ -143,9 +143,9 @@ impl ProfileService {
         let status = r.status();
         let body = r.text().await.map_err(transport)?;
         if !status.is_success() {
-            return Err(ProfileError::Api(error_of(&body).unwrap_or_else(|| {
-                format!("plan failed ({})", status.as_u16())
-            })));
+            return Err(ProfileError::Api(
+                error_of(&body).unwrap_or_else(|| format!("plan failed ({})", status.as_u16())),
+            ));
         }
         serde_json::from_str(&body).map_err(|e| ProfileError::Api(e.to_string()))
     }
@@ -168,9 +168,9 @@ impl ProfileService {
             return Ok(None);
         }
         if !(200..300).contains(&status) {
-            return Err(ProfileError::Api(error_of(text).unwrap_or_else(|| {
-                format!("switch request failed ({status})")
-            })));
+            return Err(ProfileError::Api(
+                error_of(text).unwrap_or_else(|| format!("switch request failed ({status})")),
+            ));
         }
         serde_json::from_str(text)
             .map(Some)
@@ -280,9 +280,9 @@ impl ProfileService {
         let status = r.status();
         let text = r.text().await.map_err(transport)?;
         if !status.is_success() {
-            return Err(ProfileError::Api(error_of(&text).unwrap_or_else(|| {
-                format!("{path} failed ({})", status.as_u16())
-            })));
+            return Err(ProfileError::Api(
+                error_of(&text).unwrap_or_else(|| format!("{path} failed ({})", status.as_u16())),
+            ));
         }
         serde_json::from_str(&text).map_err(|e| ProfileError::Api(e.to_string()))
     }

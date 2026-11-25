@@ -1,0 +1,9 @@
+{
+  "prompt": "Say hello",
+  "config": {
+    "agent": {
+      "engine": "turbo"
+    }
+  },
+  "replies": []
+}

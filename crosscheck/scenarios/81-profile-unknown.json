@@ -1,0 +1,13 @@
+{
+  "prompt": "Say hello",
+  "args": ["--profile", "nope"],
+  "config": {
+    "profiles": {
+      "serverUrl": "<SERVER_ROOT>"
+    }
+  },
+  "server_routes": {
+    "GET /profiles": [200, "{\"profiles\":{\"fast\":{\"client\":{}},\"slow\":{\"client\":{}}}}"]
+  },
+  "replies": []
+}

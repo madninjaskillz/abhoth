@@ -143,7 +143,10 @@ fn catalog_resolves_old_names_through_aliases_and_reads_the_v3_sections() {
          "live":{"layout":"dense4-abl"}}"#,
     )
     .unwrap();
-    assert_eq!(c.resolve(Some("DENSE4-ABL")).as_deref(), Some("dense-abl-x2"));
+    assert_eq!(
+        c.resolve(Some("DENSE4-ABL")).as_deref(),
+        Some("dense-abl-x2")
+    );
     assert_eq!(c.resolve(Some("older")).as_deref(), Some("dense-abl-x2"));
     assert_eq!(c.resolve(Some("nope")), None);
     assert!(c.find("dense4-abl").is_some());
@@ -153,11 +156,13 @@ fn catalog_resolves_old_names_through_aliases_and_reads_the_v3_sections() {
         Some("auto")
     );
     assert_eq!(c.engine_profiles.as_ref().unwrap()["g"].slots, 4);
-    assert_eq!(
-        c.engine_profiles.as_ref().unwrap()["g"].vram_gib,
-        Some(7.5)
+    assert_eq!(c.engine_profiles.as_ref().unwrap()["g"].vram_gib, Some(7.5));
+    assert!(
+        c.models.as_ref().unwrap()["m"]
+            .artifacts
+            .get("ninfer")
+            .is_some()
     );
-    assert!(c.models.as_ref().unwrap()["m"].artifacts.get("ninfer").is_some());
 }
 
 #[test]
@@ -316,7 +321,10 @@ async fn switch_refusal_and_job_following() {
     assert_eq!(refused.state.as_deref(), Some("refused"));
     assert!(refused.error.unwrap().contains("leases held"));
 
-    let job = service.request_switch("dense2", "test", None).await.unwrap();
+    let job = service
+        .request_switch("dense2", "test", None)
+        .await
+        .unwrap();
     assert_eq!(job.id.as_deref(), Some("j1"));
     let mut steps = Vec::new();
     let done = service

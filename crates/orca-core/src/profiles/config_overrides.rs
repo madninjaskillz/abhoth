@@ -18,7 +18,11 @@ fn split(path: &str) -> Result<Vec<&str>, OverrideError> {
 
 fn index_of(s: &str) -> Option<usize> {
     // int.TryParse: optional sign and surrounding whitespace; negatives are not indexes.
-    s.trim().parse::<i64>().ok().filter(|i| *i >= 0).map(|i| i as usize)
+    s.trim()
+        .parse::<i64>()
+        .ok()
+        .filter(|i| *i >= 0)
+        .map(|i| i as usize)
 }
 
 fn is_int(s: &str) -> bool {
