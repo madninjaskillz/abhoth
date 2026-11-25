@@ -133,6 +133,21 @@ pub enum PermissionDecision {
     ApproveAll,
 }
 
+tokio::task_local! {
+    static NON_INTERACTIVE: bool;
+}
+
+/// `InteractionScope.EnterNonInteractive`: run `f` where no one can answer a permission
+/// prompt (background agents): calls needing approval are refused instead of prompting.
+pub async fn non_interactive<F: std::future::Future>(f: F) -> F::Output {
+    NON_INTERACTIVE.scope(true, f).await
+}
+
+/// `InteractionScope.IsInteractive` is false here (inside [`non_interactive`]).
+pub fn is_non_interactive() -> bool {
+    NON_INTERACTIVE.try_with(|v| *v).unwrap_or(false)
+}
+
 /// `IPermissionPrompter`: asks the user whether a tool call may run.
 pub trait PermissionPrompter: Send + Sync {
     /// `risk` is the C# risk level name ("ReadOnly", "Moderate", "Dangerous").

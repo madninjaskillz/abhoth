@@ -681,3 +681,72 @@ async fn dispatcher_pi_profile_nudge_uses_pi_tool_names() {
         platform_lines(pc::PI_NUDGE_MESSAGE)
     );
 }
+
+// ── AgentWiring.RegisterPiAgentTools / WireTools ─────────────────────────────
+
+#[tokio::test]
+async fn wired_pi_agent_tools_list_custom_agents_and_record_the_lead_mode() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join("agents")).unwrap();
+    std::fs::write(
+        home.path().join("agents").join("tester.md"),
+        "---\nname: tester\ndescription: Runs the tests\ntools: [read, bash]\n---\nRun the tests.\n",
+    )
+    .unwrap();
+    let mut config = pi_config();
+    config.agent.lead_mode = "auto".into();
+    config.lm_studio.base_url = "http://127.0.0.1:9".into();
+    config.lm_studio.models = vec!["m".into()];
+    let (registry, services) = orca_cli::build_registry_in(&config, work.path());
+    let mut registry = registry;
+    orca_cli::pi_profile::register(&mut registry, &config);
+    let before: Vec<String> = registry.names();
+    let client = client_from_config(&config, Arc::new(ServedModels::new())).unwrap();
+    let mut session = AgentSession::new(config, client, registry, ToolContext::new(work.path()));
+    orca_cli::wire_agents(
+        &mut session,
+        &services.agent_tools,
+        Some(home.path()),
+        true,
+        None,
+    )
+    .unwrap();
+
+    // Same tools in the same order: the wired tools replace the unwired ones in place.
+    assert_eq!(session.registry.names(), before);
+    let subagent = session.registry.resolve(subagent::TOOL_NAME).unwrap();
+    assert!(
+        subagent
+            .description()
+            .contains("tester (Runs the tests), worker ("),
+        "{}",
+        subagent.description()
+    );
+    let o = session.orchestrator.clone().unwrap();
+    // Sub-agents never see lead_mode.
+    assert!(o.tools().iter().all(|t| t.name != "lead_mode"));
+    assert!(o.tools().iter().any(|t| t.name == subagent::TOOL_NAME));
+    // Pi's agent types plus the custom one.
+    let names = o.type_registry().get_all_names();
+    assert!(names.iter().any(|n| n == "scout"));
+    assert!(names.iter().any(|n| n == "tester"));
+
+    let lead_mode = session.registry.resolve("lead_mode").unwrap();
+    let r = lead_mode
+        .execute(
+            &json!({"mode": "hands-on", "reason": "one file"}),
+            &ToolContext::new(work.path()),
+        )
+        .await;
+    assert!(!r.is_error, "{}", r.content);
+    assert_eq!(r.content, orca_tools_pi::lead_mode::HANDS_ON_INSTRUCTIONS);
+    assert_eq!(o.lead_request_mode().as_deref(), Some("hands-on"));
+
+    let progress = session.registry.resolve("progress").unwrap();
+    let r = progress
+        .execute(&json!({"percent": 40}), &ToolContext::new(work.path()))
+        .await;
+    assert_eq!(r.content, "Progress recorded: 40%.");
+    assert_eq!(o.lead_progress(), Some(0.4));
+}

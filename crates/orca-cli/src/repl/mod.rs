@@ -61,6 +61,8 @@ pub struct Repl {
     pub custom: CustomCommandLoader,
     pub parser: CommandParser,
     pub agents: Option<Box<dyn AgentHost>>,
+    /// agent.planner: writes the plan before the first turn (`ReplLoop.Planner`).
+    pub planner: Option<orca_core::orchestration::planner_phase::PlannerPhase>,
     /// Lines printed after the banner (profile notices, resume notices).
     pub startup_notices: Vec<String>,
     /// `config.ActiveProfile`: the inference profile in use.
@@ -108,6 +110,7 @@ impl Repl {
             custom,
             parser,
             agents: None,
+            planner: None,
             startup_notices: Vec::new(),
             active_profile: None,
             saved_input: String::new(),
@@ -344,7 +347,27 @@ impl Repl {
                         escape(&attached.join(", "))
                     ));
                 }
+                let mut expanded = expanded;
+                // Results of background agents (/agent) that finished since the last turn.
+                if let Some(notes) = self
+                    .agents
+                    .as_ref()
+                    .and_then(|h| h.manager())
+                    .and_then(|m| m.drain_finished_user_agent_notes())
+                    .filter(|n| !n.is_empty())
+                {
+                    self.console.markup_line(&attached_notes_line(&notes));
+                    expanded = format!("{notes}\n\n[User message]\n{expanded}");
+                }
                 self.console.blank();
+                if let Some(planner) = self.planner.as_mut() {
+                    expanded = planner
+                        .prepare_first_message(
+                            &expanded,
+                            &orca_core::orchestration::CancelToken::new(),
+                        )
+                        .await;
+                }
                 let attachments = self.tray.take(&expanded);
                 let message = if attachments.is_empty() {
                     ChatMessage::user(expanded)
@@ -953,6 +976,32 @@ pub fn looks_like_plan(text: Option<&str>) -> bool {
     }
     let trimmed = text.trim_end();
     !trimmed.ends_with('?') && trimmed.contains('\n')
+}
+
+/// `AgentBadge.AttachedNotesLine`: which finished background agents' results go with the
+/// message.
+pub fn attached_notes_line(notes: &str) -> String {
+    let mut tags: Vec<String> = Vec::new();
+    for line in notes.lines() {
+        if let Some(rest) = line.strip_prefix("[Agent ")
+            && let Some(letter) = rest.chars().next()
+            && letter.is_ascii_uppercase()
+            && letter != 'L'
+            && rest[letter.len_utf8()..].starts_with(" \u{2014}")
+        {
+            let tag = format!("Agent {letter}");
+            if !tags.contains(&tag) {
+                tags.push(tag);
+            }
+        }
+    }
+    if tags.is_empty() {
+        return "[dim]  (attached results of finished background agents)[/]".into();
+    }
+    format!(
+        "[dim]  (attached results of finished background agents:[/] [dim]{}[/][dim])[/]",
+        tags.join(", ")
+    )
 }
 
 #[cfg(test)]

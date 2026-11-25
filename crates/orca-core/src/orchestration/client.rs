@@ -155,10 +155,25 @@ pub trait AgentClientProvider: Send + Sync {
     /// a nested spawn may borrow. None = no slots: use [`Self::default_client`].
     async fn acquire(
         &self,
-        _agent: &AgentContext,
-        _spawner: Option<&AgentContext>,
+        _agent: &Arc<AgentContext>,
+        _spawner: Option<&Arc<AgentContext>>,
         _waiting: &(dyn Fn() + Send + Sync),
     ) -> Option<AgentLease> {
+        None
+    }
+
+    /// Sticky slots are on (a parallel batch places its biggest task first, on a copy of its
+    /// own).
+    fn uses_slots(&self) -> bool {
+        false
+    }
+
+    /// The app-wide client inside an agent's flow (its compaction calls): `client` is the
+    /// agent's slot or provider client, None = it has neither. None = leave it as it is.
+    fn ambient_backend(
+        &self,
+        _client: Option<&Arc<dyn AgentChatClient>>,
+    ) -> Option<Arc<dyn crate::client::ChatBackend>> {
         None
     }
 
@@ -167,6 +182,11 @@ pub trait AgentClientProvider: Send + Sync {
 
     /// The type this agent resolved to (for logs and providers that care).
     fn note_type(&self, _agent: &AgentContext, _type_def: &AgentTypeDefinition) {}
+
+    /// Where named providers' usage is added up (`UsageLedger`); None = the process-wide one.
+    fn usage_ledger(&self) -> Option<Arc<crate::client::usage::ProviderUsageLedger>> {
+        None
+    }
 }
 
 /// Every agent uses the main client.

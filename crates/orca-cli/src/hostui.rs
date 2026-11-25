@@ -34,6 +34,40 @@ fn session_logged(
     Ok((session, services))
 }
 
+/// Start the live session over `session` with its sub-agents wired (`ToolWiring`): the agent
+/// tools, and the agent tabs and bars on `bus`.
+fn start_live(
+    mut session: AgentSession,
+    services: &ToolServices,
+    bus: Arc<LiveEventBus>,
+    mode: &str,
+) -> Arc<AgentLiveSession> {
+    let config_dir = orca_core::config::manager::default_config_dir();
+    let agents: Option<Arc<dyn orca_webui::live::AgentHost>> = match crate::wire_agents(
+        &mut session,
+        &services.agent_tools,
+        Some(&config_dir),
+        true,
+        None,
+    ) {
+        Ok(manager) => {
+            let b = bus.clone();
+            let host = Arc::new(crate::agent_host::WebAgentHost::new(
+                manager.orchestrator().clone(),
+                session.config.clone(),
+                Arc::new(move || b.in_turn()),
+            ));
+            host.attach(bus.clone());
+            Some(host)
+        }
+        Err(e) => {
+            tracing::warn!("web UI session: no sub-agents: {e}");
+            None
+        }
+    };
+    AgentLiveSession::start_with_agents(session, bus, mode, agents)
+}
+
 fn clock() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -104,7 +138,7 @@ pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i
         .start_mcp(&config, &cwd, &mut session.registry)
         .await;
     let bus = Arc::new(LiveEventBus::new());
-    let primary = AgentLiveSession::start(session, bus.clone(), "headless");
+    let primary = start_live(session, &services, bus.clone(), "headless");
 
     let others: Arc<Mutex<Vec<ToolServices>>> = Arc::new(Mutex::new(Vec::new()));
     let factory_config = config.clone();
@@ -113,8 +147,9 @@ pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i
         let dir = PathBuf::from(folder);
         match session_for(&factory_config, &dir) {
             Ok((s, svc)) => {
+                let live = start_live(s, &svc, Arc::new(LiveEventBus::new()), "worker");
                 factory_services.lock().unwrap().push(svc);
-                AgentLiveSession::start(s, Arc::new(LiveEventBus::new()), "worker")
+                live
             }
             Err(e) => Arc::new(FailedSession {
                 bus: Arc::new(LiveEventBus::new()),
@@ -242,8 +277,9 @@ fn bench_options(
             });
             match session_logged(&config, Path::new(folder), log) {
                 Ok((s, svc)) => {
+                    let live = start_live(s, &svc, Arc::new(LiveEventBus::new()), "worker");
                     others.lock().unwrap().push(svc);
-                    AgentLiveSession::start(s, Arc::new(LiveEventBus::new()), "worker")
+                    live
                 }
                 Err(e) => failed(e.to_string()),
             }

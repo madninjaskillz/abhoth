@@ -27,6 +27,18 @@ impl ToolRegistry {
         self.tools.push(tool);
     }
 
+    /// Put `tool` where the same-named tool is (keeping the advertised order), or at the end.
+    pub fn replace(&mut self, tool: Arc<dyn Tool>) {
+        match self
+            .tools
+            .iter()
+            .position(|t| t.name().eq_ignore_ascii_case(tool.name()))
+        {
+            Some(i) => self.tools[i] = tool,
+            None => self.tools.push(tool),
+        }
+    }
+
     pub fn register_all(&mut self, tools: impl IntoIterator<Item = Arc<dyn Tool>>) {
         for t in tools {
             self.register(t);

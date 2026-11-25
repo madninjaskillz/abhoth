@@ -69,14 +69,13 @@ pub fn register(r: &mut ToolRegistry, config: &OrcaConfig) {
     let agent = &config.agent;
     let auto_lead = !agent.peer_mode && agent.lead_mode.trim().eq_ignore_ascii_case("auto");
     if config.pi.agent_tools {
-        // Gap: custom agent types are not listed (the Rust CLI has no agent registry yet).
+        // Pi's own types here; wire_agents re-registers the tool in place with the
+        // orchestrator's types (custom ones included) and its hooks (pi_agents).
         let agent_list = PI_AGENT_TYPES
             .iter()
             .map(|(n, d)| format!("{n} ({d})"))
             .collect::<Vec<_>>()
             .join(", ");
-        // No orchestrator in the Rust CLI yet: the subagent tool stays unwired and answers
-        // "Subagents are not available in this session."
         r.register(Arc::new(subagent::PiSubagentTool::new(
             subagent::PiSubagentSettings {
                 agent_list,
@@ -93,7 +92,7 @@ pub fn register(r: &mut ToolRegistry, config: &OrcaConfig) {
         })));
         r.register(Arc::new(progress_tool));
         if auto_lead {
-            // Unwired (no orchestrator): "lead_mode is not available in this session."
+            // Wired to the Lead's request mode by wire_agents (pi_agents::lead_mode_chooser).
             r.register(Arc::new(lead_mode::PiLeadModeTool::default()));
         }
     }

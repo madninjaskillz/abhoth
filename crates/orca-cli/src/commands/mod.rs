@@ -4,6 +4,7 @@
 //! `__plan_toggle__`) that the REPL handles, as in C#.
 
 mod agent;
+pub mod agent_cmds;
 pub mod benchmark_cmd;
 mod config_cmds;
 pub mod config_editor;
@@ -58,6 +59,11 @@ pub struct AgentRunOutcome {
 pub trait AgentHost: Send + Sync {
     /// `AgentOrchestrator.SpawnAgentAsync(task, agentType)`.
     async fn spawn_agent(&self, task: &str, agent_type: &str) -> Result<AgentRunOutcome, String>;
+
+    /// The session's agent manager (`/workflow`, `/agent`, `/agents`); None = not available.
+    fn manager(&self) -> Option<Arc<orca_core::orchestration::AgentManager>> {
+        None
+    }
 }
 
 /// The REPL services a command can use (`ICommandContext`).
@@ -156,6 +162,8 @@ pub fn registry() -> CommandRegistry {
         Arc::new(agent::DocsCommand),
         Arc::new(agent::ReviewCommand),
         Arc::new(agent::WorkflowCommand),
+        Arc::new(agent_cmds::AgentCommand),
+        Arc::new(agent_cmds::AgentsCommand),
         Arc::new(config_cmds::InitCommand),
         Arc::new(config_cmds::ModelCommand),
         Arc::new(uncensored::UncensoredCommand),

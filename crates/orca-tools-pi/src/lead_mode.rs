@@ -42,8 +42,10 @@ pub const HANDS_ON_INSTRUCTIONS: &str = "Hands-on for this request: make the cha
 /// Result text for an answer choice.
 pub const ANSWER_INSTRUCTIONS: &str = "Answer directly from what you read; change nothing. If the user does want a change, call lead_mode again.";
 
-/// Host hook: (normalized mode, reason) -> instructions for this request.
-pub type ChooseFn = Arc<dyn Fn(&str, Option<&str>) -> String + Send + Sync>;
+/// Host hook: (normalized mode, reason) -> instructions for this request (async: the host may
+/// ask the slot registry which model copies are free).
+pub type ChooseFn =
+    Arc<dyn Fn(String, Option<String>) -> crate::subagent::BoxFuture<String> + Send + Sync>;
 
 #[derive(Default)]
 pub struct PiLeadModeTool {
@@ -124,6 +126,6 @@ impl Tool for PiLeadModeTool {
         let reason = get_string(args, "reason")
             .filter(|r| !r.trim().is_empty())
             .map(str::trim);
-        ToolResult::success(choose(mode, reason))
+        ToolResult::success(choose(mode.to_string(), reason.map(str::to_string)).await)
     }
 }

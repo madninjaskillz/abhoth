@@ -39,6 +39,8 @@ pub struct AgentState {
     pub slot: Option<String>,
     /// The last slot it held (a follow-up re-claims it when free).
     pub last_slot: Option<String>,
+    /// Identity of the slot lease it holds now (slot changes of an older lease are ignored).
+    pub lease_key: Option<usize>,
     /// The named provider it runs on (agent.providerSchedule); None = the default model.
     pub provider: Option<String>,
     /// The model id of `provider` once resolved.

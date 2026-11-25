@@ -280,6 +280,11 @@ impl SlotRuntime {
         })
     }
 
+    /// The Lead's own target (its pinned client or endpoint), never the ambient one.
+    pub fn lead_backend(&self) -> Arc<dyn ChatBackend> {
+        self.lead_target.clone()
+    }
+
     /// A pinned client for a holder's lease (a sub-agent's).
     pub fn client_for(&self, lease: Arc<SlotLease>) -> Arc<SlottedChatClient> {
         Arc::new(Self::make_client(

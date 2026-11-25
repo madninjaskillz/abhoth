@@ -380,3 +380,18 @@ async fn compact_a_tool_call_reply_is_a_failure() {
     assert!(report.mentions("attempted to call a tool"));
     let _: Value = server.requests()[0].body.clone();
 }
+
+#[tokio::test]
+async fn session_compactor_summarizes_like_the_llm_compactor() {
+    // The owned compactor sub-agents use (wire_agents sets it on the orchestrator).
+    let server = FakeOpenAi::start(vec![Reply::text(SUMMARY)]).await;
+    let mut c = build_conversation(4);
+    let compactor = orca_core::agent::SessionCompactor::new(client_for(&server), default_config());
+
+    let report = compactor.compact_conversation(&mut c, None, None).await;
+
+    assert_eq!(summary_of(&c.messages()[0]), SUMMARY);
+    assert!(!c.messages().iter().any(|m| text(m) == "user message 1"));
+    assert!(report.mentions("Compacted"));
+    assert_eq!(server.requests().len(), 1);
+}

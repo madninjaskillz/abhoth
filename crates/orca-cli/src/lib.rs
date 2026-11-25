@@ -1,6 +1,7 @@
 //! The `openorca` program. Phase 1: one-shot prompts (`--print` / `--prompt`); the
 //! interactive REPL and the `--hostui` web host.
 
+pub mod agent_host;
 pub mod args;
 pub mod commands;
 pub mod custom_commands;
@@ -8,6 +9,7 @@ pub mod file_log;
 pub mod hostui;
 pub mod input_preprocessor;
 pub mod model_discovery;
+pub mod pi_agents;
 pub mod pi_profile;
 pub mod prompter;
 pub mod render;
@@ -31,7 +33,8 @@ use orca_core::orchestration::custom_agents::CustomAgentLoader;
 use orca_core::orchestration::planner_phase::{PlannerPhase, planner_enabled};
 use orca_core::orchestration::types::AgentTypeRegistry;
 use orca_core::orchestration::{
-    AgentChatClient, AgentManager, AgentOrchestrator, DefaultClientProvider,
+    AgentChatClient, AgentClientProvider, AgentManager, AgentOrchestrator, DefaultClientProvider,
+    SlotClientProvider,
 };
 pub use orca_tools_agent::AgentToolsHandle;
 use serde::Serialize;
@@ -192,18 +195,24 @@ impl ToolServices {
 /// Sub-agents for `session` (`ToolWiring`, agent part): the orchestrator with the session's
 /// tools and custom agent types, sub-agent tool calls through a copy of the session's
 /// pipeline, and the agent tools wired to the manager. Start/finish lines go to stderr unless
-/// `quiet`.
+/// `quiet`. With `slots` (the runtime [`wire_client`] returned), every agent on the default
+/// model leases its own slot (`orchestrator.Slots = runtime`).
 pub fn wire_agents(
     session: &mut AgentSession,
     handle: &AgentToolsHandle,
     config_dir: Option<&Path>,
     quiet: bool,
+    slots: Option<&Arc<orca_core::slots::SlotRuntime>>,
 ) -> Result<Arc<AgentManager>> {
     let config = session.config.clone();
     let cwd = session.ctx.cwd.clone();
     // Sub-agents send through the session's client (its usage logging and routing).
     let client: Arc<dyn AgentChatClient> = Arc::new(session.client.clone());
     let mut types = AgentTypeRegistry::new();
+    // Pi profile with pi.agentTools: Pi's agent types (scout, planner, reviewer, worker).
+    if orca_tools_pi::is_pi_profile(&config.tool_profile) && config.pi.agent_tools {
+        types.use_pi_profile(config.pi.extra_tools);
+    }
     if let Some(dir) = config_dir {
         let names: Vec<String> = session
             .registry
@@ -219,12 +228,22 @@ pub fn wire_agents(
         });
         types.register_custom(custom.iter());
     }
-    let orchestrator = AgentOrchestrator::new(
-        Arc::new(DefaultClientProvider::new(client)),
+    let mut provider: Arc<dyn AgentClientProvider> = Arc::new(DefaultClientProvider::new(client));
+    // Named providers (agent.providerSchedule, agent.planner): logged with provider= and model=
+    // and added up in the session's usage ledger.
+    provider = Arc::new(orca_core::orchestration::ProviderRoutes::new(
+        provider,
         config.clone(),
-        types,
-        cwd,
-    );
+        orca_core::client::usage::ProviderUsageLedger::shared(),
+        orca_core::logging::process_sink(),
+    ));
+    if let Some(rt) = slots {
+        provider = Arc::new(SlotClientProvider::new(provider, rt.clone()));
+    }
+    let orchestrator = AgentOrchestrator::new(provider, config.clone(), types, cwd);
+    let manager = AgentManager::new(orchestrator.clone());
+    // The Pi agent tools (subagent, progress, lead_mode) go through the manager.
+    pi_agents::wire_pi_agent_tools(&mut session.registry, &manager, &config, slots);
     // Sub-agents never choose a Lead mode.
     orchestrator.set_tools(
         session
@@ -235,6 +254,15 @@ pub fn wire_agents(
             .collect(),
     );
     orchestrator.set_use_streaming(true);
+    // Sub-agents' context compaction uses the session's LLM summariser.
+    orchestrator.set_compactor(Some(Arc::new(orca_core::agent::SessionCompactor::new(
+        session.client.clone(),
+        config.clone(),
+    ))));
+    orchestrator.set_system_prompt_factory(Some(pi_agents::pi_prompt_factory(
+        &session.config,
+        session.ctx.cwd.clone(),
+    )));
     let shared = SharedPipeline::new();
     let factory_client = session.client.clone();
     let factory: ClientFactory = Arc::new(move || factory_client.clone());
@@ -247,7 +275,6 @@ pub fn wire_agents(
         shared.clone(),
         &orchestrator,
     ))));
-    let manager = AgentManager::new(orchestrator.clone());
     if !quiet {
         manager.set_line_sink(Some(Arc::new(|line: &str| eprintln!("{line}"))));
     }
@@ -382,7 +409,13 @@ pub async fn run_single_prompt_in_session(
         session.messages = r.messages;
         session.tool_hooks.session_id = Some(r.id);
     }
-    wire_agents(&mut session, &services.agent_tools, config_dir, quiet)?;
+    wire_agents(
+        &mut session,
+        &services.agent_tools,
+        config_dir,
+        quiet,
+        slots.as_ref(),
+    )?;
     // agent.planner: a read-only planner writes the plan before the Lead's first turn.
     let prompt = match session.orchestrator.clone() {
         Some(o) if planner_enabled(&session.config) => {
@@ -665,8 +698,23 @@ async fn run_interactive(
         session.tool_hooks.session_id = Some(r.id.clone());
         session_id = Some(r.id);
     }
+    // Sub-agents (ToolWiring): the agent tools, /review, /workflow, /agent and the planner.
+    let manager = wire_agents(
+        &mut session,
+        &services.agent_tools,
+        Some(config_dir),
+        false,
+        slots.as_ref(),
+    )?;
+    let planner = session
+        .orchestrator
+        .clone()
+        .filter(|_| planner_enabled(&session.config))
+        .map(|o| PlannerPhase::new(session.config.clone(), o, session.ctx.cwd.clone()));
     let console = ui::Console::stdout();
     let mut repl = repl::Repl::new(console, session, config_dir.to_path_buf(), session_id);
+    repl.agents = Some(Box::new(agent_host::ReplAgentHost::new(manager)));
+    repl.planner = planner;
     repl.startup_notices = startup_notices;
     repl.active_profile = active_profile;
     let exit = repl.run().await;

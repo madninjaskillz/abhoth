@@ -1,0 +1,13 @@
+{
+  "prompt": "What is the first line of notes.txt? Ask a scout.",
+  "strict": true,
+  "config": {"toolProfile": "pi"},
+  "files": {"notes.txt": "alpha\nbeta\n"},
+  "replies": [
+    {"tools": [{"name": "lead_mode", "args": {"mode": "delegate", "reason": "the user asked for a scout"}}]},
+    {"tools": [{"name": "subagent", "args": {"agent": "scout", "task": "Read notes.txt and report its first line.", "label": "Read notes"}}]},
+    {"tools": [{"name": "read", "args": {"path": "notes.txt"}}]},
+    {"text": "notes.txt:1 is alpha; that is the first line."},
+    {"text": "Agent A found that the first line of notes.txt is alpha."}
+  ]
+}
