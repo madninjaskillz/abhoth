@@ -472,3 +472,72 @@ async fn projects_add_list_remove_and_the_folder_wizard() {
         .unwrap();
     assert_eq!(primary.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_terminal_echoes_a_command_and_refuses_cross_origin() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+    let work = tempfile::tempdir().unwrap();
+    let host = Host::start_with(FakeSession::new(work.path()), |o| {
+        o.shell = Some(if cfg!(windows) {
+            "cmd.exe".into()
+        } else {
+            "/bin/sh".into()
+        });
+    })
+    .await;
+    let pid = host.primary();
+    let url = format!(
+        "ws://127.0.0.1:{}/api/projects/{pid}/pty?cols=100&rows=30",
+        host.server.port()
+    );
+    let mut req = url.clone().into_client_request().unwrap();
+    req.headers_mut()
+        .insert("X-OpenOrca-Token", TOKEN.parse().unwrap());
+    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+    // The typed line echoes the expression; only the command's output reads "pty-marker-42".
+    let line = if cfg!(windows) {
+        "echo pty-marker-%COMPUTERNAME:~0,0%42\r"
+    } else {
+        "echo pty-marker-$((40+2))\r"
+    };
+    ws.send(Message::Text(
+        json!({"t": "i", "d": line}).to_string().into(),
+    ))
+    .await
+    .unwrap();
+    let mut output = String::new();
+    let found = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        while let Some(Ok(msg)) = ws.next().await {
+            if let Message::Binary(b) = msg {
+                let text = String::from_utf8_lossy(&b).into_owned();
+                // ConPTY asks where the cursor is before it starts (xterm.js answers in the
+                // browser): answer as a terminal would.
+                if text.contains("[6n") {
+                    ws.send(Message::Binary(b"[1;1R".to_vec().into()))
+                        .await
+                        .unwrap();
+                }
+                output.push_str(&text);
+                if output.contains("pty-marker-42") {
+                    return true;
+                }
+            }
+        }
+        false
+    })
+    .await
+    .unwrap_or(false);
+    assert!(found, "{output}");
+    assert_eq!(host.server.state().ptys.count(), 1);
+    let _ = ws.close(None).await;
+
+    let mut evil = url.into_client_request().unwrap();
+    evil.headers_mut()
+        .insert("X-OpenOrca-Token", TOKEN.parse().unwrap());
+    evil.headers_mut()
+        .insert("Origin", "http://evil.example".parse().unwrap());
+    assert!(tokio_tungstenite::connect_async(evil).await.is_err());
+}
