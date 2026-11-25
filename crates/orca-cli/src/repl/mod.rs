@@ -1,6 +1,7 @@
 //! The interactive loop (`ReplLoop`): the prompt, slash commands, `!` shortcuts and agent
 //! turns with streaming output, Ctrl+C cancel, plan approval and session auto-save.
 
+pub mod agent_footer;
 pub mod command_parser;
 pub mod engine;
 pub mod line_editor;
@@ -64,6 +65,11 @@ pub struct Repl {
     pub agents: Option<Box<dyn AgentHost>>,
     /// The engine turns run on (`EngineHost`): native here, or a bridge CLI.
     pub engines: orca_core::engines::EngineHost,
+    /// The inference slots (the Lead bar shows where its requests go).
+    pub slots: Option<Arc<orca_core::slots::SlotRuntime>>,
+    /// The footer's bars and the engine name on its Lead bar.
+    footer: Option<agent_footer::FooterRenderer>,
+    footer_engine: Arc<std::sync::Mutex<Option<String>>>,
     /// agent.planner: writes the plan before the first turn (`ReplLoop.Planner`).
     pub planner: Option<orca_core::orchestration::planner_phase::PlannerPhase>,
     /// Lines printed after the banner (profile notices, resume notices).
@@ -114,6 +120,9 @@ impl Repl {
             parser,
             agents: None,
             engines: orca_core::engines::EngineHost::new(),
+            slots: None,
+            footer: None,
+            footer_engine: Arc::new(std::sync::Mutex::new(None)),
             planner: None,
             startup_notices: Vec::new(),
             active_profile: None,
@@ -202,7 +211,7 @@ impl Repl {
             .set_prompter(Box::new(permission::ConsolePermissionPrompter::new(
                 self.console.clone(),
             )));
-        self.show_bridge_progress();
+        self.start_footer();
         self.refresh_system_prompt();
         // BrowserUncensored asks each chat server what it is (in the background) at start.
         if !self.session.config.demo_mode {
@@ -228,6 +237,7 @@ impl Repl {
         if exit == ReplExit::Quit {
             self.save_auto_memory().await;
         }
+        self.footer = None;
         self.panel.teardown();
         // The bridge CLI ends with the session.
         self.engines.dispose().await;
@@ -245,6 +255,7 @@ impl Repl {
         }
         loop {
             let status = self.status_info();
+            self.sync_footer_engine();
             self.panel.enter_input(&self.state, &status);
             let completion = Completion {
                 command_names: self.parser.all_command_names(false),

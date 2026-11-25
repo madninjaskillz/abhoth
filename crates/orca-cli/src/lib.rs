@@ -809,6 +809,7 @@ async fn run_interactive(
     let mut repl = repl::Repl::new(console, session, config_dir.to_path_buf(), session_id);
     repl.agents = Some(Box::new(agent_host::ReplAgentHost::new(manager)));
     repl.planner = planner;
+    repl.slots = slots.clone();
     repl.state.engine = engine;
     repl.startup_notices = startup_notices;
     repl.active_profile = active_profile;

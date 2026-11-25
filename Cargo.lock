@@ -2627,6 +2627,7 @@ dependencies = [
  "tao",
  "tempfile",
  "tokio",
+ "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
  "tray-icon",

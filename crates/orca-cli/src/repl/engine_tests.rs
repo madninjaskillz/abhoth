@@ -175,18 +175,3 @@ async fn host_tools_run_ask_user_from_the_registry() {
     let missing = sink.run_host_tool("nope", "{}").await;
     assert!(missing.is_error);
 }
-
-#[test]
-fn external_bars_show_letter_label_and_percent() {
-    let bars = vec![ProgressFileBar {
-        key: "build".into(),
-        label: "Build the app".into(),
-        pct: 37.0,
-        colour: "purple".into(),
-        started: 1,
-        updated: 2,
-        source: Some("env".into()),
-    }];
-    let plain = crate::ui::console::strip_ansi(&format_external_bars(&bars));
-    assert_eq!(plain, " D  Build the app 37%");
-}

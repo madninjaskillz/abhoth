@@ -128,6 +128,8 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 - Foreground sub-agents ask the user for approvals in the REPL and the browser (D104).
 - `lead_mode` for the OpenOrca profile in `leadMode: auto` (D105, scenario 123).
 - Coloured agent badges in chat lines and the `/agents` picker (D106).
+- The REPL agent footer: Lead bar, a bridge's progress.js bars, agent bars (D107); scenario 235
+  and the `--hostui` bridge integration test (D108).
 
 ### Phase 7: desktop app (2026-11-25, D110)
 
@@ -164,10 +166,12 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 ## Next
 
-1. Phase 6: parity sweep (cross-check coverage, `rust-port/sweep`); bench parity run
-   (user-scheduled).
-2. An agent footer in the REPL.
+1. Bench parity run (user-scheduled; the gate for the cutover, CUTOVER.md step 0).
+2. Fresh install: the desktop app must start without a configured model and show why; an icon
+   in the `.exe` files.
 3. Phase 7 follow-ups: code signing for the MSI; a GitHub Release with the MSI (CUTOVER.md).
+4. Cutover (user-triggered): the abhoth repo split (`tools/split-abhoth-repo.sh`, tested), the
+   web container, the local install (CUTOVER.md).
 
 ### Live smoke 2026-11-25 (third run)
 
@@ -213,9 +217,7 @@ worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
 
 ## Known gaps
 
-- The REPL has no agent footer (a bridge's progress.js bars show on the info row, D101).
-- No end-to-end scenario yet for bridges under `--hostui` or the foreground sub-agent approval
-  prompt in the terminal (Rust tests only).
+- REPL footer: no bar selection (↓ / Ctrl+G) or agent view (D107).
 - Anthropic: a turn with several signed thinking blocks keeps no signature (its reasoning is not
   sent back, D92).
 - Bench runs: kit timeouts kill only the process.
