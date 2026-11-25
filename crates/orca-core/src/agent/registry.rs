@@ -6,9 +6,13 @@ use orca_abstractions::{Tool, ToolCapabilities};
 
 use crate::client::ToolDefinition;
 
+/// Decides which registered tools are advertised to the model (`ToolExposure`).
+pub type AdvertiseFilter = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
 #[derive(Default, Clone)]
 pub struct ToolRegistry {
     tools: Vec<Arc<dyn Tool>>,
+    advertise: Option<AdvertiseFilter>,
 }
 
 impl ToolRegistry {
@@ -46,6 +50,19 @@ impl ToolRegistry {
         &self.tools
     }
 
+    /// Advertise only the tools `filter` accepts (by name); all stay executable. Without a
+    /// filter every tool is advertised.
+    pub fn set_advertise_filter(&mut self, filter: AdvertiseFilter) {
+        self.advertise = Some(filter);
+    }
+
+    /// The tools offered to the model (native tool definitions and the system prompt list).
+    pub fn advertised(&self) -> impl Iterator<Item = &Arc<dyn Tool>> {
+        self.tools
+            .iter()
+            .filter(|t| self.advertise.as_ref().is_none_or(|f| f(t.name())))
+    }
+
     pub fn names(&self) -> Vec<String> {
         self.tools.iter().map(|t| t.name().to_string()).collect()
     }
@@ -74,10 +91,9 @@ impl ToolRegistry {
             .map(|t| t.name().to_string())
     }
 
-    /// The schemas sent for native function calling.
+    /// The schemas sent for native function calling (the advertised tools).
     pub fn definitions(&self) -> Vec<ToolDefinition> {
-        self.tools
-            .iter()
+        self.advertised()
             .map(|t| ToolDefinition {
                 name: t.name().to_string(),
                 description: t.description().to_string(),

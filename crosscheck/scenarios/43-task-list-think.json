@@ -1,0 +1,181 @@
+{
+  "prompt": "Plan and track the work",
+  "files": {},
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "think",
+          "args": {
+            "thought": "Step 1: list tasks.\nStep 2: do them."
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "task_list",
+          "args": {
+            "action": "list"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "task_list",
+          "args": {
+            "action": "add",
+            "task": "Write the parser"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "task_list",
+          "args": {
+            "action": "add",
+            "task": "Test the parser"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "task_list",
+          "args": {
+            "action": "add"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "task_list",
+          "args": {
+            "action": "complete",
+            "id": 1
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "task_list",
+          "args": {
+            "action": "complete",
+            "id": "2"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "task_list",
+          "args": {
+            "action": "remove",
+            "id": 9
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "task_list",
+          "args": {
+            "action": "remove"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "task_list",
+          "args": {
+            "action": "remove",
+            "id": 1
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "task_list",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "print",
+          "args": {
+            "message": "Progress: parser written and tested."
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "env",
+          "args": {
+            "action": "get",
+            "name": "ORCA_SURELY_UNSET_VAR"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "env",
+          "args": {
+            "action": "get"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "env",
+          "args": {
+            "action": "list",
+            "prefix": "ORCA_SURELY_UNSET_"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "env",
+          "args": {
+            "action": "frob"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    }
+  ]
+}

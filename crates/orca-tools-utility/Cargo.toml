@@ -1,0 +1,20 @@
+[package]
+name = "orca-tools-utility"
+description = "Utility and interactive tools: env, print, task_list, think, ask_user (port of OpenOrca.Tools.Utility and OpenOrca.Tools.Interactive)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+orca-abstractions.workspace = true
+orca-tools-common.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

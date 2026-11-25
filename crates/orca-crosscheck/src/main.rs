@@ -40,10 +40,16 @@
 //! URL, and `<CLOSED>` becomes `127.0.0.1:<port>` of a port nothing listens on. Both are
 //! normalised back in the results.
 //!
+//! A scenario can also put binary files in the work folder (`binary_files`, base64). In its
+//! config, `<FAKE_MCP>` / `<FAKE_LSP>` name the fake MCP and LSP servers built with this
+//! program and `<IMAGE_URL>` the fake server's images API; images API requests are compared
+//! too, and image files by their pixels (see `describe_image`).
+//!
 //! Known, documented gaps are ignored by default: the advertised tool list (the `tools` array
 //! and the tool-derived parts of the system prompt: the AVAILABLE TOOLS lines and the
 //! lead_mode tool's LEAD MODE section), since Rust has only the core tools until phase 3. The
-//! rest of the system prompt is compared. `--strict` compares everything.
+//! rest of the system prompt is compared. `--strict` compares everything; a scenario with
+//! `"strict": true` (the Pi profile's) is always compared in full.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -67,9 +73,16 @@ struct Scenario {
     /// Arguments after `--print <prompt>`.
     #[serde(default)]
     args: Vec<String>,
+    /// Binary files to create in the work folder: relative path -> base64 content.
+    #[serde(default)]
+    binary_files: BTreeMap<String, String>,
     /// Extra config.json keys (merged over the harness defaults, one level deep).
     #[serde(default)]
     config: serde_json::Map<String, Value>,
+    /// Compare this scenario without the known-gap masks (`--strict` for one scenario): the
+    /// tool list and the whole system prompt (the Pi profile's tools are fully ported).
+    #[serde(default)]
+    strict: bool,
     /// Commands (program and arguments) run in the work folder before the prompt.
     #[serde(default)]
     setup: Vec<Vec<String>>,
@@ -179,6 +192,7 @@ impl ScriptReply {
 struct RunResult {
     output: Value,
     requests: Vec<Value>,
+    image_requests: Vec<Value>,
     files: BTreeMap<String, String>,
     home_files: BTreeMap<String, Value>,
     exit_code: Option<i32>,
@@ -242,14 +256,14 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
     let work = tempfile::tempdir()?;
     let mut config = base_config(&server.base_url());
     merge(&mut config, &scenario.config);
-    // `<SERVER>` / `<SERVER_ROOT>` / `<HOME_JSON>` in config values: the fake server's base URL
-    // (with and without `/v1`) and the config home (slot copies, the profiles API, the local
-    // slot state file).
+    // `<SERVER>` / `<SERVER_ROOT>` / `<HOME_JSON>` / `<WORK_JSON>` in config values: the fake
+    // server's base URL (with and without `/v1`), the config home (the local slot state file)
+    // and the work folder; then the fake MCP / LSP / images placeholders.
     let server_url = server.base_url();
     let server_root = server_url.trim_end_matches("/v1").to_string();
     let home_json = serde_json::to_string(&home.path().display().to_string())?;
     let work_json = serde_json::to_string(&work.path().display().to_string())?;
-    let config_text = serde_json::to_string_pretty(&config)?
+    let config_text = fill_placeholders(&serde_json::to_string_pretty(&config)?, &server_url)
         .replace("<SERVER_ROOT>", &server_root)
         .replace("<SERVER>", &server_url)
         .replace("<HOME_JSON>", &home_json[1..home_json.len() - 1])
@@ -267,8 +281,24 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
     // Fixed, distinct mtimes (one second apart, in name order, ten minutes ago) so tools that
     // sort or describe by age give the same answer in both runs.
     let base = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
-    for (i, (rel, content)) in scenario.files.iter().enumerate() {
-        let p = work.path().join(rel);
+    let binary: Vec<(String, Vec<u8>)> = scenario
+        .binary_files
+        .iter()
+        .map(|(rel, b64)| {
+            use base64::Engine as _;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .with_context(|| format!("binary_files.{rel} is not base64"))?;
+            Ok((rel.clone(), bytes))
+        })
+        .collect::<Result<_>>()?;
+    let all_files = scenario
+        .files
+        .iter()
+        .map(|(rel, c)| (rel.clone(), c.as_bytes().to_vec()))
+        .chain(binary);
+    for (i, (rel, content)) in all_files.enumerate() {
+        let p = work.path().join(&rel);
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -362,14 +392,34 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
                 .display()
                 .to_string()
                 .replace('\\', "/");
-            files.insert(
-                rel,
-                String::from_utf8_lossy(&std::fs::read(e.path())?).to_string(),
-            );
+            let bytes = std::fs::read(e.path())?;
+            let content = describe_image(&rel, &bytes)
+                .unwrap_or_else(|| String::from_utf8_lossy(&bytes).to_string());
+            files.insert(rel, content);
         }
     }
     let mut home_files = BTreeMap::new();
     let checkpoints = home.path().join("checkpoints");
+    // Backup file name -> the (normalised) file it backs up, from the manifests: several
+    // backups made in the same second differ only in the path hash, so they are keyed by
+    // their file instead.
+    let mut backup_of: BTreeMap<String, String> = BTreeMap::new();
+    for e in walkdir::WalkDir::new(&checkpoints)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name() == "manifest.json")
+    {
+        let manifest: Value = serde_json::from_slice(&std::fs::read(e.path())?)
+            .with_context(|| format!("{} wrote a bad manifest", exe.display()))?;
+        for entry in manifest.as_array().into_iter().flatten() {
+            if let (Some(name), Some(path)) =
+                (entry["backupFile"].as_str(), entry["filePath"].as_str())
+            {
+                let shown = norm(json!(path)).as_str().unwrap_or_default().to_string();
+                backup_of.insert(name.to_string(), shown);
+            }
+        }
+    }
     for e in walkdir::WalkDir::new(&checkpoints)
         .into_iter()
         .filter_map(Result::ok)
@@ -398,10 +448,11 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         } else {
             let name = rel.rsplit('/').next().unwrap_or_default();
             let dir = &rel[..rel.len() - name.len()];
-            (
-                format!("{dir}{}", normalize_backup_name(name, None)),
-                json!(String::from_utf8_lossy(&bytes)),
-            )
+            let key = match backup_of.get(name) {
+                Some(file) => format!("{dir}<STAMP>_<{file}>.bak"),
+                None => format!("{dir}{}", normalize_backup_name(name, None)),
+            };
+            (key, json!(String::from_utf8_lossy(&bytes)))
         };
         home_files.insert(key, value);
     }
@@ -440,9 +491,49 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
             .into_iter()
             .map(|r| norm(r.body))
             .collect(),
+        image_requests: server.image_requests().into_iter().map(norm).collect(),
         files,
         stderr,
     })
+}
+
+/// Scenario placeholders in the config: `<FAKE_MCP>` / `<FAKE_LSP>` (the fake servers built
+/// next to this program, as JSON string bodies) and `<IMAGE_URL>` (the fake server's `/v1`,
+/// which also answers the images API).
+fn fill_placeholders(text: &str, base_url: &str) -> String {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .unwrap_or_default();
+    let json_path = |name: &str| {
+        let p = exe_dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+        let s = serde_json::to_string(&p.display().to_string()).unwrap_or_default();
+        s[1..s.len() - 1].to_string()
+    };
+    text.replace("<FAKE_MCP>", &json_path("fake-mcp-server"))
+        .replace("<FAKE_LSP>", &json_path("fake-lsp-server"))
+        .replace("<IMAGE_URL>", base_url)
+}
+
+/// Image files are compared by content, not bytes (the two builds use different encoders):
+/// `<image WxH rgba:SHA>` for the lossless formats, `<image FORMAT WxH>` for JPEG and WebP
+/// (lossy in C#, lossless in Rust). `None` for files that are not decodable images.
+fn describe_image(rel: &str, bytes: &[u8]) -> Option<String> {
+    let ext = rel.rsplit('.').next()?.to_ascii_lowercase();
+    if !["png", "bmp", "gif", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
+        return None;
+    }
+    let format = image::guess_format(bytes).ok()?;
+    let img = image::load_from_memory_with_format(bytes, format).ok()?;
+    let (w, h) = (img.width(), img.height());
+    let name = format!("{format:?}").to_ascii_uppercase();
+    if matches!(format, image::ImageFormat::Jpeg | image::ImageFormat::WebP) {
+        return Some(format!("<image {name} {w}x{h}>"));
+    }
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(img.to_rgba8().as_raw());
+    let hex: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
+    Some(format!("<image {name} {w}x{h} rgba:{hex}>"))
 }
 
 /// `yyyyMMdd_HHmmss_<hash16>.bak` with the time masked; with the file path, the hash is
@@ -636,6 +727,12 @@ fn compare(cs: &RunResult, rs: &RunResult, strict: bool) -> Vec<String> {
         };
         diff(&format!("request[{i}]"), &a, &b, &mut out);
     }
+    diff(
+        "image_requests",
+        &json!(cs.image_requests),
+        &json!(rs.image_requests),
+        &mut out,
+    );
     let files = |r: &RunResult| serde_json::to_value(&r.files).unwrap();
     diff("files", &files(cs), &files(rs), &mut out);
     let home = |r: &RunResult| serde_json::to_value(&r.home_files).unwrap();
@@ -696,14 +793,14 @@ async fn main() -> Result<()> {
         if let Some(out) = &out_dir {
             std::fs::create_dir_all(out)?;
             for (tag, r) in [("csharp", &cs), ("rust", &rs)] {
-                let dump = json!({"output": r.output, "requests": r.requests, "files": r.files, "home_files": r.home_files, "exit_code": r.exit_code, "notices": r.notices, "probes": r.probes, "stderr": r.stderr});
+                let dump = json!({"output": r.output, "requests": r.requests, "files": r.files, "home_files": r.home_files, "exit_code": r.exit_code, "image_requests": r.image_requests, "notices": r.notices, "probes": r.probes, "stderr": r.stderr});
                 std::fs::write(
                     out.join(format!("{}.{tag}.json", scenario.name)),
                     serde_json::to_string_pretty(&dump)?,
                 )?;
             }
         }
-        let diffs = compare(&cs, &rs, strict);
+        let diffs = compare(&cs, &rs, strict || scenario.strict);
         if diffs.is_empty() {
             passed += 1;
             println!("PASS  {}", scenario.name);

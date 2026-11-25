@@ -1,12 +1,19 @@
-//! Ported from `OpenOrca.Tools.Tests/ShellToolTests.cs` (cd and start_background_process wait
-//! for their phase-2 ports).
+//! Ported from `OpenOrca.Tools.Tests/ShellToolTests.cs` (the cd tests live with the file
+//! tools, in `orca-tools-fs`).
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use orca_abstractions::{Tool, ToolContext, ToolResult};
-use orca_tools_shell::{BashTool, GetProcessOutputTool, StopProcessTool, process};
+use orca_tools_shell::{
+    BashTool, GetProcessOutputTool, ListProcessesTool, StartBackgroundProcessTool, StopProcessTool,
+    process,
+};
 use serde_json::{Value, json};
+
+/// Tests that start background processes run one at a time: `get_process_output` with "last"
+/// picks the newest process of the whole (shared) manager.
+static PROCESS_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn ctx() -> ToolContext {
     ToolContext::new(std::env::current_dir().unwrap())
@@ -131,6 +138,7 @@ async fn multiline_output_and_streaming_callback() {
 
 #[tokio::test]
 async fn slow_command_returns_process_id_and_can_be_stopped() {
+    let _serial = PROCESS_TESTS.lock().await;
     let started = Instant::now();
     let r = run(
         &BashTool {
@@ -195,6 +203,7 @@ async fn completed_within_timeout_returns_full_output() {
 
 #[tokio::test]
 async fn manager_start_stop_tail_and_new_lines() {
+    let _serial = PROCESS_TESTS.lock().await;
     let cwd = std::env::current_dir().unwrap();
     let long = if win() {
         "ping -t 127.0.0.1"
@@ -224,4 +233,63 @@ async fn manager_start_stop_tail_and_new_lines() {
     let (again, cursor2) = m.new_lines(cursor);
     assert!(again.is_empty() && cursor2 == cursor);
     assert!(m.tail_lines(10).iter().any(|l| l.contains("third")));
+}
+
+#[tokio::test]
+async fn start_background_process_same_command_already_running_blocked() {
+    let _serial = PROCESS_TESTS.lock().await;
+    // Regression: a model that cannot observe a GUI app relaunched the same command 8 times in
+    // one session, leaking a process each time. A nonce keeps this command distinct.
+    let nonce = format!("{:x}", std::process::id() ^ 0x5eed);
+    let long_running = if win() {
+        format!("ping -n 30 127.0.0.1 & rem {nonce}")
+    } else {
+        format!("sleep 30 # {nonce}")
+    };
+    let args = json!({"command": long_running});
+    let first = StartBackgroundProcessTool.execute(&args, &ctx()).await;
+    assert!(!first.is_error, "{}", first.content);
+    let id = first
+        .content
+        .strip_prefix("Started background process ")
+        .and_then(|r| r.split(':').next())
+        .unwrap()
+        .to_string();
+    let second = StartBackgroundProcessTool.execute(&args, &ctx()).await;
+    process::stop(&id);
+    assert!(second.is_error);
+    assert_eq!(second.error_code, orca_abstractions::ToolErrorCode::Blocked);
+    assert!(second.content.contains("ALREADY RUNNING"));
+    assert!(second.content.contains(&id));
+}
+
+#[tokio::test]
+async fn start_background_process_missing_directory_and_listing() {
+    let _serial = PROCESS_TESTS.lock().await;
+    let r = StartBackgroundProcessTool
+        .execute(
+            &json!({"command": "echo hi", "working_directory": "no_such_dir_xyz"}),
+            &ctx(),
+        )
+        .await;
+    assert!(r.is_error);
+    assert!(r.content.starts_with("Working directory not found: "));
+
+    let cmd = "echo listed";
+    let started = StartBackgroundProcessTool
+        .execute(&json!({"command": cmd}), &ctx())
+        .await;
+    assert!(
+        started
+            .content
+            .contains("Use get_process_output with process_id")
+    );
+    let list = ListProcessesTool.execute(&json!({}), &ctx()).await;
+    assert!(!list.is_error);
+    assert!(
+        list.content.contains("background process(es):"),
+        "{}",
+        list.content
+    );
+    assert!(list.content.contains("  Command: echo listed"));
 }

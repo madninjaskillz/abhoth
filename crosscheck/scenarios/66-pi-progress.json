@@ -1,0 +1,15 @@
+{
+  "prompt": "Do a longer task",
+  "strict": true,
+  "config": {"toolProfile": "pi"},
+  "files": {"a.txt": "a\n"},
+  "replies": [
+    {"tools": [
+      {"name": "progress", "args": {"percent": 40, "note": "Reading files"}},
+      {"name": "read", "args": {"path": "a.txt"}}
+    ]},
+    {"tools": [{"name": "progress", "args": {"percent": "0.5"}}]},
+    {"tools": [{"name": "progress", "args": {"percent": -3}}]},
+    {"text": "The task is done: a.txt holds one line, and progress was reported along the way."}
+  ]
+}
