@@ -650,3 +650,9 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   and compiles it with embed-resource 3.0.12, a build dependency only on Windows hosts, and
   only when the target is Windows too. Linux builds don't compile it (checked with
   `tools/linux-check.sh` in WSL).
+- **D136** (design, 2026-11-25) Bridge mode: a user's machine connects out to their Abhoth server
+  (`abhoth bridge --server <url>` or the desktop tray's "Bridge to server") and server-owned
+  sessions run their workspace tools there. Design only, to be built after the multi-user auth
+  work: [`BRIDGE.md`](BRIDGE.md) (protocol, the `ToolExecutor` seam, paths across OSes, processes,
+  port forwarding, local models via the router, security model, data model, phases). In code the
+  new parts are called machines / `orca-remote`, so the engine bridges (D100-D103) keep their name.
