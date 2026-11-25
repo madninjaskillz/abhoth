@@ -95,10 +95,13 @@ impl ClientSettings {
     }
 }
 
+#[derive(Clone)]
 pub struct OpenAiClient {
     http: reqwest::Client,
     settings: ClientSettings,
     served: Arc<ServedModels>,
+    /// Requests go here instead (sticky slots: the Lead's slot-pinned client).
+    router: Option<Arc<dyn super::backend::ChatBackend>>,
 }
 
 impl OpenAiClient {
@@ -112,7 +115,27 @@ impl OpenAiClient {
             http,
             settings,
             served,
+            router: None,
         }
+    }
+
+    /// Route every request through `router` (e.g. the slot runtime's Lead client); the
+    /// settings stay this client's (the model names the session sends).
+    pub fn with_router(mut self, router: Arc<dyn super::backend::ChatBackend>) -> Self {
+        self.router = Some(router);
+        self
+    }
+
+    /// This client without its router: what the router itself falls back to.
+    pub fn without_router(&self) -> Self {
+        Self {
+            router: None,
+            ..self.clone()
+        }
+    }
+
+    pub fn router(&self) -> Option<&Arc<dyn super::backend::ChatBackend>> {
+        self.router.as_ref()
     }
 
     pub fn settings(&self) -> &ClientSettings {
@@ -200,6 +223,9 @@ impl OpenAiClient {
         messages: &[ChatMessage],
         options: &ChatOptions,
     ) -> Result<ChatResponse, ChatError> {
+        if let Some(router) = &self.router {
+            return router.complete(actor, messages, options).await;
+        }
         let body = self.build_body(messages, options, false)?;
         let requested = body["model"].as_str().map(str::to_string);
         self.served.begin(actor);
@@ -279,6 +305,11 @@ impl OpenAiClient {
         options: &ChatOptions,
         on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
     ) -> Result<ChatResponse, ChatError> {
+        if let Some(router) = &self.router {
+            return router
+                .stream_with_control(actor, messages, options, on_event)
+                .await;
+        }
         let body = self.build_body(messages, options, true)?;
         let requested = body["model"].as_str().map(str::to_string);
         self.served.begin(actor);
