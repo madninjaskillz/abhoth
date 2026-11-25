@@ -64,6 +64,15 @@ pub fn build_registry(config: &OrcaConfig) -> ToolRegistry {
 
 /// [`build_registry`] for a working folder, with the services its tools run on.
 pub fn build_registry_in(config: &OrcaConfig, cwd: &Path) -> (ToolRegistry, ToolServices) {
+    build_registry_with(config, cwd, Arc::new(prompter::ConsolePrompter))
+}
+
+/// [`build_registry_in`] with `ask_user` answered by `asker` (the web UI's question picker).
+pub fn build_registry_with(
+    config: &OrcaConfig,
+    cwd: &Path,
+    asker: Arc<dyn orca_tools_utility::UserPrompter>,
+) -> (ToolRegistry, ToolServices) {
     let mut r = ToolRegistry::new();
     #[allow(unused_mut)]
     let mut services = ToolServices::default();
@@ -80,9 +89,7 @@ pub fn build_registry_in(config: &OrcaConfig, cwd: &Path) -> (ToolRegistry, Tool
             config.agent.uncensored.clone(),
         ))),
     ));
-    r.register_all(orca_tools_utility::interactive_tools(Some(Arc::new(
-        prompter::ConsolePrompter,
-    ))));
+    r.register_all(orca_tools_utility::interactive_tools(Some(asker)));
     #[cfg(feature = "lsp")]
     {
         services.lsp = lsp_manager(config, cwd);
@@ -579,7 +586,8 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         for notice in &profile_notices {
             eprintln!("{notice}");
         }
-        return hostui::run(h, config, cwd).await;
+        let overlay = orca_core::config::schema::ProfileOverlay::of(&manager);
+        return hostui::run(h, config, cwd, overlay).await;
     }
 
     // Sweep checkpoint snapshots older than a week (best effort, in the background).

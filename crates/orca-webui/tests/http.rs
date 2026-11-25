@@ -844,9 +844,48 @@ impl orca_webui::settings::SettingsSchema for FakeSchema {
 #[tokio::test(flavor = "multi_thread")]
 async fn settings_page_reads_and_changes_the_config() {
     let work = tempfile::tempdir().unwrap();
-    let none = Host::start(FakeSession::new(work.path())).await;
-    let r = none.api(Method::GET, "/api/settings").send().await.unwrap();
-    assert_eq!(r.status(), StatusCode::CONFLICT);
+    // Without a schema of its own the host uses the core ConfigSchema on its home's config.json.
+    let home = tempfile::tempdir().unwrap();
+    let builtin = Host::start_with(FakeSession::new(work.path()), |o| {
+        o.config_home = Some(home.path().to_path_buf());
+    })
+    .await;
+    let page: Value = builtin
+        .api(Method::GET, "/api/settings")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(page["sections"].as_array().unwrap().len() > 3);
+    assert!(
+        page["configFile"]
+            .as_str()
+            .unwrap()
+            .ends_with("config.json")
+    );
+    assert!(page["profile"].is_null());
+    let ok: Value = builtin
+        .api(Method::PUT, "/api/settings")
+        .json(&json!({"key": "lmStudio.temperature", "value": 0.35}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ok["ok"], true, "{ok}");
+    assert_eq!(ok["new"], "0.35");
+    let saved = std::fs::read_to_string(home.path().join("config.json")).unwrap();
+    assert!(saved.contains("0.35"), "{saved}");
+    let bad = builtin
+        .api(Method::PUT, "/api/settings")
+        .json(&json!({"key": "lmStudio.temperature", "value": "hot"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
 
     let host = Host::start_with(FakeSession::new(work.path()), |o| {
         o.settings = Some(Arc::new(FakeSchema(std::sync::Mutex::new(0.2))));

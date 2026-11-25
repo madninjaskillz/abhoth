@@ -10,15 +10,66 @@ use anyhow::Result;
 use orca_abstractions::ToolContext;
 use orca_core::agent::AgentSession;
 use orca_core::config::OrcaConfig;
+use orca_core::config::schema::ProfileOverlay;
 use orca_core::live::{LiveEvent, LiveEventBus, types};
 use orca_webui::hostui::HostUiArgs;
-use orca_webui::native::AgentLiveSession;
+use orca_webui::native::{AgentLiveSession, NativeOptions, QuestionBroker, Rebuilt};
 use orca_webui::{LiveSession, SessionFactory, WebUiOptions, WebUiServer};
 
 use crate::{ToolServices, build_registry_in};
 
-fn session_for(config: &OrcaConfig, cwd: &Path) -> Result<(AgentSession, ToolServices)> {
-    session_logged(config, cwd, orca_core::logging::process_sink())
+/// `ask_user` answered in the browser (`LiveQuestionBroker`).
+struct BrowserAsker(Arc<QuestionBroker>);
+
+#[async_trait::async_trait]
+impl orca_tools_utility::UserPrompter for BrowserAsker {
+    async fn ask(&self, question: &str, options: &[String]) -> Result<String, String> {
+        self.0.ask(question, options).await
+    }
+}
+
+/// A web UI session for `cwd`: its questions go to `questions`' browser.
+fn browser_session(
+    config: &OrcaConfig,
+    cwd: &Path,
+    questions: &Arc<QuestionBroker>,
+) -> Result<(AgentSession, ToolServices)> {
+    let (client, _) = crate::wire_client(config, orca_core::logging::process_sink(), false)?;
+    let (registry, services) =
+        crate::build_registry_with(config, cwd, Arc::new(BrowserAsker(questions.clone())));
+    let mut session = AgentSession::new(config.clone(), client, registry, ToolContext::new(cwd));
+    session.startup_probes = true;
+    Ok((session, services))
+}
+
+/// The config a project session starts from with `profile` and `mode` (C# starts its worker
+/// with `--profile` / `--mode`): config.json, the profile, the mode; this process's runtime
+/// flags (--sandbox, --allow-dir, --demo) carry over.
+async fn config_for(
+    base: &OrcaConfig,
+    profile: Option<&str>,
+    mode: Option<&str>,
+) -> Result<(OrcaConfig, Option<ProfileOverlay>), String> {
+    let dir = orca_core::config::default_config_dir();
+    let mut manager = orca_core::config::ConfigManager::new(Some(&dir));
+    manager.load().map_err(|e| e.to_string())?;
+    if let Some(name) = profile.filter(|p| !p.is_empty()) {
+        let mut notices = Vec::new();
+        if let Some(e) =
+            orca_core::profiles::apply_at_startup(&mut manager, &dir, name, &mut notices).await
+        {
+            return Err(e);
+        }
+    }
+    if let Some(m) = mode.filter(|m| !m.is_empty()) {
+        manager.apply_mode(m)?;
+    }
+    let overlay = ProfileOverlay::of(&manager);
+    let mut config = manager.config.clone();
+    config.demo_mode = base.demo_mode;
+    config.sandbox_mode = base.sandbox_mode;
+    config.allowed_directory = base.allowed_directory.clone();
+    Ok((config, overlay))
 }
 
 /// [`session_for`] with its usage lines going to `log` (a bench run: its own home's log).
@@ -81,7 +132,12 @@ pub fn activity_line(ev: &LiveEvent) -> Option<String> {
     }
 }
 
-pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i32> {
+pub async fn run(
+    args: HostUiArgs,
+    config: OrcaConfig,
+    cwd: PathBuf,
+    overlay: Option<ProfileOverlay>,
+) -> Result<i32> {
     if args.tui {
         eprintln!("openorca: --tui needs the interactive mode, which is not ported to Rust yet.");
         return Ok(2);
@@ -99,22 +155,72 @@ pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i
         );
         return Ok(2);
     }
-    let (mut session, mut services) = session_for(&config, &cwd)?;
+    let bus = Arc::new(LiveEventBus::new());
+    let questions = Arc::new(QuestionBroker::new(bus.clone()));
+    let (mut session, mut services) = browser_session(&config, &cwd, &questions)?;
     services
         .start_mcp(&config, &cwd, &mut session.registry)
         .await;
-    let bus = Arc::new(LiveEventBus::new());
-    let primary = AgentLiveSession::start(session, bus.clone(), "headless");
+    // The primary session's profile and mode are set where it was started, as in C#.
+    let primary = AgentLiveSession::start_with(
+        session,
+        bus.clone(),
+        "headless",
+        NativeOptions {
+            overlay,
+            questions: Some(questions.clone()),
+            ..Default::default()
+        },
+    );
+    // A server that answers the /uncensored field with a 400 is told in the browser too.
+    let notice_bus = bus.clone();
+    orca_core::client::uncensored_gate::set_on_field_refused(Some(Arc::new(move |text: &str| {
+        notice_bus.publish(
+            orca_core::live::types::NOTICE,
+            serde_json::json!({"level": "warning", "text": text}),
+        );
+    })));
 
     let others: Arc<Mutex<Vec<ToolServices>>> = Arc::new(Mutex::new(Vec::new()));
     let factory_config = config.clone();
     let factory_services = others.clone();
     let factory: SessionFactory = Arc::new(move |folder: &str| -> Arc<dyn LiveSession> {
         let dir = PathBuf::from(folder);
-        match session_for(&factory_config, &dir) {
+        let bus = Arc::new(LiveEventBus::new());
+        let questions = Arc::new(QuestionBroker::new(bus.clone()));
+        match browser_session(&factory_config, &dir, &questions) {
             Ok((s, svc)) => {
                 factory_services.lock().unwrap().push(svc);
-                AgentLiveSession::start(s, Arc::new(LiveEventBus::new()), "worker")
+                // The project's profile and mode: the session is made again with them before
+                // its next turn (C# restarts the worker with --profile / --mode).
+                let (base, keep, q) = (
+                    factory_config.clone(),
+                    factory_services.clone(),
+                    questions.clone(),
+                );
+                let rebuild: orca_webui::native::RebuildFn =
+                    Arc::new(move |profile: Option<String>, mode: Option<String>| {
+                        let (base, keep, q, dir) =
+                            (base.clone(), keep.clone(), q.clone(), dir.clone());
+                        Box::pin(async move {
+                            let (config, overlay) =
+                                config_for(&base, profile.as_deref(), mode.as_deref()).await?;
+                            let (session, svc) =
+                                browser_session(&config, &dir, &q).map_err(|e| e.to_string())?;
+                            keep.lock().unwrap().push(svc);
+                            Ok(Rebuilt { session, overlay })
+                        })
+                    });
+                AgentLiveSession::start_with(
+                    s,
+                    bus,
+                    "worker",
+                    NativeOptions {
+                        questions: Some(questions),
+                        rebuild: Some(rebuild),
+                        ..Default::default()
+                    },
+                )
             }
             Err(e) => Arc::new(FailedSession {
                 bus: Arc::new(LiveEventBus::new()),
@@ -136,6 +242,17 @@ pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i
     options.profiles_cache_file =
         Some(orca_core::config::default_config_dir().join("profiles-cache.json"));
     options.config_home = Some(orca_core::config::default_config_dir());
+    // Generated images (imageGen.outputDirectory), read on each request so a settings change
+    // applies.
+    #[cfg(feature = "image")]
+    {
+        let image_gen = config.image_gen.clone();
+        options.image_directory = Some(Arc::new(move || {
+            Some(orca_tools_image::generate::resolve_output_directory(
+                &image_gen,
+            ))
+        }));
+    }
     if let Some(dir) = &args.bench_dir {
         options.bench = Some(bench_options(dir, &args, &config, others.clone()));
     }
@@ -174,6 +291,7 @@ pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i
         }
     }
     primary.permissions().deny_all();
+    questions.cancel_all();
     server.stop().await;
     primary.shutdown().await;
     services.shutdown().await;

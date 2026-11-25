@@ -33,6 +33,7 @@ tracing.workspace = true
 [dev-dependencies]
 orca-testkit.workspace = true
 orca-tools-fs.workspace = true
+orca-tools-utility.workspace = true
 tokio-tungstenite.workspace = true
 
 [lints]

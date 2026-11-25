@@ -1601,6 +1601,7 @@ dependencies = [
  "orca-core",
  "orca-testkit",
  "orca-tools-fs",
+ "orca-tools-utility",
  "percent-encoding",
  "portable-pty",
  "regex",
