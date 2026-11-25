@@ -33,6 +33,7 @@ orca-tools-utility.workspace = true
 orca-webui.workspace = true
 orca-tools-common.workspace = true
 orca-tools-archive = { workspace = true, optional = true }
+orca-router = { workspace = true, optional = true }
 orca-tools-network = { workspace = true, optional = true }
 async-trait.workspace = true
 orca-tools-mcp = { workspace = true, optional = true }
@@ -58,12 +59,14 @@ futures-util = { workspace = true, optional = true }
 
 [features]
 # Optional tool groups (PORTING.md "Plugins"): on by default, like the C# plugin folder.
-default = ["archive", "network", "mcp", "lsp", "image"]
+default = ["archive", "network", "mcp", "lsp", "image", "router"]
 archive = ["dep:orca-tools-archive"]
 network = ["dep:orca-tools-network"]
 mcp = ["dep:orca-tools-mcp"]
 lsp = ["dep:orca-tools-lsp"]
 image = ["dep:orca-tools-image"]
+# `abhoth router`: the gateway that replaces LiteLLM on DeepThought (ROUTER.md).
+router = ["dep:orca-router"]
 # `abhoth --desktop`: the web UI in a native window (WebView2 / WKWebView / WebKitGTK).
 desktop = ["dep:wry", "dep:tao", "dep:tray-icon", "dep:rfd", "dep:image", "dep:futures-util"]
 

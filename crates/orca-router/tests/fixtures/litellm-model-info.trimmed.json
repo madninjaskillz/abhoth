@@ -1,0 +1,339 @@
+{
+ "data": [
+  {
+   "model_name": "qwen3.8-flash-next",
+   "litellm_params": {
+    "model": "openai/inkling-2-mini",
+    "api_base": "http://gpu-host:8092/ninfer/v1"
+   },
+   "model_info": {
+    "id": "b81c6a71f11f65349fc8ba103e5b3570aca38cf76c3e9c40bcb2958f7e773fc9",
+    "max_input_tokens": 65536,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "none",
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": 65536
+   }
+  },
+  {
+   "model_name": "qwen3.8-27b-coder",
+   "litellm_params": {
+    "model": "openai/inkling-2-mini",
+    "api_base": "http://gpu-host:8092/ninfer/v1"
+   },
+   "model_info": {
+    "id": "4addf690a3b56e984a1429a7a012e6aa0d38fe63cbc7a8d8831ff65292024efc",
+    "max_input_tokens": 65536,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "none",
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": 65536
+   }
+  },
+  {
+   "model_name": "qwen3.6-27b-coder",
+   "litellm_params": {
+    "model": "openai/inkling-2-mini",
+    "api_base": "http://gpu-host:8092/ninfer/v1"
+   },
+   "model_info": {
+    "id": "7172db493d246989bdea0a53e5606ca90a5b41bf1d4f64e0e87cb52468addf3e",
+    "max_input_tokens": 65536,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "none",
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": 65536
+   }
+  },
+  {
+   "model_name": "qwen3.6-35b-a3b-awq",
+   "litellm_params": {
+    "model": "openai/inkling-2-mini",
+    "api_base": "http://gpu-host:8092/ninfer/v1"
+   },
+   "model_info": {
+    "id": "02c436cabe21622a90640ee8bbe2eb3ab0bc00490f27214efdcf1a6a2f10217c",
+    "max_input_tokens": 65536,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "none",
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": 65536
+   }
+  },
+  {
+   "model_name": "jarvis-brain",
+   "litellm_params": {
+    "model": "openai/inkling-2-mini",
+    "api_base": "http://gpu-host:8092/ninfer/v1"
+   },
+   "model_info": {
+    "id": "1285995922e5417fbe382d950b9591d109d3e018b5b8e24c010c6e7a9b41a0dc",
+    "max_input_tokens": 65536,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "none",
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": 65536
+   }
+  },
+  {
+   "model_name": "qwen3.8-27b",
+   "litellm_params": {
+    "model": "openai/inkling-2-mini",
+    "api_base": "http://gpu-host:8092/ninfer/v1"
+   },
+   "model_info": {
+    "id": "b9857ca6f5a351c96f8a334ecde7f3f2aa21f8e9cec0720cccb30821ff6f84a4",
+    "max_input_tokens": 65536,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "none",
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": 65536
+   }
+  },
+  {
+   "model_name": "flash-next",
+   "litellm_params": {
+    "model": "openai/flash-next",
+    "api_base": "http://gpu-host:8098/ondemand/v1"
+   },
+   "model_info": {
+    "id": "2aedaaefe671fe3db6d3b7b833690a2f2a7fae327637c9e866439e34eae4c201",
+    "max_input_tokens": 262144,
+    "engine": "strata",
+    "live": false,
+    "ondemand": true,
+    "catalog_model": "flash-next",
+    "title": "Qwen3.8 Flash Next",
+    "switch_to": {
+     "engine": "strata",
+     "engineProfile": "strata-1slot"
+    },
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": null
+   }
+  },
+  {
+   "model_name": "dense-stock",
+   "litellm_params": {
+    "model": "openai/dense-stock",
+    "api_base": "http://gpu-host:8098/ondemand/v1"
+   },
+   "model_info": {
+    "id": "00a33d7111f9dba2f3dc146a5c9fda102c32f0d9b67f3bb51d6ecb537452c29e",
+    "max_input_tokens": 131072,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "drop",
+    "live": false,
+    "ondemand": true,
+    "catalog_model": "dense-stock",
+    "title": "Dense Qwen3.8-27B, stock",
+    "switch_to": {
+     "engine": "ninfer",
+     "engineProfile": "ninfer-2lane"
+    },
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": null
+   }
+  },
+  {
+   "model_name": "qwenpi",
+   "litellm_params": {
+    "model": "openai/qwenpi",
+    "api_base": "http://gpu-host:8098/ondemand/v1"
+   },
+   "model_info": {
+    "id": "aa1b979d8161b29b02617deefe3cf40477f2cf49f5a39511e23912ffe8a38b68",
+    "max_input_tokens": 131072,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "drop",
+    "live": false,
+    "ondemand": true,
+    "catalog_model": "qwenpi",
+    "title": "QwenPi 27B",
+    "switch_to": {
+     "engine": "ninfer",
+     "engineProfile": "ninfer-2lane"
+    },
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": null
+   }
+  },
+  {
+   "model_name": "inkling-2-mini",
+   "litellm_params": {
+    "model": "openai/inkling-2-mini",
+    "api_base": "http://gpu-host:8092/a/v1"
+   },
+   "model_info": {
+    "id": "a31bafdc33bada2ffe8f4605792b0a1a7447216dc269c46876fadfbdb4d61b62",
+    "max_input_tokens": 65536,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "none",
+    "live": true,
+    "ondemand": true,
+    "catalog_model": "inkling2-mini",
+    "title": "Inkling 2 Mini",
+    "cards": [
+     "A",
+     "B"
+    ],
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": 65536
+   }
+  },
+  {
+   "model_name": "inkling-2-mini",
+   "litellm_params": {
+    "model": "openai/inkling-2-mini",
+    "api_base": "http://gpu-host:8092/b/v1"
+   },
+   "model_info": {
+    "id": "ef7435999b08aab8461c7d904d8c9de38d426ac85ec8d20c50296b2368b9639e",
+    "max_input_tokens": 65536,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "none",
+    "live": true,
+    "ondemand": true,
+    "catalog_model": "inkling2-mini",
+    "title": "Inkling 2 Mini",
+    "cards": [
+     "A",
+     "B"
+    ],
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": 65536
+   }
+  },
+  {
+   "model_name": "dense-pi-abl-v3fork",
+   "litellm_params": {
+    "model": "openai/dense-pi-abl-v3fork",
+    "api_base": "http://gpu-host:8098/ondemand/v1"
+   },
+   "model_info": {
+    "id": "c16b7357fe76b4d0219da880e308cb2d5f07877aaa709c863102fdee04f3942f",
+    "max_input_tokens": 131072,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "drop",
+    "live": false,
+    "ondemand": true,
+    "catalog_model": "dense-pi-abl-v3fork",
+    "title": "Dense Qwen3.8-27B, pi-adapted, abliterated (v3 file for the 'merged' build)",
+    "switch_to": {
+     "engine": "ninfer",
+     "engineProfile": "ninfer-merged-4lane"
+    },
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": null
+   }
+  },
+  {
+   "model_name": "qwen3.8-flash-next-a",
+   "litellm_params": {
+    "model": "openai/inkling-2-mini",
+    "api_base": "http://gpu-host:8092/a/v1"
+   },
+   "model_info": {
+    "id": "aa9c037d9728bc68d36ead55cad68bd9761b9c67c7aeed52da9c60e0198d225c",
+    "max_input_tokens": 65536,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "none",
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": 65536
+   }
+  },
+  {
+   "model_name": "qwen3.8-flash-next-b",
+   "litellm_params": {
+    "model": "openai/inkling-2-mini",
+    "api_base": "http://gpu-host:8092/b/v1"
+   },
+   "model_info": {
+    "id": "d2c52b26ad2ee671114c885ced9da39f5086b02c03a279ebeb83dde3bea01461",
+    "max_input_tokens": 65536,
+    "engine": "ninfer",
+    "effort_levels": [
+     "none",
+     "low",
+     "medium",
+     "xhigh"
+    ],
+    "thinking_off_effort": "none",
+    "gateway_rev": "816595f96a9a",
+    "max_output_tokens": 65536
+   }
+  }
+ ]
+}

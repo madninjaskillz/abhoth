@@ -597,6 +597,11 @@ Settings and sessions live in ~/.abhoth (ABHOTH_HOME; OPENORCA_HOME is read too)
 
 /// The whole program; returns the process exit code.
 pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
+    // `abhoth router ...`: the gateway (ROUTER.md); no config, sessions or tools.
+    #[cfg(feature = "router")]
+    if raw.first().map(String::as_str) == Some("router") {
+        return orca_router::cli::run(raw[1..].to_vec()).await;
+    }
     let cwd = std::env::current_dir().context("reading the current directory")?;
     // --hostui-set-password / --hostui-reset-2fa: manage the web UI's sign-in account, then exit.
     if let Some(code) = hostui_password::try_run(&raw) {

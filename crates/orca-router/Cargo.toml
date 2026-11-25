@@ -1,0 +1,34 @@
+[package]
+name = "orca-router"
+description = "abhoth router: the OpenAI-compatible gateway in front of DeepThought's engines (replaces LiteLLM, qfn-lb, pig-slots and the on-demand relay; design in ROUTER.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The small binary the Docker image ships; `abhoth router` (orca-cli) runs the same code.
+[[bin]]
+name = "abhoth-router"
+path = "src/bin/abhoth_router.rs"
+
+[dependencies]
+orca-core.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+indexmap.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["signal"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

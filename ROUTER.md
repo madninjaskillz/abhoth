@@ -1,8 +1,11 @@
 # `abhoth router`: a gateway to replace LiteLLM on DeepThought (design)
 
-Status: **design only, nothing built.** Survey date: 2026-11-25, read-only, against the live
-layout `merged-inkling-x2` (ninfer `inkling-2-mini` on both cards, 4 lanes each). Keys and
-tokens are left out of this document on purpose.
+Status (2026-11-25): **phases 1-3 built** in `crates/orca-router` (`abhoth router`), tested
+against fake engines and a local LiteLLM 1.106.6 shadow replay; see section 10 for the
+implementation decisions and section 11 for the replay results. Nothing on DeepThought uses it
+yet. Survey date: 2026-11-25, read-only, against the live layout `merged-inkling-x2` (ninfer
+`inkling-2-mini` on both cards, 4 lanes each). Keys and tokens are left out of this document on
+purpose.
 
 ## TL;DR
 
@@ -91,6 +94,19 @@ Errors seen:
 - `503` from the on-demand relay while `gateway --hold` was set.
 
 Retries made the 404s cost three attempts each, which is pure waste.
+
+**Hazard: LiteLLM's `GET /health` switches GPUs.** It sends a test chat to every deployment,
+including the on-demand relay ones (`flash-next`, `dense-stock`, `qwenpi`,
+`dense-pi-abl-v3fork`), and the relay treats each as a real request. On 2026-11-25 15:12 UTC
+one `GET :8010/health` (made while capturing shapes for this work) started job
+`20261125T151234Z-combo-7a3bf854`, switching card B to `dense-stock`. On-demand switching was
+then turned off in `gateway.json` (`onDemand.enabled=false`) and stays off until the router
+replaces LiteLLM. Rules that follow:
+
+- Never call LiteLLM's `/health` (the dash and layoutctl only use `/health/liveliness`).
+- The router's `/health` makes no model calls at all, and its on-demand decision ignores
+  nothing: a request for a not-live name is a switch request, so only clients that mean it may
+  send one. Shadow testing never names a not-live model.
 
 ### 1.2 Clients
 
@@ -501,18 +517,41 @@ mode, as well as) LiteLLM's `config.yaml` and nginx.conf:
       the router, and never during a run or the quiet window.
 
    Watch each for a day: error rate, TTFT and the request log, against LiteLLM's numbers.
-3. **Cut over the port.**
+3. **Cut over the LiteLLM port.**
    - Stop LiteLLM and move the router to `:8010`; clients revert their URLs to `:8010`.
-   - Then retire qfn-lb (router compat listener `:8092`) and pig-slots (compat listener
-     `:8099`), each separately.
-   - layoutctl stops rendering LiteLLM and nginx (`gateway.json router.enabled = true,
-     litellm.enabled = false`).
+   - layoutctl stops rendering LiteLLM (`gateway.json router.enabled = true,
+     litellm.enabled = false`), but **keeps rendering qfn-lb's nginx.conf**: qfn-lb stays up,
+     untouched, as part of the rollback.
+   - pig-slots can follow (router compat listener `--slots-port 8099`) once the registry has
+     run in shadow; separately from qfn-lb.
+3b. **Retire qfn-lb (`:8092`) last**, as its own step, only after every client has been on the
+   router and things have been stable for a while (a week or more with no router rollbacks).
+   - The end state on DeepThought is NPM (TLS for the public names only) -> `abhoth router` ->
+     the engines. Nothing talks to `:8092` any more.
+   - Until then qfn-lb is not touched: it is the rollback for anything that still reaches the
+     cards through it.
+   - Everything that uses `:8092` today, and what replaces it:
+
+     | User of `:8092` | Path | Router replacement |
+     |---|---|---|
+     | LiteLLM deployments | `/ninfer/v1`, `/a/v1`, `/b/v1` | the router itself (cards addressed directly) |
+     | profiles API on-demand relay (`lbUrl`) | `/a/v1/chat/completions`, `/b/...` | phase 3 in the router; meanwhile `lbUrl` -> router `/a/`, `/b/` (same paths) |
+     | profiles API `Loads` poll (`lbUrl`) | `/a/slots`, `/b/slots` every 3 s | router `/a/slots`, `/b/slots` (passthrough, key added) |
+     | music `chk.sh` | `/health` | router compat listener (`--lb-port`): `/` = main pool, so `/health` = the engine's |
+     | dash (older versions; check the live one) | `/health` | the router row (`/status`) |
+     | layoutctl `gateway` | renders nginx.conf, `lb_seen()` | stops rendering it when `gateway.json lb.enabled=false` (layoutctl change, needs OK) |
+     | anything with `lbUrl` / `LB_PORT` in `layouts/` | `/<engine>/`, `/<card>/` | the same prefixes on the router (`/ninfer/`, `/a/`, `/b/`) |
+
+   - The switch is one of two, both reversible: point `gateway.json lbUrl` at the router's
+     paths, or run the router's compat listener on `:8092` after stopping qfn-lb. The
+     second needs no client change; the first lets both run side by side first.
+   - Rollback: start qfn-lb again (its last nginx.conf is kept) and set `lbUrl` back.
 4. **SHOULD features.** Enable lease-aware placement, Lead priority and affinity behind config
    flags. Bench them (3 runs, per "Bench sizing") against the old placement before making them
    the default. Then on-demand in the router, with the profiles relay as fallback.
 5. **Rollback.**
    - LiteLLM's app definition, `config.yaml`, `effort_hook.py` and nginx.conf stay in place,
-     stopped rather than deleted, for 30 days.
+     stopped rather than deleted, for 30 days (qfn-lb: running until step 3b, then 30 days).
    - Rollback means: stop the router, start `litellm` and `qfn-lb` / `pig-slots`, and set
      `gateway.json router.enabled=false` so layoutctl renders the old configs again.
    - Client URLs never change in the final state, so nothing else is needed.
@@ -597,3 +636,43 @@ session-key hashing.
 - Retries multiply: LiteLLM's `num_retries: 2` times nginx's `proxy_next_upstream_tries 2`
   turned one 404 into repeated attempts. Setting `num_retries: 0` for 4xx would help even
   without the router.
+
+## 10. Implementation decisions (2026-11-25, phases 1-3)
+
+| # | Decision | Why |
+|---|---|---|
+| D-R1 | `router.json` is generated from LiteLLM's rendered `config.yaml` plus qfn-lb's `nginx.conf` (`abhoth router import-litellm`, `--watch N` for the shadow). | layoutctl is not edited until switch-over; the shadow follows every layout change for free. |
+| D-R2 | A standalone `abhoth-router` binary as well as `abhoth router`. | A small static binary for the image; same code. |
+| D-R3 | Shadow port `8020`. | Free, outside the reserved list. |
+| D-R4 | Unknown model: 400 with LiteLLM's exact message, type and code (not 404). | Clients match on it today. |
+| D-R5 | `strip_fields` defaults to `metadata`, `user`. | LiteLLM never forwards them; found in the replay. |
+| D-R6 | `extra_body` is merged into the top level before the effort rules. | Fixes a LiteLLM ordering bug: it sent `reasoning_effort: high` with `enable_thinking: false`. |
+| D-R7 | No `stream_options.include_usage` injection and no re-chunking. | The client gets the stream it asked for; usage is scanned from the stream when present. |
+| D-R8 | Response headers `x-litellm-model-name: openai/<served>`, plus `x-served-model`, `x-abhoth-card`, `x-abhoth-upstream`. | Parity for anything reading LiteLLM's header; the rest is for debugging. |
+| D-R9 | `/v1/model/info`: `max_output_tokens` = max input for card deployments, `null` for relay ones; keys whose value is null are left out. | Matches the live golden capture. |
+| D-R10 | One failover, before any byte is sent, on connect error, timeout, 502 or 503; a 10 s cooldown; if every card is cooling they are all tried anyway. | Never an outage caused by the cooldown itself. |
+| D-R11 | Admission load = max(admitted, in-flight); the Lead never queues; others wait up to `queueSeconds` then go anyway. | Requests that bypass admission (qfn-lb paths) still count. |
+| D-R12 | Placement precedence: lease, then session affinity (rendezvous hash), then least loaded. All placement is OFF by default. | Phase 2 must not change behaviour until it is switched on. |
+| D-R13 | On-demand acts only through the profiles API (`/compose`, `/plan`, `/switch`); a plan changing both cards is blocked unless `allowBothCards`. Dry-run is the default. | One actuator; on-demand is off on the gateway until the router replaces LiteLLM. |
+| D-R14 | UK DST computed by hand (last Sunday of March/October, 01:00 UTC). | No tz database in a static binary. |
+| D-R15 | `/admin/*` loopback-only or admin key; `/admin/cards/<X>/drain` and `undrain`. | Drain before a switch, without exposing it publicly. |
+| D-R16 | Compat listeners `--lb-port` (qfn-lb paths) and `--slots-port` (pig-slots API). | Lets the router take over `:8092` / `:8099` later with no client change. |
+| D-R17 | The router's `/health` makes no upstream calls. | See the hazard in section 1.1. |
+
+## 11. Shadow replay results (local, 2026-11-25)
+
+`tools/router-shadow/replay.py local`: echo engines, local LiteLLM 1.106.6 with `effort_hook.py`
+and the live config, against the router importing the same config. Upstream bodies and
+responses were diffed per client shape (`shapes.py`).
+
+- Fixed in the router after the first run: the `x-litellm-model-name` value, `metadata`/`user`
+  stripping, `extra_body` merge order (D-R5, D-R6, D-R8); `model_info` null handling (D-R9).
+- Remaining differences, all intentional: the router passes an explicit `stream:false`
+  through; it does not inject `include_usage` or re-chunk (D-R7); the `extra_body` case
+  (D-R6); local LiteLLM reports `max_output_tokens: null` where the live one says 65536 (the
+  router matches live).
+- Everything else identical, including unknown top-level fields such as `uncensored`
+  (passed through by both).
+- Live comparison so far is GET-only (`/v1/models`, `/v1/model/info`,
+  `/health/liveliness`). Chat traffic against DeepThought waits for the go-ahead, and only on
+  live aliases.

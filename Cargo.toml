@@ -20,6 +20,7 @@ members = [
     "crates/orca-cli",
     "crates/orca-testkit",
     "crates/orca-crosscheck",
+    "crates/orca-router",
 ]
 
 [workspace.package]
@@ -49,6 +50,7 @@ orca-tools-image = { path = "crates/orca-tools-image" }
 orca-tools-pi = { path = "crates/orca-tools-pi" }
 orca-testkit = { path = "crates/orca-testkit" }
 orca-webui = { path = "crates/orca-webui" }
+orca-router = { path = "crates/orca-router" }
 
 anyhow = "=1.0.105"
 async-trait = "=0.1.92"

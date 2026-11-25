@@ -2604,6 +2604,7 @@ dependencies = [
  "image",
  "orca-abstractions",
  "orca-core",
+ "orca-router",
  "orca-testkit",
  "orca-tools-agent",
  "orca-tools-archive",
@@ -2680,6 +2681,26 @@ dependencies = [
  "vt100",
  "walkdir",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "orca-router"
+version = "0.15.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "futures-util",
+ "indexmap",
+ "orca-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

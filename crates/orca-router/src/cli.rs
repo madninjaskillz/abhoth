@@ -1,0 +1,289 @@
+//! `abhoth router ...` (and the image's `abhoth-router`):
+//!
+//! ```text
+//! abhoth router --config router.json [--port 8010 | --listen 0.0.0.0:8010] [--lb-port 8092] [--slots-port 8099]
+//! abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
+//!               [--key-file /run/secrets/ninfer-key] [--base router.json] --out router.json [--watch SECONDS]
+//! abhoth router check --config router.json
+//! ```
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use anyhow::{Context, Result, anyhow, bail};
+
+use crate::config::{RouterConfig, Snapshot};
+use crate::import::{self, ImportOptions};
+use crate::server::{self, Mode};
+use crate::state::AppState;
+
+pub const HELP: &str = "abhoth router: the OpenAI-compatible gateway (replaces LiteLLM, qfn-lb, pig-slots)
+
+USAGE:
+  abhoth router --config router.json [--port P | --listen ADDR] [--host H] [--lb-port P] [--slots-port P]
+  abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
+                [--key-file PATH] [--base router.json] --out router.json [--watch SECONDS]
+  abhoth router check --config router.json
+";
+
+fn take(args: &[String], i: &mut usize, flag: &str) -> Result<String> {
+    *i += 1;
+    args.get(*i)
+        .cloned()
+        .ok_or_else(|| anyhow!("{flag} needs a value"))
+}
+
+/// Entry point; `args` start after the word `router`. Returns the exit code.
+pub async fn run(args: Vec<String>) -> Result<i32> {
+    match args.first().map(String::as_str) {
+        Some("--help" | "-h" | "help") => {
+            print!("{HELP}");
+            Ok(0)
+        }
+        Some("import-litellm") => import_cmd(&args[1..]).await,
+        Some("check") => {
+            let mut config = None;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--config" => config = Some(take(&args, &mut i, "--config")?),
+                    a => bail!("unknown argument {a}"),
+                }
+                i += 1;
+            }
+            let path = PathBuf::from(config.ok_or_else(|| anyhow!("--config is required"))?);
+            let s = Snapshot::load(&path).map_err(|e| anyhow!(e))?;
+            println!(
+                "ok: rev {}, {} upstreams, {} deployments",
+                s.config.rev,
+                s.config.upstreams.len(),
+                s.config.deployments.len()
+            );
+            Ok(0)
+        }
+        _ => serve_cmd(&args).await,
+    }
+}
+
+async fn serve_cmd(args: &[String]) -> Result<i32> {
+    let mut config = None;
+    let mut host = "0.0.0.0".to_string();
+    let mut listen: Option<String> = None;
+    let mut port: Option<u16> = None;
+    let mut lb_port: Option<u16> = None;
+    let mut slots_port: Option<u16> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--config" => config = Some(take(args, &mut i, "--config")?),
+            "--port" => port = Some(take(args, &mut i, "--port")?.parse().context("--port")?),
+            "--host" => host = take(args, &mut i, "--host")?,
+            "--listen" => listen = Some(take(args, &mut i, "--listen")?),
+            "--lb-port" => {
+                lb_port = Some(
+                    take(args, &mut i, "--lb-port")?
+                        .parse()
+                        .context("--lb-port")?,
+                )
+            }
+            "--slots-port" => {
+                slots_port = Some(
+                    take(args, &mut i, "--slots-port")?
+                        .parse()
+                        .context("--slots-port")?,
+                )
+            }
+            a => bail!("unknown argument {a} (abhoth router --help)"),
+        }
+        i += 1;
+    }
+    let path = PathBuf::from(
+        config.ok_or_else(|| anyhow!("--config is required (abhoth router --help)"))?,
+    );
+    let snap = Snapshot::load(&path).map_err(|e| anyhow!(e))?;
+    let addr = listen.unwrap_or_else(|| format!("{host}:{}", port.unwrap_or(8010)));
+    let st = AppState::new(snap, Some(path));
+    let mut tasks = Vec::new();
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    let mut bind = |addr: String, mode: Mode| -> Result<()> {
+        let std_l =
+            std::net::TcpListener::bind(&addr).with_context(|| format!("binding {addr}"))?;
+        std_l.set_nonblocking(true)?;
+        let l = tokio::net::TcpListener::from_std(std_l)?;
+        eprintln!("abhoth router: {mode:?} on {addr}");
+        let st = st.clone();
+        let mut rx = rx.clone();
+        tasks.push(tokio::spawn(async move {
+            let stop = async move {
+                let _ = rx.wait_for(|v| *v).await;
+            };
+            if let Err(e) = server::serve(l, st, mode, stop).await {
+                eprintln!("abhoth router: {addr}: {e}");
+            }
+        }));
+        Ok(())
+    };
+    bind(addr, Mode::Gateway)?;
+    if let Some(p) = lb_port {
+        bind(format!("{host}:{p}"), Mode::Lb)?;
+    }
+    if let Some(p) = slots_port {
+        bind(format!("{host}:{p}"), Mode::Slots)?;
+    }
+    tokio::spawn(crate::reload::watch(st.clone(), Duration::from_secs(2)));
+    tokio::spawn(crate::ondemand::background(st.clone()));
+    #[cfg(unix)]
+    {
+        let st = st.clone();
+        tokio::spawn(async move {
+            use tokio::signal::unix::{SignalKind, signal};
+            if let Ok(mut hup) = signal(SignalKind::hangup()) {
+                while hup.recv().await.is_some() {
+                    let _ = crate::reload::reload_now(&st);
+                }
+            }
+        });
+    }
+    shutdown_signal().await;
+    eprintln!("abhoth router: stopping");
+    let _ = tx.send(true);
+    for t in tasks {
+        let _ = tokio::time::timeout(Duration::from_secs(10), t).await;
+    }
+    Ok(0)
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+/// The import-litellm arguments.
+#[derive(Debug, Clone)]
+pub struct ImportArgs {
+    pub litellm: PathBuf,
+    pub lb: PathBuf,
+    pub gateway: Option<PathBuf>,
+    pub key_file: Option<String>,
+    pub base: Option<PathBuf>,
+    pub out: PathBuf,
+}
+
+/// One import; writes `out` atomically, only when the text changed. Ok(true) = written.
+pub fn import_once(a: &ImportArgs) -> Result<bool> {
+    let litellm =
+        std::fs::read_to_string(&a.litellm).with_context(|| a.litellm.display().to_string())?;
+    let lb = std::fs::read_to_string(&a.lb).with_context(|| a.lb.display().to_string())?;
+    let gateway = match &a.gateway {
+        Some(p) => Some(
+            serde_json::from_str(
+                &std::fs::read_to_string(p).with_context(|| p.display().to_string())?,
+            )
+            .with_context(|| p.display().to_string())?,
+        ),
+        None => None,
+    };
+    let base: Option<RouterConfig> = match &a.base {
+        Some(p) if p.exists() => Some(
+            serde_json::from_str(&std::fs::read_to_string(p)?)
+                .with_context(|| p.display().to_string())?,
+        ),
+        _ => None,
+    };
+    let cfg = import::from_litellm(
+        &litellm,
+        &lb,
+        &ImportOptions {
+            key_file: a.key_file.clone(),
+            gateway,
+            base,
+        },
+    )
+    .map_err(|e| anyhow!(e))?;
+    let text = serde_json::to_string_pretty(&cfg)? + "\n";
+    if std::fs::read_to_string(&a.out).ok().as_deref() == Some(text.as_str()) {
+        return Ok(false);
+    }
+    let tmp = a.out.with_extension("json.tmp");
+    std::fs::write(&tmp, &text).with_context(|| tmp.display().to_string())?;
+    std::fs::rename(&tmp, &a.out).with_context(|| a.out.display().to_string())?;
+    Ok(true)
+}
+
+async fn import_cmd(args: &[String]) -> Result<i32> {
+    let (mut litellm, mut lb, mut gateway, mut key_file, mut base, mut out, mut watch) =
+        (None, None, None, None, None, None, None::<u64>);
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--litellm" => litellm = Some(PathBuf::from(take(args, &mut i, "--litellm")?)),
+            "--lb" => lb = Some(PathBuf::from(take(args, &mut i, "--lb")?)),
+            "--gateway" => gateway = Some(PathBuf::from(take(args, &mut i, "--gateway")?)),
+            "--key-file" => key_file = Some(take(args, &mut i, "--key-file")?),
+            "--base" => base = Some(PathBuf::from(take(args, &mut i, "--base")?)),
+            "--out" => out = Some(PathBuf::from(take(args, &mut i, "--out")?)),
+            "--watch" => watch = Some(take(args, &mut i, "--watch")?.parse().context("--watch")?),
+            a => bail!("unknown argument {a}"),
+        }
+        i += 1;
+    }
+    let a = ImportArgs {
+        litellm: litellm.ok_or_else(|| anyhow!("--litellm is required"))?,
+        lb: lb.ok_or_else(|| anyhow!("--lb is required"))?,
+        gateway,
+        key_file,
+        base,
+        out: out.ok_or_else(|| anyhow!("--out is required"))?,
+    };
+    let Some(every) = watch else {
+        let wrote = import_once(&a)?;
+        eprintln!(
+            "{}: {}",
+            a.out.display(),
+            if wrote { "written" } else { "unchanged" }
+        );
+        return Ok(0);
+    };
+    eprintln!(
+        "abhoth router import-litellm: every {every} s -> {}",
+        a.out.display()
+    );
+    let mut last_err = String::new();
+    loop {
+        match import_once(&a) {
+            Ok(true) => {
+                eprintln!("{}: written", a.out.display());
+                last_err.clear();
+            }
+            Ok(false) => last_err.clear(),
+            Err(e) => {
+                let s = format!("{e:#}");
+                if s != last_err {
+                    eprintln!("import failed (keeping the old router.json): {s}");
+                    last_err = s;
+                }
+            }
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(every.max(1))) => {}
+            _ = shutdown_signal() => return Ok(0),
+        }
+    }
+}
+
+/// For callers that hold an `Arc<AppState>` already (tests).
+pub fn state_from(cfg: RouterConfig) -> Result<Arc<AppState>, String> {
+    Ok(AppState::new(Snapshot::build(cfg, None)?, None))
+}
