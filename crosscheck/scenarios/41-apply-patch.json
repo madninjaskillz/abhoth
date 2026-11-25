@@ -1,0 +1,133 @@
+{
+  "prompt": "Patch the files",
+  "files": {
+    "code.txt": "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n",
+    "one.txt": "one\n",
+    "gone.txt": "bye\n",
+    "crlf.txt": "a\r\nb\r\nc\r\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "code.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "apply_patch",
+          "args": {
+            "patch": "--- a/code.txt\n+++ b/code.txt\n@@ -2,3 +2,3 @@\n line2\n-line3\n+line3_changed\n line4\n@@ -8,2 +8,2 @@\n line8\n-line9\n+line9_changed"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "code.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "apply_patch",
+          "args": {
+            "patch": "--- a/code.txt\n+++ b/code.txt\n@@ -3,3 +3,3 @@\n line5\n-line6\n+line6_fuzzed\n line7",
+            "path": "code.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "apply_patch",
+          "args": {
+            "patch": "--- /dev/null\n+++ b/docs/new.md\n@@ -0,0 +1,3 @@\n+# Title\n+\n+Body text"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "apply_patch",
+          "args": {
+            "patch": "--- a/code.txt\n+++ b/code.txt\n@@ -1,2 +1,2 @@\n wrong\n-context\n+x",
+            "path": "code.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "apply_patch",
+          "args": {
+            "patch": "this is not a patch"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "apply_patch",
+          "args": {
+            "patch": "--- a/one.txt\n+++ b/one.txt\n@@ -1,1 +1,1 @@\n-one\n+ONE\n--- a/gone.txt\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-bye\n--- a/never.txt\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-x"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "crlf.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "apply_patch",
+          "args": {
+            "patch": "--- a/crlf.txt\n+++ b/crlf.txt\n@@ -2,1 +2,1 @@\n-b\n+B",
+            "path": "crlf.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "apply_patch",
+          "args": {
+            "patch": "--- a/nofile.txt\n+++ b/nofile.txt\n@@ -1,1 +1,1 @@\n-a\n+b"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    },
+    {
+      "text": "Finished: I ran every requested tool and checked each of the results carefully."
+    }
+  ]
+}

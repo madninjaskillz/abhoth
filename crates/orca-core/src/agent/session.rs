@@ -192,7 +192,8 @@ impl AgentSession {
     /// (`SystemPromptBuilder.GetSystemPromptAsync`); `native_tools` decides the tool-calling
     /// protocol section (text when no tools are registered).
     pub fn default_system_prompt(&self) -> String {
-        let tools = PromptTool::from_registry(&self.registry);
+        let mut tools = PromptTool::from_registry(&self.registry);
+        tools.retain(|t| super::tool_exposure::is_advertised(&t.name, &self.config));
         let native = self.native_tools && !tools.is_empty();
         self.prompt_builder.get_system_prompt_for_mode(
             &self.config,
@@ -259,6 +260,7 @@ impl AgentSession {
         self.registry
             .definitions()
             .into_iter()
+            .filter(|d| super::tool_exposure::is_advertised(&d.name, &self.config))
             .filter(|d| !super::policies::is_denied_for_lead(&self.config, &d.name))
             .filter(|d| {
                 !read_only
@@ -404,6 +406,11 @@ impl AgentSession {
 
         let started = Instant::now();
         let result = self.run_tool(&tool, &args, observer).await;
+        // `cd`: later tool calls resolve paths against the new directory (C# changes the
+        // process-wide current directory).
+        if let Some(dir) = result.cwd_change().filter(|_| !result.is_error) {
+            self.ctx.cwd = dir;
+        }
         let elapsed = started.elapsed().as_millis() as i64;
         self.tool_hooks.post_hook(
             &call.name,
@@ -469,7 +476,10 @@ impl AgentSession {
         args: &Value,
         observer: &mut dyn AgentObserver,
     ) -> ToolResult {
-        let long_running = tool.capabilities().contains(ToolCapabilities::LONG_RUNNING);
+        // Interactive tools (ask_user) wait on a human and long-running ones keep their own
+        // time budget: neither gets the pipeline timeout.
+        let long_running = tool.capabilities().contains(ToolCapabilities::LONG_RUNNING)
+            || tool.capabilities().contains(ToolCapabilities::INTERACTIVE);
         // Lines stream through a channel so the observer (not Sync) stays on this task.
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let on_output = move |line: &str| {

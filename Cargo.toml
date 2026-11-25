@@ -6,6 +6,9 @@ members = [
     "crates/orca-tools-common",
     "crates/orca-tools-fs",
     "crates/orca-tools-shell",
+    "crates/orca-tools-utility",
+    "crates/orca-tools-archive",
+    "crates/orca-tools-network",
     "crates/orca-cli",
     "crates/orca-testkit",
     "crates/orca-crosscheck",
@@ -26,6 +29,9 @@ orca-core = { path = "crates/orca-core" }
 orca-tools-common = { path = "crates/orca-tools-common" }
 orca-tools-fs = { path = "crates/orca-tools-fs" }
 orca-tools-shell = { path = "crates/orca-tools-shell" }
+orca-tools-utility = { path = "crates/orca-tools-utility" }
+orca-tools-archive = { path = "crates/orca-tools-archive" }
+orca-tools-network = { path = "crates/orca-tools-network" }
 orca-testkit = { path = "crates/orca-testkit" }
 
 anyhow = "=1.0.105"
@@ -46,6 +52,7 @@ tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["fmt", "env-filter", "std"] }
 walkdir = "=2.5.1"
 windows-version = "=0.1.1"
+zip = { version = "=9.8.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -14,6 +14,7 @@ pub mod run_evidence;
 pub mod session;
 pub mod system_prompt;
 pub mod tool_call_parser;
+pub mod tool_exposure;
 pub mod tool_hooks;
 mod turn;
 
