@@ -6,6 +6,7 @@ pub mod config;
 pub mod control;
 pub mod effort;
 pub mod import;
+pub mod leases;
 pub mod metrics;
 pub mod observe;
 pub mod ondemand;

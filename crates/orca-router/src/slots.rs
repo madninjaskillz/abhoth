@@ -13,7 +13,6 @@
 //! What is new: the router knows which card each lease is on, so placement can follow leases
 //! (`lease_for_key`) and on-demand decisions read leases without an HTTP call.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -21,24 +20,13 @@ use axum::http::Method;
 use axum::response::Response;
 use indexmap::IndexMap;
 use orca_core::slots::registry::SlotClaim;
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::config::{FileSig, Snapshot};
+use crate::leases::{GuardLease, LeaseTable, SlotView};
+pub use crate::leases::{Lease, copy_of};
 use crate::proxy::{json_response, now_epoch};
 use crate::state::AppState;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Lease {
-    pub key: String,
-    pub owner: String,
-    pub host: String,
-    pub pid: i64,
-    pub label: String,
-    pub kind: String,
-    pub since: f64,
-    pub renewed: f64,
-}
 
 #[derive(Debug, Default)]
 struct LayoutFile {
@@ -51,22 +39,17 @@ struct LayoutFile {
 
 #[derive(Default)]
 struct Inner {
-    leases: IndexMap<String, Lease>,
+    table: LeaseTable,
     layout: LayoutFile,
+    /// Set by the control plane (ROUTER-CONFIG.md 8.2): the active layout's slots, withdrawn
+    /// cards and the freeze, in memory. Wins over the layout file.
+    control: Option<SlotView>,
     loaded: bool,
 }
 
 #[derive(Default)]
 pub struct Registry {
     inner: Mutex<Inner>,
-}
-
-/// The card ("copy") of a slot: its first letter, as pig-slots ("B1" -> "B").
-pub fn copy_of(slot: &str) -> String {
-    slot.chars()
-        .next()
-        .map(|c| c.to_string())
-        .unwrap_or_default()
 }
 
 /// The claim fields, parsed into orca-core's wire type (the client side of the same protocol).
@@ -94,24 +77,39 @@ pub fn parse_claim(b: &Map<String, Value>) -> SlotClaim {
     }
 }
 
-fn clip(s: &str, n: usize) -> String {
-    s.chars().take(n).collect()
-}
-
 impl Registry {
-    fn slots_of(inner: &Inner, snap: &Snapshot) -> Vec<String> {
-        if let Some(s) = &inner.layout.slots {
-            return s.clone();
+    /// The cards `/list` always shows: the configured upstream cards (pig-slots: A and B).
+    fn base_cards(snap: &Snapshot) -> Vec<String> {
+        snap.config.upstreams.keys().cloned().collect()
+    }
+
+    fn view(inner: &Inner, snap: &Snapshot) -> SlotView {
+        if let Some(v) = &inner.control {
+            return v.clone();
         }
-        let mut out = Vec::new();
+        let cards = Self::base_cards(snap);
+        if let Some(s) = &inner.layout.slots {
+            return SlotView {
+                slots: s.clone(),
+                frozen: inner.layout.frozen,
+                layout: inner.layout.layout.clone(),
+                reason: inner.layout.reason.clone(),
+                cards,
+            };
+        }
+        let mut slots = Vec::new();
         for (card, u) in &snap.config.upstreams {
             if u.online {
                 for i in 1..=u.lanes {
-                    out.push(format!("{card}{i}"));
+                    slots.push(format!("{card}{i}"));
                 }
             }
         }
-        out
+        SlotView {
+            slots,
+            cards,
+            ..SlotView::default()
+        }
     }
 
     fn refresh(inner: &mut Inner, snap: &Snapshot) {
@@ -167,10 +165,10 @@ impl Registry {
                 && let Ok(m) = serde_json::from_str::<IndexMap<String, Lease>>(&t)
             {
                 Self::refresh(&mut g, snap);
-                let slots = Self::slots_of(&g, snap);
+                let slots = Self::view(&g, snap).slots;
                 for (s, l) in m {
                     if slots.contains(&s) {
-                        g.leases.insert(s, l);
+                        g.table.leases.insert(s, l);
                     }
                 }
             }
@@ -187,201 +185,65 @@ impl Registry {
             let _ = std::fs::create_dir_all(d);
         }
         let tmp = p.with_extension("json.tmp");
-        if let Ok(text) = serde_json::to_string(&inner.leases)
+        if let Ok(text) = serde_json::to_string(&inner.table.leases)
             && std::fs::write(&tmp, text).is_ok()
         {
             let _ = std::fs::rename(&tmp, &p);
         }
     }
 
-    fn reap(inner: &mut Inner, now: f64, ttl: f64) -> bool {
-        let before = inner.leases.len();
-        inner.leases.retain(|_, l| now - l.renewed <= ttl);
-        inner.leases.len() != before
+    fn run(
+        &self,
+        snap: &Snapshot,
+        f: impl FnOnce(&mut LeaseTable, &SlotView, f64, f64) -> (u16, Value, bool),
+    ) -> (u16, Value) {
+        let now = now_epoch();
+        let ttl = snap.config.slots.ttl_seconds;
+        let mut g = self.prepare(snap);
+        let view = Self::view(&g, snap);
+        let (code, v, changed) = f(&mut g.table, &view, now, ttl);
+        if changed {
+            Self::save(&g, snap);
+        }
+        (code, v)
     }
 
     pub fn claim(&self, snap: &Snapshot, b: &Map<String, Value>) -> (u16, Value) {
-        let now = now_epoch();
-        let ttl = snap.config.slots.ttl_seconds;
-        let c = parse_claim(b);
-        if c.key.is_empty() {
-            return (400, json!({"ok": false, "reason": "key required"}));
-        }
-        let mut g = self.prepare(snap);
-        let mut changed = Self::reap(&mut g, now, ttl);
-        let slots = Self::slots_of(&g, snap);
-        let res = if let Some((s, l)) = g.leases.iter_mut().find(|(_, l)| l.key == c.key) {
-            l.renewed = now;
-            json!({"ok": true, "slot": s, "copy": copy_of(s), "ttl": ttl, "existing": true})
-        } else {
-            let cards: Vec<String> = {
-                let mut v: Vec<String> = slots.iter().map(|s| copy_of(s)).collect();
-                v.dedup();
-                v
-            };
-            let avoid: Vec<String> = c
-                .avoid
-                .clone()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|x| cards.contains(x))
-                .collect();
-            let hard = c.copy.clone().filter(|x| cards.contains(x));
-            let cand: Vec<String> = match &c.slot {
-                Some(want) if slots.contains(want) => {
-                    if g.leases.contains_key(want) {
-                        vec![]
-                    } else {
-                        vec![want.clone()]
-                    }
-                }
-                _ => match &hard {
-                    Some(h) => slots
-                        .iter()
-                        .filter(|s| copy_of(s) == *h && !g.leases.contains_key(*s))
-                        .cloned()
-                        .collect(),
-                    None => order(&g.leases, &slots, &avoid),
-                },
-            };
-            if g.layout.frozen {
-                json!({"ok": false, "reason": "switching"})
-            } else if let Some(s) = cand.first().cloned() {
-                g.leases.insert(
-                    s.clone(),
-                    Lease {
-                        key: c.key.clone(),
-                        owner: clip(if c.owner.is_empty() { "?" } else { &c.owner }, 80),
-                        host: clip(if c.host.is_empty() { "?" } else { &c.host }, 80),
-                        pid: c.pid as i64,
-                        label: clip(&c.label, 80),
-                        kind: if c.kind == "main" {
-                            "main".into()
-                        } else {
-                            "agent".into()
-                        },
-                        since: now,
-                        renewed: now,
-                    },
-                );
-                changed = true;
-                json!({"ok": true, "slot": s, "copy": copy_of(&s), "ttl": ttl})
-            } else {
-                json!({"ok": false, "reason": "full"})
-            }
-        };
-        if changed {
-            Self::save(&g, snap);
-        }
-        (200, res)
+        self.claim_as(snap, b, None)
+    }
+
+    /// A claim that records the principal (user or key id) making it.
+    pub fn claim_as(
+        &self,
+        snap: &Snapshot,
+        b: &Map<String, Value>,
+        principal: Option<&str>,
+    ) -> (u16, Value) {
+        self.run(snap, |t, v, now, ttl| t.claim(v, b, now, ttl, principal))
     }
 
     pub fn renew(&self, snap: &Snapshot, b: &Map<String, Value>) -> (u16, Value) {
-        let now = now_epoch();
-        let keys: Vec<String> = b
-            .get("keys")
-            .and_then(Value::as_array)
-            .map(|a| {
-                a.iter()
-                    .map(|k| {
-                        k.as_str()
-                            .map(str::to_string)
-                            .unwrap_or_else(|| k.to_string())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut g = self.prepare(snap);
-        let changed = Self::reap(&mut g, now, snap.config.slots.ttl_seconds);
-        let (mut ok, mut lost) = (Vec::new(), Vec::new());
-        for k in keys {
-            match g.leases.values_mut().find(|l| l.key == k) {
-                Some(l) => {
-                    l.renewed = now;
-                    ok.push(k);
-                }
-                None => lost.push(k),
-            }
-        }
-        if changed {
-            Self::save(&g, snap);
-        }
-        (200, json!({"renewed": ok, "lost": lost}))
+        self.run(snap, |t, _, now, ttl| t.renew(b, now, ttl))
     }
 
     pub fn release(&self, snap: &Snapshot, b: &Map<String, Value>) -> (u16, Value) {
-        let mut g = self.prepare(snap);
-        let key = b
-            .get("key")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty());
-        let host = b
-            .get("host")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty());
-        let pid = b.get("pid").and_then(Value::as_i64).filter(|p| *p != 0);
-        let gone: Vec<String> = g
-            .leases
-            .iter()
-            .filter(|(_, l)| {
-                key.is_some_and(|k| l.key == k)
-                    || (host.is_some_and(|h| l.host == h) && pid.is_some_and(|p| l.pid == p))
-            })
-            .map(|(s, _)| s.clone())
-            .collect();
-        for s in &gone {
-            g.leases.shift_remove(s);
-        }
-        if !gone.is_empty() {
-            Self::save(&g, snap);
-        }
-        (200, json!({"ok": true, "released": gone}))
+        self.run(snap, |t, _, _, _| t.release(b))
     }
 
     pub fn list(&self, snap: &Snapshot) -> Value {
-        let now = now_epoch();
-        let mut g = self.prepare(snap);
-        if Self::reap(&mut g, now, snap.config.slots.ttl_seconds) {
-            Self::save(&g, snap);
-        }
-        let slots = Self::slots_of(&g, snap);
-        let mut sm = Map::new();
-        for s in &slots {
-            sm.insert(
-                s.clone(),
-                match g.leases.get(s) {
-                    Some(l) => json!({"key": l.key, "owner": l.owner, "host": l.host, "pid": l.pid,
-                        "label": l.label, "kind": l.kind, "age_s": (now - l.since) as i64,
-                        "idle_s": (now - l.renewed) as i64}),
-                    None => Value::Null,
-                },
-            );
-        }
-        let mut load: BTreeMap<String, usize> = BTreeMap::new();
-        for s in &slots {
-            load.entry(copy_of(s)).or_default();
-        }
-        for s in g.leases.keys() {
-            *load.entry(copy_of(s)).or_default() += 1;
-        }
-        let mut orphans: Vec<&String> = g.leases.keys().filter(|s| !slots.contains(s)).collect();
-        orphans.sort();
-        json!({
-            "ttl": snap.config.slots.ttl_seconds,
-            "slots": sm,
-            "free": slots.iter().filter(|s| !g.leases.contains_key(*s)).collect::<Vec<_>>(),
-            "load": load,
-            "layout": g.layout.layout,
-            "frozen": g.layout.frozen,
-            "orphans": orphans,
+        self.run(snap, |t, v, now, ttl| {
+            let (v, changed) = t.list(v, now, ttl);
+            (200, v, changed)
         })
+        .1
     }
 
     /// The card and kind of the lease held by `key`, if any (placement).
     pub fn lease_for_key(&self, snap: &Snapshot, key: &str) -> Option<(String, String)> {
         let now = now_epoch();
         let g = self.prepare(snap);
-        g.leases
+        g.table
+            .leases
             .iter()
             .find(|(_, l)| l.key == key && now - l.renewed <= snap.config.slots.ttl_seconds)
             .map(|(s, l)| (copy_of(s), l.kind.clone()))
@@ -392,6 +254,7 @@ impl Registry {
         let now = now_epoch();
         let g = self.prepare(snap);
         let mut v: Vec<String> = g
+            .table
             .leases
             .iter()
             .filter(|(_, l)| l.kind == "main" && now - l.renewed <= snap.config.slots.ttl_seconds)
@@ -405,23 +268,68 @@ impl Registry {
     pub fn held(&self, snap: &Snapshot) -> Vec<(String, String)> {
         let now = now_epoch();
         let g = self.prepare(snap);
-        g.leases
+        g.table
+            .leases
             .iter()
             .filter(|(_, l)| now - l.renewed <= snap.config.slots.ttl_seconds)
             .map(|(s, l)| (s.clone(), format!("{}@{}", l.owner, l.host)))
             .collect()
     }
-}
 
-/// Free slots, least-loaded copy first, then by name (pig-slots `order`).
-fn order(leases: &IndexMap<String, Lease>, slots: &[String], avoid: &[String]) -> Vec<String> {
-    let load = |c: &str| leases.keys().filter(|s| copy_of(s) == c).count();
-    let mut free: Vec<&String> = slots
-        .iter()
-        .filter(|s| !leases.contains_key(*s) && !avoid.contains(&copy_of(s)))
-        .collect();
-    free.sort_by_key(|s| (load(&copy_of(s)), (*s).clone()));
-    free.into_iter().cloned().collect()
+    // ── the control plane's side (ROUTER-CONFIG.md 5.4 steps 4-5, 8.2, 8.3) ────────────────
+
+    /// Replace the slot view (the active layout's slots, withdrawn cards, the freeze). `None`
+    /// goes back to the layout file or the upstreams' lanes.
+    pub fn set_control_view(&self, view: Option<SlotView>) {
+        self.inner.lock().unwrap().control = view;
+    }
+
+    /// The view the control plane set, if any.
+    pub fn control_view(&self) -> Option<SlotView> {
+        self.inner.lock().unwrap().control.clone()
+    }
+
+    /// The view claims see now.
+    pub fn current_view(&self, snap: &Snapshot) -> SlotView {
+        let g = self.prepare(snap);
+        Self::view(&g, snap)
+    }
+
+    /// Live leases that refuse a switch of `cards` (`LeaseTable::held_on`).
+    pub fn held_on(&self, snap: &Snapshot, cards: &[String]) -> Vec<(String, String)> {
+        let now = now_epoch();
+        let g = self.prepare(snap);
+        let view = Self::view(&g, snap);
+        g.table
+            .held_on(&view, cards, now, snap.config.slots.ttl_seconds)
+    }
+
+    /// Claim or renew a guard lease (the native lease API, section 8.3).
+    pub fn claim_guard(
+        &self,
+        snap: &Snapshot,
+        key: &str,
+        reason: &str,
+        owner: &str,
+        principal: Option<&str>,
+    ) -> GuardLease {
+        let mut g = self.prepare(snap);
+        g.table.claim_guard(
+            key,
+            reason,
+            owner,
+            principal,
+            now_epoch(),
+            snap.config.slots.ttl_seconds,
+        )
+    }
+
+    /// Live guard leases (they block switches and on-demand).
+    pub fn live_guards(&self, snap: &Snapshot) -> Vec<GuardLease> {
+        let g = self.prepare(snap);
+        g.table
+            .live_guards(now_epoch(), snap.config.slots.ttl_seconds)
+    }
 }
 
 /// The pig-slots HTTP surface (on `/slots/...` of the main listener, or every path of the

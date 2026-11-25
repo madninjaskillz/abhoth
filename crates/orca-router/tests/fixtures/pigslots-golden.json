@@ -1,0 +1,1037 @@
+{
+ "source": "pig-slots server.py (copied read-only from the GPU host, run locally)",
+ "env": {
+  "TTL": 3,
+  "SLOTS": "A1 A2 A3 B1 B2"
+ },
+ "steps": [
+  {
+   "t": 0.001,
+   "method": "GET",
+   "path": "/health",
+   "status": 200,
+   "response": {
+    "status": "ok",
+    "service": "pig-slots"
+   }
+  },
+  {
+   "t": 0.003,
+   "method": "GET",
+   "path": "/list",
+   "status": 200,
+   "response": {
+    "ttl": 3.0,
+    "slots": {
+     "A1": null,
+     "A2": null,
+     "A3": null,
+     "B1": null,
+     "B2": null
+    },
+    "free": [
+     "A1",
+     "A2",
+     "A3",
+     "B1",
+     "B2"
+    ],
+    "load": {
+     "A": 0,
+     "B": 0
+    },
+    "layout": null,
+    "frozen": false,
+    "orphans": []
+   }
+  },
+  {
+   "t": 0.008,
+   "method": "GET",
+   "path": "/",
+   "status": 200,
+   "response": {
+    "ttl": 3.0,
+    "slots": {
+     "A1": null,
+     "A2": null,
+     "A3": null,
+     "B1": null,
+     "B2": null
+    },
+    "free": [
+     "A1",
+     "A2",
+     "A3",
+     "B1",
+     "B2"
+    ],
+    "load": {
+     "A": 0,
+     "B": 0
+    },
+    "layout": null,
+    "frozen": false,
+    "orphans": []
+   }
+  },
+  {
+   "t": 0.015,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "slot": "A1",
+    "copy": "A",
+    "ttl": 3.0
+   },
+   "body": {
+    "key": "lead-1",
+    "owner": "pig",
+    "host": "pc1",
+    "pid": 100,
+    "label": "Lead",
+    "kind": "main",
+    "copy": "A"
+   }
+  },
+  {
+   "t": 0.027,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "slot": "B1",
+    "copy": "B",
+    "ttl": 3.0
+   },
+   "body": {
+    "key": "ag-1",
+    "owner": "pig",
+    "host": "pc1",
+    "pid": 101,
+    "label": "agent 1",
+    "kind": "agent"
+   }
+  },
+  {
+   "t": 0.062,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "slot": "A2",
+    "copy": "A",
+    "ttl": 3.0
+   },
+   "body": {
+    "key": "ag-2",
+    "owner": "pig",
+    "host": "pc1",
+    "pid": 102,
+    "label": "agent 2",
+    "kind": "weird"
+   }
+  },
+  {
+   "t": 0.068,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "slot": "A1",
+    "copy": "A",
+    "ttl": 3.0,
+    "existing": true
+   },
+   "body": {
+    "key": "lead-1",
+    "owner": "pig",
+    "host": "pc1",
+    "pid": 100,
+    "kind": "main",
+    "copy": "A"
+   }
+  },
+  {
+   "t": 0.086,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "slot": "B2",
+    "copy": "B",
+    "ttl": 3.0
+   },
+   "body": {
+    "key": "ag-3",
+    "owner": "pig",
+    "host": "pc2",
+    "pid": 200,
+    "slot": "B2"
+   }
+  },
+  {
+   "t": 0.093,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": false,
+    "reason": "full"
+   },
+   "body": {
+    "key": "ag-4",
+    "owner": "pig",
+    "host": "pc2",
+    "pid": 201,
+    "slot": "B2"
+   }
+  },
+  {
+   "t": 0.117,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": false,
+    "reason": "full"
+   },
+   "body": {
+    "key": "ag-5",
+    "owner": "pig",
+    "host": "pc2",
+    "pid": 202,
+    "copy": "B"
+   }
+  },
+  {
+   "t": 0.144,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": false,
+    "reason": "full"
+   },
+   "body": {
+    "key": "ag-6",
+    "host": "pc2",
+    "pid": 203,
+    "avoid": [
+     "A"
+    ]
+   }
+  },
+  {
+   "t": 0.166,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "slot": "A3",
+    "copy": "A",
+    "ttl": 3.0
+   },
+   "body": {
+    "key": "ag-7",
+    "pid": "204",
+    "slot": "Z9",
+    "copy": "Q",
+    "avoid": [
+     "Q",
+     "B"
+    ]
+   }
+  },
+  {
+   "t": 0.186,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": false,
+    "reason": "full"
+   },
+   "body": {
+    "key": "ag-8",
+    "owner": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "host": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+    "label": "llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll"
+   }
+  },
+  {
+   "t": 0.19,
+   "method": "POST",
+   "path": "/claim",
+   "status": 400,
+   "response": {
+    "ok": false,
+    "reason": "key required"
+   },
+   "body": {
+    "owner": "pig"
+   }
+  },
+  {
+   "t": 0.212,
+   "method": "POST",
+   "path": "/claim",
+   "status": 400,
+   "response": {
+    "ok": false,
+    "reason": "key required"
+   },
+   "body": {
+    "key": ""
+   }
+  },
+  {
+   "t": 0.213,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": false,
+    "reason": "full"
+   },
+   "body": {
+    "key": 12345,
+    "owner": "num"
+   }
+  },
+  {
+   "t": 0.228,
+   "method": "GET",
+   "path": "/list",
+   "status": 200,
+   "response": {
+    "ttl": 3.0,
+    "slots": {
+     "A1": {
+      "key": "lead-1",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 100,
+      "label": "Lead",
+      "kind": "main",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A2": {
+      "key": "ag-2",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 102,
+      "label": "agent 2",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A3": {
+      "key": "ag-7",
+      "owner": "?",
+      "host": "?",
+      "pid": 204,
+      "label": "",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "B1": {
+      "key": "ag-1",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 101,
+      "label": "agent 1",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "B2": {
+      "key": "ag-3",
+      "owner": "pig",
+      "host": "pc2",
+      "pid": 200,
+      "label": "",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     }
+    },
+    "free": [],
+    "load": {
+     "A": 3,
+     "B": 2
+    },
+    "layout": null,
+    "frozen": false,
+    "orphans": []
+   }
+  },
+  {
+   "t": 0.244,
+   "method": "POST",
+   "path": "/renew",
+   "status": 200,
+   "response": {
+    "renewed": [
+     "lead-1"
+    ],
+    "lost": [
+     "nope",
+     "12345"
+    ]
+   },
+   "body": {
+    "keys": [
+     "lead-1",
+     "nope",
+     12345
+    ]
+   }
+  },
+  {
+   "t": 0.256,
+   "method": "POST",
+   "path": "/renew",
+   "status": 200,
+   "response": {
+    "renewed": [],
+    "lost": []
+   },
+   "body": {}
+  },
+  {
+   "t": 0.26,
+   "method": "POST",
+   "path": "/release",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "released": [
+     "B1"
+    ]
+   },
+   "body": {
+    "key": "ag-1"
+   }
+  },
+  {
+   "t": 0.276,
+   "method": "POST",
+   "path": "/release",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "released": []
+   },
+   "body": {
+    "key": "ag-1"
+   }
+  },
+  {
+   "t": 0.289,
+   "method": "POST",
+   "path": "/release",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "released": [
+     "B2"
+    ]
+   },
+   "body": {
+    "host": "pc2",
+    "pid": 200
+   }
+  },
+  {
+   "t": 0.293,
+   "method": "POST",
+   "path": "/release",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "released": []
+   },
+   "body": {
+    "host": "pc2"
+   }
+  },
+  {
+   "t": 0.319,
+   "method": "POST",
+   "path": "/release",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "released": []
+   },
+   "body": {}
+  },
+  {
+   "t": 0.32,
+   "method": "POST",
+   "path": "/claim",
+   "status": 400,
+   "response": {
+    "error": "bad json"
+   },
+   "raw": "{not json"
+  },
+  {
+   "t": 0.321,
+   "method": "POST",
+   "path": "/claim",
+   "status": 500,
+   "response": {
+    "error": "'list' object has no attribute 'get'"
+   },
+   "raw": "[1,2]"
+  },
+  {
+   "t": 0.335,
+   "method": "POST",
+   "path": "/nope",
+   "status": 404,
+   "response": {
+    "error": "not found"
+   },
+   "body": {
+    "key": "x"
+   }
+  },
+  {
+   "t": 0.349,
+   "method": "GET",
+   "path": "/nope",
+   "status": 404,
+   "response": {
+    "error": "not found"
+   }
+  },
+  {
+   "t": 0.365,
+   "method": "GET",
+   "path": "/list?x=1",
+   "status": 200,
+   "response": {
+    "ttl": 3.0,
+    "slots": {
+     "A1": {
+      "key": "lead-1",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 100,
+      "label": "Lead",
+      "kind": "main",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A2": {
+      "key": "ag-2",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 102,
+      "label": "agent 2",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A3": {
+      "key": "ag-7",
+      "owner": "?",
+      "host": "?",
+      "pid": 204,
+      "label": "",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "B1": null,
+     "B2": null
+    },
+    "free": [
+     "B1",
+     "B2"
+    ],
+    "load": {
+     "A": 3,
+     "B": 0
+    },
+    "layout": null,
+    "frozen": false,
+    "orphans": []
+   }
+  },
+  {
+   "t": 0.381,
+   "method": "POST",
+   "path": "/claim?x=1",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "slot": "B1",
+    "copy": "B",
+    "ttl": 3.0
+   },
+   "body": {
+    "key": "q-1",
+    "host": "pc3",
+    "pid": 300
+   }
+  },
+  {
+   "t": 0.422,
+   "layout_file": {
+    "layout": "L1",
+    "slots": [
+     "A1",
+     "A2",
+     "A3",
+     "B1",
+     "B2"
+    ],
+    "frozen": true,
+    "reason": "switching to L2"
+   }
+  },
+  {
+   "t": 0.422,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": false,
+    "reason": "switching"
+   },
+   "body": {
+    "key": "f-1",
+    "host": "pc3",
+    "pid": 301
+   }
+  },
+  {
+   "t": 0.507,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "slot": "A1",
+    "copy": "A",
+    "ttl": 3.0,
+    "existing": true
+   },
+   "body": {
+    "key": "lead-1",
+    "host": "pc1",
+    "pid": 100,
+    "kind": "main",
+    "copy": "A"
+   }
+  },
+  {
+   "t": 0.517,
+   "method": "POST",
+   "path": "/renew",
+   "status": 200,
+   "response": {
+    "renewed": [
+     "lead-1"
+    ],
+    "lost": []
+   },
+   "body": {
+    "keys": [
+     "lead-1"
+    ]
+   }
+  },
+  {
+   "t": 0.525,
+   "method": "GET",
+   "path": "/list",
+   "status": 200,
+   "response": {
+    "ttl": 3.0,
+    "slots": {
+     "A1": {
+      "key": "lead-1",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 100,
+      "label": "Lead",
+      "kind": "main",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A2": {
+      "key": "ag-2",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 102,
+      "label": "agent 2",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A3": {
+      "key": "ag-7",
+      "owner": "?",
+      "host": "?",
+      "pid": 204,
+      "label": "",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "B1": {
+      "key": "q-1",
+      "owner": "?",
+      "host": "pc3",
+      "pid": 300,
+      "label": "",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "B2": null
+    },
+    "free": [
+     "B2"
+    ],
+    "load": {
+     "A": 3,
+     "B": 1
+    },
+    "layout": "L1",
+    "frozen": true,
+    "orphans": []
+   }
+  },
+  {
+   "t": 0.557,
+   "layout_file": {
+    "layout": "L1",
+    "slots": [
+     "A1",
+     "A2",
+     "A3"
+    ],
+    "frozen": false,
+    "reason": "switching card(s) B to L3"
+   }
+  },
+  {
+   "t": 0.558,
+   "method": "GET",
+   "path": "/list",
+   "status": 200,
+   "response": {
+    "ttl": 3.0,
+    "slots": {
+     "A1": {
+      "key": "lead-1",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 100,
+      "label": "Lead",
+      "kind": "main",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A2": {
+      "key": "ag-2",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 102,
+      "label": "agent 2",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A3": {
+      "key": "ag-7",
+      "owner": "?",
+      "host": "?",
+      "pid": 204,
+      "label": "",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     }
+    },
+    "free": [],
+    "load": {
+     "A": 3,
+     "B": 1
+    },
+    "layout": "L1",
+    "frozen": false,
+    "orphans": [
+     "B1"
+    ]
+   }
+  },
+  {
+   "t": 0.594,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": false,
+    "reason": "full"
+   },
+   "body": {
+    "key": "p-1",
+    "host": "pc3",
+    "pid": 302,
+    "copy": "B"
+   }
+  },
+  {
+   "t": 0.615,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": false,
+    "reason": "full"
+   },
+   "body": {
+    "key": "p-2",
+    "host": "pc3",
+    "pid": 303
+   }
+  },
+  {
+   "t": 0.63,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": false,
+    "reason": "full"
+   },
+   "body": {
+    "key": "p-3",
+    "host": "pc3",
+    "pid": 304,
+    "slot": "B1"
+   }
+  },
+  {
+   "t": 0.652,
+   "layout_file": {
+    "layout": "L3",
+    "slots": [
+     "A1",
+     "A2",
+     "A3",
+     "A4",
+     "B1",
+     "B2",
+     "B3",
+     "B4"
+    ],
+    "frozen": false,
+    "reason": null
+   }
+  },
+  {
+   "t": 0.652,
+   "method": "GET",
+   "path": "/list",
+   "status": 200,
+   "response": {
+    "ttl": 3.0,
+    "slots": {
+     "A1": {
+      "key": "lead-1",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 100,
+      "label": "Lead",
+      "kind": "main",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A2": {
+      "key": "ag-2",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 102,
+      "label": "agent 2",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A3": {
+      "key": "ag-7",
+      "owner": "?",
+      "host": "?",
+      "pid": 204,
+      "label": "",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "A4": null,
+     "B1": {
+      "key": "q-1",
+      "owner": "?",
+      "host": "pc3",
+      "pid": 300,
+      "label": "",
+      "kind": "agent",
+      "age_s": 0,
+      "idle_s": 0
+     },
+     "B2": null,
+     "B3": null,
+     "B4": null
+    },
+    "free": [
+     "A4",
+     "B2",
+     "B3",
+     "B4"
+    ],
+    "load": {
+     "A": 3,
+     "B": 1
+    },
+    "layout": "L3",
+    "frozen": false,
+    "orphans": []
+   }
+  },
+  {
+   "t": 0.669,
+   "method": "POST",
+   "path": "/claim",
+   "status": 200,
+   "response": {
+    "ok": true,
+    "slot": "B2",
+    "copy": "B",
+    "ttl": 3.0
+   },
+   "body": {
+    "key": "n-1",
+    "host": "pc3",
+    "pid": 305
+   }
+  },
+  {
+   "t": 2.67,
+   "sleep_until": 2.669
+  },
+  {
+   "t": 2.67,
+   "method": "POST",
+   "path": "/renew",
+   "status": 200,
+   "response": {
+    "renewed": [
+     "lead-1"
+    ],
+    "lost": []
+   },
+   "body": {
+    "keys": [
+     "lead-1"
+    ]
+   }
+  },
+  {
+   "t": 4.271,
+   "sleep_until": 4.27
+  },
+  {
+   "t": 4.271,
+   "method": "GET",
+   "path": "/list",
+   "status": 200,
+   "response": {
+    "ttl": 3.0,
+    "slots": {
+     "A1": {
+      "key": "lead-1",
+      "owner": "pig",
+      "host": "pc1",
+      "pid": 100,
+      "label": "Lead",
+      "kind": "main",
+      "age_s": 4,
+      "idle_s": 1
+     },
+     "A2": null,
+     "A3": null,
+     "A4": null,
+     "B1": null,
+     "B2": null,
+     "B3": null,
+     "B4": null
+    },
+    "free": [
+     "A2",
+     "A3",
+     "A4",
+     "B1",
+     "B2",
+     "B3",
+     "B4"
+    ],
+    "load": {
+     "A": 1,
+     "B": 0
+    },
+    "layout": "L3",
+    "frozen": false,
+    "orphans": []
+   }
+  },
+  {
+   "t": 4.295,
+   "method": "POST",
+   "path": "/renew",
+   "status": 200,
+   "response": {
+    "renewed": [
+     "lead-1"
+    ],
+    "lost": [
+     "n-1"
+    ]
+   },
+   "body": {
+    "keys": [
+     "lead-1",
+     "n-1"
+    ]
+   }
+  },
+  {
+   "t": 4.296,
+   "method": "POST",
+   "path": "/claim",
+   "status": 400,
+   "response": {
+    "ok": false,
+    "reason": "key required"
+   },
+   "raw": {
+    "big_body_bytes": 70011
+   }
+  }
+ ]
+}
