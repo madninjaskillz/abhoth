@@ -187,3 +187,35 @@ fn version_flag() {
         .unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).starts_with("Abhoth v"));
 }
+
+/// The planner's tool calls are in the `--print` tool calls, before the Lead's (C# records
+/// every sub-agent call in the one history; D126, cross-check 234).
+#[tokio::test(flavor = "multi_thread")]
+async fn print_lists_the_planner_tool_calls() {
+    let server = FakeOpenAi::start(vec![
+        Reply::tool("read_file", json!({"path": "main.py"})).for_model("plan-model"),
+        Reply::text("# Plan\n\n1. Add greet.py.\n").for_model("plan-model"),
+        Reply::text("I will follow the plan.").for_model("fake-model"),
+    ])
+    .await;
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    std::fs::write(work.path().join("main.py"), "print('hi')\n").unwrap();
+    write_config(
+        home.path(),
+        &server.base_url(),
+        json!({
+            "agent": {"leadMode": "hands-on", "planner": {"provider": "plan", "maxSteps": 5}},
+            "providers": {"plan": {"type": "openai-compat", "baseUrl": server.base_url(), "apiKey": "k", "models": ["plan-model"]}},
+            "permissions": {"autoApproveAll": true},
+            "context": {"autoDetectContextWindow": false},
+        }),
+    );
+    let (out, stdout) = run_print(home.path(), work.path(), "Add a greeting module").await;
+    let calls = out["tool_calls"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert_eq!(calls.len(), 1, "{stdout}");
+    assert_eq!(calls[0]["name"], "read_file");
+    assert!(work.path().join("PLAN.md").exists());
+}

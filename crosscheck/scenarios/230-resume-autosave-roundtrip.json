@@ -1,0 +1,30 @@
+{
+  "_comment": "--print -r with session.autoSave on: the resumed session file is left as it was (C# saves sessions only in the REPL).",
+  "prompt": "second question",
+  "args": [
+    "-r",
+    "keep0001"
+  ],
+  "config": {
+    "session": {
+      "autoSave": true
+    }
+  },
+  "home_files": {
+    "sessions/keep0001.json": "{\n  \"id\": \"keep0001\",\n  \"title\": \"Earlier work\",\n  \"createdAt\": \"2026-11-20T10:00:00.0000000Z\",\n  \"updatedAt\": \"2026-11-20T10:05:00.0000000Z\",\n  \"workingDirectory\": \"<WORK_JSON>\",\n  \"parentSessionId\": \"root0001\",\n  \"engine\": \"native\",\n  \"engineSessionId\": \"eng-123\",\n  \"systemPrompt\": \"Old prompt.\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"first question\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"text\": \"first answer\"\n    }\n  ]\n}"
+  },
+  "compare_home": [
+    "sessions/"
+  ],
+  "file_masks": [
+    [
+      "\"updatedAt\": \"[^\"]*\"",
+      "\"updatedAt\": \"<TIME>\""
+    ]
+  ],
+  "replies": [
+    {
+      "text": "second answer"
+    }
+  ]
+}

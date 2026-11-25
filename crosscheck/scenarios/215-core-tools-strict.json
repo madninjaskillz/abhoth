@@ -1,0 +1,15 @@
+{
+  "_comment": "The default (core) tool set, compared strictly. leadMode hands-on: lead_mode is ported separately.",
+  "prompt": "Say hi",
+  "strict": true,
+  "replies": [
+    {
+      "text": "Hi."
+    }
+  ],
+  "config": {
+    "agent": {
+      "leadMode": "hands-on"
+    }
+  }
+}

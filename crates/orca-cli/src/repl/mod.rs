@@ -369,12 +369,14 @@ impl Repl {
                 }
                 self.console.blank();
                 if let Some(planner) = self.planner.as_mut() {
+                    self.session.seed_sub_agents();
                     expanded = planner
                         .prepare_first_message(
                             &expanded,
                             &orca_core::orchestration::CancelToken::new(),
                         )
                         .await;
+                    self.session.take_sub_agent_work();
                 }
                 let attachments = self.tray.take(&expanded);
                 let message = if attachments.is_empty() {
@@ -706,6 +708,9 @@ impl Repl {
                 self.session.set_conversation(conversation);
                 self.retry_index = next;
                 self.session.client.settings_mut().default_model = Some(model.clone());
+                // The request names the backup model (C# keeps sending lmStudio.models[0];
+                // D127).
+                self.session.primary_model_override = Some(model.clone());
                 self.console.markup_line(&format!(
                     "[yellow]Retrying last turn with backup model: {}[/]",
                     escape(&model)
@@ -809,8 +814,14 @@ impl Repl {
         cmd: &dyn crate::commands::Command,
         args: &[String],
     ) -> CommandResult {
-        let mut ctx = self.context();
-        cmd.execute(&mut ctx, args).await
+        self.session.seed_sub_agents();
+        let result = {
+            let mut ctx = self.context();
+            cmd.execute(&mut ctx, args).await
+        };
+        // Sub-agents a command ran (`/review`, `/workflow`, `/agent`) record their calls.
+        self.session.take_sub_agent_work();
+        result
     }
 
     /// `HandleCommandResultAsync`.

@@ -1,0 +1,72 @@
+{
+  "_comment": "Interactive: -r with autoSave: the session is saved back with its parent and engine fields.",
+  "args": [
+    "-r",
+    "keep0001"
+  ],
+  "config": {
+    "session": {
+      "autoSave": true
+    }
+  },
+  "home_files": {
+    "sessions/keep0001.json": "{\n  \"id\": \"keep0001\",\n  \"title\": \"Earlier work\",\n  \"createdAt\": \"2026-11-20T10:00:00.0000000Z\",\n  \"updatedAt\": \"2026-11-20T10:05:00.0000000Z\",\n  \"workingDirectory\": \"<WORK_JSON>\",\n  \"parentSessionId\": \"root0001\",\n  \"engine\": \"native\",\n  \"engineSessionId\": \"eng-123\",\n  \"systemPrompt\": \"Old prompt.\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"first question\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"text\": \"first answer\"\n    }\n  ]\n}"
+  },
+  "replies": [
+    {
+      "text": "Second answer. RS-DONE"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "second question"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "RS-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!",
+      "Resumed session"
+    ]
+  }
+}

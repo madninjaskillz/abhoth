@@ -1,0 +1,100 @@
+{
+  "_comment": "Interactive: /export <file> writes the conversation (tool call and result) as markdown.",
+  "files": {
+    "notes.txt": "hi\n"
+  },
+  "file_masks": [
+    [
+      "Exported: \\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d",
+      "Exported: <TIME>"
+    ],
+    [
+      "(?s)## System Prompt\\n```\\n.*?\\n```\\n",
+      "## System Prompt (compared in the requests)\n"
+    ]
+  ],
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "notes.txt"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Notes say hi. EXP-DONE"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "read notes"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "EXP-DONE",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/export out/conv.md"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "Exported conversation to",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!",
+      "Exported conversation to"
+    ]
+  }
+}

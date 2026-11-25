@@ -1,0 +1,16 @@
+{
+  "_comment": "A wildcard pre-hook runs for every tool, a named post-hook after write_file with ORCA_TOOL_* variables; a failing post-hook changes nothing.",
+  "prompt": "Write a file",
+  "config": {
+    "hooks": {
+      "preToolHooks": { "*": "echo pre %ORCA_TOOL_NAME%>> hooks.log" },
+      "postToolHooks": { "write_file": "echo post %ORCA_TOOL_NAME% %ORCA_TOOL_ERROR%>> post.log", "read_file": "exit 3" }
+    }
+  },
+  "replies": [
+    { "tools": [ { "name": "write_file", "args": { "path": "a.txt", "content": "a\n" } } ] },
+    { "tools": [ { "name": "read_file", "args": { "path": "missing.txt" } } ] },
+    { "tools": [ { "name": "bash", "args": { "command": "ping -n 3 127.0.0.1 > nul && echo waited" } } ] },
+    { "text": "Done." }
+  ]
+}

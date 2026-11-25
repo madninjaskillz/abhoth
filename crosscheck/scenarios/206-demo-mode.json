@@ -1,0 +1,6 @@
+{
+  "_comment": "--demo: the built-in demo client answers; nothing reaches the server.",
+  "prompt": "hello there",
+  "args": ["--demo"],
+  "replies": []
+}

@@ -763,8 +763,14 @@ impl AgentSession {
         let several = calls.len() > 1;
         for (i, call) in calls.iter().enumerate() {
             // C# starts the first call early while the response streams (and records its raw
-            // arguments) only when it is one of the ReadOnlyCommand tools.
-            self.record_raw_arguments = several && i == 0 && early_start_tool(&call.name);
+            // arguments) only when it is one of the ReadOnlyCommand tools and it may run early
+            // (agent.earlyReadOnlyTools on, `IsEarlyEligible`).
+            self.record_raw_arguments = several
+                && i == 0
+                && early_start_tool(&call.name)
+                && self.config.agent.early_read_only_tools
+                && self.native_tools
+                && (self.early_eligibility())(&call.name, &call.arguments);
             self.last_tool_images.clear();
             let mut result = self.run_one_call(call, true, observer).await;
             if self.config.agent.repeat_call_notes
@@ -1035,9 +1041,11 @@ impl AgentSession {
             }
             s.pre_verification_wrap_up = None;
             if prompts::is_substantive_final_message(&prose) {
+                observer.on_wrap_up(Some(&prose));
                 self.final_prose = Some(prose);
                 return false;
             }
+            observer.on_wrap_up(None);
             s.summary_requested = true;
             self.messages
                 .push(ChatMessage::user(prompts::summary_request_message()));

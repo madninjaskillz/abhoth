@@ -125,6 +125,17 @@ fn required(schema: &Value) -> Vec<String> {
 
 // ── SpawnAgentToolTests ──────────────────────────────────────────────────────
 
+/// The C# plugin registers its tools in source-file order as Windows lists them, and the order
+/// shows in the advertised tools and the system prompt (cross-check 215, strict).
+#[test]
+fn tools_come_in_csharp_registration_order() {
+    let names: Vec<String> = all_tools(&AgentToolsHandle::default())
+        .iter()
+        .map(|t| t.name().to_string())
+        .collect();
+    assert_eq!(names, ["report_progress", "spawn_agents", "spawn_agent"]);
+}
+
 #[test]
 fn name_is_spawn_agent() {
     assert_eq!(unwired("spawn_agent").name(), "spawn_agent");

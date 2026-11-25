@@ -34,6 +34,10 @@ pub struct TurnObserver {
     /// `StreamingRenderer.Suppressed`: model text and thinking are not shown (the benchmark
     /// runner); tool calls still are.
     suppressed: bool,
+    /// A tool ran this turn: from then on the text is collected in `wrap_up` and shown once
+    /// at the end of the turn (C# `ToolsExecuted` / `SummaryBuffer` / `RenderFinalSummary`).
+    tools_ran: bool,
+    wrap_up: String,
 }
 
 impl TurnObserver {
@@ -54,6 +58,8 @@ impl TurnObserver {
             mid_line: false,
             in_reasoning: false,
             suppressed: false,
+            tools_ran: false,
+            wrap_up: String::new(),
         }
     }
 
@@ -75,20 +81,32 @@ impl TurnObserver {
         }
     }
 
-    /// The turn was cancelled: the partial reply stays as it is on screen.
+    /// The turn was cancelled: the partial reply stays as it is on screen (the collected
+    /// wrap-up is shown, as C# renders its summary buffer in `finally`).
     pub fn cancel(&mut self) {
         self.markdown.clear();
         if self.in_reasoning {
             self.console.raw("[0m");
             self.in_reasoning = false;
         }
+        self.show_wrap_up();
     }
 
     /// End the streamed output (before the turn footer); the suggested next prompt, if the
     /// model gave one.
     pub fn finish(&mut self) -> Option<String> {
         self.end_line();
+        self.show_wrap_up();
         self.next_prompt.captured_prompt()
+    }
+
+    /// `RenderFinalSummary`: the text collected since a tool ran, rendered once.
+    fn show_wrap_up(&mut self) {
+        let text = std::mem::take(&mut self.wrap_up);
+        if !text.is_empty() && !self.suppressed {
+            self.markdown.append(&text);
+            self.markdown.finish();
+        }
     }
 }
 
@@ -110,6 +128,10 @@ impl AgentObserver for TurnObserver {
         let shown = self.tag_filter.filter(&visible);
         let shown = self.next_prompt.filter(&shown);
         if shown.is_empty() {
+            return;
+        }
+        if self.tools_ran {
+            self.wrap_up.push_str(&shown);
             return;
         }
         self.markdown.append(&shown);
@@ -143,7 +165,15 @@ impl AgentObserver for TurnObserver {
         }
     }
 
+    fn on_wrap_up(&mut self, replacement: Option<&str>) {
+        self.wrap_up.clear();
+        if let Some(text) = replacement {
+            self.wrap_up.push_str(text);
+        }
+    }
+
     fn on_tool_end(&mut self, call: &ToolCall, result: &ToolResult) {
+        self.tools_ran = true;
         let elapsed = self.started.remove(&call.id).map(|t| t.elapsed());
         let tool = self.registry.get(&call.name).cloned();
         self.tools.render_tool_result(
@@ -161,5 +191,49 @@ impl AgentObserver for TurnObserver {
         self.end_line();
         self.console
             .markup_line(&format!("[yellow]{}[/]", escape(message)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn call() -> ToolCall {
+        ToolCall {
+            id: "c1".into(),
+            name: "read_file".into(),
+            arguments: "{}".into(),
+        }
+    }
+
+    /// Text after a tool ran is collected and shown once at the end (C# `SummaryBuffer`): a
+    /// requested summary replaces the wrap-up streamed before it (cross-check 225).
+    #[test]
+    fn text_after_a_tool_shows_once_at_the_end() {
+        let (console, buf) = Console::buffer();
+        let mut o = TurnObserver::new(console, ReplState::default(), &[]);
+        o.on_text("Reading. ");
+        o.on_tool_end(&call(), &ToolResult::success("ok"));
+        o.on_text("Wrap-up one.");
+        o.on_wrap_up(None);
+        o.on_text("Summary two.");
+        let before = Console::buffer_text(&buf);
+        assert!(!before.contains("Wrap-up one.") && !before.contains("Summary two."));
+        o.finish();
+        let after = Console::buffer_text(&buf);
+        assert!(after.contains("Reading.") && !after.contains("Wrap-up one."));
+        assert_eq!(after.matches("Summary two.").count(), 1);
+    }
+
+    #[test]
+    fn a_standing_wrap_up_replaces_the_collected_text() {
+        let (console, buf) = Console::buffer();
+        let mut o = TurnObserver::new(console, ReplState::default(), &[]);
+        o.on_tool_end(&call(), &ToolResult::success("ok"));
+        o.on_text("Verified.");
+        o.on_wrap_up(Some("The earlier wrap-up."));
+        o.finish();
+        let out = Console::buffer_text(&buf);
+        assert!(out.contains("The earlier wrap-up.") && !out.contains("Verified."));
     }
 }

@@ -11,6 +11,16 @@ pub struct InitCommand;
 
 pub const ORCA_MD_TEMPLATE: &str = "# Project Instructions\n\n## Overview\n<!-- Brief description of the project -->\n\n## Architecture\n<!-- Key directories, patterns, frameworks -->\n\n## Code Style\n<!-- Naming conventions, formatting, preferred patterns -->\n\n## Testing\n<!-- How to run tests, testing conventions -->\n\n## Common Commands\n<!-- Build, test, deploy commands -->";
 
+/// The template as `/init` writes it: the C# raw string literal keeps its source file's line
+/// endings, which are CRLF in the Windows build (cross-check 226).
+pub fn orca_md_template() -> String {
+    if cfg!(windows) {
+        ORCA_MD_TEMPLATE.replace('\n', "\r\n")
+    } else {
+        ORCA_MD_TEMPLATE.to_string()
+    }
+}
+
 #[async_trait]
 impl Command for InitCommand {
     fn name(&self) -> &'static str {
@@ -36,7 +46,7 @@ impl Command for InitCommand {
             return CommandResult::Ok;
         }
         let written = std::fs::create_dir_all(&orca_dir)
-            .and_then(|_| std::fs::write(&orca_path, ORCA_MD_TEMPLATE));
+            .and_then(|_| std::fs::write(&orca_path, orca_md_template()));
         if let Err(e) = written {
             ctx.console
                 .markup_line(&format!("[red]{}[/]", escape(&e.to_string())));
@@ -68,6 +78,7 @@ impl Command for ModelCommand {
     async fn execute(&self, ctx: &mut CommandContext<'_>, args: &[String]) -> CommandResult {
         if let Some(model) = args.first() {
             ctx.session.config.lm_studio.models = vec![model.clone()];
+            ctx.session.primary_model_override = Some(model.clone());
             ctx.console
                 .markup_line(&format!("[green]Model set to: {}[/]", escape(model)));
             return CommandResult::Ok;
@@ -88,6 +99,7 @@ impl Command for ModelCommand {
                 escape(&selected.join(" > "))
             ));
         }
+        ctx.session.primary_model_override = selected.first().cloned();
         ctx.session.config.lm_studio.models = selected;
         CommandResult::Ok
     }
@@ -169,4 +181,21 @@ fn model_picker(ctx: &CommandContext<'_>, available: &[String]) -> Vec<String> {
         }
     }
     selected
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn init_template_uses_the_csharp_build_line_endings() {
+        let t = orca_md_template();
+        assert!(t.starts_with("# Project Instructions"));
+        if cfg!(windows) {
+            assert!(t.contains("# Project Instructions\r\n\r\n## Overview\r\n"));
+            assert!(!t.replace("\r\n", "").contains('\n'));
+        } else {
+            assert_eq!(t, ORCA_MD_TEMPLATE);
+        }
+    }
 }

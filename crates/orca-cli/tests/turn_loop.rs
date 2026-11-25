@@ -267,3 +267,23 @@ async fn a_failing_test_run_blocks_the_wrap_up_twice() {
         ));
     }
 }
+
+/// `/model <name>` after the client was made: C# sends `lmStudio.models[0]` as each request's
+/// model, so the next request goes to the new model (cross-check 227).
+#[tokio::test]
+async fn a_primary_model_chosen_later_is_sent_with_the_next_request() {
+    let server = FakeOpenAi::start(vec![
+        Reply::text("First answer, long enough to count as a real reply here."),
+        Reply::text("Second answer, long enough to count as a real reply here."),
+    ])
+    .await;
+    let work = tempfile::tempdir().unwrap();
+    let mut s = session(&server, work.path(), true);
+    s.run_turn("one", &mut NullObserver).await.unwrap();
+    s.config.lm_studio.models = vec!["other-model".into()];
+    s.primary_model_override = Some("other-model".into());
+    s.run_turn("two", &mut NullObserver).await.unwrap();
+    let reqs = server.requests();
+    assert_eq!(reqs[0].body["model"], "model-a");
+    assert_eq!(reqs[1].body["model"], "other-model");
+}

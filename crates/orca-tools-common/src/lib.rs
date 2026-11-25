@@ -219,6 +219,17 @@ pub fn io_message(e: &std::io::Error) -> String {
     }
 }
 
+/// An I/O error on `path` as .NET's exception message shows it: a refused path gets
+/// `UnauthorizedAccessException`'s text (it names the path; e.g. writing over a folder),
+/// anything else [`io_message`].
+pub fn io_message_for(e: &std::io::Error, path: &str) -> String {
+    if e.kind() == std::io::ErrorKind::PermissionDenied {
+        format!("Access to the path '{path}' is denied.")
+    } else {
+        io_message(e)
+    }
+}
+
 /// Appends `line` and a [`NEWLINE`] (`StringBuilder.AppendLine`).
 pub fn append_line(sb: &mut String, line: &str) {
     sb.push_str(line);
@@ -229,6 +240,17 @@ pub fn append_line(sb: &mut String, line: &str) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn io_message_for_names_a_refused_path_as_dotnet_does() {
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert_eq!(
+            io_message_for(&denied, r"C:\w\dir"),
+            r"Access to the path 'C:\w\dir' is denied."
+        );
+        let other = std::io::Error::other("Disk full");
+        assert_eq!(io_message_for(&other, "x"), "Disk full");
+    }
 
     // ── StringEscapeHelperTests ──
 

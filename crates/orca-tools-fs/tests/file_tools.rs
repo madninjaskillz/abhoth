@@ -222,6 +222,26 @@ async fn write_file_rejects_empty_and_role_tags_and_unescapes() {
     assert_eq!(e.read("b.txt"), "a\nb");
 }
 
+/// Writing over a folder fails with .NET's `UnauthorizedAccessException` text (cross-check
+/// 232).
+#[cfg(windows)]
+#[tokio::test]
+async fn write_file_over_a_folder_names_the_path() {
+    let e = Env::new();
+    e.write("dir/inner.txt", "i");
+    let r = e
+        .run(&WriteFileTool, json!({"path": e.p("dir"), "content": "x"}))
+        .await;
+    assert!(r.is_error);
+    assert_eq!(
+        r.content,
+        format!(
+            "Error writing file: Access to the path '{}' is denied.",
+            e.p("dir")
+        )
+    );
+}
+
 // ── edit_file ──
 
 #[tokio::test]
