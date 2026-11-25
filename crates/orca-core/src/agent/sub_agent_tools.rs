@@ -54,7 +54,8 @@ impl SharedPipeline {
     pub(super) fn seed_from(&self, session: &AgentSession) {
         let mut s = self.lock();
         s.files_read = session.files_read.clone();
-        s.approved_scopes.extend(session.approved_scopes.iter().cloned());
+        s.approved_scopes
+            .extend(session.approved_scopes.iter().cloned());
         s.plan_mode = session.plan_mode;
     }
 
@@ -172,7 +173,11 @@ impl SubAgentToolExecutor for SessionToolExecutor {
         s.approved_scopes.extend(copy.approved_scopes);
         s.journal.append(&mut copy.tool_call_history);
         for path in copy.files_modified {
-            if !s.files_modified.iter().any(|p| p.eq_ignore_ascii_case(&path)) {
+            if !s
+                .files_modified
+                .iter()
+                .any(|p| p.eq_ignore_ascii_case(&path))
+            {
                 s.files_modified.push(path);
             }
         }

@@ -156,9 +156,8 @@ pub struct AgentSession {
 }
 
 /// See [`AgentSession::collect_background`].
-pub type BackgroundCollector = Arc<
-    dyn Fn() -> futures_util::future::BoxFuture<'static, Option<String>> + Send + Sync,
->;
+pub type BackgroundCollector =
+    Arc<dyn Fn() -> futures_util::future::BoxFuture<'static, Option<String>> + Send + Sync>;
 
 impl AgentSession {
     pub fn new(

@@ -1322,7 +1322,8 @@ impl AgentSession {
 }
 
 /// Agent types that only read: delegating to them changes no code.
-const READ_ONLY_AGENT_TYPES: &[&str] = &["scout", "planner", "reviewer", "explore", "plan", "review"];
+const READ_ONLY_AGENT_TYPES: &[&str] =
+    &["scout", "planner", "reviewer", "explore", "plan", "review"];
 
 /// `DelegatesCodeWork`: whether a delegation call's arguments send work to an agent that can
 /// change code: any named agent (agent / agent_type, in single, tasks, chain or agents form)

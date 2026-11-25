@@ -7,8 +7,7 @@
 use std::sync::{Arc, RwLock};
 
 use orca_abstractions::{
-    Tool, ToolCapabilities, ToolContext, ToolErrorCode, ToolRenderHints, ToolResult,
-    ToolRiskLevel,
+    Tool, ToolCapabilities, ToolContext, ToolErrorCode, ToolRenderHints, ToolResult, ToolRiskLevel,
 };
 use orca_core::orchestration::{AgentManager, CancelToken, ParallelAgentSpec};
 use serde_json::Value;
@@ -294,10 +293,7 @@ impl Tool for SpawnAgentsTool {
         }
         if specs.len() > 8 {
             return ToolResult::error_with(
-                format!(
-                    "Too many agents ({}); maximum is 8 per call.",
-                    specs.len()
-                ),
+                format!("Too many agents ({}); maximum is 8 per call.", specs.len()),
                 ToolErrorCode::InvalidArguments,
             );
         }

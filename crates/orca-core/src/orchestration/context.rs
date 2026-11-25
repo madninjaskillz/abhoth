@@ -62,12 +62,6 @@ pub struct AgentState {
     pub(super) cancellation: Option<CancelToken>,
 }
 
-impl Default for AgentStatus {
-    fn default() -> Self {
-        AgentStatus::Pending
-    }
-}
-
 /// How an agent is created (the parts of `AgentContext` that are `init` in C#).
 #[derive(Debug, Clone, Default)]
 pub struct AgentSpec {

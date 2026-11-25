@@ -5,8 +5,9 @@
 use indexmap::IndexMap;
 
 /// `AgentStatus`: where a sub-agent is in its life.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum AgentStatus {
+    #[default]
     Pending,
     Running,
     Completed,

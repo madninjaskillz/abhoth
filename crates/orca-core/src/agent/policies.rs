@@ -328,8 +328,10 @@ pub fn check_blocked(
     args_json: &str,
     types: Option<&AgentTypeRegistry>,
 ) -> Option<ToolBlock> {
-    check_blocked_for_sub_agent(config, registry, plan_mode, native, tool_name, args_json, types)
-        .or_else(|| check_lead_mode(config, tool_name))
+    check_blocked_for_sub_agent(
+        config, registry, plan_mode, native, tool_name, args_json, types,
+    )
+    .or_else(|| check_lead_mode(config, tool_name))
 }
 
 #[cfg(test)]

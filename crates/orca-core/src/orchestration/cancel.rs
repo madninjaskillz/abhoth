@@ -19,7 +19,8 @@ impl Inner {
             return;
         }
         self.notify.notify_waiters();
-        let children = std::mem::take(&mut *self.children.lock().unwrap_or_else(|e| e.into_inner()));
+        let children =
+            std::mem::take(&mut *self.children.lock().unwrap_or_else(|e| e.into_inner()));
         for child in children.into_iter().filter_map(|w| w.upgrade()) {
             child.cancel();
         }

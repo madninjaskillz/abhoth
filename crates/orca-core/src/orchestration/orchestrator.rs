@@ -35,8 +35,8 @@ use crate::chat::{
     planner,
 };
 use crate::client::{
-    ChatError, ChatMessage, ChatOptions, ChatResponse, Role, StreamControl, StreamEvent,
-    ToolCall, ToolDefinition, request_parameters,
+    ChatError, ChatMessage, ChatOptions, ChatResponse, Role, StreamControl, StreamEvent, ToolCall,
+    ToolDefinition, request_parameters,
 };
 use crate::config::OrcaConfig;
 use crate::config::dotnet_json::NEWLINE;
@@ -185,6 +185,7 @@ pub type SystemPromptFactory =
     Arc<dyn Fn(&AgentTypeDefinition, &[ToolDefinition], &str) -> Option<String> + Send + Sync>;
 
 type EventHandler = Arc<dyn Fn(&AgentEvent) + Send + Sync>;
+type UserAgentRepliedHandler = Arc<dyn Fn(&AgentContext, &str) + Send + Sync>;
 
 #[derive(Clone, Default)]
 struct Ambient {
@@ -225,7 +226,7 @@ pub struct AgentOrchestrator {
     use_streaming: AtomicBool,
     text_tool_calls: AtomicBool,
     handlers: Mutex<Vec<EventHandler>>,
-    user_agent_replied: Mutex<Vec<Arc<dyn Fn(&AgentContext, &str) + Send + Sync>>>,
+    user_agent_replied: Mutex<Vec<UserAgentRepliedHandler>>,
     lead: Mutex<LeadState>,
     user_agent_notes: Mutex<VecDeque<String>>,
     cwd: PathBuf,
@@ -469,7 +470,10 @@ impl AgentOrchestrator {
 
     /// Sub-agents created this session (each counts toward agent.maxAgents).
     pub fn agents_created(&self) -> i32 {
-        self.create.lock().unwrap_or_else(|e| e.into_inner()).scheduled
+        self.create
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .scheduled
     }
 
     /// How many more agents may be created, or None without a cap.
@@ -491,9 +495,7 @@ impl AgentOrchestrator {
                 "Agent budget: {left} of {max} new agents left (follow-ups with to do not count). A piece that is still large can go to several new agents, one file group each."
             )
         } else {
-            format!(
-                "Agent budget: all {max} agents used; send new work as follow-ups with to."
-            )
+            format!("Agent budget: all {max} agents used; send new work as follow-ups with to.")
         })
     }
 
@@ -1048,7 +1050,10 @@ impl AgentOrchestrator {
         for (i, ctx) in futures_util::future::join_all(futures).await {
             results[i] = Some(ctx);
         }
-        Ok(results.into_iter().map(|r| r.expect("every task ran")).collect())
+        Ok(results
+            .into_iter()
+            .map(|r| r.expect("every task ran"))
+            .collect())
     }
 
     /// A batch task that never ran (its dependency failed).
@@ -1510,11 +1515,7 @@ impl AgentOrchestrator {
         }
         let native = self.config.lm_studio.native_tool_calling;
         // Every request (the final summary included) sends the same tools.
-        let request_tools: Vec<ToolDefinition> = if native {
-            filtered.clone()
-        } else {
-            Vec::new()
-        };
+        let request_tools: Vec<ToolDefinition> = if native { filtered.clone() } else { Vec::new() };
         context.state().request_tools = Some(request_tools.clone());
         let context_config = self.context_for(route);
 
@@ -1533,9 +1534,11 @@ impl AgentOrchestrator {
                 s.conversation.add_system_message(system_prompt);
                 s.conversation.add_user_message(user);
                 drop(s);
-                context
-                    .transcript
-                    .add(super::transcript::AgentTranscriptKind::Task, &context.task, false);
+                context.transcript.add(
+                    super::transcript::AgentTranscriptKind::Task,
+                    &context.task,
+                    false,
+                );
             }
             Some(message) => {
                 // A follow-up after a long pause: make the re-read short first (no model call).
@@ -1640,10 +1643,15 @@ impl AgentOrchestrator {
                 });
             }
             if let Some(notice) = budget_notice.take() {
-                context.state().conversation.add_user_message(notice.clone());
                 context
-                    .transcript
-                    .add(super::transcript::AgentTranscriptKind::Status, &notice, false);
+                    .state()
+                    .conversation
+                    .add_user_message(notice.clone());
+                context.transcript.add(
+                    super::transcript::AgentTranscriptKind::Status,
+                    &notice,
+                    false,
+                );
             }
             self.maybe_compact(context, &context_config, Some(budget.max() - iteration))
                 .await;
@@ -1750,10 +1758,15 @@ impl AgentOrchestrator {
                         output_cut_off_notice(options.max_output_tokens)
                     ),
                 };
-                context.state().conversation.add_user_message(notice.clone());
                 context
-                    .transcript
-                    .add(super::transcript::AgentTranscriptKind::Status, &notice, false);
+                    .state()
+                    .conversation
+                    .add_user_message(notice.clone());
+                context.transcript.add(
+                    super::transcript::AgentTranscriptKind::Status,
+                    &notice,
+                    false,
+                );
                 iteration += 1;
                 continue;
             }
@@ -1792,8 +1805,14 @@ impl AgentOrchestrator {
                             })
                             .collect();
                         budget.record_calls(&calls);
-                        self.execute_text_tool_calls(context, type_def, &calls, next_depth, tool_timeout)
-                            .await;
+                        self.execute_text_tool_calls(
+                            context,
+                            type_def,
+                            &calls,
+                            next_depth,
+                            tool_timeout,
+                        )
+                        .await;
                         budget_notice = self.extend_at_limit(context, &mut budget, iteration);
                         iteration += 1;
                         continue;
@@ -1806,10 +1825,15 @@ impl AgentOrchestrator {
                         "Sub-agent #{} reply was cut off at the output limit; asking it to continue in smaller pieces",
                         context.number
                     );
-                    context.state().conversation.add_user_message(notice.clone());
                     context
-                        .transcript
-                        .add(super::transcript::AgentTranscriptKind::Status, &notice, false);
+                        .state()
+                        .conversation
+                        .add_user_message(notice.clone());
+                    context.transcript.add(
+                        super::transcript::AgentTranscriptKind::Status,
+                        &notice,
+                        false,
+                    );
                     iteration += 1;
                     continue;
                 }
@@ -1880,7 +1904,13 @@ impl AgentOrchestrator {
             None
         };
         let summary = self
-            .request_final_summary(context, type_def, &client, &request_tools, request.as_deref())
+            .request_final_summary(
+                context,
+                type_def,
+                &client,
+                &request_tools,
+                request.as_deref(),
+            )
             .await;
         let narration = narration.trim().to_string();
         context.state().result = Some(summary.unwrap_or_else(|| {
@@ -1946,7 +1976,10 @@ impl AgentOrchestrator {
         if context.origin == AgentOrigin::User {
             prompt.push_str("\n\nYou run in the background while the user keeps working. Tools that need the user's approval are denied \u{2014} work with what is allowed and say what you couldn't do.");
         }
-        let progress_tool = tools.iter().map(|t| t.name.as_str()).find(|n| is_progress_tool(n));
+        let progress_tool = tools
+            .iter()
+            .map(|t| t.name.as_str())
+            .find(|n| is_progress_tool(n));
         if progress_tool == Some(REPORT_PROGRESS_TOOL_NAME)
             && !prompt.contains(REPORT_PROGRESS_TOOL_NAME)
         {
@@ -2103,7 +2136,9 @@ impl AgentOrchestrator {
         let tool_name = call.name.as_str();
         let described = activity::describe(tool_name, Some(args), Some(&self.cwd));
         context.state().current_activity = Some(described.clone());
-        context.transcript.add_tool_call(&described, tool_name, args);
+        context
+            .transcript
+            .add_tool_call(&described, tool_name, args);
         self.raise(AgentEvent::ToolCallStarted {
             agent_id: context.id.clone(),
             tool_name: tool_name.to_string(),
@@ -2203,7 +2238,13 @@ impl AgentOrchestrator {
         }
         let settings = CompactionSettings::from_config(context_config);
         let mut conversation = context.state().conversation.clone();
-        let plan = planner::plan(&conversation, &settings, context_config, remaining_steps, None);
+        let plan = planner::plan(
+            &conversation,
+            &settings,
+            context_config,
+            remaining_steps,
+            None,
+        );
         if plan.action == CompactionAction::None {
             if plan.tokens_before > settings.planned_trigger_tokens {
                 tracing::debug!("Compaction check for agent {}: {plan}", context.id);
@@ -2329,7 +2370,8 @@ impl AgentOrchestrator {
                 } else {
                     "iteration limit"
                 };
-                (!text.is_empty()).then(|| format!("[Partial result \u{2014} {why} reached]\n{text}"))
+                (!text.is_empty())
+                    .then(|| format!("[Partial result \u{2014} {why} reached]\n{text}"))
             }
             Err(e) => {
                 tracing::warn!("Final summary request failed for agent {}: {e}", context.id);
@@ -2356,8 +2398,9 @@ fn chat_error_message(e: &ChatError) -> String {
 /// (`JsonDefaults.Options`), or `{}` when they are not a JSON object.
 pub fn native_args_json(raw: &str) -> String {
     match serde_json::from_str::<Value>(raw) {
-        Ok(v @ Value::Object(_)) => crate::config::dotnet_json::to_string_dotnet(&v)
-            .unwrap_or_else(|_| "{}".into()),
+        Ok(v @ Value::Object(_)) => {
+            crate::config::dotnet_json::to_string_dotnet(&v).unwrap_or_else(|_| "{}".into())
+        }
         _ => "{}".into(),
     }
 }
@@ -2371,7 +2414,11 @@ fn append_text_tool_instructions(prompt: &str, tools: &[ToolDefinition]) -> Stri
         .map(|t| {
             format!(
                 "  - {}",
-                crate::agent::prompts::format_signature(&t.name, Some(&t.description), &t.parameters)
+                crate::agent::prompts::format_signature(
+                    &t.name,
+                    Some(&t.description),
+                    &t.parameters
+                )
             )
         })
         .collect();
@@ -2460,7 +2507,15 @@ pub fn user_messages_note(messages: &[String]) -> Option<String> {
     }
     let lines: Vec<String> = messages
         .iter()
-        .map(|m| format!("- {}", truncate3(m.replace("\r\n", " ").replace(['\n', '\r'], " ").trim(), 600)))
+        .map(|m| {
+            format!(
+                "- {}",
+                truncate3(
+                    m.replace("\r\n", " ").replace(['\n', '\r'], " ").trim(),
+                    600
+                )
+            )
+        })
         .collect();
     Some(format!(
         "[User told this agent directly (from its tab):\n{}]",
@@ -2743,7 +2798,8 @@ pub fn iterations_for(config: &OrcaConfig, type_name: &str, type_override: Optio
     let a = &config.agent;
     type_override.unwrap_or(
         if a.reviewer_max_iterations > 0
-            && (type_name.eq_ignore_ascii_case("reviewer") || type_name.eq_ignore_ascii_case("review"))
+            && (type_name.eq_ignore_ascii_case("reviewer")
+                || type_name.eq_ignore_ascii_case("review"))
         {
             a.reviewer_max_iterations
         } else {
@@ -2754,7 +2810,12 @@ pub fn iterations_for(config: &OrcaConfig, type_name: &str, type_override: Optio
 
 /// `AgentConfig.IsOrchestratorLead`.
 pub fn is_orchestrator_lead(config: &OrcaConfig) -> bool {
-    !config.agent.peer_mode && config.agent.lead_mode.trim().eq_ignore_ascii_case("orchestrator")
+    !config.agent.peer_mode
+        && config
+            .agent
+            .lead_mode
+            .trim()
+            .eq_ignore_ascii_case("orchestrator")
 }
 
 /// `AgentConfig.IsAutoLead`.

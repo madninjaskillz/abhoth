@@ -91,10 +91,7 @@ impl AgentManager {
         ct: &CancelToken,
     ) -> String {
         let depth = AgentOrchestrator::current_depth();
-        self.print_line(
-            &format!("    {agent_type}: {}", preview(task, 80)),
-            depth,
-        );
+        self.print_line(&format!("    {agent_type}: {}", preview(task, 80)), depth);
         let context = self
             .orchestrator
             .spawn_agent_with(
@@ -132,7 +129,10 @@ impl AgentManager {
         );
         let contexts = self.orchestrator.spawn_parallel(specs, depth, ct).await?;
         let mut digest = String::new();
-        digest.push_str(&format!("Ran {} agents in parallel:{NEWLINE}", contexts.len()));
+        digest.push_str(&format!(
+            "Ran {} agents in parallel:{NEWLINE}",
+            contexts.len()
+        ));
         for (c, spec) in contexts.iter().zip(specs) {
             self.print_finish(c, caller_depth);
             digest.push_str(NEWLINE);
@@ -364,10 +364,7 @@ impl AgentManager {
 
     /// Cancel the background helpers.
     pub fn cancel_background(&self) {
-        let mut ct = self
-            .background_ct
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut ct = self.background_ct.lock().unwrap_or_else(|e| e.into_inner());
         ct.cancel();
         *ct = CancelToken::new();
     }
@@ -376,7 +373,8 @@ impl AgentManager {
 
     /// /agent: start a background agent.
     pub fn start_user_agent(&self, task: &str, agent_type: &str) -> Arc<AgentContext> {
-        self.orchestrator.start_background_agent(task, agent_type, None)
+        self.orchestrator
+            .start_background_agent(task, agent_type, None)
     }
 
     /// Results of background agents that finished since the last call, for the main agent's
@@ -481,7 +479,10 @@ impl AgentManager {
                 c.limit_description()
             ),
             AgentStatus::Cancelled => {
-                format!("    \u{2298} #{} {} agent cancelled {tag}", c.number, c.agent_type)
+                format!(
+                    "    \u{2298} #{} {} agent cancelled {tag}",
+                    c.number, c.agent_type
+                )
             }
             _ => format!(
                 "    \u{2717} #{} {} agent {tag} {}",
@@ -531,10 +532,9 @@ pub fn format_elapsed(d: std::time::Duration) -> String {
 pub fn tool_result_text(c: &AgentContext) -> String {
     let s = c.state();
     let body = match s.status {
-        AgentStatus::Completed | AgentStatus::CompletedPartial => s
-            .result
-            .clone()
-            .unwrap_or_else(|| "(no result)".into()),
+        AgentStatus::Completed | AgentStatus::CompletedPartial => {
+            s.result.clone().unwrap_or_else(|| "(no result)".into())
+        }
         _ => format!("Sub-agent failed: {}", s.error.clone().unwrap_or_default()),
     };
     drop(s);
@@ -639,7 +639,9 @@ pub fn files_line(c: &AgentContext, cwd: &std::path::Path) -> String {
             let p = std::path::Path::new(f);
             let rel = if p.is_absolute()
                 && f.len() >= cwd_s.len()
-                && f[..cwd_s.len()].replace('\\', "/").eq_ignore_ascii_case(&cwd_s.replace('\\', "/"))
+                && f[..cwd_s.len()]
+                    .replace('\\', "/")
+                    .eq_ignore_ascii_case(&cwd_s.replace('\\', "/"))
             {
                 p.strip_prefix(cwd)
                     .map(|r| r.display().to_string())

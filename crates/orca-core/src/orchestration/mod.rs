@@ -2,8 +2,13 @@
 
 pub mod activity;
 pub mod brief_files;
+pub mod cancel;
+pub mod client;
+pub mod context;
 pub mod custom_agents;
+pub mod events;
 pub mod labels;
+pub mod orchestrator;
 pub mod palette;
 pub mod prompt_loader;
 pub mod read_only_command;
@@ -12,11 +17,6 @@ pub mod step_budget;
 pub mod transcript;
 pub mod types;
 pub mod workflow;
-pub mod cancel;
-pub mod client;
-pub mod context;
-pub mod events;
-pub mod orchestrator;
 
 pub use cancel::CancelToken;
 pub use client::{
