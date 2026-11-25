@@ -307,3 +307,10 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D64** `/config` saves from a fresh load plus the profile overlay (profile values are not
   written into config.json); `/profile switch` saves `profiles.active` and restarts with
   `--profile` and `--resume`.
+- **D73** Bench runs are kept by id in one state object; changes go out on the C#
+  `/api/bench/events` stream (the React client is unchanged); cancelling a run drops its task.
+- **D74** Bench times: UK summer time computed by hand, .NET timestamp text and rounding.
+- **D75** `results.jsonl` rows keep the C# keys and order; Rust writes `+`/non-ASCII unescaped
+  and whole floats as `200.0` (both builds read either form).
+- **D76** Each bench run is an in-process Rust session configured from its own `config.json`
+  (C# starts a worker process per run).
