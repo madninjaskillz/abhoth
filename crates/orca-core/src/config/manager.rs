@@ -38,6 +38,10 @@ pub struct ConfigManager {
     dir: PathBuf,
     path: PathBuf,
     pub config: OrcaConfig,
+    /// The file as loaded (what `serialize_for_save` restores overridden paths from).
+    base_json: serde_json::Value,
+    /// Dotted paths a profile or mode overrides (kept out of config.json).
+    overlay_paths: Vec<String>,
 }
 
 impl ConfigManager {
@@ -51,7 +55,70 @@ impl ConfigManager {
             dir,
             path,
             config: OrcaConfig::default(),
+            base_json: serde_json::Value::Object(Default::default()),
+            overlay_paths: Vec::new(),
         }
+    }
+
+    /// The paths the applied profile and mode override.
+    pub fn overlay_paths(&self) -> &[String] {
+        &self.overlay_paths
+    }
+
+    /// `ApplyProfile`: apply a profile's client settings over the loaded config. Runtime-only
+    /// flags carry over; the overridden paths stay out of config.json on save.
+    pub fn apply_profile(
+        &mut self,
+        name: &str,
+        profile: &crate::profiles::ProfileDefinition,
+    ) -> Result<(), crate::profiles::config_overrides::OverrideError> {
+        let overrides: Vec<(String, serde_json::Value)> = profile
+            .client
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        self.apply_overlay(&overrides, Some(name.to_string()))?;
+        self.overlay_paths = profile.client.keys().cloned().collect();
+        Ok(())
+    }
+
+    /// `ApplyMode`: apply an agent mode over the config and any profile already applied; like a
+    /// profile, it never reaches config.json. Errors for an unknown mode.
+    pub fn apply_mode(&mut self, mode: &str) -> Result<(), String> {
+        let overrides = crate::profiles::agent_modes::overrides(mode)?;
+        let profile = self.config.active_profile.clone();
+        self.apply_overlay(&overrides, profile)
+            .map_err(|e| e.to_string())?;
+        for (k, _) in overrides {
+            if !self.overlay_paths.contains(&k) {
+                self.overlay_paths.push(k);
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_overlay(
+        &mut self,
+        overrides: &[(String, serde_json::Value)],
+        profile_name: Option<String>,
+    ) -> Result<(), crate::profiles::config_overrides::OverrideError> {
+        use crate::profiles::config_overrides as co;
+        let mut json = config_json(&self.config);
+        for (path, value) in overrides {
+            co::set(&mut json, path, Some(value))?;
+        }
+        let mut next: OrcaConfig = serde_json::from_value(json).unwrap_or_default();
+        for provider in next.providers.values_mut() {
+            provider.apply_alias();
+        }
+        next.demo_mode = self.config.demo_mode;
+        next.sandbox_mode = self.config.sandbox_mode;
+        next.allowed_directory = self.config.allowed_directory.clone();
+        next.active_profile = profile_name;
+        next.agent.uncensored.session = self.config.agent.uncensored.session;
+        validate(&mut next);
+        self.config = next;
+        Ok(())
     }
 
     /// The config.json this manager reads and writes.
@@ -64,6 +131,7 @@ impl ConfigManager {
     pub fn load(&mut self) -> Result<(), ConfigError> {
         if !self.path.exists() {
             self.config = OrcaConfig::default();
+            self.base_json = config_json(&self.config);
             return self.save();
         }
         let bytes = std::fs::read(&self.path).map_err(|source| ConfigError::Io {
@@ -87,6 +155,11 @@ impl ConfigManager {
         let migrated = migrate_legacy_models(&mut config);
         validate(&mut config);
         self.config = config;
+        self.base_json = serde_json::from_str(json)
+            .ok()
+            .filter(serde_json::Value::is_object)
+            .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
+        self.overlay_paths.clear();
         Ok(migrated)
     }
 
@@ -103,10 +176,43 @@ impl ConfigManager {
         })
     }
 
-    /// The text that goes to disk. (Profile overlays are phase 2; until then this is the config.)
+    /// The text that goes to disk: the profile's overridden paths as the file had them.
     pub fn serialize_for_save(&self) -> Result<String, ConfigError> {
-        Ok(serialize_config(&self.config)?)
+        use crate::profiles::config_overrides as co;
+        if self.overlay_paths.is_empty() {
+            return Ok(serialize_config(&self.config)?);
+        }
+        let mut json = config_json(&self.config);
+        for path in &self.overlay_paths {
+            // The shortest prefix the file didn't have goes entirely (e.g. a whole "slots"
+            // section a profile brought); otherwise the file's own value comes back.
+            let parts: Vec<&str> = path.split('.').collect();
+            let mut restored = false;
+            for i in 1..=parts.len() {
+                let prefix = parts[..i].join(".");
+                if !co::has(&self.base_json, &prefix) {
+                    if co::has(&json, &prefix) {
+                        let _ = co::set(&mut json, &prefix, None);
+                    }
+                    restored = true;
+                    break;
+                }
+            }
+            if !restored {
+                let value = co::get(&self.base_json, path).cloned();
+                let _ = co::set(&mut json, path, value.as_ref());
+            }
+        }
+        Ok(dotnet_json::to_string_dotnet(&json)?)
     }
+}
+
+/// The config as System.Text.Json writes it, as a JSON tree.
+fn config_json(config: &OrcaConfig) -> serde_json::Value {
+    serialize_config(config)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::Value::Object(Default::default()))
 }
 
 /// `JsonSerializer.Serialize(config, JsonDefaults.Options)`.
