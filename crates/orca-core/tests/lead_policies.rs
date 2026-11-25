@@ -20,8 +20,10 @@ use orca_core::orchestration::types::{AgentTypeDefinition, AgentTypeRegistry};
 use serde_json::{Value, json};
 
 fn config(profile: &str, mode: &str) -> OrcaConfig {
-    let mut config = OrcaConfig::default();
-    config.tool_profile = profile.into();
+    let mut config = OrcaConfig {
+        tool_profile: profile.into(),
+        ..OrcaConfig::default()
+    };
     config.lm_studio.native_tool_calling = true;
     config.agent.lead_mode = mode.into();
     config

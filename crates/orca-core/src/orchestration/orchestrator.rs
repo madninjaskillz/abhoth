@@ -1129,7 +1129,10 @@ impl AgentOrchestrator {
         {
             match self.provider.provider_route(&provider_name) {
                 Some(r) => {
-                    client = r.client.clone();
+                    client = Arc::new(super::client::PinnedModelClient::new(
+                        r.client.clone(),
+                        r.model.clone(),
+                    ));
                     context.state().provider_model = Some(r.model.clone());
                     route = Some(r);
                 }

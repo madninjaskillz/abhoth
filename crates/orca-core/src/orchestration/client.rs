@@ -71,6 +71,56 @@ pub struct ProviderRoute {
     pub max_tokens: Option<i32>,
 }
 
+/// A named provider's client with its model id pinned on every request (C# wraps the route's
+/// client in `ConfigureOptionsChatClient(o => o.ModelId = model)`), so callers in the agent's
+/// flow that set no model still reach the provider's model.
+pub struct PinnedModelClient {
+    inner: Arc<dyn AgentChatClient>,
+    model: String,
+}
+
+impl PinnedModelClient {
+    pub fn new(inner: Arc<dyn AgentChatClient>, model: impl Into<String>) -> Self {
+        Self {
+            inner,
+            model: model.into(),
+        }
+    }
+
+    fn pin(&self, options: &ChatOptions) -> ChatOptions {
+        let mut options = options.clone();
+        options.model = Some(self.model.clone());
+        options.model_from_client = false;
+        options
+    }
+}
+
+#[async_trait::async_trait]
+impl AgentChatClient for PinnedModelClient {
+    async fn complete(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+    ) -> Result<ChatResponse, ChatError> {
+        self.inner
+            .complete(actor, messages, &self.pin(options))
+            .await
+    }
+
+    async fn stream(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+    ) -> Result<ChatResponse, ChatError> {
+        self.inner
+            .stream(actor, messages, &self.pin(options), on_event)
+            .await
+    }
+}
+
 /// What an agent got from [`AgentClientProvider::acquire`].
 #[derive(Clone)]
 pub struct AgentLease {
