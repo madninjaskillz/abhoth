@@ -2,6 +2,7 @@
 //! interactive REPL/TUI and the web host follow in later phases (see PORTING.md).
 
 pub mod args;
+pub mod hostui;
 pub mod pi_profile;
 pub mod prompter;
 pub mod sessions;
@@ -359,12 +360,22 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         println!("OpenOrca v{} (Rust port)", version());
         return Ok(0);
     }
-    let Some(prompt) = args.single_prompt.clone() else {
+    // --hostui: the web UI, headless (src/OpenOrca.Cli/HostUi). Ignored with --print.
+    let hostui_args = if args.single_prompt.is_none() {
+        orca_webui::hostui::HostUiArgs::parse(&raw)
+    } else {
+        None
+    };
+    if let Some(e) = hostui_args.as_ref().and_then(|h| h.error.clone()) {
+        eprintln!("openorca: {e}");
+        return Ok(2);
+    }
+    if args.single_prompt.is_none() && hostui_args.is_none() {
         eprintln!(
-            "The interactive mode is not ported to Rust yet. Use --print \"<prompt>\" (JSON output) or --prompt \"<prompt>\"."
+            "The interactive mode is not ported to Rust yet. Use --print \"<prompt>\" (JSON output), --prompt \"<prompt>\" or --hostui."
         );
         return Ok(2);
-    };
+    }
     let mut manager = ConfigManager::new(None);
     manager
         .load()
@@ -426,6 +437,14 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
     {
         tracing::warn!("could not write the default prompt template: {e}");
     }
+
+    if let Some(h) = hostui_args {
+        for notice in &profile_notices {
+            eprintln!("{notice}");
+        }
+        return hostui::run(h, config, cwd).await;
+    }
+    let prompt = args.single_prompt.clone().unwrap_or_default();
 
     // Sweep checkpoint snapshots older than a week (best effort, in the background).
     let sweeper = orca_core::session::CheckpointManager::new(config_dir.join("checkpoints"));
