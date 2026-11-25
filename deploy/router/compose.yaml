@@ -1,6 +1,7 @@
 # abhoth router on DeepThought, SHADOW mode (nothing points at it). TrueNAS custom app / compose.
 #   State and config:  $AI_ROOT/router/          (router.json, base.json, requests.jsonl)
-#   Engine key:        $AI_ROOT/router/secrets/ninfer-key  (mode 0400, uid 568; never printed)
+#   Engine key:        $AI_ROOT/router/secrets/ninfer-key  (568:568, mode 0600; never printed)
+#   State dir:         568:568, mode 2770 (setgid, so the importer's files stay group 568)
 #   Inputs, read-only: LiteLLM's generated config.yaml, qfn-lb's nginx.conf, layouts/gateway.json
 # `importer` regenerates router.json from LiteLLM's config every 10 s (atomic write, only when it
 # changes); `router` hot-reloads it. Placement and slots stay OFF; on-demand follows gateway.json
@@ -9,7 +10,9 @@ services:
   importer:
     image: local/abhoth-router:1
     restart: unless-stopped
-    user: "568:568"
+    # uid 950 (admin) can read LiteLLM's config.yaml (0640) and qfn-lb's nginx.conf (0600);
+    # gid 568 writes into the setgid state dir (568:568, 2770). It never reads the key.
+    user: "950:568"
     read_only: true
     command: ["import-litellm",
               "--litellm", "/in/litellm/config.yaml",
