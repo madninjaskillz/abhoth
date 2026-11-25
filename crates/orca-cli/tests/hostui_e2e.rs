@@ -84,6 +84,10 @@ fn bad_hostui_flags_exit_2() {
             "--hostui-token and --hostui-open need --hostui.",
         ),
         (vec!["--hostui=notahost:1"], "Not an IP address: notahost."),
+        (
+            vec!["--hostui=127.0.0.1:0", "--hostui-bench"],
+            "--hostui-bench (the Benchmarks page) is not ported to Rust yet",
+        ),
     ] {
         let home = tempfile::tempdir().unwrap();
         let out = Command::new(env!("CARGO_BIN_EXE_openorca"))

@@ -78,6 +78,12 @@ pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i
         eprintln!("openorca: --tui needs the interactive mode, which is not ported to Rust yet.");
         return Ok(2);
     }
+    if args.bench_dir.is_some() {
+        eprintln!(
+            "openorca: --hostui-bench (the Benchmarks page) is not ported to Rust yet; use the C# build for benches."
+        );
+        return Ok(2);
+    }
     if args.login {
         eprintln!(
             "openorca: --hostui-login (sign-in mode) is not ported to Rust yet; use the token."
@@ -128,9 +134,6 @@ pub async fn run(args: HostUiArgs, config: OrcaConfig, cwd: PathBuf) -> Result<i
     options.profiles_cache_file =
         Some(orca_core::config::default_config_dir().join("profiles-cache.json"));
     options.config_home = Some(orca_core::config::default_config_dir());
-    if let Some(dir) = &args.bench_dir {
-        options.bench = Some(orca_webui::bench::BenchOptions { dir: dir.clone() });
-    }
     let mut server = match WebUiServer::start(options, primary.clone()).await {
         Ok(s) => s,
         Err(e) => {
