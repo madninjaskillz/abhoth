@@ -126,6 +126,15 @@ pub struct AgentSession {
     pub final_prose: Option<String>,
     /// Session id, checkpoints, hooks and formatter around each tool call (none by default).
     pub tool_hooks: super::tool_hooks::ToolHooks,
+
+    // ---- context management (agent/context.rs, chat::*) ----
+    /// Usage bookkeeping for the compaction estimates (server prompt size, rewrite count).
+    pub context_usage: crate::chat::ContextUsage,
+    /// Overflow recovery already ran this turn (`AgentLoopState.OverflowRecoveryUsed`).
+    pub overflow_recovery_used: bool,
+    /// What compaction told the user (console lines in C#); a UI drains it.
+    pub compaction_notices: Vec<String>,
+    // ---- end context management ----
 }
 
 impl AgentSession {
@@ -165,6 +174,9 @@ impl AgentSession {
             failover_delay: Duration::from_secs(2),
             final_prose: None,
             tool_hooks: Default::default(),
+            context_usage: Default::default(),
+            overflow_recovery_used: false,
+            compaction_notices: Vec::new(),
         }
     }
 

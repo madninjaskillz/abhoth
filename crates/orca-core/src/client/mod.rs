@@ -1,5 +1,7 @@
 //! The OpenAI-compatible chat client and request shaping.
 
+pub mod context_overflow;
+pub mod context_window_detector;
 pub mod openai;
 pub mod request_parameters;
 pub mod served_models;

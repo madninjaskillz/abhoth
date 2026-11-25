@@ -1,5 +1,6 @@
 //! The agent: tool registry, permissions, prompts and the model/tool loop.
 
+mod context;
 pub mod llm_tags;
 pub mod long_task;
 pub mod loop_messages;

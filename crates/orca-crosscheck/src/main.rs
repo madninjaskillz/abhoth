@@ -63,6 +63,9 @@ struct ScriptReply {
     tools: Vec<ScriptTool>,
     #[serde(default)]
     finish_reason: Option<String>,
+    /// The prompt size the usage reports (default 100): drives the context estimate.
+    #[serde(default)]
+    prompt_tokens: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,7 +94,7 @@ impl ScriptReply {
                 })
                 .collect(),
             finish_reason: self.finish_reason.clone(),
-            prompt_tokens: 100,
+            prompt_tokens: self.prompt_tokens.unwrap_or(100),
             completion_tokens: if self.tools.is_empty() { 10 } else { 20 },
             ..Reply::default()
         }

@@ -80,6 +80,7 @@ impl AgentSession {
     ) -> Result<TurnEnd, AgentError> {
         self.messages.push(ChatMessage::user(user_message));
         self.begin_turn();
+        self.overflow_recovery_used = false;
         let mut s = LoopState {
             iteration_budget: self.config.agent.main_loop_max_iterations.max(1),
             task_brief: self.snapshot_task_brief(),
@@ -101,7 +102,9 @@ impl AgentSession {
                 break;
             }
             s.history_marks.push(self.tool_call_history.len());
-            self.inject_task_reminder(&mut s, iteration);
+            // Long tool-heavy turns overflow the window mid-loop.
+            let compacted = self.maybe_compact().await;
+            self.inject_task_reminder(&mut s, iteration, compacted);
             self.inject_budget_advisory(&mut s, iteration);
             let closed = self.close_dangling_tool_calls();
             if closed > 0 {
@@ -110,6 +113,7 @@ impl AgentSession {
                 );
             }
 
+            let context_mark = self.context_mark();
             let response = match self.stream_request(observer).await {
                 Ok(r) => r,
                 Err(ChatError::IdleTimeout(d)) => {
@@ -125,8 +129,17 @@ impl AgentSession {
                         Recovery::Break => break,
                     }
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => {
+                    // The server rejected the prompt as too long: compact and retry once.
+                    if self.recover_from_overflow(&e).await {
+                        iteration += 1;
+                        continue;
+                    }
+                    return Err(e.into());
+                }
             };
+            // The server's real prompt size becomes the base for the next estimate.
+            self.record_prompt_usage(context_mark, &response.usage);
 
             if is_empty_response(&response) {
                 tracing::warn!("no tokens received from the LLM: empty response");
@@ -308,48 +321,22 @@ impl AgentSession {
         self.sync_system_prompt_tool_mode();
     }
 
-    /// Context size estimate for the reminder threshold (chars / `context.charsPerToken`,
-    /// tool content at 75% of the ratio, as `Conversation.EstimateTokenCount`).
-    pub fn estimate_context_tokens(&self) -> i64 {
-        let cpt = if self.config.context.chars_per_token > 0.0 {
-            self.config.context.chars_per_token as f64
-        } else {
-            3.5
-        };
-        let tool_cpt = cpt * 0.75;
-        let mut total = 0.0;
-        for m in &self.messages {
-            let text = m.content.as_deref().map_or(0, |c| c.encode_utf16().count()) as f64;
-            let tools: usize = m
-                .tool_calls
-                .iter()
-                .map(|c| c.name.len() + c.arguments.encode_utf16().count())
-                .sum();
-            if m.role == Role::Tool {
-                total += text / tool_cpt;
-            } else {
-                total += text / cpt;
-            }
-            total += tools as f64 / tool_cpt;
-        }
-        total as i64
-    }
-
     /// The task brief, recited on a cadence once the context is large (never during the
     /// verification / summary wind-down).
-    fn inject_task_reminder(&mut self, s: &mut LoopState, iteration: i32) {
+    fn inject_task_reminder(&mut self, s: &mut LoopState, iteration: i32, compacted: bool) {
         s.iterations_since_reminder += 1;
         let interval = self.config.agent.task_reminder_interval;
         let Some(brief) = s.task_brief.clone() else {
             return;
         };
-        if interval <= 0
-            || !s.tools_executed
-            || s.verification_requested
-            || s.summary_requested
-            || s.iterations_since_reminder < interval
-            || self.estimate_context_tokens()
-                < self.config.agent.task_reminder_min_context_tokens as i64
+        if interval <= 0 || !s.tools_executed || s.verification_requested || s.summary_requested {
+            return;
+        }
+        // Right after compaction, or on the cadence once the context is large.
+        if !compacted
+            && (s.iterations_since_reminder < interval
+                || self.estimate_context_tokens()
+                    < self.config.agent.task_reminder_min_context_tokens)
         {
             return;
         }
@@ -607,7 +594,13 @@ impl AgentSession {
         let several = calls.len() > 1;
         for (i, call) in calls.iter().enumerate() {
             self.record_raw_arguments = several && i == 0;
-            let result = self.run_one_call(call, true, observer).await;
+            let mut result = self.run_one_call(call, true, observer).await;
+            if self.config.agent.repeat_call_notes
+                && let Some(note) =
+                    crate::chat::repeat_call_note::note_for(&self.messages, call, &result)
+            {
+                result.push_str(&note);
+            }
             self.messages
                 .push(ChatMessage::tool_result(call.id.clone(), result));
         }
