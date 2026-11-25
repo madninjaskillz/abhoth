@@ -1,0 +1,14 @@
+{
+  "prompt": "Carry on",
+  "args": [
+    "--continue"
+  ],
+  "home_files": {
+    "sessions/bbbb2222.json": "{\n  \"id\": \"bbbb2222\",\n  \"title\": \"From elsewhere\",\n  \"createdAt\": \"2026-06-01T00:00:00Z\",\n  \"updatedAt\": \"2026-06-01T00:00:00Z\",\n  \"workingDirectory\": \"C:\\\\elsewhere\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"From elsewhere\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"text\": \"Noted.\",\n      \"reasoning\": \"short\"\n    }\n  ]\n}"
+  },
+  "replies": [
+    {
+      "text": "Continuing where we left off."
+    }
+  ]
+}

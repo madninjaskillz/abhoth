@@ -147,4 +147,38 @@ mod tests {
             "a flag without its value is ignored"
         );
     }
+    // Ported from CliArgumentParserTests (continue / resume).
+
+    #[test]
+    fn parse_continue_flag_sets_continue_session() {
+        assert!(parse(&["--continue"]).continue_session);
+    }
+
+    #[test]
+    fn parse_continue_short_flag_sets_continue_session() {
+        assert!(parse(&["-c"]).continue_session);
+    }
+
+    #[test]
+    fn parse_resume_flag_sets_resume_session_id() {
+        assert_eq!(
+            parse(&["--resume", "abc-123"]).resume_session_id.as_deref(),
+            Some("abc-123")
+        );
+    }
+
+    #[test]
+    fn parse_resume_short_flag_sets_resume_session_id() {
+        assert_eq!(
+            parse(&["-r", "abc-123"]).resume_session_id.as_deref(),
+            Some("abc-123")
+        );
+    }
+
+    #[test]
+    fn parse_no_args_has_no_session_flags() {
+        let a = parse(&[]);
+        assert!(!a.continue_session);
+        assert!(a.resume_session_id.is_none());
+    }
 }

@@ -10,7 +10,14 @@
 //! replies. Compared after normalising (durations, temp paths):
 //! - the `--print` JSON (response, tokens, tool calls with arguments and results, files, success),
 //! - every request body the server received (messages, sampling fields, ...),
-//! - the files in the work folder afterwards.
+//! - the files in the work folder afterwards,
+//! - the checkpoints in the config home (`checkpoints/`: manifests with times blanked and the
+//!   backup names checked against the path hash, backup contents),
+//! - the exit code and the session notices on stderr (resumed / not found / none to continue).
+//!
+//! A scenario can plant files in the config home first (`home_files`, e.g. a saved session;
+//! `<WORK_JSON>` in them becomes the work folder as a JSON string body) and pass extra
+//! arguments (`args`, e.g. `["-r", "s1"]`).
 //!
 //! Known, documented gaps are ignored by default: the system prompt text and the advertised
 //! tool list (phase 1 has a compact prompt and only the core tools). `--strict` compares them too.
@@ -31,6 +38,12 @@ struct Scenario {
     prompt: String,
     #[serde(default)]
     files: BTreeMap<String, String>,
+    /// Files to create in the config home (relative paths), e.g. `sessions/<id>.json`.
+    #[serde(default)]
+    home_files: BTreeMap<String, String>,
+    /// Arguments after `--print <prompt>`.
+    #[serde(default)]
+    args: Vec<String>,
     /// Extra config.json keys (merged over the harness defaults, one level deep).
     #[serde(default)]
     config: serde_json::Map<String, Value>,
@@ -87,6 +100,9 @@ struct RunResult {
     output: Value,
     requests: Vec<Value>,
     files: BTreeMap<String, String>,
+    home_files: BTreeMap<String, Value>,
+    exit_code: Option<i32>,
+    notices: Vec<String>,
     stderr: String,
 }
 
@@ -125,6 +141,15 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         home.path().join("config.json"),
         serde_json::to_string_pretty(&config)?,
     )?;
+    let work_json = serde_json::to_string(&work.path().display().to_string())?;
+    let work_json = &work_json[1..work_json.len() - 1];
+    for (rel, content) in &scenario.home_files {
+        let p = home.path().join(rel);
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&p, content.replace("<WORK_JSON>", work_json))?;
+    }
     // Fixed, distinct mtimes (one second apart, in name order, ten minutes ago) so tools that
     // sort or describe by age give the same answer in both runs.
     let base = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
@@ -140,15 +165,17 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
             .set_modified(base + std::time::Duration::from_secs(i as u64))?;
     }
 
-    let (exe_owned, work_path, home_path, prompt) = (
+    let (exe_owned, work_path, home_path, prompt, extra) = (
         exe.to_path_buf(),
         work.path().to_path_buf(),
         home.path().to_path_buf(),
         scenario.prompt.clone(),
+        scenario.args.clone(),
     );
     let out = tokio::task::spawn_blocking(move || {
         Command::new(exe_owned)
             .args(["--print", &prompt])
+            .args(&extra)
             .current_dir(&work_path)
             .env("OPENORCA_HOME", &home_path)
             .env_remove("RUST_LOG")
@@ -157,13 +184,18 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
     .await??;
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-    let json_start = stdout.find('{').unwrap_or(0);
-    let output: Value = serde_json::from_str(stdout[json_start..].trim()).with_context(|| {
-        format!(
-            "{} printed no JSON.\nstdout: {stdout}\nstderr: {stderr}",
-            exe.display()
-        )
-    })?;
+    // A run that stops early (an unknown --resume id) prints nothing to stdout.
+    let output: Value = if stdout.trim().is_empty() {
+        Value::Null
+    } else {
+        let json_start = stdout.find('{').unwrap_or(0);
+        serde_json::from_str(stdout[json_start..].trim()).with_context(|| {
+            format!(
+                "{} printed no JSON.\nstdout: {stdout}\nstderr: {stderr}",
+                exe.display()
+            )
+        })?
+    };
 
     let work_str = work.path().display().to_string();
     let home_str = home.path().display().to_string();
@@ -187,8 +219,64 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
             );
         }
     }
+    let mut home_files = BTreeMap::new();
+    let checkpoints = home.path().join("checkpoints");
+    for e in walkdir::WalkDir::new(&checkpoints)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if !e.file_type().is_file() {
+            continue;
+        }
+        let rel = e
+            .path()
+            .strip_prefix(home.path())
+            .unwrap()
+            .display()
+            .to_string()
+            .replace('\\', "/");
+        let bytes = std::fs::read(e.path())?;
+        let (key, value) = if rel.ends_with("/manifest.json") {
+            let mut manifest: Value = serde_json::from_slice(&bytes)
+                .with_context(|| format!("{} wrote a bad {rel}", exe.display()))?;
+            for entry in manifest.as_array_mut().into_iter().flatten() {
+                entry["timestamp"] = json!("<TIME>");
+                let path = entry["filePath"].as_str().unwrap_or_default().to_string();
+                let name = entry["backupFile"].as_str().unwrap_or_default().to_string();
+                entry["backupFile"] = json!(normalize_backup_name(&name, Some(&path)));
+            }
+            (rel, norm(manifest))
+        } else {
+            let name = rel.rsplit('/').next().unwrap_or_default();
+            let dir = &rel[..rel.len() - name.len()];
+            (
+                format!("{dir}{}", normalize_backup_name(name, None)),
+                json!(String::from_utf8_lossy(&bytes)),
+            )
+        };
+        home_files.insert(key, value);
+    }
+    let notices = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| {
+            [
+                "Resumed session:",
+                "Session not found:",
+                "No saved sessions",
+                "No session for this directory",
+            ]
+            .iter()
+            .any(|p| l.starts_with(p))
+        })
+        .map(str::to_string)
+        .collect();
+
     Ok(RunResult {
         output: norm(output),
+        home_files,
+        exit_code: out.status.code(),
+        notices,
         requests: server
             .requests()
             .into_iter()
@@ -197,6 +285,40 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         files,
         stderr,
     })
+}
+
+/// `yyyyMMdd_HHmmss_<hash16>.bak` with the time masked; with the file path, the hash is
+/// checked to be the first 16 hex digits of the path's SHA-256 (as C# names backups).
+fn normalize_backup_name(name: &str, path: Option<&str>) -> String {
+    let Some(rest) = name.strip_suffix(".bak") else {
+        return name.to_string();
+    };
+    let (stamp, hash) = rest.split_at(rest.len().min(16));
+    let stamp_ok = stamp.len() == 16
+        && stamp.chars().enumerate().all(|(i, c)| {
+            if i == 8 || i == 15 {
+                c == '_'
+            } else {
+                c.is_ascii_digit()
+            }
+        });
+    if !stamp_ok || hash.len() != 16 {
+        return name.to_string();
+    }
+    let hash = match path {
+        Some(p) => {
+            use sha2::Digest;
+            let digest = sha2::Sha256::digest(p.as_bytes());
+            let expected: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
+            if expected == hash {
+                "<HASH-OK>".to_string()
+            } else {
+                format!("<HASH-MISMATCH {hash}>")
+            }
+        }
+        None => "<HASH>".to_string(),
+    };
+    format!("<STAMP>_{hash}.bak")
 }
 
 /// Replace temp paths (in both slash styles and JSON-escaped forms) and zero the timings.
@@ -308,6 +430,15 @@ fn compare(cs: &RunResult, rs: &RunResult, strict: bool) -> Vec<String> {
     }
     let files = |r: &RunResult| serde_json::to_value(&r.files).unwrap();
     diff("files", &files(cs), &files(rs), &mut out);
+    let home = |r: &RunResult| serde_json::to_value(&r.home_files).unwrap();
+    diff("home", &home(cs), &home(rs), &mut out);
+    if cs.exit_code != rs.exit_code {
+        out.push(format!(
+            "exit code: C# {:?}, Rust {:?}",
+            cs.exit_code, rs.exit_code
+        ));
+    }
+    diff("notices", &json!(cs.notices), &json!(rs.notices), &mut out);
     out
 }
 
@@ -356,7 +487,7 @@ async fn main() -> Result<()> {
         if let Some(out) = &out_dir {
             std::fs::create_dir_all(out)?;
             for (tag, r) in [("csharp", &cs), ("rust", &rs)] {
-                let dump = json!({"output": r.output, "requests": r.requests, "files": r.files, "stderr": r.stderr});
+                let dump = json!({"output": r.output, "requests": r.requests, "files": r.files, "home_files": r.home_files, "exit_code": r.exit_code, "notices": r.notices, "stderr": r.stderr});
                 std::fs::write(
                     out.join(format!("{}.{tag}.json", scenario.name)),
                     serde_json::to_string_pretty(&dump)?,

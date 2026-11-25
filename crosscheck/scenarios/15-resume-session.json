@@ -1,0 +1,42 @@
+{
+  "prompt": "Now update a.txt",
+  "args": [
+    "-r",
+    "csharp01"
+  ],
+  "home_files": {
+    "sessions/csharp01.json": "{\n  \"id\": \"csharp01\",\n  \"title\": \"Fix the \\u0027bug\\u0027 in a\\u002Bb \\u003Cnow\\u003E \\u2014 caf\\u00E9 \\uD83D\\uDE00\\r\\nplease\",\n  \"createdAt\": \"2026-11-25T02:01:22.2996656Z\",\n  \"updatedAt\": \"2026-11-25T02:01:22.299746Z\",\n  \"workingDirectory\": \"C:\\\\work\\\\project\",\n  \"systemPrompt\": \"You are Orca.\\nBe brief \\u0026 exact \\u003Cok\\u003E.\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"Fix the \\u0027bug\\u0027 in a\\u002Bb \\u003Cnow\\u003E \\u2014 caf\\u00E9 \\uD83D\\uDE00\\r\\nplease\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"text\": \"I\\u0027ll read it first.\",\n      \"reasoning\": \"Need to look at main.py.\",\n      \"toolCalls\": [\n        {\n          \"callId\": \"call_1\",\n          \"name\": \"read_file\",\n          \"arguments\": \"{\\r\\n  \\u0022path\\u0022: \\u0022main.py\\u0022,\\r\\n  \\u0022offset\\u0022: 1,\\r\\n  \\u0022limit\\u0022: 2.5,\\r\\n  \\u0022flags\\u0022: [\\r\\n    true,\\r\\n    null\\r\\n  ],\\r\\n  \\u0022opt\\u0022: {\\r\\n    \\u0022x\\u0022: \\u0022\\\\u003Cy\\\\u003E\\u0022\\r\\n  }\\r\\n}\"\n        }\n      ]\n    },\n    {\n      \"role\": \"tool\",\n      \"text\": \"\",\n      \"toolResults\": [\n        {\n          \"callId\": \"call_1\",\n          \"result\": \"1: print(\\u0027hi\\u0027)\\n2: x = a\\u002Bb\"\n        }\n      ]\n    },\n    {\n      \"role\": \"assistant\",\n      \"text\": \"\",\n      \"toolCalls\": [\n        {\n          \"callId\": \"call_2\",\n          \"name\": \"bash\",\n          \"arguments\": \"{\\r\\n  \\u0022command\\u0022: \\u0022echo \\\\u0022a\\\\u0026b\\\\u0022\\u0022\\r\\n}\"\n        },\n        {\n          \"callId\": \"call_3\",\n          \"name\": \"list_directory\"\n        }\n      ]\n    },\n    {\n      \"role\": \"tool\",\n      \"text\": \"\",\n      \"toolResults\": [\n        {\n          \"callId\": \"call_2\",\n          \"result\": \"a\\u0026b\"\n        }\n      ]\n    },\n    {\n      \"role\": \"tool\",\n      \"text\": \"\",\n      \"toolResults\": [\n        {\n          \"callId\": \"call_3\",\n          \"result\": \"main.py\"\n        }\n      ]\n    },\n    {\n      \"role\": \"assistant\",\n      \"text\": \"Done: fixed a\\u002Bb.\"\n    }\n  ]\n}"
+  },
+  "files": {
+    "a.txt": "old\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "a.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "a.txt",
+            "content": "new\n"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Done."
+    },
+    {
+      "text": "Summary: I read a.txt and replaced its single line with the word new."
+    }
+  ]
+}
