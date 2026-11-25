@@ -25,12 +25,14 @@ const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 /// desktop app apply an update downloaded in an earlier session before it starts; the console
 /// exe never restarts itself under the user's feet.
 pub fn startup(apply_pending: bool) {
-    VelopackApp::build()
-        .set_auto_apply_on_startup(apply_pending)
+    let app = VelopackApp::build().set_auto_apply_on_startup(apply_pending);
+    // The install hooks exist on Windows only (the AppImage has no install step).
+    #[cfg(windows)]
+    let app = app
         .on_after_install_fast_callback(|_| user_path::edit_for_current_exe(true))
         .on_after_update_fast_callback(|_| user_path::edit_for_current_exe(true))
-        .on_before_uninstall_fast_callback(|_| user_path::edit_for_current_exe(false))
-        .run();
+        .on_before_uninstall_fast_callback(|_| user_path::edit_for_current_exe(false));
+    app.run();
 }
 
 /// A downloaded update, ready to apply.
@@ -106,9 +108,10 @@ fn check_and_download(manager: &UpdateManager) -> Result<Option<ReadyUpdate>, St
 }
 
 /// The install folder on the user PATH, so `abhoth` works in a terminal (as the MSI did).
+#[cfg(windows)]
 mod user_path {
     /// Adds (or removes) the folder of the running exe to the user PATH. At hook time that is
-    /// `%LocalAppData%\Abhoth\current`. Windows only; elsewhere nothing.
+    /// `%LocalAppData%\Abhoth\current`.
     pub fn edit_for_current_exe(add: bool) {
         let Some(dir) = std::env::current_exe()
             .ok()
@@ -124,7 +127,6 @@ mod user_path {
     /// PowerShell, so the value keeps its REG_EXPAND_SZ type and `%VARS%` stay unexpanded, and
     /// setting a variable through .NET broadcasts WM_SETTINGCHANGE so new terminals see it.
     /// The folder goes in through the environment, never into the script text.
-    #[cfg(windows)]
     const SCRIPT: &str = r#"
 $k = Get-Item 'HKCU:\Environment'
 $p = [string]$k.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
@@ -136,7 +138,6 @@ Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Value ($parts -join ';') 
 [Environment]::SetEnvironmentVariable('ABHOTH_PATH_REFRESH', $null, 'User')
 "#;
 
-    #[cfg(windows)]
     fn edit(dir: &str, add: bool) -> std::io::Result<()> {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -160,10 +161,5 @@ Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Value ($parts -join ';') 
                 "powershell exited with {status}"
             )))
         }
-    }
-
-    #[cfg(not(windows))]
-    fn edit(_dir: &str, _add: bool) -> std::io::Result<()> {
-        Ok(())
     }
 }
