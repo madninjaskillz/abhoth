@@ -80,6 +80,7 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/projects", get(list).post(add))
         .route(p, delete(remove))
+        .route(&format!("{p}/opened"), post(opened))
         .route("/api/fs/browse", get(browse))
         .route("/api/fs/mkdir", post(mkdir))
         .route("/api/projects/clone", post(clone))
@@ -224,6 +225,22 @@ async fn add(
         }
         Err(e) => err(StatusCode::BAD_REQUEST, &e),
     }
+}
+
+/// The client switched to this project: it becomes the caller's last opened one, which the
+/// desktop app opens when started from its install folder (D137).
+async fn opened(
+    State(s): State<Arc<AppState>>,
+    Path(pid): Path<String>,
+    Extension(p): Extension<Principal>,
+) -> Response {
+    let Some(info) = s.projects.info(&pid) else {
+        return not_found();
+    };
+    s.projects
+        .store()
+        .record_opened(&info.path, Some(p.user_id));
+    axum::Json(json!({"ok": true})).into_response()
 }
 
 async fn remove(

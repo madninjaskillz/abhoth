@@ -1372,3 +1372,50 @@ async fn a_plain_server_still_shows_the_setup() {
     assert!(site.host.server.setup_needed());
     assert_eq!(site.db().user_count(), 0);
 }
+
+/// D137: the tab a user switches to becomes their last opened project (the desktop app opens it
+/// when started from its install folder); another user can't mark it, and has their own.
+#[tokio::test(flavor = "multi_thread")]
+async fn switching_to_a_project_makes_it_that_users_last_opened_one() {
+    let site = Site::start(Setup::default()).await;
+    let mut admin = site.admin().await;
+    let ann = user_with_key(&site, &mut admin, "ann").await;
+    let bob = user_with_key(&site, &mut admin, "bob").await;
+    let add = async |key: &str, name: &str| -> (String, String) {
+        let folder = site.folder(name);
+        let v: Value = keyed(&site, key, Method::POST, "/api/projects")
+            .json(&json!({"path": folder}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        (v["id"].as_str().unwrap().to_string(), folder)
+    };
+    let (first, first_dir) = add(&ann, "ann-first").await;
+    let (_, second_dir) = add(&ann, "ann-second").await;
+    let (_, bob_dir) = add(&bob, "bob-own").await;
+    let ann_id = site.db().user_by_name("ann").unwrap().id;
+    let bob_id = site.db().user_by_name("bob").unwrap().id;
+    let store = site.host.server.projects().store();
+    let last = |id: i64| store.last_opened(&[Some(id), None]).unwrap();
+    let same = |a: PathBuf, b: &str| orca_webui::paths::same_path(&a.to_string_lossy(), b);
+    assert!(same(last(ann_id), &second_dir), "adding opens it");
+
+    let opened = format!("/api/projects/{first}/opened");
+    assert_eq!(
+        status_of(keyed(&site, &ann, Method::POST, &opened)).await,
+        StatusCode::OK
+    );
+    assert!(
+        same(last(ann_id), &first_dir),
+        "switching back to the first"
+    );
+    // Bob can't reach Ann's project, and his own last project is untouched.
+    assert_eq!(
+        status_of(keyed(&site, &bob, Method::POST, &opened)).await,
+        StatusCode::NOT_FOUND
+    );
+    assert!(same(last(bob_id), &bob_dir));
+}

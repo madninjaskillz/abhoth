@@ -706,6 +706,8 @@ export const api = {
   projects: () => request<ProjectList>("GET", "/api/projects"),
   addFolder: (path: string, name?: string) => request<Project>("POST", "/api/projects", { path, name }),
   removeProject: (id: string) => request<{ ok: boolean }>("DELETE", `/api/projects/${id}`),
+  /** The tab now shown: the desktop app reopens it when started from its install folder. */
+  projectOpened: (id: string) => request<{ ok: boolean }>("POST", `/api/projects/${encodeURIComponent(id)}/opened`),
   bench: () => request<BenchState>("GET", "/api/bench"),
   benchResults: () => request<BenchResult[]>("GET", "/api/bench/results"),
   benchStart: (suite: string, confirmSwitch = false) => request<{ queued: number; batch: string }>("POST", "/api/bench/start", { suite, confirmSwitch }),

@@ -35,8 +35,28 @@ struct StoreFile {
     projects: Option<Vec<ProjectInfo>>,
 }
 
-/// Next to projects.json: the folder of the last opened project.
-const LAST_OPENED_FILE: &str = "last-project";
+/// Next to projects.json: each user's last opened project folder (D137).
+const LAST_OPENED_FILE: &str = "last-project.json";
+/// The single owner-less folder 0.16.2-0.16.4 wrote; read as the owner-less entry.
+const LEGACY_LAST_OPENED_FILE: &str = "last-project";
+
+/// `last-project.json`: per opener ("" = no user, else the user id), the folder and a sequence
+/// number that orders the entries (newest highest).
+#[derive(Default, Serialize, Deserialize)]
+struct LastOpenedFile {
+    #[serde(default)]
+    users: BTreeMap<String, LastOpenedEntry>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct LastOpenedEntry {
+    path: String,
+    seq: u64,
+}
+
+fn user_key(user: Option<i64>) -> String {
+    user.map(|u| u.to_string()).unwrap_or_default()
+}
 
 pub struct ProjectStore {
     file: PathBuf,
@@ -94,15 +114,12 @@ impl ProjectStore {
         self.read()
     }
 
-    /// Add a folder for `owner` (or return the existing entry for it). Either way an owner-less
-    /// one (the desktop app's, or a token-mode web UI's) becomes the last opened project
-    /// ([`Self::last_opened`]).
+    /// Add a folder for `owner` (or return the existing entry for it). Either way it becomes
+    /// `owner`'s last opened project ([`Self::last_opened`]).
     pub fn add(&self, path: &str, name: Option<&str>, owner: Option<i64>) -> ProjectInfo {
         let full = paths::normalize(path).to_string_lossy().to_string();
         let _g = self.lock.lock().unwrap();
-        if owner.is_none() {
-            let _ = std::fs::write(self.state_dir().join(LAST_OPENED_FILE), &full);
-        }
+        self.write_last_opened(&full, owner);
         let mut list = self.read();
         let id = Self::id_for(&full, owner);
         if let Some(existing) = list.iter().find(|p| p.id == id) {
@@ -123,19 +140,70 @@ impl ProjectStore {
         info
     }
 
-    /// The folder of the owner-less project opened last (started in, or added from the UI), while it is
-    /// still in the list and exists. The desktop app opens it when launched from its install
-    /// folder (D137).
-    pub fn last_opened(&self) -> Option<PathBuf> {
+    /// `user` opened (switched to) the project in `path`: it becomes their last opened one.
+    pub fn record_opened(&self, path: &str, user: Option<i64>) {
+        let full = paths::normalize(path).to_string_lossy().to_string();
         let _g = self.lock.lock().unwrap();
-        let text = std::fs::read_to_string(self.state_dir().join(LAST_OPENED_FILE)).ok()?;
-        let last = text.trim();
-        let listed = self
-            .read()
-            .into_iter()
-            .any(|p| paths::same_path(&p.path, last));
-        let dir = PathBuf::from(last);
-        (listed && dir.is_dir()).then_some(dir)
+        self.write_last_opened(&full, user);
+    }
+
+    /// The folder last opened by any of `users` (the newest entry wins; `None` = opened with no
+    /// user, such as the folder a session starts in), while it is still a listed project and
+    /// exists. The desktop app opens it when launched from its install folder (D137): `users`
+    /// are the user the desktop signs in as, and `None`.
+    pub fn last_opened(&self, users: &[Option<i64>]) -> Option<PathBuf> {
+        let _g = self.lock.lock().unwrap();
+        let file = self.read_last_opened();
+        let list = self.read();
+        let mut entries: Vec<&LastOpenedEntry> = users
+            .iter()
+            .filter_map(|u| file.users.get(&user_key(*u)))
+            .collect();
+        entries.sort_by(|a, b| b.seq.cmp(&a.seq));
+        entries.into_iter().find_map(|e| {
+            let listed = list.iter().any(|p| paths::same_path(&p.path, &e.path));
+            let dir = PathBuf::from(&e.path);
+            (listed && dir.is_dir()).then_some(dir)
+        })
+    }
+
+    fn read_last_opened(&self) -> LastOpenedFile {
+        let dir = self.state_dir();
+        let mut file: LastOpenedFile = std::fs::read_to_string(dir.join(LAST_OPENED_FILE))
+            .ok()
+            .and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok())
+            .unwrap_or_default();
+        if !file.users.contains_key("")
+            && let Ok(legacy) = std::fs::read_to_string(dir.join(LEGACY_LAST_OPENED_FILE))
+            && !legacy.trim().is_empty()
+        {
+            let path = legacy.trim().to_string();
+            file.users
+                .insert(String::new(), LastOpenedEntry { path, seq: 0 });
+        }
+        file
+    }
+
+    fn write_last_opened(&self, full: &str, user: Option<i64>) {
+        let mut file = self.read_last_opened();
+        let seq = file.users.values().map(|e| e.seq).max().unwrap_or(0) + 1;
+        let entry = LastOpenedEntry {
+            path: full.to_string(),
+            seq,
+        };
+        file.users.insert(user_key(user), entry);
+        let dir = self.state_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(text) = serde_json::to_string_pretty(&file) {
+            let target = dir.join(LAST_OPENED_FILE);
+            let tmp = dir.join(format!(
+                "{LAST_OPENED_FILE}.{}.tmp",
+                crate::util::short_id(8)
+            ));
+            if std::fs::write(&tmp, text).is_ok() && std::fs::rename(&tmp, &target).is_err() {
+                let _ = std::fs::remove_file(&tmp);
+            }
+        }
     }
 
     /// Forget a project (never touches its folder).
@@ -269,33 +337,63 @@ impl EngineChoiceStore {
 mod last_opened_tests {
     use super::*;
 
+    fn same(found: Option<PathBuf>, want: &str) -> bool {
+        found.is_some_and(|f| paths::same_path(&f.to_string_lossy(), want))
+    }
+
     #[test]
     fn the_last_added_or_reopened_folder_is_the_last_opened_while_listed() {
         let home = tempfile::tempdir().unwrap();
         let a = tempfile::tempdir().unwrap();
         let b = tempfile::tempdir().unwrap();
         let store = ProjectStore::new(home.path().join("projects.json"));
-        assert_eq!(store.last_opened(), None);
+        assert_eq!(store.last_opened(&[None]), None);
         store.add(&a.path().to_string_lossy(), None, None);
         let pb = store.add(&b.path().to_string_lossy(), None, None);
-        assert!(paths::same_path(
-            &store.last_opened().unwrap().to_string_lossy(),
-            &pb.path
-        ));
+        assert!(same(store.last_opened(&[None]), &pb.path));
         // Opening a listed project again makes it the last one.
         let pa = store.add(&a.path().to_string_lossy(), None, None);
-        assert!(paths::same_path(
-            &store.last_opened().unwrap().to_string_lossy(),
-            &pa.path
-        ));
-        // A user's own project (accounts mode) does not count.
-        store.add(&b.path().to_string_lossy(), None, Some(7));
-        assert!(paths::same_path(
-            &store.last_opened().unwrap().to_string_lossy(),
-            &pa.path
-        ));
+        assert!(same(store.last_opened(&[None]), &pa.path));
         // A project removed from the list is not offered.
         store.remove(&pa.id);
-        assert_eq!(store.last_opened(), None);
+        assert_eq!(store.last_opened(&[None]), None);
+    }
+
+    /// The desktop signs in as a user (D140/D142): the projects that user opens or switches to
+    /// count, newest first, next to the folder the session started in; another user's don't.
+    #[test]
+    fn each_user_has_their_own_last_project_and_the_newest_of_the_desktops_wins() {
+        let home = tempfile::tempdir().unwrap();
+        let work = tempfile::tempdir().unwrap();
+        let start = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let store = ProjectStore::new(home.path().join("projects.json"));
+        let desktop = [Some(1), None];
+        // The user adds a project in the UI (owned by them), then the app restarts elsewhere.
+        let pw = store.add(&work.path().to_string_lossy(), None, Some(1));
+        let ps = store.add(&start.path().to_string_lossy(), None, None);
+        assert!(same(store.last_opened(&desktop), &ps.path));
+        // Switching to the user's project makes it the last again.
+        store.record_opened(&pw.path, Some(1));
+        assert!(same(store.last_opened(&desktop), &pw.path));
+        // Another user opening something does not move the desktop user's choice.
+        let po = store.add(&other.path().to_string_lossy(), None, Some(2));
+        assert!(same(store.last_opened(&desktop), &pw.path));
+        assert!(same(store.last_opened(&[Some(2)]), &po.path));
+    }
+
+    #[test]
+    fn the_single_folder_file_of_earlier_versions_counts_as_the_oldest_ownerless_entry() {
+        let home = tempfile::tempdir().unwrap();
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let store = ProjectStore::new(home.path().join("projects.json"));
+        let pa = store.add(&a.path().to_string_lossy(), None, None);
+        let pb = store.add(&b.path().to_string_lossy(), None, None);
+        std::fs::remove_file(home.path().join(LAST_OPENED_FILE)).unwrap();
+        std::fs::write(home.path().join(LEGACY_LAST_OPENED_FILE), &pa.path).unwrap();
+        assert!(same(store.last_opened(&[Some(1), None]), &pa.path));
+        store.record_opened(&pb.path, Some(1));
+        assert!(same(store.last_opened(&[Some(1), None]), &pb.path));
     }
 }

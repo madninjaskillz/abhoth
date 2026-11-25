@@ -635,6 +635,12 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   opened folder in `last-project` next to projects.json, written on every `add` (the folder a
   session starts in, or one added in the UI), and offers it only while it is listed and exists.
   A launch from any other folder is unchanged.
+  Per user (D140 accounts): `last-project.json` keeps one entry per opener (`""` = no user,
+  the folder a session starts in; else the user id) with a sequence number. Adding a project
+  records it for its owner, and the client posts `/api/projects/{pid}/opened` whenever a tab
+  becomes active, recording it for the signed-in user. The desktop app takes the newest entry
+  of the user it signs in as (the first admin) and the owner-less one. The single-folder
+  `last-project` of 0.16.2-0.16.4 is read as the oldest owner-less entry.
 - **D109** User-visible "openorca" text reads Abhoth (`brand::PRODUCT_NAME` / `BINARY_NAME`):
   the `--hostui-set-password` usage line, the requester names of profile switches (TUI, web UI,
   bench runner), the slot request labels (`Abhoth lead`, `Abhoth A: <label>`), the file log's

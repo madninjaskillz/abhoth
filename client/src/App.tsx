@@ -81,6 +81,7 @@ export default function App() {
     if (!active) return;
     watchProject(active);
     try { localStorage.setItem("openorca.activeProject", active); } catch { /* private */ }
+    api.projectOpened(active).catch(() => { /* only a preference */ });
   }, [active]);
 
   if (connection === "unauthorized" || (projects.error as { status?: number } | null)?.status === 401) return <Unauthorized />;

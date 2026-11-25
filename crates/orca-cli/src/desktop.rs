@@ -255,6 +255,19 @@ fn install_roots() -> Vec<PathBuf> {
     roots
 }
 
+/// Whose last opened project the desktop app starts in: the user it signs in as (the first
+/// admin, D142) when the accounts database exists, and the folder a session started in.
+fn desktop_users() -> Vec<Option<i64>> {
+    let db = orca_core::config::default_config_dir().join("abhoth.db");
+    let admin = db
+        .is_file()
+        .then(|| orca_webui::login::db::UserDb::open(&db).ok())
+        .flatten()
+        .and_then(|db| db.first_admin())
+        .map(|u| u.id);
+    vec![admin, None]
+}
+
 /// Runs the desktop app; returns the process exit code.
 pub fn run(raw: Vec<String>) -> i32 {
     use orca_webui::projects::store::ProjectStore;
@@ -262,7 +275,7 @@ pub fn run(raw: Vec<String>) -> i32 {
         && let Some(dir) = start_folder(
             &cwd,
             &install_roots(),
-            || ProjectStore::new(ProjectStore::default_path()).last_opened(),
+            || ProjectStore::new(ProjectStore::default_path()).last_opened(&desktop_users()),
             &orca_core::config::manager::user_profile(),
         )
     {
