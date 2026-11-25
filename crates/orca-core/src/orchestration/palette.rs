@@ -91,7 +91,7 @@ pub fn assign(in_use: &[i32]) -> i32 {
     let used: Vec<i32> = in_use.iter().map(|&s| normalize_color(s)).collect();
     (0..COUNT)
         .find(|i| !used.contains(i))
-        .unwrap_or_else(|| (in_use.len() as i32) % COUNT)
+        .unwrap_or((in_use.len() as i32) % COUNT)
 }
 
 /// The next agent letter (slot) for the session: the first letter no agent of this session

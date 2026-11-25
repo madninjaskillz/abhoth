@@ -165,7 +165,10 @@ pub fn clear(session: &str, roots: Option<&[PathBuf]>) {
     }
 }
 
-type ChangedListener = Arc<dyn Fn(&[ProgressFileBar]) + Send + Sync>;
+/// A listener for bar changes of a [`ProgressBucketWatcher`].
+pub type ChangedFn = dyn Fn(&[ProgressFileBar]) + Send + Sync;
+
+type ChangedListener = Arc<ChangedFn>;
 
 struct WatcherInner {
     session: String,
@@ -273,7 +276,7 @@ impl ProgressBucketWatcher {
 
     /// Register a listener called (on the poll thread, or the thread calling
     /// [`refresh`](Self::refresh)) with the new bar list when anything changed.
-    pub fn on_changed(&self, callback: Box<dyn Fn(&[ProgressFileBar]) + Send + Sync>) {
+    pub fn on_changed(&self, callback: Box<ChangedFn>) {
         lock(&self.inner.listeners).push(Arc::from(callback));
     }
 

@@ -159,6 +159,9 @@ pub struct ChatOptions {
     pub max_output_tokens: Option<i32>,
     pub tools: Vec<ToolDefinition>,
     pub additional: IndexMap<String, Value>,
+    /// No `ModelId` in C#: the SDK writes the client's model right after the messages instead
+    /// of last (sub-agent requests).
+    pub model_from_client: bool,
 }
 
 impl ChatOptions {

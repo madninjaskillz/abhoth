@@ -157,6 +157,12 @@ impl OpenAiClient {
             .map(|m| m.to_wire(self.settings.echo_reasoning))
             .collect();
         body.insert("messages".into(), Value::Array(wire));
+        // A request that names no model of its own (a sub-agent's: the C# orchestrator leaves
+        // `ChatOptions.ModelId` unset) gets the client's model right after the messages.
+        let early_model = options.model_from_client && options.model.is_none();
+        if early_model {
+            body.insert("model".into(), json!(model));
+        }
         if let Some(n) = options.max_output_tokens {
             // The OpenAI .NET SDK (2.x) sends MaxOutputTokenCount as max_completion_tokens.
             body.insert("max_completion_tokens".into(), json!(n));
@@ -189,7 +195,9 @@ impl OpenAiClient {
             body.insert(k.clone(), v.clone());
         }
         // The SDK writes `model` after the patched extra-body fields.
-        body.insert("model".into(), json!(model));
+        if !early_model {
+            body.insert("model".into(), json!(model));
+        }
         Ok(Value::Object(body))
     }
 

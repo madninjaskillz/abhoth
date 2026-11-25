@@ -94,9 +94,9 @@ fn type_error(path: &str, ty: &str) -> String {
 fn prop<'a>(obj: &'a Value, name: &str) -> Option<&'a Value> {
     obj.as_object()?
         .iter()
-        .filter(|(k, _)| eq_ci(k, name))
+        .rev()
+        .find(|(k, _)| eq_ci(k, name))
         .map(|(_, v)| v)
-        .last()
 }
 
 fn opt_string(obj: &Value, name: &str, path: &str) -> Result<Option<String>, String> {

@@ -1652,6 +1652,7 @@ impl AgentOrchestrator {
                 temperature: Some(self.config.lm_studio.temperature),
                 max_output_tokens: self.max_output_tokens_for(context, route),
                 tools: request_tools.clone(),
+                model_from_client: true,
                 ..ChatOptions::default()
             };
             self.apply_request_parameters(&mut options, type_def, context);
@@ -2313,6 +2314,7 @@ impl AgentOrchestrator {
             temperature: Some(self.config.lm_studio.temperature),
             max_output_tokens: self.max_output_tokens_for(context, None),
             tools: tools.to_vec(),
+            model_from_client: true,
             ..ChatOptions::default()
         };
         self.apply_request_parameters(&mut options, type_def, context);

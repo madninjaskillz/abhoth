@@ -69,9 +69,16 @@ pub struct AgentTranscriptCapture {
     pub stream_end: i64,
 }
 
-type AppendedListener = Arc<dyn Fn(&AgentTranscriptEntry) + Send + Sync>;
-type TextDeltaListener = Arc<dyn Fn(&str) + Send + Sync>;
-type StreamDeltaListener = Arc<dyn Fn(&str, i64) + Send + Sync>;
+/// A listener for appended entries.
+pub type AppendedFn = dyn Fn(&AgentTranscriptEntry) + Send + Sync;
+/// A listener for streamed text chunks.
+pub type TextDeltaFn = dyn Fn(&str) + Send + Sync;
+/// A listener for streamed text chunks with the stream total (UTF-16 units) so far.
+pub type StreamDeltaFn = dyn Fn(&str, i64) + Send + Sync;
+
+type AppendedListener = Arc<AppendedFn>;
+type TextDeltaListener = Arc<TextDeltaFn>;
+type StreamDeltaListener = Arc<StreamDeltaFn>;
 
 #[derive(Default)]
 struct State {
@@ -133,14 +140,14 @@ impl AgentTranscript {
     }
 
     /// Register a listener called after an entry is appended (on the agent's thread).
-    pub fn on_appended(&self, listener: Box<dyn Fn(&AgentTranscriptEntry) + Send + Sync>) {
+    pub fn on_appended(&self, listener: Box<AppendedFn>) {
         lock_ignoring_poison(&self.listeners)
             .appended
             .push(Arc::from(listener));
     }
 
     /// Register a listener for each streamed text chunk of the current iteration.
-    pub fn on_text_delta(&self, listener: Box<dyn Fn(&str) + Send + Sync>) {
+    pub fn on_text_delta(&self, listener: Box<TextDeltaFn>) {
         lock_ignoring_poison(&self.listeners)
             .text_delta
             .push(Arc::from(listener));
@@ -149,7 +156,7 @@ impl AgentTranscript {
     /// Like [`on_text_delta`](Self::on_text_delta), with the total number of UTF-16 units
     /// streamed so far (this chunk included): a viewer that captured up to some total skips
     /// what it already has.
-    pub fn on_stream_delta(&self, listener: Box<dyn Fn(&str, i64) + Send + Sync>) {
+    pub fn on_stream_delta(&self, listener: Box<StreamDeltaFn>) {
         lock_ignoring_poison(&self.listeners)
             .stream_delta
             .push(Arc::from(listener));
