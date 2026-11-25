@@ -29,8 +29,9 @@ impl Console {
     /// The process's stdout. ANSI styling when it is a terminal and `NO_COLOR` is not set.
     pub fn stdout() -> Self {
         let terminal = std::io::stdout().is_terminal();
+        // Windows consoles need VT processing switched on for escape sequences.
+        #[cfg(windows)]
         if terminal {
-            // Windows consoles need VT processing switched on for escape sequences.
             let _ = crossterm::ansi_support::supports_ansi();
         }
         let ansi = terminal && std::env::var_os("NO_COLOR").is_none();
