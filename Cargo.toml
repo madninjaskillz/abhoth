@@ -78,6 +78,8 @@ wry = "=0.57.4"
 tao = "=0.37.0"
 tray-icon = { version = "=0.26.1", default-features = false, features = ["ksni"] }
 rfd = "=0.18.0"
+# The icon and version info in the Windows executables (orca-cli build script, D117).
+embed-resource = "=3.0.12"
 indexmap = { version = "=2.14.2", features = ["serde"] }
 regex = "=1.13.2"
 reqwest = { version = "=0.13.5", default-features = false, features = ["json", "stream", "rustls"] }

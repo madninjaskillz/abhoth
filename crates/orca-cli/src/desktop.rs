@@ -29,6 +29,8 @@ enum UserEvent {
     Ready(String),
     /// The host could not start.
     Failed(String),
+    /// The host thread ended (its error, if it returned one) while the window was up.
+    HostStopped(Option<String>),
     /// Another launch asked for the window.
     Focus,
     Menu(MenuId),
@@ -66,6 +68,26 @@ pub fn close_to_tray(home: &Path) -> bool {
     serde_json::from_slice::<orca_core::config::OrcaConfig>(bytes)
         .map(|c| c.desktop.close_to_tray)
         .unwrap_or(default)
+}
+
+/// Why the app stops, on stderr and in a native error box: `abhoth-desktop.exe` has no console,
+/// so without the box it would just vanish (D116).
+fn report_error(text: &str) {
+    eprintln!("abhoth: {text}");
+    let _ = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title(orca_core::brand::PRODUCT_NAME)
+        .set_description(text)
+        .set_buttons(rfd::MessageButtons::Ok)
+        .show();
+}
+
+/// What the error box says when the host thread ends on its own.
+fn host_stopped_text(error: Option<&str>) -> String {
+    match error {
+        Some(e) => format!("The web host stopped: {e}"),
+        None => "The web host stopped before the window could open.".into(),
+    }
 }
 
 /// The arguments for the in-process host: `--desktop` becomes a loopback `--hostui` on a free
@@ -202,17 +224,17 @@ pub fn run(raw: Vec<String>) -> i32 {
             if signal_running(&home) {
                 return 0;
             }
-            eprintln!(
-                "abhoth: another {} window is starting or not answering; try again.",
+            report_error(&format!(
+                "Another {} window is starting or not answering; try again.",
                 orca_core::brand::PRODUCT_NAME
-            );
+            ));
             return 1;
         }
         Err(e) => {
-            eprintln!(
-                "abhoth: could not take the desktop lock in {}: {e}",
+            report_error(&format!(
+                "Could not take the desktop lock in {}: {e}",
                 home.display()
-            );
+            ));
             return 1;
         }
     };
@@ -231,35 +253,36 @@ pub fn run(raw: Vec<String>) -> i32 {
         },
     });
     let args = host_args(&raw);
+    let host_proxy = proxy.clone();
     let host = std::thread::Builder::new()
         .name("abhoth-desktop-host".into())
         .spawn(move || {
-            let runtime = match tokio::runtime::Builder::new_multi_thread()
+            let (code, error) = match tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
             {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("abhoth: {e}");
-                    return 1;
-                }
+                Ok(runtime) => match runtime.block_on(crate::main_with_args(args)) {
+                    Ok(code) => (code, None),
+                    Err(e) => {
+                        eprintln!("Error: {e:#}");
+                        (1, Some(format!("{e:#}")))
+                    }
+                },
+                Err(e) => (1, Some(e.to_string())),
             };
-            match runtime.block_on(crate::main_with_args(args)) {
-                Ok(code) => code,
-                Err(e) => {
-                    eprintln!("Error: {e:#}");
-                    1
-                }
-            }
+            // Unless the window is quitting (then nobody reads it), this ends the app.
+            let _ = host_proxy.send_event(UserEvent::HostStopped(error));
+            code
         })
         .expect("spawning the host thread");
     {
+        // A host that stops before it is ready says why through `HostStopped`.
         let proxy = proxy.clone();
         std::thread::spawn(move || {
             let event = match ready_rx.recv() {
                 Ok(Ok(url)) => UserEvent::Ready(url),
                 Ok(Err(e)) => UserEvent::Failed(e),
-                Err(_) => UserEvent::Failed("the web host stopped before it was ready".into()),
+                Err(_) => return,
             };
             let _ = proxy.send_event(event);
         });
@@ -297,7 +320,7 @@ pub fn run(raw: Vec<String>) -> i32 {
     {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("abhoth: could not open a window: {e}");
+            report_error(&format!("Could not open a window: {e}"));
             return 1;
         }
     };
@@ -372,18 +395,30 @@ pub fn run(raw: Vec<String>) -> i32 {
                 match built {
                     Ok(v) => webview = Some(v),
                     Err(e) => {
-                        eprintln!(
-                            "abhoth: could not open the web view ({e}). On Windows the WebView2 runtime is needed: https://developer.microsoft.com/microsoft-edge/webview2/"
-                        );
+                        report_error(&format!(
+                            "Could not open the web view ({e}). On Windows the WebView2 runtime is needed: https://developer.microsoft.com/microsoft-edge/webview2/"
+                        ));
                         let code = quit(&mut stop, &mut host, &mut lock);
                         std::process::exit(if code == 0 { 1 } else { code });
                     }
                 }
             }
             Event::UserEvent(UserEvent::Failed(e)) => {
-                eprintln!("abhoth: the web host did not start: {e}");
+                report_error(&format!("The web host did not start: {e}"));
                 let code = quit(&mut stop, &mut host, &mut lock);
                 std::process::exit(if code == 0 { 1 } else { code });
+            }
+            Event::UserEvent(UserEvent::HostStopped(error)) => {
+                // A clean stop with the window up (Ctrl+C in the console) just ends the app.
+                let explain = error.is_some() || webview.is_none();
+                drop(webview.take());
+                drop(tray.take());
+                window.set_visible(false);
+                if explain {
+                    report_error(&host_stopped_text(error.as_deref()));
+                }
+                let code = quit(&mut stop, &mut host, &mut lock);
+                finish(if code == 0 { 1 } else { code });
             }
             // macOS: clicking the Dock icon while the window is hidden in the tray.
             Event::Reopen {
@@ -510,6 +545,15 @@ mod tests {
         assert!(close_to_tray(home.path()));
         // Reading never creates or rewrites the file.
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "not json");
+    }
+
+    #[test]
+    fn a_stopped_host_is_explained() {
+        assert_eq!(
+            host_stopped_text(Some("no model")),
+            "The web host stopped: no model"
+        );
+        assert!(host_stopped_text(None).contains("before the window could open"));
     }
 
     #[test]

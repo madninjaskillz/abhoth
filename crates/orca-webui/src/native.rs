@@ -14,7 +14,7 @@ use orca_abstractions::ToolResult;
 use orca_core::agent::permissions::{PermissionDecision, PermissionPrompter};
 use orca_core::agent::{AgentObserver, AgentSession};
 use orca_core::chat::conversation::TEXT_TOOL_RESULTS_PREFIX;
-use orca_core::client::{ChatMessage, Role, ToolCall};
+use orca_core::client::{ChatMessage, OpenAiClient, Role, ToolCall};
 use orca_core::config::schema::{self, ProfileOverlay};
 use orca_core::config::{ConfigManager, OrcaConfig};
 use orca_core::engines::session_sink::SessionBridgeSink;
@@ -253,6 +253,13 @@ pub type RebuildFn = Arc<
         + Sync,
 >;
 
+/// Makes the chat client for a config (`ServiceRegistration`'s client): a session started
+/// without a model gets a new one once the settings page sets a model (D116).
+pub type ClientFactory = Arc<dyn Fn(&OrcaConfig) -> OpenAiClient + Send + Sync>;
+
+/// What a turn says when no model is configured (D116).
+pub const NO_MODEL_NOTICE: &str = "No model is configured yet. Open Settings, LLM Server: set the Base URL of your model server and its Models, then send the prompt again.";
+
 /// What a native session can do beyond running turns.
 #[derive(Default)]
 pub struct NativeOptions {
@@ -268,6 +275,8 @@ pub struct NativeOptions {
     pub agents: Option<Arc<dyn AgentHost>>,
     /// Runs bridge turns (`None`: a new [`EngineHost`]; tests pass one with fakes).
     pub engines: Option<EngineHost>,
+    /// Makes the client again when the session has no model and the settings now name one.
+    pub client_factory: Option<ClientFactory>,
 }
 
 #[derive(Default)]
@@ -359,6 +368,7 @@ struct Shared {
     settings_gate: tokio::sync::Mutex<()>,
     questions: Option<Arc<QuestionBroker>>,
     rebuild: Option<RebuildFn>,
+    client_factory: Option<ClientFactory>,
     choice: Mutex<Choice>,
     /// The bridge engines (`AttachEngines`): switched from the browser, held while a bridge
     /// turn runs.
@@ -520,6 +530,7 @@ impl AgentLiveSession {
             settings_gate: tokio::sync::Mutex::new(()),
             questions: options.questions,
             rebuild: options.rebuild,
+            client_factory: options.client_factory,
             choice: Mutex::new(Choice::default()),
             engines: tokio::sync::Mutex::new(engines),
             engine_view,
@@ -608,6 +619,22 @@ fn worker_loop(mut session: AgentSession, shared: Arc<Shared>) {
         }
         if shared.config_dirty.swap(false, Ordering::SeqCst) {
             session.config = shared.config.lock().unwrap().clone();
+        }
+        // Started without a model (D116): the LLM Server settings apply once a model is set,
+        // on this session's settings or in config.json (the settings page without a project).
+        if session.active_model().is_none()
+            && let Some(factory) = &shared.client_factory
+        {
+            if session.config.lm_studio.primary_model().is_none() {
+                let mut file = ConfigManager::new(shared.config_home.as_deref());
+                if file.load().is_ok() && file.config.lm_studio.primary_model().is_some() {
+                    session.config.lm_studio = file.config.lm_studio.clone();
+                    shared.config.lock().unwrap().lm_studio = file.config.lm_studio;
+                }
+            }
+            if session.config.lm_studio.primary_model().is_some() {
+                session.client = factory(&session.config);
+            }
         }
         if !prepared {
             session.native_tools = session.resolve_native_tools();
@@ -727,6 +754,12 @@ async fn run_one(session: &mut AgentSession, shared: &Shared, text: &str, source
     let bridge = EngineHost::is_bridge(&session.config);
     let outcome = if bridge {
         run_bridge(session, shared, text, rx).await
+    } else if session.active_model().is_none() {
+        bus.publish(
+            types::NOTICE,
+            json!({"level": "error", "text": NO_MODEL_NOTICE}),
+        );
+        "error"
     } else {
         tokio::select! {
         r = session.run_turn(text, &mut observer) => match r {

@@ -634,3 +634,19 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   compared text. C#'s bash tool reads stdout and stderr on separate async readers, so its
   stderr line sometimes lands before cmd's banner; Rust's order is stable. Set on 08-bash,
   63-pi-bash and 233-bash-errors (the scenarios whose commands write to stderr).
+- **D116** Fresh install: `--hostui` and `--desktop` start without a model (C# and the REPL /
+  `--print` still refuse with "no model configured"). The web sessions get a client with no
+  default model (`client_from_config_or_unset`, `wire_host_client`); a native turn without a
+  model publishes an error notice ("No model is configured yet. Open Settings, LLM Server ...")
+  and ends with outcome `error`. Before each turn, a session without a model looks at its own
+  settings and, if they still name none, at config.json's `lmStudio` (the settings page without
+  a project writes only the file); once a model is named, `NativeOptions::client_factory` makes
+  the client again from that config, so the user needn't restart. Sub-agents wired at start
+  keep the startup config until the next start. The desktop app shows a native error box
+  (`rfd::MessageDialog`) for anything that stops it: lock, window, web view, a host that fails
+  to start or stops on its own (its error, sent by the host thread as `HostStopped`).
+- **D117** `abhoth.exe` and `abhoth-desktop.exe` carry `assets/abhoth/icons/abhoth.ico` and
+  version info (product "Abhoth", version from Cargo): `crates/orca-cli/build.rs` writes an .rc
+  and compiles it with embed-resource 3.0.12, a build dependency only on Windows hosts, and
+  only when the target is Windows too. Linux builds don't compile it (checked with
+  `tools/linux-check.sh` in WSL).

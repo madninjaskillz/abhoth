@@ -45,13 +45,14 @@ impl orca_tools_utility::UserPrompter for BrowserAsker {
     }
 }
 
-/// A web UI session for `cwd`: its questions go to `questions`' browser.
+/// A web UI session for `cwd`: its questions go to `questions`' browser. It starts without a
+/// model too (a fresh install): turns then ask for one to be set in the settings (D116).
 fn browser_session(
     config: &OrcaConfig,
     cwd: &Path,
     questions: &Arc<QuestionBroker>,
 ) -> Result<(AgentSession, ToolServices)> {
-    let (client, _) = crate::wire_client(config, orca_core::logging::process_sink(), false)?;
+    let client = crate::wire_host_client(config, orca_core::logging::process_sink());
     let (registry, services) =
         crate::build_registry_with(config, cwd, Arc::new(BrowserAsker(questions.clone())));
     let mut session = AgentSession::new(config.clone(), client, registry, ToolContext::new(cwd));
@@ -102,6 +103,13 @@ fn session_logged(
     Ok((session, services))
 }
 
+/// The client a session started without a model gets once the settings name one (D116).
+fn client_factory() -> orca_webui::native::ClientFactory {
+    Arc::new(|config: &OrcaConfig| {
+        crate::wire_host_client(config, orca_core::logging::process_sink())
+    })
+}
+
 /// Start the live session over `session` with its sub-agents wired (`ToolWiring`): the agent
 /// tools, and the agent tabs and bars on `bus`.
 fn start_live(
@@ -136,6 +144,9 @@ fn start_live(
         }
     };
     options.agents = agents;
+    if options.client_factory.is_none() {
+        options.client_factory = Some(client_factory());
+    }
     let live = AgentLiveSession::start_with(session, bus.clone(), mode, options);
     if let Some(host) = web_host {
         host.attach(bus, Some(live.agents_decorator()));

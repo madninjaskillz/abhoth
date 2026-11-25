@@ -51,6 +51,10 @@ msiexec /x target\installer\abhoth-0.15.0-x64.msi              # uninstall (or S
 and uploads it as an artifact. The state home (`~/.abhoth`) is never touched by install or
 uninstall. The MSI is not signed yet, so SmartScreen may warn.
 
+On a fresh install with no model configured, the desktop app and `--hostui` still start: open
+Settings, LLM Server, and set the Base URL of your model server and its Models; the next prompt
+uses them. The executables carry the mascot icon and version info.
+
 ## Name, state and compatibility
 
 - **Binary and product name:** `abhoth` / "Abhoth" (`orca_core::brand`). The TUI header,

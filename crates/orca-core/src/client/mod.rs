@@ -53,6 +53,25 @@ pub fn client_from_config(
     Ok(client_for_model(config, served, &model))
 }
 
+/// [`client_from_config`], or with no model yet when `lmStudio.models` is empty (D116: the web
+/// host and the desktop app start without one so it can be set on the settings page). Its
+/// requests fail with [`ChatError::NoModel`] until a model is set.
+pub fn client_from_config_or_unset(
+    config: &crate::config::OrcaConfig,
+    served: std::sync::Arc<ServedModels>,
+) -> OpenAiClient {
+    match config.lm_studio.primary_model() {
+        Some(model) => client_for_model(config, served, model),
+        None => {
+            let lm = &config.lm_studio;
+            let mut settings = ClientSettings::new(lm.base_url.clone(), lm.resolve_api_key(), None);
+            settings.request_timeout =
+                std::time::Duration::from_secs(lm.timeout_seconds.max(1) as u64);
+            OpenAiClient::new(settings, served)
+        }
+    }
+}
+
 /// A client for one named model on the main model server (`LmStudioClientFactory.Create(model)`):
 /// pair programming's alternate models and voters.
 pub fn client_for_model(

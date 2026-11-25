@@ -338,12 +338,35 @@ pub fn wire_client(
     Option<Arc<orca_core::slots::SlotRuntime>>,
 )> {
     let client = client_from_config(config, Arc::new(ServedModels::new()))?;
+    Ok(route_client(config, client, log, slots))
+}
+
+/// [`wire_client`] for the web host and the desktop app (no slots): with no model configured
+/// it still makes a client, whose turns are refused with a notice until one is set (D116).
+pub fn wire_host_client(
+    config: &OrcaConfig,
+    log: Option<Arc<dyn orca_core::logging::LogSink>>,
+) -> orca_core::client::OpenAiClient {
+    let client =
+        orca_core::client::client_from_config_or_unset(config, Arc::new(ServedModels::new()));
+    route_client(config, client, log, false).0
+}
+
+fn route_client(
+    config: &OrcaConfig,
+    client: orca_core::client::OpenAiClient,
+    log: Option<Arc<dyn orca_core::logging::LogSink>>,
+    slots: bool,
+) -> (
+    orca_core::client::OpenAiClient,
+    Option<Arc<orca_core::slots::SlotRuntime>>,
+) {
     if config.demo_mode {
         // `--demo`: canned answers, no server (DemoChatClient).
-        return Ok((
+        return (
             client.with_router(Arc::new(orca_core::client::demo::DemoChatClient)),
             None,
-        ));
+        );
     }
     let fallback: Arc<dyn orca_core::client::ChatBackend> =
         Arc::new(orca_core::client::UsageLoggingBackend::new(
@@ -361,7 +384,7 @@ pub fn wire_client(
         Some(rt) => rt.lead_client(),
         None => fallback,
     };
-    Ok((client.with_router(router), runtime))
+    (client.with_router(router), runtime)
 }
 
 /// "Provider usage ..." per provider (`Program`'s exit lines), to the process log.

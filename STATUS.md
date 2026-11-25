@@ -148,6 +148,11 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   `abhoth-installer.yml` on `abhoth-v*` tags or by hand. Built locally (abhoth-0.15.0-x64.msi,
   25 MB); a silent per-user install and uninstall on Windows 11 put in and took out the files,
   shortcut (with icon), PATH entry and HKCU keys.
+- Fresh install (D116): `--hostui` and `--desktop` start with no model; a prompt gets a
+  "No model is configured yet" notice, and setting the model in the settings applies to the
+  running session (e2e test `hostui_fresh_install_e2e`). The desktop app shows a native error
+  box when it can't start or its host stops.
+- `abhoth.exe` / `abhoth-desktop.exe` carry the mascot icon and version info (D117).
 
 ### Phase 6: parity sweep, coverage (2026-11-25, D120-D128)
 
@@ -234,8 +239,6 @@ worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
 - Bench runs: kit timeouts kill only the process.
 - Desktop: the Linux and macOS builds are CI-only (never run with a window); no first-hide
   tray notification (D113); the MSI is unsigned, so SmartScreen warns.
-- Desktop with no model configured (fresh install): the host refuses to start ("no model
-  configured") and `abhoth-desktop.exe`, having no console, shows nothing.
 - grep: files in sorted order; regex error texts differ from .NET (lookaround/backreferences work, D112).
 - C# REPL bugs kept out of the cross-check (D127): custom markdown commands ("Unknown command" in
   C#), `/memory <unknown>` (crashes C#), `/retry` on a second model (C# drops the prompt).
