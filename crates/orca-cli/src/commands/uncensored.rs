@@ -1,9 +1,9 @@
 //! `/uncensored [on|off|status]` and `UncensoredSwitch` (what it does apart from printing).
-//! The C# `UncensoredGate` (a server that refused the field) is not ported to the Rust client,
-//! so no server counts as having refused it.
+//! A server that refused the field (`UncensoredGate`) is reported as such.
 
 use async_trait::async_trait;
 use orca_core::client::server_identity::{self, ServerIdentity, ServerInfo, ServerKind};
+use orca_core::client::uncensored_gate;
 use orca_core::config::{AgentUncensoredConfig, ImageGenerationConfig, OrcaConfig};
 
 use super::{Command, CommandContext, CommandResult};
@@ -39,24 +39,14 @@ pub struct UncensoredServer {
     pub info: Option<ServerInfo>,
 }
 
-fn kind_name(kind: ServerKind) -> &'static str {
-    match kind {
-        ServerKind::Unknown => "Unknown",
-        ServerKind::Strata => "Strata",
-        ServerKind::Ninfer => "Ninfer",
-        ServerKind::Other => "Other",
-    }
-}
-
 fn is_read_by(u: &AgentUncensoredConfig, kind: ServerKind) -> bool {
-    kind != ServerKind::Unknown
-        && u.server_kinds
-            .as_ref()
-            .is_some_and(|k| k.iter().any(|s| s.eq_ignore_ascii_case(kind_name(kind))))
+    u.is_read_by(kind)
 }
 
-fn is_sent_to(u: &AgentUncensoredConfig, kind: ServerKind) -> bool {
-    matches!(kind, ServerKind::Unknown | ServerKind::Other) || is_read_by(u, kind)
+/// `GetsField`: whether a request to `server` carries the field while the switch is on.
+fn gets_field(u: &AgentUncensoredConfig, server: &UncensoredServer) -> bool {
+    !uncensored_gate::has_refused(&server.base_url)
+        && u.is_sent_to(server.info.as_ref().map_or(ServerKind::Unknown, |i| i.kind))
 }
 
 fn esc(s: &str) -> String {
@@ -86,15 +76,7 @@ pub fn apply(
     let now = uncensored.is_on();
     let no_server = now
         && field.is_some()
-        && servers.is_some_and(|s| {
-            !s.is_empty()
-                && !s.iter().any(|s| {
-                    is_sent_to(
-                        uncensored,
-                        s.info.as_ref().map_or(ServerKind::Unknown, |i| i.kind),
-                    )
-                })
-        });
+        && servers.is_some_and(|s| !s.is_empty() && !s.iter().any(|s| gets_field(uncensored, s)));
     let f = esc(field.as_deref().unwrap_or("(no field)"));
     let mut lines = Vec::new();
     if action == Action::Status || now == was {
@@ -139,11 +121,13 @@ fn server_lines(u: &AgentUncensoredConfig, servers: &[UncensoredServer]) -> Vec<
         let kind = s.info.as_ref().map_or(ServerKind::Unknown, |i| i.kind);
         let display = s.info.as_ref().map_or("", |i| i.display_name());
         let place = format!("{} ({})", esc(&s.label), esc(&s.base_url));
-        if is_read_by(u, kind) {
+        if uncensored_gate::has_refused(&s.base_url) {
+            out.push(format!("[yellow]Chat: not available on {place}: it refused the field, so it is not sent there; requests there stay normal.[/]"));
+        } else if is_read_by(u, kind) {
             continue;
         } else if kind == ServerKind::Unknown {
             out.push(format!("[yellow]Chat: the field is sent, but {place} could not be identified, so it is not confirmed that it reads it.[/]"));
-        } else if is_sent_to(u, kind) {
+        } else if u.is_sent_to(kind) {
             out.push(format!("[yellow]Chat: the field is sent, but {place} is {display}, which is not known to read it: it may be ignored there.[/]"));
         } else {
             out.push(format!("[yellow]Chat: not available on {place}, which is {display}: the field is not sent there; requests there stay normal.[/]"));
@@ -379,5 +363,31 @@ mod tests {
         assert!(same[0].contains("is on"));
         let back = apply(&mut u, Action::Off, true, None, None);
         assert!(back[1].contains("re-reads"));
+    }
+
+    #[test]
+    fn a_server_that_refused_the_field_is_reported_and_counts_as_not_taking_it() {
+        let url = "http://refusing.invalid:7/v1";
+        let mut u = AgentUncensoredConfig {
+            session: Some(true),
+            ..Default::default()
+        };
+        uncensored_gate::UncensoredGate::new(u.clone(), url, None, None).mark_refused(
+            &orca_core::client::ChatError::Http {
+                status: 400,
+                url: url.into(),
+                body: r#"{"error":{"type":"invalid_request_error","code":"speed_projection_not_supported"}}"#
+                    .into(),
+            },
+        );
+        let servers = [UncensoredServer {
+            label: "the model server".into(),
+            base_url: url.into(),
+            info: Some(ServerInfo::new(ServerKind::Strata, None, None)),
+        }];
+        let lines = apply(&mut u, Action::Status, false, None, Some(&servers));
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("no chat server here takes"));
+        assert!(lines[1].contains("refused the field"));
     }
 }

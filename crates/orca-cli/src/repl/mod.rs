@@ -199,6 +199,14 @@ impl Repl {
         orca_core::client::tool_images::set_on_vision_refused(Some(Arc::new(move |text: &str| {
             notice_console.markup_line(&format!("[yellow]{}[/]", escape(text)));
         })));
+        // A server that answers the /uncensored field with a 400 (speed_projection_not_supported)
+        // likewise.
+        let notice_console = self.console.clone();
+        orca_core::client::uncensored_gate::set_on_field_refused(Some(Arc::new(
+            move |text: &str| {
+                notice_console.markup_line(&format!("[yellow]{}[/]", escape(text)));
+            },
+        )));
         let exit = self.input_loop().await;
         if exit == ReplExit::Quit {
             self.save_auto_memory().await;

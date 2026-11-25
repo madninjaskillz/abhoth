@@ -710,6 +710,78 @@ impl AgentUncensoredConfig {
             self.body_value.clone().unwrap_or(Value::Bool(true)),
         ))
     }
+
+    /// `IsReadBy`: a server of this kind is known to read the field (its kind is listed).
+    pub fn is_read_by(&self, kind: crate::client::ServerKind) -> bool {
+        kind != crate::client::ServerKind::Unknown
+            && self.server_kinds.as_ref().is_some_and(|k| {
+                k.iter()
+                    .any(|s| s.eq_ignore_ascii_case(server_kind_name(kind)))
+            })
+    }
+
+    /// `IsSentTo`: the field goes to a listed kind, to a server that could not be identified,
+    /// and to one that is neither Strata nor ninfer (a gateway passes it on).
+    pub fn is_sent_to(&self, kind: crate::client::ServerKind) -> bool {
+        use crate::client::ServerKind;
+        matches!(kind, ServerKind::Unknown | ServerKind::Other) || self.is_read_by(kind)
+    }
+
+    /// `FieldFor`: the field for a named provider's request: only while on, and only to a
+    /// provider `providers` lists or one on a local server's host.
+    pub fn field_for(
+        &self,
+        config: &OrcaConfig,
+        provider_name: &str,
+        base_url: &str,
+    ) -> Option<(String, Value)> {
+        let listed = self
+            .providers
+            .as_ref()
+            .is_some_and(|p| p.iter().any(|n| n.eq_ignore_ascii_case(provider_name)));
+        if self.is_on() && (listed || is_local_server(config, base_url)) {
+            self.field()
+        } else {
+            None
+        }
+    }
+}
+
+/// The C# `ServerKind` enum name (as `serverKinds` lists it).
+fn server_kind_name(kind: crate::client::ServerKind) -> &'static str {
+    use crate::client::ServerKind;
+    match kind {
+        ServerKind::Unknown => "Unknown",
+        ServerKind::Strata => "Strata",
+        ServerKind::Ninfer => "Ninfer",
+        ServerKind::Other => "Other",
+    }
+}
+
+/// `IsLocalServer`: `base_url` is on the host of lmStudio.baseUrl (unless that is Anthropic),
+/// a slot copy or slots.lead.
+pub fn is_local_server(config: &OrcaConfig, base_url: &str) -> bool {
+    fn host(url: &str) -> Option<String> {
+        reqwest::Url::parse(url.trim())
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_lowercase))
+    }
+    let Some(target) = host(base_url) else {
+        return false;
+    };
+    let mut local: Vec<&str> = Vec::new();
+    if !config.lm_studio.is_anthropic() {
+        local.push(&config.lm_studio.base_url);
+    }
+    if let Some(slots) = &config.slots {
+        if let Some(lead) = &slots.lead {
+            local.push(&lead.base_url);
+        }
+        local.extend(slots.copies.iter().map(|c| c.base_url.as_str()));
+    }
+    local
+        .iter()
+        .any(|u| host(u).as_deref() == Some(target.as_str()))
 }
 
 /// Reasoning effort per role (`AgentReasoningConfig`).

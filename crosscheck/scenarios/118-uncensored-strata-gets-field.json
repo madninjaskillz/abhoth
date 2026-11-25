@@ -1,0 +1,22 @@
+{
+  "_comment": "agent.uncensored.enabled with a server that says it is Strata (/health service strata): the field goes last on the request.",
+  "prompt": "Say hello.",
+  "config": {
+    "agent": {
+      "uncensored": {
+        "enabled": true
+      }
+    }
+  },
+  "server_routes": {
+    "GET /health": [
+      200,
+      "{\"status\": \"ok\", \"max_context\": 262144, \"images\": true, \"service\": \"strata\"}"
+    ]
+  },
+  "replies": [
+    {
+      "text": "Hello! How can I help you with your project today?"
+    }
+  ]
+}

@@ -74,6 +74,9 @@ pub struct ClientSettings {
     /// One more top-level body field (the `/uncensored` switch), added last and only when the
     /// request doesn't set it itself.
     pub session_field: Option<(String, Value)>,
+    /// Asked per request that would carry `session_field`: whether this server gets it (not
+    /// one identified as a kind that does not read it, nor one that refused it). `None` = always.
+    pub uncensored_gate: Option<Arc<super::uncensored_gate::UncensoredGate>>,
     /// The request went straight to a model server (a slot copy), not through a gateway.
     pub direct: bool,
     /// Whether the server takes images (`lmStudio.vision`); `None` = ask the server once
@@ -95,6 +98,7 @@ impl ClientSettings {
             idle_timeout: Duration::from_secs(120),
             echo_reasoning: false,
             session_field: None,
+            uncensored_gate: None,
             direct: false,
             vision: None,
         }
@@ -171,6 +175,25 @@ impl OpenAiClient {
         options: &ChatOptions,
         stream: bool,
     ) -> Result<Value, ChatError> {
+        self.build_body_with(
+            messages,
+            options,
+            stream,
+            self.settings.session_field.as_ref(),
+            None,
+        )
+    }
+
+    /// [`Self::build_body`] with the session field decided by the caller (the gate) and one
+    /// request field to leave out (`drop`: the refused field, also when the request sets it).
+    fn build_body_with(
+        &self,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        stream: bool,
+        session_field: Option<&(String, Value)>,
+        drop: Option<&str>,
+    ) -> Result<Value, ChatError> {
         let model = options
             .model
             .clone()
@@ -221,9 +244,11 @@ impl OpenAiClient {
             body.insert("top_k".into(), json!(k));
         }
         for (k, v) in &options.additional {
-            body.insert(k.clone(), v.clone());
+            if drop != Some(k.as_str()) {
+                body.insert(k.clone(), v.clone());
+            }
         }
-        if let Some((k, v)) = &self.settings.session_field
+        if let Some((k, v)) = session_field
             && !options.additional.contains_key(k)
         {
             body.insert(k.clone(), v.clone());
@@ -274,13 +299,52 @@ impl OpenAiClient {
             .await
     }
 
+    /// The session field for this request: none while off, or when the gate keeps it from this
+    /// server (`ExtraBodyChatClient.SessionFieldAsync`).
+    async fn session_field_for_request(&self) -> Option<(String, Value)> {
+        let field = self.settings.session_field.clone()?;
+        if let Some(gate) = &self.settings.uncensored_gate
+            && !gate.allows().await
+        {
+            return None;
+        }
+        Some(field)
+    }
+
+    /// One request with the `/uncensored` safety net: a server that answers the field with a
+    /// 400 gets the request once more without it, and never again.
     async fn complete_once(
         &self,
         actor: &str,
         messages: &[ChatMessage],
         options: &ChatOptions,
     ) -> Result<ChatResponse, ChatError> {
-        let body = self.build_body(messages, options, false)?;
+        let field = self.session_field_for_request().await;
+        let (Some(field), Some(gate)) = (field.as_ref(), &self.settings.uncensored_gate) else {
+            return self
+                .complete_raw(actor, messages, options, field.as_ref(), None)
+                .await;
+        };
+        match self
+            .complete_raw(actor, messages, options, Some(field), None)
+            .await
+        {
+            Err(e) if super::uncensored_gate::is_field_refusal(&e) => gate.mark_refused(&e),
+            other => return other,
+        }
+        self.complete_raw(actor, messages, options, None, Some(&field.0))
+            .await
+    }
+
+    async fn complete_raw(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        session_field: Option<&(String, Value)>,
+        drop: Option<&str>,
+    ) -> Result<ChatResponse, ChatError> {
+        let body = self.build_body_with(messages, options, false, session_field, drop)?;
         let requested = body["model"].as_str().map(str::to_string);
         self.served.begin(actor);
         let response = self.send(&body).await?;
@@ -416,6 +480,8 @@ impl OpenAiClient {
         .await
     }
 
+    /// [`Self::complete_once`] for a stream: the refusal is the answer to the request itself,
+    /// so nothing has streamed when it comes.
     async fn stream_once(
         &self,
         actor: &str,
@@ -424,7 +490,61 @@ impl OpenAiClient {
         on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
         mut on_tool_delta: Option<&mut (dyn FnMut(&ToolCallDelta) + Send)>,
     ) -> Result<ChatResponse, ChatError> {
-        let body = self.build_body(messages, options, true)?;
+        let field = self.session_field_for_request().await;
+        let (Some(field), Some(gate)) = (field.as_ref(), &self.settings.uncensored_gate) else {
+            return self
+                .stream_raw(
+                    actor,
+                    messages,
+                    options,
+                    on_event,
+                    on_tool_delta,
+                    field.as_ref(),
+                    None,
+                )
+                .await;
+        };
+        match self
+            .stream_raw(
+                actor,
+                messages,
+                options,
+                on_event,
+                on_tool_delta
+                    .as_mut()
+                    .map(|f| &mut **f as &mut (dyn FnMut(&ToolCallDelta) + Send)),
+                Some(field),
+                None,
+            )
+            .await
+        {
+            Err(e) if super::uncensored_gate::is_field_refusal(&e) => gate.mark_refused(&e),
+            other => return other,
+        }
+        self.stream_raw(
+            actor,
+            messages,
+            options,
+            on_event,
+            on_tool_delta,
+            None,
+            Some(&field.0),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn stream_raw(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+        mut on_tool_delta: Option<&mut (dyn FnMut(&ToolCallDelta) + Send)>,
+        session_field: Option<&(String, Value)>,
+        drop: Option<&str>,
+    ) -> Result<ChatResponse, ChatError> {
+        let body = self.build_body_with(messages, options, true, session_field, drop)?;
         let requested = body["model"].as_str().map(str::to_string);
         self.served.begin(actor);
         let response = self.send(&body).await?;
@@ -500,7 +620,7 @@ impl OpenAiClient {
             }
         }
         // Dropping the byte stream closes the connection, which ends a stopped request.
-        drop(bytes);
+        std::mem::drop(bytes);
         let served = if served_done {
             self.served.for_actor(actor).and_then(|s| s.served)
         } else {

@@ -1,0 +1,35 @@
+{
+  "_comment": "agent.uncensored.enabled: the fake server is identified as another kind of server (it lists one model, /health 404), so the field goes on the request; it answers 400 speed_projection_not_supported, and the request is sent once more without the field (UncensoredGate). A second turn step goes out without it too.",
+  "prompt": "Read a.txt and tell me what it says.",
+  "files": {
+    "a.txt": "alpha\n"
+  },
+  "config": {
+    "agent": {
+      "uncensored": {
+        "enabled": true
+      }
+    }
+  },
+  "replies": [
+    {
+      "error": [
+        400,
+        "{\"error\":{\"message\":\"experimental_speed_projection is not supported by this server\",\"type\":\"invalid_request_error\",\"param\":\"experimental_speed_projection\",\"code\":\"speed_projection_not_supported\"}}"
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "a.txt"
+          }
+        }
+      ]
+    },
+    {
+      "text": "The file a.txt says alpha, and that is the whole content of it."
+    }
+  ]
+}

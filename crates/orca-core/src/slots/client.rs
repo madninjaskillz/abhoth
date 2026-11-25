@@ -244,12 +244,18 @@ impl FactoryParts {
             .filter(|k| !k.trim().is_empty())
             .unwrap_or_else(|| "not-needed".into());
         let lm = &self.config.lm_studio;
-        let mut settings = ClientSettings::new(base_url, key, Some(model));
+        let mut settings = ClientSettings::new(base_url, key.clone(), Some(model));
         settings.request_timeout = Duration::from_secs(lm.timeout_seconds.max(1) as u64);
         settings.idle_timeout = Duration::from_secs(lm.streaming_timeout_seconds.max(1) as u64);
         settings.echo_reasoning = echo;
         settings.direct = direct;
         settings.session_field = self.config.agent.uncensored.field();
+        settings.uncensored_gate =
+            Some(crate::client::uncensored_gate::UncensoredGate::for_config(
+                &self.config,
+                base_url,
+                Some(key.clone()),
+            ));
         settings.vision = lm.vision;
         let inner: Arc<dyn ChatBackend> =
             Arc::new(OpenAiClient::new(settings, self.served.clone()));
