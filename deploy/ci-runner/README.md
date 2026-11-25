@@ -40,6 +40,20 @@ runner's cache directory is over the cap. The dataset quota (40 GB) is the backs
 
 Access: `ssh -i ~/.ssh/id_truenas admin@gpu-host`; `sudo -n docker ...` works.
 
+## Public repo: pull requests from forks never run here
+
+A self-hosted runner on a public repository would run whatever a fork's pull request puts in
+its workflow, on deepthought. Three layers stop that:
+
+1. `job-started.sh`, baked into the image (a pull request cannot change it), fails every job
+   that is not a `push`, a `workflow_dispatch`, or a `pull_request` whose head branch is in
+   this repository, before its first step.
+2. The self-hosted jobs in `ci.yml` skip pull requests from forks (`if:`). A fork can edit
+   that, which is why (1) exists.
+3. The repository's Actions setting requires approval before workflows from outside
+   contributors run (Settings → Actions → General → "Require approval for all outside
+   collaborators").
+
 ## Why Docker Compose and not a TrueNAS custom app
 
 The fissure-ci and ezmuze-ci runners are TrueNAS custom apps. Since the Apps pool incident
