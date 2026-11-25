@@ -848,3 +848,16 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   (`title`, control characters dropped, 200 characters at most). The separate bar remains for
   pages without the header (sign-in, setup); with the system title bar, and in a browser, the
   header is as before.
+- **D145** (user decisions 2026-11-25) `abhoth router` becomes the inference control plane:
+  design in [`ROUTER-CONFIG.md`](ROUTER-CONFIG.md), nothing built yet. One TOML file (servers →
+  cards by GPU UUID → engines with command-template lifecycles → layouts → routes) replaces
+  LiteLLM, qfn-lb, pig-slots and DeepThought's layout tooling (`layoutctl.py`, `profiles.json`,
+  the profiles API, `ondemand.py`, `gateway.json`) in one cutover, with an importer, plans
+  (dry runs), an observe-mode trial and a rollback that relies on a 30-day legacy state mirror.
+  Hosts are driven over a forced-command SSH key whose root-owned allowlist the router cannot
+  change; cold models follow a per-route policy (reject/fallback by default, on-demand only for
+  authenticated chat requests, so a health probe can never switch a GPU); cloud and chained
+  router upstreams get per-user/per-key budgets; Responses-in, chat ⇄ Anthropic, tool-call
+  normalisation and reasoning mapping are adapter chains with a golden corpus; only admins
+  (D140) see and edit the config. Supersedes ROUTER.md's WON'T items for switching, cloud
+  providers, budgets and the admin UI. About 41 agent-days (cutover set about 32).
