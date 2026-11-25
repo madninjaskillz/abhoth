@@ -543,3 +543,13 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   has no lookbehind) with the same rule: `Agent [A-KM-Z]` not inside a word. `/agents` with no
   single running agent opens the arrow-key picker (`AgentCommands.Pick`: running first, newest
   first, "← back"); its rows carry progress, activity and elapsed time as in C#.
+- **D130** Abhoth no longer reads files outside `rust/` at build time, so the same tree builds
+  in openorca and in the split abhoth repo. `orca-webui/build.rs` finds the client's `dist`
+  (`../../client/dist` in the abhoth layout, then `../../../src/OpenOrca.WebUi/client/dist`;
+  `ABHOTH_CLIENT_DIST` overrides) and hands it to rust-embed through its
+  `interpolate-folder-path` feature. The six bridge fixtures are copied from the C# tests to
+  `crates/orca-core/tests/data/engines`.
+- **D131** (user decision) Abhoth moves to its own private repo `abhoth` at cutover, with
+  history: `tools/split-abhoth-repo.sh` runs git-filter-repo, mapping `rust/` to the root and
+  `src/OpenOrca.WebUi/client/` to `client/`, and checks the layout, the Anthropic key prefix across all history
+  and the build. The repo is created and pushed by the user at cutover (CUTOVER.md step 1).

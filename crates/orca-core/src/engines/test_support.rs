@@ -16,7 +16,7 @@ macro_rules! fixture {
     ($path:literal) => {
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../../tests/OpenOrca.Core.Tests/TestData/",
+            "/tests/data/engines/",
             $path
         ))
     };

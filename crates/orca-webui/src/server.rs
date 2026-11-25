@@ -143,7 +143,7 @@ pub struct AppState {
 }
 
 #[derive(rust_embed::RustEmbed)]
-#[folder = "../../../src/OpenOrca.WebUi/client/dist"]
+#[folder = "$ABHOTH_CLIENT_DIST"]
 struct ClientDist;
 
 /// The server failed to start.
