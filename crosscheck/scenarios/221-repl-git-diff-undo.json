@@ -1,0 +1,204 @@
+{
+  "_comment": "Interactive: /diff shows the unstaged change, /undo reverts it (first choice), then nothing is left.",
+  "files": {
+    "a.txt": "one\n"
+  },
+  "env": {
+    "GIT_AUTHOR_NAME": "Test",
+    "GIT_AUTHOR_EMAIL": "test@test.com",
+    "GIT_COMMITTER_NAME": "Test",
+    "GIT_COMMITTER_EMAIL": "test@test.com",
+    "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
+    "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z",
+    "GIT_CONFIG_GLOBAL": "<HOME>/gitconfig",
+    "GIT_CONFIG_NOSYSTEM": "1"
+  },
+  "setup": [
+    [
+      "git",
+      "init",
+      "-b",
+      "main"
+    ],
+    [
+      "git",
+      "config",
+      "core.autocrlf",
+      "false"
+    ],
+    [
+      "git",
+      "add",
+      "-A"
+    ],
+    [
+      "git",
+      "commit",
+      "-m",
+      "init"
+    ]
+  ],
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "a.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "a.txt",
+            "content": "changed\n"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Changed a.txt. UNDO-READY"
+    }
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "/diff"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "No uncommitted changes",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "change a.txt"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "UNDO-READY",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/diff"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "Unstaged Changes",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/undo"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "How would you like",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "key",
+        "name": "enter",
+        "count": 1
+      },
+      {
+        "action": "waitFor",
+        "text": "All changes reverted"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/undo"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "No changes to undo",
+        "timeoutMs": 30000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 600
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "Goodbye!",
+      "No uncommitted changes",
+      "All changes reverted",
+      "No changes to undo",
+      "[-+](one|changed)\\b",
+      "a\\.txt \\| \\d+ [-+]+"
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "_comment": "--mode peer: the peer prompt section.",
+  "prompt": "Say hello",
+  "args": ["--mode", "peer"],
+  "replies": [ { "text": "Hello, peer here." } ]
+}

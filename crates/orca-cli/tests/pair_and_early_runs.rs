@@ -303,6 +303,9 @@ async fn read_only_calls_start_while_the_response_streams() {
         .map(|r| r.arguments.clone().unwrap())
         .collect();
     assert!(names[0].contains("a.txt") && names[1].contains("b.txt"));
+    // C# records the early-started first call's arguments as the model sent them.
+    assert_eq!(names[0], r#"{"path":"a.txt"}"#);
+    assert_eq!(names[1], "{\r\n  \"path\": \"b.txt\"\r\n}");
     let reqs = server.requests();
     let msgs = reqs[1].body["messages"].as_array().unwrap();
     let tool_results: Vec<&str> = msgs
@@ -369,4 +372,12 @@ async fn early_runs_off_runs_everything_normally() {
     s.run_turn("read", &mut NullObserver).await.unwrap();
     assert_eq!(s.early_tool_runs_used, 0);
     assert_eq!(s.tool_call_history.len(), 2);
+    // Nothing started early, so every record shows the re-serialized arguments (cross-check
+    // 219).
+    for r in &s.tool_call_history {
+        assert_eq!(
+            r.arguments.as_deref(),
+            Some("{\r\n  \"path\": \"a.txt\"\r\n}")
+        );
+    }
 }

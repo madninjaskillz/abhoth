@@ -25,7 +25,8 @@ fn format_all_registered_tools_produce_non_empty_single_line_signatures() {
     }
 }
 
-/// The registry keeps the C# order (plugin DLLs by file name, tool classes by name), and the
+/// The registry keeps the C# order (plugin DLLs by file name, tool classes in source-file order
+/// as Windows lists them, D121), and the
 /// advertised subset is the C# default list minus the tools not ported yet.
 #[test]
 fn registry_order_matches_csharp_plugin_order() {
@@ -33,8 +34,8 @@ fn registry_order_matches_csharp_plugin_order() {
     let names = registry.names();
     let expected = [
         "report_progress",
-        "spawn_agent",
         "spawn_agents",
+        "spawn_agent",
         "archive",
         "apply_patch",
         "cd",
@@ -97,8 +98,8 @@ fn registry_order_matches_csharp_plugin_order() {
         advertised,
         [
             "report_progress",
-            "spawn_agent",
             "spawn_agents",
+            "spawn_agent",
             "delete_file",
             "edit_file",
             "glob",

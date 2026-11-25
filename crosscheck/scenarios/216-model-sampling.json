@@ -1,0 +1,11 @@
+{
+  "_comment": "lmStudio.modelSampling overlays the sampling for the model in use.",
+  "prompt": "Say hi",
+  "config": {
+    "lmStudio": {
+      "sampling": { "temperature": 0.3, "topP": 0.9 },
+      "modelSampling": { "fake-model": { "preset": "qwen-coding", "topK": 30, "presencePenalty": 0.5 }, "other": { "topK": 5 } }
+    }
+  },
+  "replies": [ { "text": "Hi." } ]
+}

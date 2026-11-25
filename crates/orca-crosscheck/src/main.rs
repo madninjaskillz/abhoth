@@ -18,6 +18,10 @@
 //!   durations masked; `usage_log: false` skips them). Replies can report `cached_tokens`,
 //!   `reasoning_tokens`, `completion_tokens` and llama.cpp `timings` for them.
 //!
+//! Config-home files outside those are compared when the scenario names them (`compare_home`,
+//! e.g. `["memory/"]`), and `file_masks` (`[regex, replacement]`) blank volatile text (an
+//! export's time stamp) in them and in the work files.
+//!
 //! A scenario can plant files in the config home first (`home_files`, e.g. a saved session;
 //! `<WORK_JSON>` in them becomes the work folder as a JSON string body) and pass extra
 //! arguments (`args`, e.g. `["-r", "s1"]`). The fake server can answer other endpoints
@@ -158,6 +162,14 @@ struct Scenario {
     /// whose request ends at a timing-dependent point, such as a Ctrl+C mid-stream).
     #[serde(default = "yes")]
     usage_log: bool,
+    /// Config-home files compared too (relative paths; one ending in `/` takes the files under
+    /// that folder), e.g. `memory/` or `config.json`. Paths and masks applied as for work files.
+    #[serde(default)]
+    compare_home: Vec<String>,
+    /// `[regex, replacement]` pairs applied to work files and `compare_home` files (e.g. a time
+    /// stamp written into an exported file).
+    #[serde(default)]
+    file_masks: Vec<(String, String)>,
     replies: Vec<ScriptReply>,
 }
 
@@ -375,9 +387,10 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         }
         std::fs::write(&p, content.replace("<WORK_JSON>", work_json))?;
     }
-    // Fixed, distinct mtimes (one second apart, in name order, ten minutes ago) so tools that
-    // sort or describe by age give the same answer in both runs.
-    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+    // Fixed, distinct mtimes (one second apart, in name order, ten and a half minutes ago) so
+    // tools that sort or describe by age give the same answer in both runs: "10m ago" however
+    // fast the binary starts (at exactly ten minutes a quick run still saw "9m").
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(630);
     let binary: Vec<(String, Vec<u8>)> = scenario
         .binary_files
         .iter()
@@ -504,6 +517,11 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
             ],
         )
     };
+    let masks = scenario
+        .file_masks
+        .iter()
+        .map(|(re, to)| Ok((regex::Regex::new(re)?, to.clone())))
+        .collect::<Result<Vec<_>>>()?;
     let mut files = BTreeMap::new();
     for e in walkdir::WalkDir::new(work.path())
         .into_iter()
@@ -521,10 +539,34 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
             let bytes = std::fs::read(e.path())?;
             let content = describe_image(&rel, &bytes)
                 .unwrap_or_else(|| String::from_utf8_lossy(&bytes).to_string());
-            files.insert(rel, content);
+            files.insert(rel, mask_file(&norm(json!(content)), &masks));
         }
     }
     let mut home_files = BTreeMap::new();
+    for e in walkdir::WalkDir::new(home.path())
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+    {
+        let rel = e
+            .path()
+            .strip_prefix(home.path())
+            .unwrap()
+            .display()
+            .to_string()
+            .replace('\\', "/");
+        let wanted = scenario.compare_home.iter().any(|w| {
+            if w.ends_with('/') {
+                rel.starts_with(w.as_str())
+            } else {
+                rel == *w
+            }
+        });
+        if wanted {
+            let text = String::from_utf8_lossy(&std::fs::read(e.path())?).into_owned();
+            home_files.insert(rel, json!(mask_file(&norm(json!(text)), &masks)));
+        }
+    }
     let checkpoints = home.path().join("checkpoints");
     // Backup file name -> the (normalised) file it backs up, from the manifests: several
     // backups made in the same second differ only in the path hash, so they are keyed by
@@ -699,6 +741,15 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         snaps,
         raw,
     })
+}
+
+/// A normalised file body (a JSON string) with the scenario's `file_masks` applied.
+fn mask_file(v: &Value, masks: &[(regex::Regex, String)]) -> String {
+    let mut text = v.as_str().unwrap_or_default().to_string();
+    for (re, to) in masks {
+        text = re.replace_all(&text, to.as_str()).into_owned();
+    }
+    text
 }
 
 /// The "Slot usage" and "Provider usage" lines of the logs in `dir`, in file order, without

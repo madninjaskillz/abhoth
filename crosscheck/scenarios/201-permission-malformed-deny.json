@@ -1,0 +1,11 @@
+{
+  "_comment": "A deny pattern that does not parse fails closed: every tool call is refused.",
+  "prompt": "Read a.txt",
+  "files": { "a.txt": "hello\n" },
+  "config": { "permissions": { "autoApproveAll": true, "denyPatterns": ["rm -rf"] } },
+  "replies": [
+    { "tools": [ { "name": "read_file", "args": { "path": "a.txt" } } ] },
+    { "tools": [ { "name": "list_directory", "args": { "path": "." } } ] },
+    { "text": "Every tool call was refused." }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "_comment": "bash: a failing exit code, stderr only, an unknown command, and an empty command.",
+  "prompt": "Run some commands",
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "bash",
+          "args": {
+            "command": "echo out && exit 3"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "bash",
+          "args": {
+            "command": "echo only-err 1>&2"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "bash",
+          "args": {
+            "command": "definitely-not-a-command-xyz"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "bash",
+          "args": {
+            "command": ""
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "bash",
+          "args": {
+            "command": "echo done",
+            "timeout_seconds": 5
+          }
+        }
+      ]
+    },
+    {
+      "text": "The first exited 3, the third was not found."
+    }
+  ]
+}

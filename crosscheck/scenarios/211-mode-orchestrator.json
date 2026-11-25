@@ -1,0 +1,12 @@
+{
+  "_comment": "--mode orchestrator: the Lead's prompt says so and its own writes are refused.",
+  "prompt": "Create a.txt",
+  "args": ["--mode", "orchestrator"],
+  "files": { "notes.txt": "n\n" },
+  "replies": [
+    { "tools": [ { "name": "read_file", "args": { "path": "notes.txt" } } ] },
+    { "tools": [ { "name": "write_file", "args": { "path": "a.txt", "content": "a\n" } } ] },
+    { "tools": [ { "name": "edit_file", "args": { "path": "notes.txt", "old_string": "n", "new_string": "m" } } ] },
+    { "text": "As the orchestrator I cannot write files myself." }
+  ]
+}

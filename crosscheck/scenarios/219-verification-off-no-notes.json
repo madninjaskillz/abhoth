@@ -1,0 +1,12 @@
+{
+  "_comment": "agent.verificationMode off, repeatCallNotes and earlyReadOnlyTools off: same reads twice, no verification.",
+  "prompt": "Check a.txt",
+  "files": { "a.txt": "a\n" },
+  "config": { "agent": { "verificationMode": "off", "repeatCallNotes": false, "earlyReadOnlyTools": false } },
+  "replies": [
+    { "tools": [ { "name": "read_file", "args": { "path": "a.txt" } }, { "name": "read_file", "args": { "path": "a.txt" } } ] },
+    { "tools": [ { "name": "write_file", "args": { "path": "b.txt", "content": "b\n" } } ] },
+    { "tools": [ { "name": "read_file", "args": { "path": "a.txt" } } ] },
+    { "text": "a.txt holds a; b.txt written." }
+  ]
+}

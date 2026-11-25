@@ -1,0 +1,21 @@
+{
+  "_comment": "Without autoApproveAll: --allow, alwaysApprove, allowPatterns and read-only auto-approval let these calls run without a prompt.",
+  "prompt": "Tidy up",
+  "args": ["--allow", "bash, write_file"],
+  "files": { "a.txt": "one\n", "tmp/x.txt": "x\n" },
+  "config": {
+    "permissions": {
+      "autoApproveAll": false,
+      "alwaysApprove": ["edit_file"],
+      "allowPatterns": ["delete_file(tmp/*)"]
+    }
+  },
+  "replies": [
+    { "tools": [ { "name": "read_file", "args": { "path": "a.txt" } } ] },
+    { "tools": [ { "name": "bash", "args": { "command": "echo approved" } } ] },
+    { "tools": [ { "name": "write_file", "args": { "path": "b.txt", "content": "two\n" } } ] },
+    { "tools": [ { "name": "edit_file", "args": { "path": "a.txt", "old_string": "one", "new_string": "uno" } } ] },
+    { "tools": [ { "name": "delete_file", "args": { "path": "tmp/x.txt" } } ] },
+    { "text": "Done." }
+  ]
+}

@@ -54,6 +54,11 @@ pub trait AgentObserver: Send {
     fn on_tool_end(&mut self, _call: &ToolCall, _result: &ToolResult) {}
     /// A one-line status message (retries, nudges, loop guards) the console shows in yellow.
     fn on_notice(&mut self, _message: &str) {}
+    /// The wrap-up shown at the end of a turn that ran tools (C#'s `SummaryBuffer`, which
+    /// collects the text streamed after the first tool ran) changes: `None` when the final
+    /// summary is requested (the buffer starts over with its answer), `Some(prose)` when the
+    /// model's earlier wrap-up stands instead.
+    fn on_wrap_up(&mut self, _replacement: Option<&str>) {}
 }
 
 pub struct NullObserver;
@@ -122,6 +127,9 @@ pub struct AgentSession {
     pub(super) recent_call_history: Vec<(String, String, u64)>,
     /// Index into `lmStudio.models` of the model in use (failover moves it on).
     pub model_index: usize,
+    /// The primary model chosen with `/model` after the client was made: C# sends
+    /// `lmStudio.models[0]` as each request's model, so the change applies to the next request.
+    pub primary_model_override: Option<String>,
     /// Models that proved they can't do native tool calls (`NativeToolsSupport`).
     pub native_tools_support: std::collections::HashMap<String, bool>,
     /// Base delay of the same-model retry backoff (2 s; tests shorten it).
@@ -206,6 +214,7 @@ impl AgentSession {
             recent_tool_errors: Default::default(),
             recent_call_history: Vec::new(),
             model_index: 0,
+            primary_model_override: None,
             native_tools_support: Default::default(),
             retry_base_delay: Duration::from_secs(2),
             failover_delay: Duration::from_secs(2),
@@ -274,12 +283,31 @@ impl AgentSession {
         self.set_system_prompt(prompt);
     }
 
+    /// Before sub-agents run outside a tool call (the planner, `/review`, `/workflow`): share
+    /// the files read, approved scopes and plan mode with them.
+    pub fn seed_sub_agents(&self) {
+        if let Some(shared) = &self.sub_agent_pipeline {
+            shared.seed_from(self);
+        }
+    }
+
+    /// After such a run: take its tool calls, modified files and mutations into this session
+    /// (C# records every sub-agent call in the one `ReplState` history as it happens).
+    pub fn take_sub_agent_work(&mut self) {
+        if let Some(shared) = self.sub_agent_pipeline.clone() {
+            shared.drain_into(self);
+        }
+    }
+
     /// The model requests go to: the failover position in `lmStudio.models`, else the
     /// client's default.
     pub fn active_model(&self) -> Option<String> {
         if self.model_index > 0
             && let Some(m) = self.config.lm_studio.models.get(self.model_index)
         {
+            return Some(m.clone());
+        }
+        if let Some(m) = &self.primary_model_override {
             return Some(m.clone());
         }
         self.client.settings().default_model.clone()
@@ -299,7 +327,7 @@ impl AgentSession {
     ) -> ChatOptions {
         let mut options = ChatOptions::default();
         let model = self.active_model();
-        if self.model_index > 0 {
+        if self.model_index > 0 || self.primary_model_override.is_some() {
             options.model = model.clone();
         }
         if runaway_recovery {

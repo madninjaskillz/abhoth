@@ -1,0 +1,141 @@
+{
+  "_comment": "File tool error paths: missing files and folders, a folder where a file is expected, existing targets.",
+  "prompt": "Poke at the files",
+  "files": {
+    "a.txt": "a\n",
+    "dir/inner.txt": "i\n",
+    "b.txt": "b\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "missing.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "dir"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "list_directory",
+          "args": {
+            "path": "nowhere"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "dir",
+            "content": "x"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "delete_file",
+          "args": {
+            "path": "missing.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "move_file",
+          "args": {
+            "source": "missing.txt",
+            "destination": "c.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "move_file",
+          "args": {
+            "source": "a.txt",
+            "destination": "b.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "mkdir",
+          "args": {
+            "path": "dir"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "glob",
+          "args": {
+            "pattern": "**/*.nothing"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "grep",
+          "args": {
+            "pattern": "zzz",
+            "path": "."
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "edit_file",
+          "args": {
+            "path": "missing.txt",
+            "old_string": "a",
+            "new_string": "b"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "a.txt",
+            "offset": 50
+          }
+        }
+      ]
+    },
+    {
+      "text": "Most of those failed, as expected."
+    }
+  ]
+}

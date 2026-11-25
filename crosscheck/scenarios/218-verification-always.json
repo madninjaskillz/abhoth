@@ -1,0 +1,11 @@
+{
+  "_comment": "agent.verificationMode always: a verification request after the change.",
+  "prompt": "Create a.txt",
+  "config": { "agent": { "verificationMode": "always" } },
+  "replies": [
+    { "tools": [ { "name": "write_file", "args": { "path": "a.txt", "content": "a\n" } } ] },
+    { "text": "Created a.txt." },
+    { "tools": [ { "name": "read_file", "args": { "path": "a.txt" } } ] },
+    { "text": "Verified: a.txt contains a." }
+  ]
+}

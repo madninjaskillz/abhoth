@@ -1,0 +1,22 @@
+{
+  "_comment": "tools.extraTools adds named tools to the core set; compared strictly. leadMode hands-on: lead_mode is ported separately.",
+  "prompt": "Say hi",
+  "strict": true,
+  "config": {
+    "tools": {
+      "extraTools": [
+        "git_log",
+        "web_fetch",
+        "zip_files"
+      ]
+    },
+    "agent": {
+      "leadMode": "hands-on"
+    }
+  },
+  "replies": [
+    {
+      "text": "Hi."
+    }
+  ]
+}

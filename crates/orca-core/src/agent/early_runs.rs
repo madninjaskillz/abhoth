@@ -135,7 +135,7 @@ impl AgentSession {
     /// `IsEarlyEligible`: read-only (the read-only command allowlist), an existing tool that
     /// is not interactive, auto-approved, and no policy blocks it. Also not when the normal
     /// pipeline would refuse it (permission rules, missing arguments, directory restriction).
-    fn early_eligibility(&self) -> impl Fn(&str, &str) -> bool + Send + Sync + 'static {
+    pub(super) fn early_eligibility(&self) -> impl Fn(&str, &str) -> bool + Send + Sync + 'static {
         let config = Arc::new(self.config.clone());
         let registry = self.registry.clone();
         let ctx = self.ctx.clone();

@@ -1,0 +1,6 @@
+{
+  "_comment": "thinking.budgetTokens and level high: prompt and request fields.",
+  "prompt": "Say hi",
+  "config": { "thinking": { "budgetTokens": 4096, "level": "high" } },
+  "replies": [ { "reasoning": "Short thought.", "text": "Hi." } ]
+}

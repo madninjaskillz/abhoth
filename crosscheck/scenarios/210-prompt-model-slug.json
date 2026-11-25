@@ -1,0 +1,6 @@
+{
+  "_comment": "Without promptProfile, prompts/<model slug>.md is used for that model.",
+  "prompt": "Say hi",
+  "home_files": { "prompts/fake-model.md": "Model-specific prompt for the fake model.\n" },
+  "replies": [ { "text": "Hi from the model prompt." } ]
+}

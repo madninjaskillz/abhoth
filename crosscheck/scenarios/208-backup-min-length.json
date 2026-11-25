@@ -1,0 +1,9 @@
+{
+  "_comment": "lmStudio.backupMinResponseLength: a too-short answer is retried on backupModel.",
+  "prompt": "Explain recursion",
+  "config": { "lmStudio": { "backupModel": "backup-model", "backupMinResponseLength": 40 } },
+  "replies": [
+    { "text": "ok" },
+    { "text": "Recursion is when a function calls itself on a smaller part of the problem." }
+  ]
+}
