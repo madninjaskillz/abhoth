@@ -1333,20 +1333,25 @@ impl AgentSession {
     /// `DelegatedWithoutCheck`: this turn's last successful delegation of code work has no
     /// passing command run after it.
     pub(super) fn delegated_without_check(&self) -> bool {
-        let history = self.turn_history();
-        let Some(last) = history.iter().rposition(|r| {
-            matches!(r.name.as_str(), "subagent" | "spawn_agent" | "spawn_agents")
-                && !r.is_error
-                && delegates_code_work(r.arguments.as_deref())
-        }) else {
-            return false;
-        };
-        !history[last + 1..].iter().any(|r| {
-            is_command_runner(&r.name)
-                && run_evidence::classify(r.result.as_deref(), r.is_error, r.arguments.as_deref())
-                    == run_evidence::RunOutcome::Pass
-        })
+        delegated_without_check(self.turn_history())
     }
+}
+
+/// `DelegatedWithoutCheck` over a turn's records: the last successful delegation of code work
+/// has no passing command run after it.
+pub fn delegated_without_check(history: &[super::session::ToolCallRecord]) -> bool {
+    let Some(last) = history.iter().rposition(|r| {
+        matches!(r.name.as_str(), "subagent" | "spawn_agent" | "spawn_agents")
+            && !r.is_error
+            && delegates_code_work(r.arguments.as_deref())
+    }) else {
+        return false;
+    };
+    !history[last + 1..].iter().any(|r| {
+        is_command_runner(&r.name)
+            && run_evidence::classify(r.result.as_deref(), r.is_error, r.arguments.as_deref())
+                == run_evidence::RunOutcome::Pass
+    })
 }
 
 /// Agent types that only read: delegating to them changes no code.

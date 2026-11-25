@@ -25,3 +25,4 @@ mod turn;
 pub use registry::ToolRegistry;
 pub use session::{AgentError, AgentObserver, AgentSession, NullObserver, ToolCallRecord, TurnEnd};
 pub use tool_hooks::ToolHooks;
+pub use turn::{delegated_without_check, delegates_code_work};

@@ -1,6 +1,7 @@
 //! Lead policies that depend on agents, ported from `tests/OpenOrca.Cli.Tests`:
 //! `AutoLeadModeTests.cs` (the `LeadModePolicy` checks), `AgentUiTests.PlanMode_AllowsReadOnly
-//! SubagentTypes_Only` and `DelegatedCheckMessageTests.cs`.
+//! SubagentTypes_Only` and `DelegatedCheckMessageTests.cs`, and the
+//! `ToolCallExecutorTests` delegated-check tests (`DelegatedWithoutCheck`, `DelegatesCodeWork`).
 //!
 //! Not ported from `AutoLeadModeTests.cs`: the tool filtering (`FilterForLead`,
 //! `WithoutLeadMode`), the lead_mode tool and its chooser (`LeadModeChooser`, `PiLeadModeTool`),
@@ -10,11 +11,13 @@
 use std::sync::Arc;
 
 use orca_abstractions::{Tool, ToolContext, ToolResult, ToolRiskLevel};
-use orca_core::agent::ToolRegistry;
 use orca_core::agent::policies::{
     AutoLeadVerdict, LEAD_MODE_DELEGATE, LEAD_MODE_HANDS_ON, check_auto_lead, check_plan_mode_with,
 };
 use orca_core::agent::prompt_constants::PI_DELEGATED_CHECK_MESSAGE;
+use orca_core::agent::{
+    ToolCallRecord, ToolRegistry, delegated_without_check, delegates_code_work,
+};
 use orca_core::config::OrcaConfig;
 use orca_core::orchestration::types::{AgentTypeDefinition, AgentTypeRegistry};
 use serde_json::{Value, json};
@@ -274,5 +277,84 @@ fn reviewer_agents_get_a_smaller_iteration_budget() {
             type_override.unwrap_or(40),
             "{ty}"
         );
+    }
+}
+
+// ── ToolCallExecutorTests: delegated work needs a final check ───────────────
+
+fn record(name: &str, arguments: &str, result: &str, is_error: bool) -> ToolCallRecord {
+    ToolCallRecord {
+        name: name.into(),
+        arguments: Some(arguments.into()),
+        result: Some(result.into()),
+        is_error,
+        duration_ms: 0,
+    }
+}
+
+#[test]
+fn delegated_without_check_true_until_a_passing_run_after_the_last_delegation() {
+    let mut history: Vec<ToolCallRecord> = Vec::new();
+    assert!(!delegated_without_check(&history)); // nothing delegated
+
+    history.push(record(
+        "bash",
+        r#"{"command":"dotnet test"}"#,
+        "Passed!  - Failed: 0, Passed: 5",
+        false,
+    ));
+    history.push(record(
+        "subagent",
+        r#"{"tasks":[{"agent":"worker","task":"build it"}]}"#,
+        "Parallel: 1/1 succeeded",
+        false,
+    ));
+    assert!(delegated_without_check(&history)); // the earlier pass came before the agents
+
+    history.push(record(
+        "bash",
+        r#"{"command":"dotnet test"}"#,
+        "Failed!  - Failed: 2, Passed: 3",
+        true,
+    ));
+    assert!(delegated_without_check(&history)); // a failing run is not a check that passed
+
+    history.push(record(
+        "bash",
+        r#"{"command":"dotnet test"}"#,
+        "Passed!  - Failed: 0, Passed: 5",
+        false,
+    ));
+    assert!(!delegated_without_check(&history));
+
+    history.push(record(
+        "subagent",
+        r#"{"to":"A","task":"fix the filter"}"#,
+        "Agent A (UI): fixed",
+        false,
+    ));
+    assert!(delegated_without_check(&history)); // a follow-up changed code again
+}
+
+#[test]
+fn delegates_code_work_only_for_agents_that_can_change_code() {
+    let cases: &[(&str, bool)] = &[
+        (r#"{"agent":"scout","task":"find the parser"}"#, false),
+        (
+            r#"{"tasks":[{"agent":"scout","task":"a"},{"agent":"reviewer","task":"b"}]}"#,
+            false,
+        ),
+        (
+            r#"{"tasks":[{"agent":"scout","task":"a"},{"agent":"worker","task":"b"}]}"#,
+            true,
+        ),
+        (r#"{"chain":[{"task":"no agent means the worker"}]}"#, true),
+        (r#"{"to":"B","task":"continue"}"#, true),
+        (r#"{"agent_type":"explore","task":"look"}"#, false),
+        (r#"{"agent_type":"general","task":"build"}"#, true),
+        ("not json", true),
+    ];
+    for &(args, expected) in cases {
+        assert_eq!(delegates_code_work(Some(args)), expected, "{args}");
     }
 }
