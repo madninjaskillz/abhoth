@@ -46,43 +46,62 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   files compatible both ways with C#, `-c` / `-r` in `--print`, fork / tree / list, file
   checkpoints before modifications, pre/post tool hooks and the auto-formatter.
 
+### Phase 2 leftovers (done 2026-11-25, second run)
+
+- Stream guards (`agent::streaming`, client `stream_with_control`): thinking-runaway cancel with
+  strikes and the low-temperature retry, per-step reasoning cap and re-ask, budget note,
+  tool-less retry of a content-free stream; mid-stream salvage (`ChatError::Interrupted`);
+  adaptive reasoning; the server error probe after empty replies; `MaxTokensNegotiator`; the
+  startup context-window probe and `ServerIdentity` (gateway `/health` skipped).
+
+### Phase 3: tools, slots, engines, profiles (most of it)
+
+- Tools (C# plugin order, optional groups as Cargo features, all on by default): the whole
+  FileSystem, Shell, Utility, Interactive (ask_user), Archive, Network, Git, GitHub, Web,
+  ImageGeneration, Lsp and Mcp plugins (`orca-tools-*`); `ToolExposure` (advertised subset)
+  and the C# wire schema shape.
+- Pi profile (`orca-tools-pi`): all Pi tools, the Pi system prompt, Pi loop wording; subagent /
+  lead_mode answer "not available" until orchestration is wired.
+- `orca-core::{slots, engines, profiles, live}`: slot registries, `SlotAllocator` balanced
+  placement, copy models / served models, the slotted client with the Lead's Strata pin, lazy
+  Lead lease; Claude Code / Codex bridges; profiles v3, agent modes; `--profile`, `--mode`,
+  `--engine` in `--print`.
+
 ### Tests
 
-- Rust: 501 tests (`cargo test --workspace`), clippy `-D warnings` and fmt clean.
-- Cross-check: 28 scenarios, all identical between the C# and Rust builds (text tool calls,
-  nudges, doom loops, iteration limit, sandbox, empty-args downgrade, sessions, hooks,
-  checkpoints, compaction, plus the phase 1 set).
+- Rust: 1114 tests (`cargo test --workspace`), clippy `-D warnings` and fmt clean.
+- Cross-check: 72 scenarios, all identical between the C# and Rust builds (phase 1 and 2 sets,
+  stream guards and probes 30-39, file/utility tools 40-45, git/web 50-55, Pi 60-69 compared
+  strictly, MCP/LSP/image 70-76, profiles/modes/slots/engines 80-84).
 
 ## Next
 
-1. Phase 2 leftovers (see gaps below): mid-stream salvage, thinking-runaway and per-step
-   reasoning caps (need a stream abort hook in the client), adaptive reasoning, the server
-   error probe, `MaxTokensNegotiator`, the startup context-window probe, early read-only runs,
-   plan mode entry points (`/plan`, planner phase), pair voting.
-2. Phase 3: the remaining tools and plugins, Tools.Pi (and the Pi system prompt), sub-agents,
-   orchestration, slots (SlotAllocator balanced placement, CopyModels / ServedModels, server
-   identity with the gateway `/health` skip, preserve-thinking), engines, profiles.
-3. Phase 4: REPL / TUI, slash commands, custom commands. Phase 5: WebUi host and hub.
+1. In progress (helper branches): orchestration and sub-agents with the agent tools, pair
+   voting, early read-only runs and plan-mode entry points (`rust-port/orch`); REPL / TUI,
+   console permission prompter, slash and custom commands, attachments (`rust-port/repl`);
+   WebUi host with the websocket hub and client adapter (`rust-port/webui`).
+2. After the orch merge: wire `SlotAllocator` leases into agent spawning, the Pi subagent /
+   lead_mode hooks, and the agent commands.
+3. Phase 6: parity sweep, side-by-side benches, live smoke on the full tool set.
 
 ## Known gaps
 
-- Tool list: Rust advertises the 9 ported tools (C# 31+); masked in the cross-check
-  (`--strict` shows it).
-- No interactive mode (REPL/TUI) yet: without `--print`/`--prompt` the binary exits 2. The
-  permission prompter exists but the CLI installs none, so calls needing approval are refused
-  (C# `--print` behaves the same).
-- Stream errors: a stream that dies mid-response loses its partial text (C# executes a complete
-  tool call from it); the thinking-runaway cancel and the per-step reasoning cap are not wired
-  (pure `chat::reasoning_cap` logic is ported).
-- An empty reply counts as empty only without usage; C# counts any streamed content.
-- Delegated-check request, background helper collection, lead-mode auto choice and read-only
-  spawns in plan mode wait for the agent tools (phase 3).
-- Sessions: `engine` / `engineSessionId` are dropped on save; no auto-save outside `--print`
-  (there is no interactive loop yet).
+- Orchestration is not merged yet: spawn_agent(s) / report_progress are missing from the
+  advertised list (the only `--strict` tool-list difference in the default profile); Pi
+  subagent / lead_mode answer "not available"; delegated checks, background helpers,
+  lead-mode auto choice, pair voting and read-only spawns in plan mode wait for it.
+- No interactive mode (REPL/TUI) yet: without `--print`/`--prompt` the binary exits 2; no
+  console permission prompter (calls needing approval are refused, as in C# `--print`).
+- Sessions: `engine` / `engineSessionId` are dropped on save; no auto-save outside `--print`.
 - Numbers inside re-serialized tool arguments use serde's shortest form (`1.0` -> `1`), C#
   keeps the model's digits.
 - grep: Rust regex syntax (no lookaround/backreferences); files in sorted order.
 - Console output decoding is lossy UTF-8 rather than the OEM code page; hook stdin is UTF-8.
 - list_directory ordering approximates .NET culture-aware sorting.
-- Pi profile: the Pi system prompt is not ported (a Pi config gets the OpenOrca prompt).
+- Error texts from OS / transport / JSON parser failures (web, network, MCP, slots) differ from
+  .NET's wording in places; profile JSON property names are case-sensitive.
+- Not ported by design: `job screenshot` (needs `unsafe` Win32 capture, D37). C# bugs not
+  reproduced: LSP PascalCase wire fields (D42), MCP image base64 (D43).
+- Archive sizes/timestamps, network ping/DNS output, env ordering differ (unit-tested only).
+- No per-request usage logging (`RequestStats`); tool-result images are not sent to the model.
 - Live smoke (LiteLLM, qwen3.8-27b, read a file and answer) passed 2026-11-25 for phase 1.
