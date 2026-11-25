@@ -34,6 +34,8 @@ async fn hostui_prints_the_url_and_serves_the_api() {
         let mut seen = Vec::new();
         while let Some(Ok(line)) = lines.next() {
             if let Some(u) = line.strip_prefix("● Web UI ") {
+                // Keep reading: the host prints more lines, and a closed pipe would kill it.
+                std::thread::spawn(move || lines.for_each(drop));
                 return Ok(u.trim().to_string());
             }
             seen.push(line);
@@ -188,9 +190,11 @@ async fn hostui_bench_runs_a_suite_in_its_own_home_and_records_the_row_with_toke
         .unwrap();
     let stdout = child.stdout.take().unwrap();
     let url = tokio::task::spawn_blocking(move || {
-        let lines = BufReader::new(stdout).lines();
-        for line in lines.map_while(Result::ok) {
+        let mut lines = BufReader::new(stdout).lines();
+        while let Some(Ok(line)) = lines.next() {
             if let Some(u) = line.strip_prefix("● Web UI ") {
+                // Keep reading: the host prints more lines, and a closed pipe would kill it.
+                std::thread::spawn(move || lines.for_each(drop));
                 return Some(u.trim().to_string());
             }
         }

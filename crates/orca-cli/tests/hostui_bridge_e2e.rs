@@ -116,10 +116,15 @@ async fn hostui_switches_to_the_bridge_and_runs_a_turn() {
         .unwrap();
     let stdout = child.stdout.take().unwrap();
     let url = tokio::task::spawn_blocking(move || {
-        BufReader::new(stdout)
-            .lines()
-            .map_while(Result::ok)
-            .find_map(|l| l.strip_prefix("● Web UI ").map(|u| u.trim().to_string()))
+        let mut lines = BufReader::new(stdout).lines();
+        while let Some(Ok(line)) = lines.next() {
+            if let Some(u) = line.strip_prefix("● Web UI ") {
+                // Keep reading: the host prints more lines, and a closed pipe would kill it.
+                std::thread::spawn(move || lines.for_each(drop));
+                return Some(u.trim().to_string());
+            }
+        }
+        None
     })
     .await
     .unwrap();
