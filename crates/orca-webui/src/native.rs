@@ -1165,7 +1165,13 @@ mod tests {
         assert!(broker.resolve("p0001", "Always"));
         assert_eq!(h.join().unwrap(), PermissionDecision::ApproveAll);
         assert!(!broker.resolve("p0001", "yes"));
+        // The request thread may publish its event after `resolve` already has (pending is
+        // filled first), so look the resolution up rather than counting on the order.
         let events = seen.lock().unwrap();
-        assert_eq!(events[1]["decision"], "all");
+        assert!(
+            events
+                .iter()
+                .any(|e| e["id"] == "p0001" && e["decision"] == "all")
+        );
     }
 }
