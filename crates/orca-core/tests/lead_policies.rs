@@ -191,3 +191,86 @@ fn pi_check_has_the_checklist_and_the_plausibility_step() {
     assert!(text.contains("empty or zero result as a failure"));
     assert!(text.contains("invented fixtures is not verified"));
 }
+
+// ── LeadModeTests (policy parts) ────────────────────────────────────────────
+// The tool-list filtering (`FilterForLead`) is applied where the Lead's tools are advertised
+// through `is_denied_for_lead`; the orchestrator instructions and prompt addenda are Pi/prompt
+// tests ported with those.
+
+#[test]
+fn lead_mode_defaults_to_auto_with_bash() {
+    let c = OrcaConfig::default();
+    assert_eq!(c.agent.lead_mode, "auto");
+    assert!(orca_core::orchestration::is_auto_lead(&c));
+    assert!(c.agent.lead_bash);
+    assert!(!orca_core::agent::policies::is_orchestrator_lead(&c));
+}
+
+#[test]
+fn hands_on_keeps_every_tool() {
+    let c = config("pi", "hands-on");
+    for tool in ["read", "bash", "edit", "write", "subagent", "progress"] {
+        assert!(!orca_core::agent::policies::is_denied_for_lead(&c, tool));
+    }
+    assert!(orca_core::agent::policies::check_lead_mode(&c, "write").is_none());
+}
+
+#[test]
+fn orchestrator_pi_drops_write_and_edit_keeps_read_search_shell_and_delegation() {
+    use orca_core::agent::policies::is_denied_for_lead;
+    let c = config("pi", "orchestrator");
+    let lead = [
+        "read", "bash", "edit", "write", "grep", "find", "ls", "subagent", "progress",
+    ];
+    let kept: Vec<&str> = lead
+        .into_iter()
+        .filter(|t| !is_denied_for_lead(&c, t))
+        .collect();
+    assert_eq!(
+        kept,
+        ["read", "bash", "grep", "find", "ls", "subagent", "progress"]
+    );
+    let mut strict = c.clone();
+    strict.agent.lead_bash = false;
+    let kept: Vec<&str> = lead
+        .into_iter()
+        .filter(|t| !is_denied_for_lead(&strict, t))
+        .collect();
+    assert_eq!(kept, ["read", "grep", "find", "ls", "subagent", "progress"]);
+}
+
+#[test]
+fn orchestrator_refuses_a_write_call_anyway_with_a_pointer_to_subagent() {
+    use orca_core::agent::policies::check_lead_mode;
+    let c = config("pi", "orchestrator");
+    let blocked = check_lead_mode(&c, "edit").expect("edit is refused");
+    assert!(blocked.is_error);
+    assert!(blocked.message.contains("subagent"), "{}", blocked.message);
+    assert!(check_lead_mode(&c, "bash").is_none());
+    let mut strict = c.clone();
+    strict.agent.lead_bash = false;
+    assert!(check_lead_mode(&strict, "bash").is_some());
+    assert!(check_lead_mode(&c, "read").is_none());
+}
+
+#[test]
+fn reviewer_agents_get_a_smaller_iteration_budget() {
+    use orca_core::orchestration::iterations_for;
+    let cases: &[(&str, Option<i32>, i32)] = &[
+        ("reviewer", None, 15),
+        ("Review", None, 15),
+        ("worker", None, 40),
+        ("scout", None, 40),
+        ("reviewer", Some(25), 25),
+    ];
+    for &(ty, type_override, expected) in cases {
+        let mut c = OrcaConfig::default();
+        assert_eq!(iterations_for(&c, ty, type_override), expected, "{ty}");
+        c.agent.reviewer_max_iterations = 0;
+        assert_eq!(
+            iterations_for(&c, ty, type_override),
+            type_override.unwrap_or(40),
+            "{ty}"
+        );
+    }
+}
