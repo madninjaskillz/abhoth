@@ -291,10 +291,10 @@ impl ProjectManager {
     /// Close a project's tab: forget it (the folder stays) and stop its session.
     pub async fn remove(&self, id: &str) -> Result<bool, String> {
         if id == self.primary.id {
-            return Err(
-                "This project is the session openorca was started in; it can't be closed here."
-                    .into(),
-            );
+            return Err(format!(
+                "This project is the session {} was started in; it can't be closed here.",
+                orca_core::brand::BINARY_NAME
+            ));
         }
         let removed = !id.starts_with("bench-") && self.store.remove(id);
         self.transient.lock().unwrap().retain(|p| p.id != id);

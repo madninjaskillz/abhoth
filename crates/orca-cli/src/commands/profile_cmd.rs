@@ -200,7 +200,12 @@ impl ProfileCommand {
                 console.markup_line("[grey]Not switched.[/]");
                 return None;
             }
-            let requester = format!("{}@{} (openorca TUI)", user_name(), machine_name());
+            let requester = format!(
+                "{}@{} ({} TUI)",
+                user_name(),
+                machine_name(),
+                orca_core::brand::BINARY_NAME
+            );
             let mut job = match service
                 .request_switch(name, &requester, Some("/profile switch"))
                 .await

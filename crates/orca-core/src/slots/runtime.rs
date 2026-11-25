@@ -63,8 +63,12 @@ impl SlotRuntime {
         usage_log: Option<Arc<dyn crate::logging::LogSink>>,
     ) -> Arc<Self> {
         let lead_lease = allocator.new_lease(
-            SlotRequest::new(LEAD_OWNER, LEAD_KIND, "OpenOrca lead")
-                .with_prefer_copy(Some(&allocator.lead_copy())),
+            SlotRequest::new(
+                LEAD_OWNER,
+                LEAD_KIND,
+                &format!("{} lead", crate::brand::PRODUCT_NAME),
+            )
+            .with_prefer_copy(Some(&allocator.lead_copy())),
         );
         let lead_slot_client = Arc::new(Self::make_client(
             &allocator,

@@ -148,7 +148,7 @@ function EmptyState() {
         {mode === "tui"
           ? "This is the same session as the terminal. Prompts typed here or there run in order."
           : mode === "worker"
-            ? "This project has its own session (its own openorca process). Type a prompt below to start."
+            ? `This project has its own session (its own ${brandName()} process). Type a prompt below to start.`
             : "Type a prompt below to start."}
       </p>
     </div>

@@ -1,4 +1,4 @@
-// Sign-in mode (openorca --hostui-login): session cookie + CSRF header. Token mode has no /api/auth.
+// Sign-in mode (abhoth --hostui-login): session cookie + CSRF header. Token mode has no /api/auth.
 
 export type AuthStage = "signedOut" | "totp" | "enroll" | "ok";
 

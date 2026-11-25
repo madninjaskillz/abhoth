@@ -226,7 +226,11 @@ async fn switch(
         return err(StatusCode::BAD_REQUEST, "Which profile?");
     };
     match svc
-        .request_switch(name, "openorca web UI", Some("web UI server layout"))
+        .request_switch(
+            name,
+            &format!("{} web UI", orca_core::brand::BINARY_NAME),
+            Some("web UI server layout"),
+        )
         .await
     {
         Ok(job) => {

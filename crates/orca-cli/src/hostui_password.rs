@@ -77,7 +77,10 @@ pub fn run(
     }
     let Some(set) = set else { return 0 };
     let Some(user) = args.get(set + 1).filter(|a| !a.starts_with("--")) else {
-        eprintln!("usage: openorca {SET_FLAG} <username> [--hostui-state=<dir>]");
+        eprintln!(
+            "usage: {} {SET_FLAG} <username> [--hostui-state=<dir>]",
+            orca_core::brand::BINARY_NAME
+        );
         return 2;
     };
     let Some(password) = password() else {

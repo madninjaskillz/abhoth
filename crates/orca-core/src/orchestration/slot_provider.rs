@@ -141,7 +141,12 @@ impl AgentClientProvider for SlotClientProvider {
         let last_slot = agent.state().last_slot.clone();
         let request = SlotRequest::agent(
             &agent.id,
-            &format!("OpenOrca {}: {}", agent.tag(), agent.label()),
+            &format!(
+                "{} {}: {}",
+                crate::brand::PRODUCT_NAME,
+                agent.tag(),
+                agent.label()
+            ),
         )
         .with_prefer_slot(last_slot.as_deref())
         .with_heavy(agent.heavy);

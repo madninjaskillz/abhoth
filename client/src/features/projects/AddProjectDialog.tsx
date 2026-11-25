@@ -14,7 +14,7 @@ import { CheckLine, rememberToken, rememberedToken } from "@/features/git/GitHub
 import type { GitHubCheck } from "@/lib/api";
 
 /**
- * The [+] tab's wizard: (a) a folder on the machine openorca runs on (picked by browsing that
+ * The [+] tab's wizard: (a) a folder on the machine Abhoth runs on (picked by browsing that
  * machine's folders), (b) a repository picked after signing in with GitHub (the server's GitHub
  * App, device flow), or (c) any repository by URL, with an optional pasted token or the machine's
  * own git credentials.

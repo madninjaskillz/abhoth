@@ -486,7 +486,7 @@ impl BenchRunner {
                     BenchArm::for_engine("codex", None),
                 ],
                 &["agents-per-copy"],
-                "One real task on each engine: native OpenOrca, Claude Code and Codex (the bridges need their CLI logged in).",
+                "One real task on each engine: native Abhoth, Claude Code and Codex (the bridges need their CLI logged in).",
             ),
         );
         write(
@@ -1348,7 +1348,7 @@ impl BenchRunner {
         let job = match profiles
             .request_switch(
                 &name,
-                "openorca bench runner",
+                &format!("{} bench runner", orca_core::brand::BINARY_NAME),
                 Some(&format!("bench {}: {}", run.suite, run.arm.name)),
             )
             .await
@@ -1462,7 +1462,7 @@ impl BenchRunner {
         let job = match profiles
             .request_layout_switch(
                 &layout,
-                "openorca bench runner",
+                &format!("{} bench runner", orca_core::brand::BINARY_NAME),
                 Some(&format!("bench {batch} ended: back to {layout}")),
             )
             .await
@@ -2042,7 +2042,7 @@ pub fn read_rows(file: &Path, archive: Option<&str>, into: &mut Vec<Value>) {
     }
 }
 
-/// "OpenOrca lead, orca@DeepThought" from a pig-slots lease, or `None`.
+/// "Abhoth lead, orca@DeepThought" from a pig-slots lease, or `None`.
 pub fn lease_holder(lease: &Value) -> Option<String> {
     let o = lease.as_object()?;
     let parts: Vec<&str> = ["label", "owner"]

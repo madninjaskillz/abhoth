@@ -613,3 +613,20 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   `println!`, which panics on a broken pipe. A harness that read only the URL line and dropped
   the pipe killed the host at its next activity line (seen on the CI runners); the tests drain
   stdout now too.
+- **D109** User-visible "openorca" text reads Abhoth (`brand::PRODUCT_NAME` / `BINARY_NAME`):
+  the `--hostui-set-password` usage line, the requester names of profile switches (TUI, web UI,
+  bench runner), the slot request labels (`Abhoth lead`, `Abhoth A: <label>`), the file log's
+  "--- Abhoth log opened" header, the web git stash message, the "can't close the primary
+  project" error, the bench suite text for the native engine, and the web client's notices
+  (`brandName()`). The cross-check masks Abhoth as OpenOrca, so these still compare with C#.
+  Kept, for compatibility or because they name the C# project: `OPENORCA_*` variables, the
+  `~/.openorca` home and its migration marker, `X-OpenOrca-*` headers, cookie / token names
+  and localStorage keys, the in-page event and preview message names (`openorca:files`,
+  `openorca-preview`) and the Monaco theme id, the bridges' MCP server name `openorca`
+  (CUTOVER step 6), the tool profile id and engine alias `openorca`, the `OpenOrca.*` log
+  categories, the log file names (`openorca-<date>.log`, read by the bench runner and C#
+  tools), the `openorca-prompt` stamps and generated prompt header (hashes shared with C#),
+  progress.js bucket names and temp folders, HTTP user agents (not shown to people), the bench
+  mirror `openorca.git` and the suite text about past OpenOrca commits (the repository's name),
+  `--version`'s "the Rust successor of OpenOrca", and the demo client's reply (it describes the
+  C# solution).

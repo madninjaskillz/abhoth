@@ -477,7 +477,7 @@ function ProjectTab({ project, active, onSelect, onClose }: { project: Project; 
   const busy = useStore(store, (s) => s.busy);
   const permissions = useStore(store, (s) => s.permissions.length);
   return (
-    <Tip label={`${project.path}${project.primary ? `\n${project.mode === "tui" ? "Shared with the terminal session" : "This openorca's own session"}` : ""}`}>
+    <Tip label={`${project.path}${project.primary ? `\n${project.mode === "tui" ? "Shared with the terminal session" : `This ${brandName()}'s own session`}` : ""}`}>
       <div
         role="tab"
         aria-selected={active}

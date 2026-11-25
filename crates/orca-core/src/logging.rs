@@ -102,7 +102,8 @@ impl FileLog {
             // std opens files shared for reading and writing on Windows (FileShare.ReadWrite).
             if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
                 let header = format!(
-                    "--- OpenOrca log opened at {} ---{}",
+                    "--- {} log opened at {} ---{}",
+                    crate::brand::PRODUCT_NAME,
                     now.format("%Y-%m-%d %H:%M:%S"),
                     NEWLINE
                 );
@@ -213,7 +214,7 @@ mod tests {
         );
         let text = std::fs::read_to_string(&files[0]).unwrap();
         let lines: Vec<&str> = text.lines().collect();
-        assert!(lines[0].starts_with("--- OpenOrca log opened at "));
+        assert!(lines[0].starts_with("--- Abhoth log opened at "));
         let re = regex::Regex::new(
             r"^\d\d:\d\d:\d\d\.\d{3} \[INF\] Usage: Slot usage lead on provider: x$",
         )

@@ -193,7 +193,10 @@ impl GitService {
                     "dirty",
                 ));
             }
-            let msg = format!("OpenOrca: before switching to {branch}");
+            let msg = format!(
+                "{}: before switching to {branch}",
+                orca_core::brand::PRODUCT_NAME
+            );
             let s = run(
                 &root,
                 &["stash", "push", "--include-untracked", "-m", &msg],
