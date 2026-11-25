@@ -254,13 +254,13 @@ impl Tool for GrepTool {
                 );
                 out.push_str(NEWLINE);
                 if output_mode == "files_only" {
-                    file_counts.sort_by(|a, b| name_key(&a.0).cmp(&name_key(&b.0)));
+                    file_counts.sort_by_key(|f| name_key(&f.0));
                     for (f, _) in &file_counts {
                         append_line(&mut out, f);
                     }
                 } else {
                     // OrderByDescending is stable: ties keep their search order.
-                    file_counts.sort_by(|a, b| b.1.cmp(&a.1));
+                    file_counts.sort_by_key(|f| std::cmp::Reverse(f.1));
                     for (f, n) in &file_counts {
                         append_line(&mut out, &format!("  {f}: {n}"));
                     }

@@ -1,5 +1,6 @@
 [package]
 name = "orca-cli"
+description = "The openorca command-line program (port of OpenOrca.Cli)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +11,23 @@ publish.workspace = true
 name = "openorca"
 path = "src/main.rs"
 
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
+orca-abstractions.workspace = true
+orca-core.workspace = true
+orca-tools-fs.workspace = true
+orca-tools-shell.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+orca-testkit.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

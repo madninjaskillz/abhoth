@@ -137,7 +137,6 @@ impl Tool for ReadFileTool {
 
         let total = lines.len();
         let start = (offset.max(1) - 1) as usize;
-        let start = start.min(usize::MAX);
         let end = total.min(start.saturating_add(limit.max(0) as usize));
         let mut sb = String::new();
         append_line(

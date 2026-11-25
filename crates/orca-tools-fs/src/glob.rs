@@ -139,7 +139,7 @@ impl Tool for GlobTool {
             return ToolResult::success("No files matched the pattern.");
         }
         let total = matched.len();
-        matched.sort_by(|a, b| b.1.cmp(&a.1));
+        matched.sort_by_key(|m| std::cmp::Reverse(m.1));
         matched.truncate(max_results);
 
         let mut sb = String::new();

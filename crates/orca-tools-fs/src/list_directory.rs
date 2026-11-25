@@ -160,7 +160,7 @@ impl Tool for ListDirectoryTool {
             };
             entries.push((!is_dir, name, size));
         }
-        entries.sort_by(|a, b| (a.0, name_key(&a.1)).cmp(&(b.0, name_key(&b.1))));
+        entries.sort_by_key(|e| (e.0, name_key(&e.1)));
 
         let mut sb = String::new();
         let mut count = 0;

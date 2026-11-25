@@ -54,7 +54,7 @@ pub fn group_thousands(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -184,6 +184,27 @@ pub fn split_lines(text: &str) -> Vec<&str> {
     lines
 }
 
+/// `Environment.NewLine`, which the C# tools' `AppendLine` writes.
+pub const NEWLINE: &str = if cfg!(windows) { "\r\n" } else { "\n" };
+
+/// A C# `string.Length`: UTF-16 code units (what the tools report as "chars").
+pub fn utf16_len(s: &str) -> usize {
+    s.encode_utf16().count()
+}
+
+/// A required string argument, or the error the tool returns without it.
+pub fn required_str<'a>(args: &'a Value, name: &str) -> Result<&'a str, String> {
+    args.get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("Missing required argument: {name}"))
+}
+
+/// Appends `line` and a [`NEWLINE`] (`StringBuilder.AppendLine`).
+pub fn append_line(sb: &mut String, line: &str) {
+    sb.push_str(line);
+    sb.push_str(NEWLINE);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,25 +306,4 @@ mod tests {
         assert!(split_lines("").is_empty());
         assert_eq!(decode_text(b"\xEF\xBB\xBFhi"), "hi");
     }
-}
-
-/// `Environment.NewLine`, which the C# tools' `AppendLine` writes.
-pub const NEWLINE: &str = if cfg!(windows) { "\r\n" } else { "\n" };
-
-/// A C# `string.Length`: UTF-16 code units (what the tools report as "chars").
-pub fn utf16_len(s: &str) -> usize {
-    s.encode_utf16().count()
-}
-
-/// A required string argument, or the error the tool returns without it.
-pub fn required_str<'a>(args: &'a Value, name: &str) -> Result<&'a str, String> {
-    args.get(name)
-        .and_then(Value::as_str)
-        .ok_or_else(|| format!("Missing required argument: {name}"))
-}
-
-/// Appends `line` and a [`NEWLINE`] (`StringBuilder.AppendLine`).
-pub fn append_line(sb: &mut String, line: &str) {
-    sb.push_str(line);
-    sb.push_str(NEWLINE);
 }
