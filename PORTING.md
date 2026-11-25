@@ -270,3 +270,18 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   (Unavailable, Failed, Cancelled) instead of adding `tokio-util`.
 - **D49** Cross-check config placeholders `<SERVER>`, `<SERVER_ROOT>`, `<HOME_JSON>`,
   `<WORK_JSON>` (no fixed ports or paths); profile/mode/engine errors on stderr are compared.
+- **D65** `orca-webui` (axum) hosts `--hostui`; chat sessions sit behind a `LiveSession` trait
+  and sub-agent features behind an `AgentHost` trait (wired after the orchestration merge).
+- **D66** Hub protocol: JSON over one websocket (`/hub/ws`) with the C# method names, numbered
+  messages, acks and pings; reconnect resumes (`?resume=&last=`) and replays missed events
+  within a 30 s grace period.
+- **D67** The React client picks its transport from `/api/info` (`"hub":"ws"` selects the
+  websocket adapter `hubConnection.ts`), so one client build works with both hosts.
+- **D68** The built client is embedded with rust-embed (an optional folder can be served
+  instead); SPA fallback and token auth (header, cookie, query token redirect) as in C#.
+- **D69** The file-change watcher polls.
+- **D70** The settings page takes its schema from the caller (the config schema comes with the
+  REPL port).
+- **D71** Extra projects run as in-process sessions (C# uses worker processes).
+- **D72** The native session runs on its own thread and sends approvals to the browser; only
+  headless mode is supported (`--tui`, `--hostui-login` are refused).
