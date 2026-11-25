@@ -1259,6 +1259,7 @@ impl MarkdownStreamRenderer {
             return;
         }
         self.active = false;
+        crate::repl::agent_footer::LIVE_TAIL.store(false, std::sync::atomic::Ordering::SeqCst);
         let rest = self.text[self.rendered..].trim().to_string();
         self.rendered = self.text.len();
         if self.live && !self.tail.is_empty() && !self.erase_tail() {
@@ -1278,6 +1279,7 @@ impl MarkdownStreamRenderer {
         if self.active && self.live {
             self.end_tail_line();
         }
+        crate::repl::agent_footer::LIVE_TAIL.store(false, std::sync::atomic::Ordering::SeqCst);
         self.tail.clear();
         self.active = false;
     }
@@ -1285,6 +1287,9 @@ impl MarkdownStreamRenderer {
     fn write_tail(&mut self, raw: &str) {
         if raw.is_empty() {
             return;
+        }
+        if self.live {
+            crate::repl::agent_footer::LIVE_TAIL.store(true, std::sync::atomic::Ordering::SeqCst);
         }
         self.console.raw(raw);
         self.tail.push_str(raw);
@@ -1315,13 +1320,21 @@ impl MarkdownStreamRenderer {
         if rows > height.saturating_sub(TAIL_RESERVED_ROWS) {
             return false;
         }
+        // Clear the tail's own rows (ESC[J would also wipe the footer's bars under them).
         let up = rows - 1;
-        if up > 0 {
-            self.console.raw(&format!("\x1b[{up}A\r\x1b[J"));
+        let mut s = if up > 0 {
+            format!("\x1b[{up}A\r")
         } else {
-            self.console.raw("\r\x1b[J");
+            "\r".to_string()
+        };
+        s.push_str(&"\x1b[2K\x1b[1B".repeat(up));
+        s.push_str("\x1b[2K");
+        if up > 0 {
+            s.push_str(&format!("\x1b[{up}A"));
         }
+        self.console.raw(&s);
         self.tail.clear();
+        crate::repl::agent_footer::LIVE_TAIL.store(false, std::sync::atomic::Ordering::SeqCst);
         true
     }
 }

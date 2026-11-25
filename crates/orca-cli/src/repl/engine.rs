@@ -13,7 +13,6 @@ use orca_core::engines::{
     AgentEngineEvent, AgentEngines, AgentTurnMode, BridgeTurnRequest, CancelToken, EngineError,
     EngineHost, EngineReadiness, EngineReadinessState,
 };
-use orca_core::progress::ProgressFileBar;
 
 use crate::render::markdown::MarkdownStreamRenderer;
 use crate::render::tool_call::ToolCallRenderer;
@@ -155,23 +154,6 @@ impl BridgeView for ReplBridgeView {
             escape(original_name)
         ));
     }
-}
-
-/// The bridge's progress.js bars as one line for the info row: `[A] Label 37%` per bar.
-pub fn format_external_bars(bars: &[ProgressFileBar]) -> String {
-    bars.iter()
-        .map(|b| {
-            let colour =
-                orca_core::orchestration::palette::XTERM[(b.color_slot().rem_euclid(8)) as usize];
-            format!(
-                "\x1b[48;5;{colour}m\x1b[30m {} \x1b[0m {} \x1b[2m{:.0}%\x1b[0m",
-                b.letter(),
-                crate::render::text::sanitize(&b.label),
-                b.pct.clamp(0.0, 100.0)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("  ")
 }
 
 impl Repl {
@@ -408,20 +390,48 @@ impl Repl {
         ));
     }
 
-    /// The bridge's progress.js bars on the info row while they change.
-    pub(super) fn show_bridge_progress(&self) {
-        let Some(write) = self.panel.info_line_writer() else {
+    /// The footer's bars (`AgentPanelRenderer`): the Lead, a bridge's progress.js bars and the
+    /// sub-agents, repainted from their own thread.
+    pub(super) fn start_footer(&mut self) {
+        if !self.panel.is_active() {
             return;
-        };
-        let last = Arc::new(std::sync::Mutex::new(String::new()));
+        }
+        self.sync_footer_engine();
+        let external = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let footer = super::agent_footer::FooterRenderer::start(
+            self.panel.clone(),
+            super::agent_footer::FooterSources {
+                orchestrator: self.session.orchestrator.clone(),
+                slots: self.slots.clone(),
+                provider_model: self
+                    .session
+                    .config
+                    .lm_studio
+                    .primary_model()
+                    .map(str::to_string),
+                engine_label: self.footer_engine.clone(),
+                external: external.clone(),
+            },
+        );
+        let poke = footer.poker();
         self.engines.on_progress_changed(Arc::new(move |bars| {
-            let line = format_external_bars(bars);
-            let mut l = last.lock().unwrap_or_else(|e| e.into_inner());
-            if *l != line {
-                write(&line);
-                *l = line;
-            }
+            *external.lock().unwrap_or_else(|e| e.into_inner()) = bars.to_vec();
+            poke();
         }));
+        self.footer = Some(footer);
+    }
+
+    /// The Lead bar's engine name follows the selected engine.
+    pub(super) fn sync_footer_engine(&self) {
+        let label = EngineHost::footer_label(&self.session.config).map(str::to_string);
+        let mut current = self.footer_engine.lock().unwrap_or_else(|e| e.into_inner());
+        if *current != label {
+            *current = label;
+            drop(current);
+            if let Some(f) = &self.footer {
+                f.poke();
+            }
+        }
     }
 }
 

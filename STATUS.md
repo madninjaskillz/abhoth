@@ -128,6 +128,8 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 - Foreground sub-agents ask the user for approvals in the REPL and the browser (D104).
 - `lead_mode` for the OpenOrca profile in `leadMode: auto` (D105, scenario 123).
 - Coloured agent badges in chat lines and the `/agents` picker (D106).
+- The REPL agent footer: Lead bar, a bridge's progress.js bars, agent bars (D107); scenario 235
+  and the `--hostui` bridge integration test (D108).
 
 ### Phase 7: desktop app (2026-11-25, D110)
 
@@ -155,8 +157,7 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 1. Phase 6: parity sweep (cross-check coverage, `rust-port/sweep`); bench parity run
    (user-scheduled).
-2. An agent footer in the REPL.
-3. Phase 7 follow-ups: close-to-tray setting, Linux/macOS desktop builds in CI, installer.
+2. Phase 7 follow-ups: close-to-tray setting, Linux/macOS desktop builds in CI, installer.
 
 ### Live smoke 2026-11-25 (third run)
 
@@ -202,9 +203,7 @@ worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
 
 ## Known gaps
 
-- The REPL has no agent footer (a bridge's progress.js bars show on the info row, D101).
-- No end-to-end scenario yet for bridges under `--hostui` or the foreground sub-agent approval
-  prompt in the terminal (Rust tests only).
+- REPL footer: no bar selection (↓ / Ctrl+G) or agent view (D107).
 - Anthropic: a turn with several signed thinking blocks keeps no signature (its reasoning is not
   sent back, D92).
 - Bench runs: kit timeouts kill only the process.

@@ -543,3 +543,15 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   has no lookbehind) with the same rule: `Agent [A-KM-Z]` not inside a word. `/agents` with no
   single running agent opens the arrow-key picker (`AgentCommands.Pick`: running first, newest
   first, "← back"); its rows carry progress, activity and elapsed time as in C#.
+- **D107** The REPL footer (`AgentPanelLayout` / `AgentPanelRenderer`): the Lead bar (from 14
+  rows), a bridge's progress.js bars under it, then a bar per running or just-finished agent,
+  repainted by a thread every 250 ms and at once on agent events, changed rows only; the panel
+  is shared state so that thread can resize the reserved rows. This replaces D101 (bars on the
+  info row). Not ported: bar selection (↓ / Ctrl+G, the agent view) and its key hints. A
+  streamed reply's live tail is erased row by row instead of with `ESC[J`, which would also
+  wipe the bars; the footer does not grow while a tail is on screen (as C#).
+- **D108** End-to-end coverage: scenario 235 shows a foreground sub-agent's approval prompt in
+  the terminal on both builds (C# prompts too; `spawn_agent` itself needs approval in both, so
+  the scenario always-approves it). Bridges under `--hostui` are covered by a Rust integration
+  test (`hostui_bridge_e2e`: the real `abhoth --hostui` with a temp home, `SetEngine` over the
+  hub, one turn played by fake-claude), as the cross-check does not drive the web host.

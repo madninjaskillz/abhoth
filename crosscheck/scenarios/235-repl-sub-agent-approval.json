@@ -1,0 +1,33 @@
+{
+  "_comment": "Interactive: a foreground sub-agent's write_file asks 'Allow this tool call?' in the terminal as the Lead's would (C# shares one PermissionManager; D104). spawn_agent itself is always approved here so the only prompt is the sub-agent's; Enter answers Yes.",
+  "config": {
+    "agent": {"leadMode": "hands-on"},
+    "permissions": {"autoApproveAll": false, "alwaysApprove": ["spawn_agent"]}
+  },
+  "replies": [
+    {"tools": [{"name": "spawn_agent", "args": {"task": "Write out/a.txt.", "agent_type": "general", "label": "Write a file"}}]},
+    {"tools": [{"name": "write_file", "args": {"path": "out/a.txt", "content": "one\n"}}]},
+    {"text": "Wrote a.txt."},
+    {"text": "Agent A wrote the file. SUB-DONE"}
+  ],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {"action": "waitFor", "text": "❯", "timeoutMs": 45000},
+      {"action": "waitQuiet", "ms": 500},
+      {"action": "type", "text": "write a file with a helper"},
+      {"action": "key", "name": "enter"},
+      {"action": "waitFor", "text": "Allow this tool call?"},
+      {"action": "waitQuiet", "ms": 500},
+      {"action": "key", "name": "enter"},
+      {"action": "waitFor", "text": "SUB-DONE"},
+      {"action": "waitQuiet", "ms": 600},
+      {"action": "type", "text": "/exit"},
+      {"action": "key", "name": "enter"},
+      {"action": "exit", "timeoutMs": 15000},
+      {"action": "expect", "text": "Goodbye!"}
+    ],
+    "compareScreen": ["Goodbye!"]
+  }
+}

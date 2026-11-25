@@ -69,6 +69,8 @@ desktop = ["dep:wry", "dep:tao", "dep:tray-icon", "dep:rfd", "dep:image", "dep:f
 
 [dev-dependencies]
 reqwest.workspace = true
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
 orca-testkit.workspace = true
 tempfile.workspace = true
 async-trait.workspace = true
