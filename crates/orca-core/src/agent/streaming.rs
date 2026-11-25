@@ -4,6 +4,7 @@
 //! native-tools retry of an empty stream, and partial output kept when the stream dies after
 //! text arrived.
 
+use super::log_lines::STREAM;
 use super::session::{AgentObserver, AgentSession};
 use super::think_tag_filter::ThinkTagFilter;
 use crate::chat::ReasoningCap;
@@ -46,6 +47,17 @@ struct Counters {
     /// The current update's reasoning and answer text (for the reasoning cap).
     update_reasoning: String,
     update_text: String,
+    /// "First token received from LLM" was logged.
+    first_token_seen: bool,
+}
+
+impl Counters {
+    fn note_first_token(&mut self) {
+        if !self.first_token_seen {
+            self.first_token_seen = true;
+            tracing::debug!(target: STREAM, "First token received from LLM");
+        }
+    }
 }
 
 impl AgentSession {
@@ -66,6 +78,7 @@ impl AgentSession {
             let mut on_event = |e: StreamEvent| -> StreamControl {
                 match e {
                     StreamEvent::Text(t) => {
+                        c.note_first_token();
                         c.token_count += 1;
                         c.text_parts += 1;
                         let (think_text, _) = think.process(&t);
@@ -89,6 +102,7 @@ impl AgentSession {
                         }
                     }
                     StreamEvent::Reasoning(r) => {
+                        c.note_first_token();
                         c.thinking += 1;
                         if budget > 0 && c.thinking > budget {
                             c.budget_exceeded = true;
@@ -100,7 +114,8 @@ impl AgentSession {
                         }
                         c.update_reasoning.push_str(&r);
                     }
-                    StreamEvent::ToolCallStarted { .. } | StreamEvent::Usage(_) => {}
+                    StreamEvent::ToolCallStarted { .. } => c.note_first_token(),
+                    StreamEvent::Usage(_) => {}
                     StreamEvent::UpdateEnd { tool_call_delta } => {
                         let reasoning = std::mem::take(&mut c.update_reasoning);
                         let text = std::mem::take(&mut c.update_text);
@@ -146,7 +161,8 @@ impl AgentSession {
             // loop decide whether it holds a complete tool call.
             Err(ChatError::Interrupted { message, partial }) if partial.text_parts > 0 => {
                 tracing::warn!(
-                    "stream died mid-response after {} text parts; keeping the partial output",
+                    target: STREAM,
+                    "Stream died mid-response after {} text parts \u{2014} preserving partial output",
                     partial.text_parts
                 );
                 stream_error = Some(ChatError::Interrupted {
@@ -156,11 +172,26 @@ impl AgentSession {
                 *partial
             }
             Err(e) => {
+                if let ChatError::IdleTimeout(d) = &e {
+                    tracing::warn!(
+                        target: STREAM,
+                        "Streaming idle timeout after {}s \u{2014} no tokens received",
+                        d.as_secs()
+                    );
+                }
                 self.last_chunk_count = c.token_count;
                 return Err(e);
             }
         };
 
+        for call in &response.tool_calls {
+            tracing::debug!(
+                target: STREAM,
+                "Native FunctionCallContent received: {} (id: {})",
+                call.name,
+                call.id
+            );
+        }
         let mut out = StreamOutcome {
             token_count: c.token_count,
             thinking_token_count: c.thinking,
@@ -175,7 +206,8 @@ impl AgentSession {
         }
         if c.runaway {
             tracing::warn!(
-                "thinking runaway: {} reasoning chunks with no text or tool call; generation cancelled",
+                target: STREAM,
+                "Thinking runaway: {} reasoning chunks with no text or tool call \u{2014} generation cancelled",
                 c.thinking
             );
             out.thinking_runaway = true;
@@ -192,7 +224,8 @@ impl AgentSession {
             && self.native_tools
         {
             tracing::debug!(
-                "stream had {} updates but no content with native tools; retrying without tools",
+                target: STREAM,
+                "Stream had {} updates but 0 contents with native tools \u{2014} retrying without native tools",
                 response.updates
             );
             let mut retry_options = options.clone();
@@ -215,6 +248,12 @@ impl AgentSession {
             self.native_tools = false;
             self.remember_native_tools_support(false);
             let retry = retry?;
+            tracing::debug!(
+                target: STREAM,
+                "Retry stream complete: {} updates, {} contents",
+                retry.updates,
+                retry.content_items
+            );
             out.native_tools_downgraded = true;
             out.token_count += retry_tokens;
             out.empty = retry.content_items == 0;
@@ -226,9 +265,34 @@ impl AgentSession {
         }
 
         out.empty = stream_error.is_none() && response.content_items == 0;
+        if !out.empty {
+            log_stream_complete(&response.text, out.token_count, response.content_items);
+        }
         out.stream_error = stream_error;
         out.response = response;
         self.last_chunk_count = out.token_count;
         Ok(out)
+    }
+}
+
+/// "Streaming complete" (the bench reads its token count) and the captured `<next-prompt>`
+/// suggestion, as `ProcessStreamAsync` logs them at the end of a stream with content.
+fn log_stream_complete(raw: &str, token_count: i64, content_items: usize) {
+    let text = super::prompts::strip_next_prompt_tag(raw);
+    tracing::debug!(
+        target: STREAM,
+        "Streaming complete: {token_count} tokens, {} chars, {content_items} content items",
+        text.encode_utf16().count()
+    );
+    let lower = raw.to_ascii_lowercase();
+    if let Some(start) = lower.find("<next-prompt>") {
+        let from = start + "<next-prompt>".len();
+        if let Some(len) = lower[from..].find("</next-prompt>") {
+            tracing::debug!(
+                target: STREAM,
+                "Captured next-prompt suggestion: {}",
+                raw[from..from + len].trim()
+            );
+        }
     }
 }

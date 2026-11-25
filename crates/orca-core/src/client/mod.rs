@@ -109,6 +109,11 @@ pub fn client_for_model(
         a.idle_timeout = std::time::Duration::from_secs(lm.streaming_timeout_seconds.max(1) as u64);
         return client.with_router(std::sync::Arc::new(anthropic::AnthropicClient::new(a)));
     }
+    tracing::info!(
+        target: "orca_core::client::LmStudioClientFactory",
+        "Creating LM Studio client: {}, model: {model}",
+        lm.base_url
+    );
     client
 }
 

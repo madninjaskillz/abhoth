@@ -43,12 +43,12 @@ pub fn register_with(
 ) {
     let shell = match orca_tools_pi::shell::resolve(config.pi.shell_path.as_deref()) {
         Ok(s) => {
-            tracing::info!("Pi profile: bash = {}", s.path);
+            tracing::info!(target: "orca_cli::Program", "Pi profile: bash = {}", s.path);
             Some(s)
         }
         Err(e) => {
             // Fall back to OpenOrca's own shell tool rather than failing every call.
-            tracing::warn!("Pi profile: no bash found, keeping Abhoth's bash tool. {e}");
+            tracing::warn!(target: "orca_cli::Program", "Pi profile: no bash found, keeping Abhoth's bash tool. {e}");
             eprintln!(
                 "\u{26A0} Pi profile: no bash shell found \u{2014} falling back to Abhoth's shell tool. Install Git for Windows or set pi.shellPath in config.json."
             );
@@ -69,12 +69,18 @@ pub fn register_with(
         session_environment: session_environment(config),
         job_manager: jobs,
     });
+    let names = tools
+        .iter()
+        .map(|t| t.name().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
     for tool in tools {
         if tool.name() == "bash" && !has_shell {
             continue;
         }
         r.register(as_tool(tool));
     }
+    tracing::info!(target: "orca_cli::Program", "Pi profile: registered {names}");
 
     let agent = &config.agent;
     let auto_lead = !agent.peer_mode && agent.lead_mode.trim().eq_ignore_ascii_case("auto");

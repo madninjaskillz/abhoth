@@ -1708,6 +1708,12 @@ impl AgentOrchestrator {
                 s.current_activity = Some("thinking".into());
             }
             let step = iteration + 1;
+            tracing::debug!(
+                "Sub-agent #{} {} iteration {step}/{}",
+                context.number,
+                type_def.name,
+                budget.max()
+            );
             self.raise(AgentEvent::IterationStarted {
                 agent_id: context.id.clone(),
                 iteration: step,

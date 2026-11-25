@@ -472,6 +472,8 @@ pub async fn run_single_prompt_in_session(
     config_dir: Option<&Path>,
     restored: Option<sessions::RestoredSession>,
 ) -> Result<SinglePromptResult> {
+    // `RunSinglePromptJsonAsync` logs the prompt under the REPL's category.
+    tracing::info!(target: "orca_cli::ReplLoop", "Single-prompt JSON mode: {prompt}");
     if orca_core::engines::selected_bridge(&config).is_some() {
         return run_bridge_prompt(config, cwd, prompt, quiet, restored).await;
     }

@@ -345,7 +345,10 @@ impl AgentSession {
         );
         if skip_thinking {
             request_parameters::skip_thinking(&mut options);
-            tracing::debug!("adaptive reasoning: no thinking for this step");
+            tracing::debug!(
+                target: super::log_lines::LOOP,
+                "Adaptive reasoning: no thinking for this step (the last round was all successful writes/edits)"
+            );
         }
         options.max_output_tokens = self.config.lm_studio.max_tokens;
         if self.native_tools {
@@ -460,8 +463,16 @@ impl AgentSession {
         call: &ToolCall,
         observer: &mut dyn AgentObserver,
     ) -> ToolResult {
+        use super::log_lines::{self as log, PIPELINE};
+        tracing::debug!(
+            target: PIPELINE,
+            "ExecuteToolAsync called: {} args: {}",
+            call.name,
+            log::head_ellipsis(&call.arguments, log::ARGS_MAX_CHARS)
+        );
         let pi_profile = orca_tools_pi::is_pi_profile(&self.config.tool_profile);
         let Some(tool) = self.registry.resolve(&call.name) else {
+            tracing::warn!(target: PIPELINE, "Unknown tool requested: {}", call.name);
             if pi_profile {
                 // Pi's agent-loop text.
                 return ToolResult::error_with(
@@ -490,8 +501,19 @@ impl AgentSession {
             Ok(Value::Object(_)) => call.arguments.as_str(),
             _ => "{}",
         };
+        tracing::debug!(
+            target: PIPELINE,
+            "Tool resolved: {} (risk: {:?})",
+            call.name,
+            tool.risk_level()
+        );
         let prepared = match tool.prepare_arguments(raw_arguments) {
             Some(Err(error)) => {
+                tracing::warn!(
+                    target: PIPELINE,
+                    "Tool {} argument validation failed: {error}",
+                    call.name
+                );
                 return ToolResult::error_with(
                     error,
                     orca_abstractions::ToolErrorCode::InvalidArguments,
@@ -532,6 +554,7 @@ impl AgentSession {
         };
 
         if !self.check_permission(tool.as_ref(), &args) {
+            tracing::info!(target: PIPELINE, "Permission denied for tool: {}", call.name);
             return ToolResult::denied("Permission denied by user.");
         }
         // Already started while the model was still writing (agent.earlyReadOnlyTools): its
@@ -575,6 +598,21 @@ impl AgentSession {
         };
         if let Some(shared) = &shared {
             shared.drain_into(self);
+        }
+        tracing::debug!(
+            target: PIPELINE,
+            "Tool {} completed: isError={} ({} chars)",
+            call.name,
+            log::dotnet_bool(result.is_error),
+            result.content.encode_utf16().count()
+        );
+        if result.is_error {
+            tracing::warn!(
+                target: PIPELINE,
+                "Tool {} error: {}",
+                call.name,
+                log::head_ellipsis(&result.content, log::PREVIEW_MAX_CHARS)
+            );
         }
         // `cd`: later tool calls resolve paths against the new directory (C# changes the
         // process-wide current directory).
@@ -658,10 +696,17 @@ impl AgentSession {
                 .await
             {
                 Ok(r) => r,
-                Err(_) => ToolResult::error(format!(
-                    "Error: Tool '{}' timed out after {TOOL_EXECUTION_TIMEOUT_SECONDS} seconds.",
-                    tool.name()
-                )),
+                Err(_) => {
+                    tracing::warn!(
+                        target: super::log_lines::EXECUTOR,
+                        "Tool {} timed out after {TOOL_EXECUTION_TIMEOUT_SECONDS}s",
+                        tool.name()
+                    );
+                    ToolResult::error(format!(
+                        "Error: Tool '{}' timed out after {TOOL_EXECUTION_TIMEOUT_SECONDS} seconds.",
+                        tool.name()
+                    ))
+                }
             }
         };
         while let Ok(line) = rx.try_recv() {
