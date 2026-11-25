@@ -12,9 +12,17 @@ on:
 permissions:
   contents: read
 
+# Debug info off: the full workspace's test binaries with debug info fill the runner's disk
+# (ld died with a bus error on ubuntu-latest). Incremental builds are useless on CI anyway.
+env:
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+
 jobs:
   rust:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
