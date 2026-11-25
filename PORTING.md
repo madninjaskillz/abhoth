@@ -35,14 +35,15 @@ target/debug/orca-crosscheck --csharp ../src/OpenOrca.Cli/bin/Release/net10.0/op
 | OpenOrca.Tools.Common (truncation, paths, text helpers) | `orca-tools-common` | done for current tools |
 | OpenOrca.Core/Configuration (`OrcaConfig`, `ConfigManager`) | `orca-core::config` | done, round-trip compatible |
 | OpenOrca.Core/Client (OpenAI client, extra body, served models, request parameters, thinking) | `orca-core::client` | done for LM Studio / OpenAI-compatible |
-| OpenOrca.Cli/Repl agent loop (`AgentLoopRunner`, `ToolCallDispatcher`, `ToolCallExecutor`, `ToolExecutionPipeline`, `RunEvidence`) | `orca-core::agent` | core loop done; see gaps |
-| OpenOrca.Core/Permissions | `orca-core::agent::permissions` | matcher done; no prompter yet |
+| OpenOrca.Cli/Repl agent loop (`AgentLoopRunner`, `ToolCallDispatcher`, `ToolCallExecutor`, `ToolExecutionPipeline`, `RunEvidence`) | `orca-core::agent` | loop parity done (see STATUS gaps) |
+| OpenOrca.Core/Permissions | `orca-core::agent::permissions` | done; prompter trait, CLI installs none yet |
 | plugins/tools FileSystem (read, write, edit, list, glob, grep) | `orca-tools-fs` | done |
 | plugins/tools Shell (bash, get_process_output, stop_process) | `orca-tools-shell` | done |
 | plugins/tools (git, web, image, LSP, MCP proxy, archive, multi_edit, apply_patch, agents, ...) | `orca-tools-*` | phase 3 |
 | plugins/commands (slash commands) | `orca-cli::commands` | phase 4 |
 | OpenOrca.Tools.Pi (Pi profile toolset) | `orca-tools-pi` | phase 3 |
-| OpenOrca.Core Session, Chat, Orchestration, Slots, Engines, Profiles, Hooks, Mcp, Live, Attachments | `orca-core::*` | phase 2-3 |
+| OpenOrca.Core Session, Chat (compaction), Hooks | `orca-core::{session,chat,hooks}` | done |
+| OpenOrca.Core Orchestration, Slots, Engines, Profiles, Mcp, Live, Attachments | `orca-core::*` | phase 3 |
 | OpenOrca.Cli (Program, REPL, rendering, TUI, custom commands, `--print`) | `orca-cli` | `--print` done; REPL/TUI phase 4 |
 | OpenOrca.WebUi (host, SignalR hub, bench, git, files, PTY, projects) | `orca-webui` | phase 5 |
 | tests/OpenOrca.TestKit (fake model server) | `orca-testkit` | done |
@@ -168,3 +169,31 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D7** The cross-check masks the system prompt text and the tools list until phase 2
   ports the prompt system and phase 3 the remaining tools.
 - **D8** The run-evidence command splitter is hand-written (the C# regex uses lookaround).
+- **D9** The turn loop lives in `agent::turn` (one module for `AgentLoopRunner` +
+  `ToolCallDispatcher` + `ToolCallExecutor`), with the per-turn state in a `LoopState` struct;
+  the session keeps the cross-turn state (failover index, sticky native-tools support,
+  retry and doom histories). Retry/failover delays are session fields so tests can zero them.
+- **D10** Stream-start errors other than a context overflow end the turn with an error, as in
+  C#; only idle timeouts and empty replies go through retry and failover.
+- **D11** Tool policies (input size, plan, sandbox, orchestrator Lead) run before execution in
+  the C# order; a blocked call returns its message as the result and is neither recorded nor
+  counted for retry detection.
+- **D12** Permissions: `evaluate_permission` returns Allow / Deny / Ask, and a
+  `PermissionPrompter` trait answers Ask (approve / deny / approve-all, the scope stored
+  lowercase for the session). With no prompter, calls needing approval fail closed, matching
+  C# `--print`.
+- **D13** `--print` reports `LastAssistantResponse` (the last reply text), not the wrap-up
+  buffer, matching C#.
+- **D14** The text tool-call parser's file-path regex and single-quote JSON repair are
+  hand-written (the C# patterns use lookaround).
+- **D15** Cross-check scenarios can pass extra CLI args (`args`) and plant config-home files
+  (`home_files`); scenario numbers are unique prefixes.
+- **D16** New pinned deps: `sha2 =0.10.8` (prompt hashes), `windows-version =0.1.1`
+  (PLATFORM string as .NET prints it), `async-trait =0.1.92` (the compactor trait object).
+- **D17** Loop messages re-export `PromptConstants` from `agent::prompt_constants` instead of
+  keeping copies.
+- **D18** Context management keeps the session's `Vec<ChatMessage>`; each compaction check
+  works on a `Conversation` copy and writes the result back, so a cancelled compaction loses
+  nothing. Usage reported for a history changed in place since the request is discarded.
+- **D19** Session files keep the C# JSON shape (read and written both ways); `--print` does not
+  auto-save, as in C#.
