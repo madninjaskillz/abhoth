@@ -35,6 +35,8 @@ struct Setup {
     require_totp: bool,
     legacy_dir: Option<PathBuf>,
     proxies: Vec<std::net::IpAddr>,
+    /// The desktop app (D142).
+    local_admin: bool,
 }
 
 impl Site {
@@ -56,6 +58,7 @@ impl Site {
                 o.login.require_totp = cfg.require_totp;
                 o.login.legacy_dir = cfg.legacy_dir;
                 o.login.trusted_proxies = cfg.proxies;
+                o.login.local_admin = cfg.local_admin;
                 o.login.user_roots = Some(vec![root_path]);
                 o.login.clock = Some(Arc::new(move || clock_now.load(Ordering::SeqCst) as f64));
                 let factory: SessionFactory =
@@ -1243,4 +1246,129 @@ async fn the_admin_can_come_from_a_password_file() {
         "from a file, long enough",
         &u.password_hash
     ));
+}
+
+// ---- the desktop's local admin (D142) ----
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_desktop_signs_in_as_its_local_admin_which_has_no_password_sign_in() {
+    let site = Site::start(Setup {
+        no_admin: true,
+        local_admin: true,
+        ..Default::default()
+    })
+    .await;
+    assert!(!site.host.server.setup_needed(), "no setup screen");
+    let admin = site.db().first_admin().unwrap();
+    assert!(admin.local_only());
+    // The launch URL (what the desktop window opens) signs in.
+    let r = site
+        .browser()
+        .req(Method::GET, &format!("/?token={TOKEN}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::FOUND);
+    let mut b = site.browser();
+    b.keep(&r);
+    let (_, state) = b.get("/api/auth/state").await;
+    assert_eq!(state["user"], admin.username.as_str());
+    assert_eq!(state["admin"], true);
+    let (_, me) = b.get("/api/account").await;
+    assert_eq!(me["localOnly"], true);
+    // Password sign-in refuses it, with the answer an unknown user gets.
+    let (st, v) = site.browser().sign_in(&admin.username, "").await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    let (st2, unknown) = site.browser().sign_in("nobody-here", "").await;
+    assert_eq!((st2, &v), (StatusCode::UNAUTHORIZED, &unknown));
+    assert_eq!(
+        site.browser()
+            .sign_in(&admin.username, "any long password at all")
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    // It sets a first password without a current one; then password sign-in works.
+    let (_, _) = b.get("/api/auth/state").await;
+    let (st, v) = b
+        .post(
+            "/api/account/password",
+            json!({"password": "a first real password"}),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{v}");
+    assert!(!site.db().user(admin.id).unwrap().local_only());
+    assert_eq!(
+        site.browser()
+            .sign_in(&admin.username, "a first real password")
+            .await
+            .0,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_exposed_server_on_the_desktops_home_asks_for_the_local_admins_password_first() {
+    // The same home served exposed: only the passwordless local admin exists.
+    let site = Site::start(Setup {
+        no_admin: true,
+        local_admin: true,
+        exposed: true,
+        ..Default::default()
+    })
+    .await;
+    let admin = site.db().first_admin().unwrap();
+    assert!(admin.local_only());
+    assert!(site.host.server.setup_needed());
+    let mut b = site.browser();
+    let page = b.req(Method::GET, "/").send().await.unwrap();
+    assert_eq!(page.headers()["location"], "/setup");
+    assert_eq!(
+        status_of(site.host.api(Method::GET, "/api/info")).await,
+        StatusCode::FORBIDDEN,
+        "the token opens nothing"
+    );
+    let (_, state) = b.get("/api/auth/state").await;
+    assert_eq!(state["setup"], true);
+    assert_eq!(state["setupUser"], admin.username.as_str());
+    assert_eq!(
+        b.sign_in(&admin.username, "").await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    // The setup (with the code) sets its password: no second admin.
+    let (st, _) = b
+        .post(
+            "/api/auth/setup",
+            json!({"password": "a long enough password", "code": "wrong"}),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, v) = b
+        .post(
+            "/api/auth/setup",
+            json!({"username": "someone-else", "password": "a long enough password", "code": TOKEN}),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{v}");
+    assert_eq!(v["user"], admin.username.as_str());
+    assert_eq!(site.db().user_count(), 1);
+    assert!(!site.host.server.setup_needed());
+    assert_eq!(
+        site.browser()
+            .sign_in(&admin.username, "a long enough password")
+            .await
+            .0,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_plain_server_still_shows_the_setup() {
+    let site = Site::start(Setup {
+        no_admin: true,
+        ..Default::default()
+    })
+    .await;
+    assert!(site.host.server.setup_needed());
+    assert_eq!(site.db().user_count(), 0);
 }

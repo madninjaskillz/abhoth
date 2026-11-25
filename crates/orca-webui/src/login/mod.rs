@@ -81,6 +81,9 @@ pub struct LoginOptions {
     /// Where users who aren't admins may open projects; `None`: the projects locations
     /// (`ABHOTH_PROJECT_ROOTS` / `ABHOTH_PROJECTS_ROOT`, else /projects on Linux).
     pub user_roots: Option<Vec<PathBuf>>,
+    /// The desktop app (D142): with no account yet, make a local admin named after the OS user,
+    /// without a password (it signs in only through this process's launch token).
+    pub local_admin: bool,
 }
 
 impl Default for LoginOptions {
@@ -99,6 +102,7 @@ impl Default for LoginOptions {
             clock: None,
             cost: Cost::default(),
             user_roots: None,
+            local_admin: false,
         }
     }
 }
@@ -203,6 +207,28 @@ pub(crate) fn header_str<'a>(h: &'a HeaderMap, name: &str) -> Option<&'a str> {
         .filter(|s| !s.is_empty())
 }
 
+/// The desktop's local admin's name (D142): the OS user, cut down to what a username allows,
+/// else "admin".
+pub fn local_admin_name(os_user: Option<&str>) -> String {
+    let cleaned: String = os_user
+        .unwrap_or("")
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches(['-', '.'])
+        .chars()
+        .take(32)
+        .collect();
+    check_username(&cleaned).unwrap_or_else(|_| "admin".to_string())
+}
+
 /// A username: 1-64 letters, digits and `. _ - @`.
 pub fn check_username(name: &str) -> Result<String, String> {
     let n = name.trim();
@@ -261,7 +287,34 @@ impl LoginAuth {
         };
         auth.import_legacy();
         auth.bootstrap()?;
+        auth.create_local_admin();
         Ok(auth)
+    }
+
+    /// The desktop's first start (D142): a local admin named after the OS user, no password.
+    /// An imported old account or a bootstrap admin comes first (then there are users already).
+    fn create_local_admin(&self) {
+        if !self.options.local_admin || self.db.user_count() > 0 {
+            return;
+        }
+        let os_user = ["USERNAME", "USER", "LOGNAME"]
+            .iter()
+            .find_map(|k| std::env::var(k).ok().filter(|v| !v.trim().is_empty()));
+        let name = local_admin_name(os_user.as_deref());
+        match self.db.create_user(&name, "", true, true, self.now()) {
+            Ok(u) => {
+                self.record(
+                    "user.created",
+                    None,
+                    Some(&u.username),
+                    None,
+                    json!({"admin": true, "via": "desktop", "localOnly": true}),
+                );
+                tracing::info!("web UI: made the local admin {} (desktop)", u.username);
+            }
+            // Another process got there first: fine.
+            Err(e) => tracing::debug!("web UI: no local admin: {e}"),
+        }
     }
 
     fn import_legacy(&self) {
@@ -360,16 +413,29 @@ impl LoginAuth {
         })
     }
 
-    /// No user exists yet (first-run setup).
+    /// First-run setup: no user exists yet, or (exposed) only the desktop's local admin, which
+    /// must get a password before the server is reachable with one (D142).
     pub fn setup_needed(&self) -> bool {
         if self.has_users.load(Ordering::Relaxed) {
             return false;
         }
-        let some = self.db.user_count() > 0;
-        if some {
+        let ready = if self.options.exposed {
+            self.db.password_user_count() > 0
+        } else {
+            self.db.user_count() > 0
+        };
+        if ready {
             self.has_users.store(true, Ordering::Relaxed);
         }
-        !some
+        !ready
+    }
+
+    /// The local-only admin the setup gives a password to (exposed, D142).
+    pub fn setup_user(&self) -> Option<User> {
+        if self.db.password_user_count() > 0 {
+            return None;
+        }
+        self.db.first_admin().filter(User::local_only)
     }
 
     /// An account event: in the database's audit table and the audit log file.
@@ -569,6 +635,7 @@ impl LoginAuth {
             "mode": "login",
             "setup": setup,
             "setupCodeNeeded": setup && !setup_cookie,
+            "setupUser": if setup { self.setup_user().map(|u| u.username) } else { None },
             "stage": session.map_or("signedOut", |(s, _)| s.stage.as_str()),
             "user": ok.map(|(_, u)| u.username.clone()),
             "userId": ok.map(|(_, u)| u.id),
@@ -984,6 +1051,84 @@ mod tests {
         assert_eq!(project_of("/api/projects/abc"), Some("abc"));
         assert_eq!(project_of("/api/projects/clone"), None);
         assert_eq!(project_of("/api/projects"), None);
+    }
+
+    #[test]
+    fn the_local_admins_name_comes_from_the_os_user() {
+        assert_eq!(local_admin_name(Some("james")), "james");
+        assert_eq!(local_admin_name(Some("Jane Doe")), "Jane-Doe");
+        assert_eq!(local_admin_name(Some(r" DOMAIN\bob ")), "DOMAIN-bob");
+        assert_eq!(local_admin_name(Some("!!!")), "admin");
+        assert_eq!(local_admin_name(None), "admin");
+        assert_eq!(local_admin_name(Some(&"x".repeat(100))).len(), 32);
+    }
+
+    fn local_auth(dir: &std::path::Path, legacy: Option<PathBuf>) -> LoginAuth {
+        let options = LoginOptions {
+            local_admin: true,
+            legacy_dir: legacy,
+            cost: Cost::FAST,
+            ..Default::default()
+        };
+        let db = db::UserDb::open(&dir.join("abhoth.db")).unwrap();
+        LoginAuth::with_db(
+            options,
+            db,
+            String::new(),
+            true,
+            Arc::new(AuditLog::new(None)),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_desktop_makes_one_local_admin_without_a_password_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = local_auth(dir.path(), None);
+        let users = a.db.users();
+        assert_eq!(users.len(), 1);
+        assert!(users[0].admin && users[0].local_only());
+        assert!(!a.setup_needed());
+        assert_eq!(a.launch_principal().unwrap().user_id, users[0].id);
+        drop(a);
+        // The next start: the same account, no second one.
+        let b = local_auth(dir.path(), None);
+        assert_eq!(b.db.users(), users);
+        // An exposed server on this home asks for its password first.
+        let exposed = LoginAuth::with_db(
+            LoginOptions {
+                exposed: true,
+                cost: Cost::FAST,
+                ..Default::default()
+            },
+            db::UserDb::open(&dir.path().join("abhoth.db")).unwrap(),
+            String::new(),
+            false,
+            Arc::new(AuditLog::new(None)),
+        )
+        .unwrap();
+        assert!(exposed.setup_needed());
+        assert_eq!(exposed.setup_user().unwrap().id, users[0].id);
+        assert!(exposed.launch_principal().is_none());
+        exposed
+            .db
+            .set_password_hash(users[0].id, &password::hash("now it has one", Cost::FAST));
+        assert!(exposed.setup_user().is_none());
+        assert!(!exposed.setup_needed());
+    }
+
+    #[test]
+    fn the_old_account_comes_before_the_local_admin() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy = dir.path().join("webui");
+        accounts::AccountStore::new(&legacy)
+            .create("old", "the old long password")
+            .unwrap();
+        let a = local_auth(dir.path(), Some(legacy));
+        let users = a.db.users();
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].username, "old");
+        assert!(!users[0].local_only());
     }
 
     #[test]

@@ -393,6 +393,8 @@ pub async fn run_with(
     if let Some(dir) = &args.bench_dir {
         options.bench = Some(bench_options(dir, &args, &config, others.clone()));
     }
+    // The desktop app makes its own local admin on the first start (D142).
+    options.login.local_admin = hooks.is_some();
     options.desktop = hooks;
     let mut server = match WebUiServer::start(options, primary.clone()).await {
         Ok(s) => s,

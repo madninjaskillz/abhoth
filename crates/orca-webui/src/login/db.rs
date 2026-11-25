@@ -101,6 +101,14 @@ pub struct User {
     pub last_login: Option<i64>,
 }
 
+impl User {
+    /// The desktop's local admin (D142): no password yet, so it signs in only through the
+    /// desktop's per-launch token until one is set.
+    pub fn local_only(&self) -> bool {
+        self.password_hash.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Session {
     pub id: i64,
@@ -291,6 +299,19 @@ impl UserDb {
     }
 
     // ---- users ----
+
+    /// Users who can sign in with a password (not the desktop's local-only admin).
+    pub fn password_user_count(&self) -> i64 {
+        self.conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM users WHERE password_hash <> ''",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    }
 
     pub fn user_count(&self) -> i64 {
         self.conn

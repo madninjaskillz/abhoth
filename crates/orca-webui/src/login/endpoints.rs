@@ -151,15 +151,38 @@ async fn setup(State(state): State<Arc<AppState>>, req: Request<Body>) -> Respon
         auth.record("setup.fail", None, None, ip.as_deref(), json!({}));
         return error(StatusCode::FORBIDDEN, "That setup code is not right.");
     }
-    let name = match super::check_username(&text(&body, "username")) {
-        Ok(n) => n,
-        Err(e) => return error(StatusCode::BAD_REQUEST, &e),
+    // Giving the desktop's local admin a password: its name is already set.
+    let name = match auth.setup_user() {
+        Some(u) => u.username,
+        None => match super::check_username(&text(&body, "username")) {
+            Ok(n) => n,
+            Err(e) => return error(StatusCode::BAD_REQUEST, &e),
+        },
     };
     let pw = text(&body, "password");
     if let Err(e) = password::check(&pw) {
         return error(StatusCode::BAD_REQUEST, &e);
     }
     let hash = hash_password(pw, auth.options.cost).await;
+    // The desktop's local admin (D142) gets its password here rather than a second admin.
+    if let Some(local) = auth.setup_user() {
+        auth.db.set_password_hash(local.id, &hash);
+        let user = auth.db.user(local.id).unwrap_or(local);
+        let p = Principal::of(&user, Via::LaunchToken);
+        auth.record(
+            "password.set",
+            Some(&p),
+            Some(&user.username),
+            ip.as_deref(),
+            json!({"via": "setup", "localOnly": true}),
+        );
+        auth.db.touch_login(user.id, auth.now());
+        let r = signed_in(&auth, &user, "ok", &c, &headers, None);
+        return with_cookie(
+            r,
+            format!("{SETUP_COOKIE}=; max-age=0; path=/; samesite=strict; httponly"),
+        );
+    }
     let user = match auth.db.create_user(&name, &hash, true, true, auth.now()) {
         Ok(u) => u,
         Err(super::db::CreateError::NotFirst) => {
@@ -266,7 +289,8 @@ async fn login(State(state): State<Arc<AppState>>, req: Request<Body>) -> Respon
     if let Some(r) = locked(&auth, ip.as_deref(), &name) {
         return r;
     }
-    let user = auth.db.user_by_name(&name);
+    // The desktop's local admin has no password (D142): like an unknown user here.
+    let user = auth.db.user_by_name(&name).filter(|u| !u.local_only());
     // The same work for an unknown or disabled user as for a wrong password (no probing by
     // timing), and the same answer.
     let stored = user
@@ -464,6 +488,7 @@ async fn account(State(state): State<Arc<AppState>>, req: Request<Body>) -> Resp
         "username": u.username,
         "admin": u.admin,
         "totp": u.totp_enabled,
+        "localOnly": u.local_only(),
         "created": u.created,
         "lastLogin": u.last_login,
         "recoveryCodesLeft": state.login.db.recovery_codes_left(u.id),
@@ -479,6 +504,10 @@ async fn confirm_password(
     given: String,
     ip: Option<&str>,
 ) -> Result<(), Response> {
+    // The desktop's local admin sets its first password without one (D142).
+    if user.local_only() {
+        return Ok(());
+    }
     if let Some(r) = locked(auth, ip, &user.username) {
         return Err(r);
     }

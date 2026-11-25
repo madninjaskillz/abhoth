@@ -780,3 +780,18 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     of each build now differs only in C#'s plugin-loading lines. Tests: `crates/orca-cli/tests/event_log.rs`
     runs turns against the fake server with the file log layer and counts each kind with the
     bench's own patterns.
+- **D142** (user decision 2026-11-25) The desktop app needs no setup screen. When `abhoth-desktop`
+  starts and `abhoth.db` has no users, it makes a local admin named after the OS user
+  (`USERNAME`/`USER`, cut down to the username characters, else `admin`) with **no password**
+  (`password_hash` empty; `User::local_only`). The creation is the same atomic insert as the
+  setup, so a restart makes nothing new. An imported `account.json` (D140) or an
+  `ABHOTH_ADMIN_USER` admin comes first, and then there is nothing to make. `--hostui` (Docker,
+  servers) never does this and still shows the setup.
+  - **Signing in.** This account signs in only through the desktop's per-launch token.
+    Password sign-in and 2FA refuse it, with the same answer and the same hashing work as for an
+    unknown user. The Account page lets it set a first password without a current one.
+  - **Exposed servers.** If the same home is later served with `--hostui-login`, a home whose
+    only users have no password counts as not set up. Pages redirect to `/setup`, the API answers
+    403, and the launch token opens nothing. The setup screen names the local admin
+    (`setupUser`) and sets its password, with the setup code as usual, instead of making a
+    second admin. `abhoth admin reset-password <name>` does the same from the command line.

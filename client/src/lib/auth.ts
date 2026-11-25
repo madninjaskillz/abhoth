@@ -9,6 +9,8 @@ export interface AuthState {
   setup: boolean;
   /** The setup page must ask for the code the server printed (no setup cookie from the launch URL). */
   setupCodeNeeded: boolean;
+  /** Setup on an exposed server for the desktop's local admin: it only needs a password. */
+  setupUser?: string | null;
   stage: AuthStage;
   user: string | null;
   userId: number | null;
@@ -133,6 +135,8 @@ export interface Account {
   username: string;
   admin: boolean;
   totp: boolean;
+  /** The desktop's local admin, without a password yet (signs in only through the desktop). */
+  localOnly?: boolean;
   created: number;
   lastLogin: number | null;
   recoveryCodesLeft: number;

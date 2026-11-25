@@ -89,6 +89,11 @@ The web UI (`--hostui`, `--desktop`, Docker) has accounts, kept in SQLite at
   abhoth admin reset-password <name>       # also ends that user's sessions
   abhoth admin reset-2fa <name>            # abhoth admin list shows the users
   ```
+- **The desktop app.** The first start makes a local admin named after your OS user, with no
+  password, and signs in as it. This account signs in only through the desktop window, and
+  password sign-in refuses it until a password is set: on the Account page, or with
+  `abhoth admin reset-password <name>`. If the same home is served with `--hostui-login`, the
+  setup screen asks for that password first. `--hostui` servers still show the setup (D142).
 - **Users.** Admins create, disable and delete users, reset their passwords and 2FA, grant
   admin rights, and read the audit log (Users page). Each user has their own projects and their
   chats in them. The server checks ownership on every endpoint and on the hub websocket:

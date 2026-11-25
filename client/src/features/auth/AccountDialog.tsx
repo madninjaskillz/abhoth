@@ -39,7 +39,7 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             {account.isError && <div className="text-sm text-destructive">{errorText(account.error)}</div>}
             <TabsContent value="security" className="space-y-6">
-              <PasswordSection />
+              <PasswordSection localOnly={account.data?.localOnly} />
               {account.data && <TotpSection totp={account.data.totp} left={account.data.recoveryCodesLeft} />}
             </TabsContent>
             <TabsContent value="keys">
@@ -65,7 +65,7 @@ function Section({ title, description, children }: { title: string; description?
   );
 }
 
-function PasswordSection() {
+function PasswordSection({ localOnly = false }: { localOnly?: boolean }) {
   const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -84,18 +84,23 @@ function PasswordSection() {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setMsg(null);
-    if (current && !problem) change.mutate();
+    if ((current || localOnly) && !problem) change.mutate();
   };
   return (
-    <Section title="Password" description={`At least ${MIN_PASSWORD} characters. Changing it signs out your other sessions.`}>
+    <Section
+      title="Password"
+      description={localOnly
+        ? `No password yet: this account signs in only through the desktop app. Set one (at least ${MIN_PASSWORD} characters) to sign in from a browser too.`
+        : `At least ${MIN_PASSWORD} characters. Changing it signs out your other sessions.`}
+    >
       <form onSubmit={submit} className="grid gap-2 sm:grid-cols-3" data-testid="password-form">
         <input type="text" autoComplete="username" value={authState().user ?? ""} readOnly hidden />
-        <input className={small} type="password" autoComplete="current-password" placeholder="Current password" value={current} onChange={(e) => setCurrent(e.target.value)} aria-label="Current password" />
+        {!localOnly && <input className={small} type="password" autoComplete="current-password" placeholder="Current password" value={current} onChange={(e) => setCurrent(e.target.value)} aria-label="Current password" />}
         <input className={small} type="password" autoComplete="new-password" placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="New password" />
         <input className={small} type="password" autoComplete="new-password" placeholder="New password again" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-label="New password again" />
         <div className="flex items-center gap-3 sm:col-span-3">
-          <Button type="submit" size="sm" disabled={change.isPending || !current || !!problem} data-testid="password-submit">
-            {change.isPending && <Loader2 className="animate-spin" />} Change password
+          <Button type="submit" size="sm" disabled={change.isPending || (!current && !localOnly) || !!problem} data-testid="password-submit">
+            {change.isPending && <Loader2 className="animate-spin" />} {localOnly ? "Set password" : "Change password"}
           </Button>
           {password && problem && <span className="text-xs text-muted-foreground">{problem}</span>}
           {msg && <span className={msg.ok ? "text-xs text-success" : "text-xs text-destructive"} role="status">{msg.text}</span>}

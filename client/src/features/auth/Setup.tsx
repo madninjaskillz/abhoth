@@ -9,7 +9,7 @@ import { Field, errorText, input } from "./parts";
 
 /** First run (no users yet): create the admin account. */
 export function Setup({ state, onDone }: { state: AuthState; onDone: () => void }) {
-  const [user, setUser] = useState("");
+  const [user, setUser] = useState(state.setupUser ?? "");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [code, setCode] = useState("");
@@ -39,11 +39,13 @@ export function Setup({ state, onDone }: { state: AuthState; onDone: () => void 
   };
 
   return (
-    <AuthPage subtitle="Create the admin account" wide>
+    <AuthPage subtitle={state.setupUser ? "Set the admin's password" : "Create the admin account"} wide>
       <form onSubmit={(e) => void submit(e)} className="space-y-3" data-testid="setup-form">
         <p className="text-xs text-muted-foreground">
-          This is the first start of this {brandName()} server. The admin manages users and the server's settings; you can add more
-          users afterwards.
+          {state.setupUser
+            ? <>The admin {state.setupUser} was made by the desktop app and has no password yet. Set one to use this server from a browser.</>
+            : <>This is the first start of this {brandName()} server. The admin manages users and the server's settings; you can add more
+          users afterwards.</>}
         </p>
         {state.setupCodeNeeded && (
           <Field label="Setup code" hint={<>Printed in the server's log at startup (<code>First-run setup code: …</code>).</>}>
@@ -59,7 +61,7 @@ export function Setup({ state, onDone }: { state: AuthState; onDone: () => void 
           </Field>
         )}
         <Field label="Username" hint={touched && userProblem ? <span className="text-destructive">{userProblem}</span> : undefined}>
-          <input className={input} autoComplete="username" value={user} onChange={(e) => setUser(e.target.value)} autoFocus aria-label="Username" data-testid="setup-username" />
+          <input className={input} autoComplete="username" value={user} onChange={(e) => setUser(e.target.value)} readOnly={!!state.setupUser} autoFocus={!state.setupUser} aria-label="Username" data-testid="setup-username" />
         </Field>
         <Field label="Password" hint={`At least ${MIN_PASSWORD} characters. A long phrase is easiest.`}>
           <input

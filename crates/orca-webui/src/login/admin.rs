@@ -53,6 +53,7 @@ macro_rules! ctx_or_return {
 
 fn describe(state: &AppState, u: &User) -> Value {
     let mut v = json!(u);
+    v["localOnly"] = json!(u.local_only());
     v["projects"] = json!(state.projects.count_owned_by(u.id));
     v
 }

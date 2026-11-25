@@ -124,6 +124,11 @@ pub fn run(
                     if u.disabled { ", disabled" } else { "" },
                     if u.totp_enabled { ", 2FA" } else { "" }
                 );
+                if u.local_only() {
+                    println!(
+                        "      (desktop local admin, no password: set one with reset-password)"
+                    );
+                }
             }
             0
         }
