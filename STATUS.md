@@ -111,24 +111,25 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   CLI session from a saved bridged session, which also selects its engine at startup),
   `SessionBridgeSink` + the REPL view, progress.js bars on the info row, the engine on the status
   line. Cross-check 119-122 with the fake Claude CLI.
+- Bridges under `--hostui` and in bench runs (D103): `SetEngine`, the project's preferred
+  engine, the login offer, bridge turns on the bus, the Lead bar and the CLI's bars.
+- Foreground sub-agents ask the user for approvals in the REPL and the browser (D104).
+- `lead_mode` for the OpenOrca profile in `leadMode: auto` (D105, scenario 123).
 
 ## Next
 
 1. GitHub App device flow; Anthropic/Ollama clients; tool-argument number formatting.
-2. Bridge engines under `--hostui`; sub-agent approval prompter; `lead_mode` for `leadMode: auto`.
-3. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).
-4. Phase 7: `abhoth --desktop`.
+2. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).
+3. Phase 7: `abhoth --desktop`.
 
 ## Known gaps
 
-- Sub-agent tool calls that need approval are refused, also in foreground agents (C# asks the
-  user): the sub-agent pipeline has no prompter.
 - No Anthropic or Ollama clients (named providers of those kinds fall back to the local model).
-- `lead_mode` is not registered for the OpenOrca profile with `leadMode: auto`; agent badges are
-  not coloured in note lines; `/agents` is a plain list, not the interactive picker.
+- Agent badges are not coloured in note lines; `/agents` is a plain list, not the interactive
+  picker.
 - WebUi: no settings schema passed yet (settings page empty), profile/mode switching answers
   409, ask_user questions not forwarded, generated images only via the raw-file endpoint.
-- Bench runs in the Rust host are native-engine only; kit timeouts kill only the process.
+- Bench runs: kit timeouts kill only the process.
 - REPL: no agent footer bars; a bridge's progress.js bars show on the info row (D101).
 - Numbers inside re-serialized tool arguments use serde's shortest form (`1.0` -> `1`), C#
   keeps the model's digits.

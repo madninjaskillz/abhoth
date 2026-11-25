@@ -48,7 +48,7 @@ pub struct BridgeStart {
 pub type BridgeFactory = Box<dyn FnMut(&BridgeStart) -> Box<dyn AgentEngine> + Send>;
 
 /// Checks a bridge CLI before it is enabled (tests swap in fakes).
-pub type ReadinessCheck = Box<
+pub type ReadinessCheck = Arc<
     dyn Fn(&str, &OrcaConfig) -> BoxFuture<'static, Result<EngineReadiness, EngineError>>
         + Send
         + Sync,
@@ -152,19 +152,28 @@ impl EngineHost {
 
     /// Is `engine_id` usable now (installed, new enough, logged in)? A check that fails
     /// outright reads as an `Error` readiness with its message.
-    pub async fn check(&self, engine_id: &str, config: &OrcaConfig) -> EngineReadiness {
-        let result = match &self.readiness_check {
-            Some(check) => check(engine_id, config).await,
-            None => readiness::check(engine_id, config, &CancelToken::new()).await,
-        };
-        result.unwrap_or_else(|e| EngineReadiness {
-            engine_id: engine_id.to_string(),
-            state: EngineReadinessState::Error,
-            message: e.to_string(),
-            executable: None,
-            version: None,
-            login_command: None,
-        })
+    pub fn check<'a>(
+        &self,
+        engine_id: &'a str,
+        config: &'a OrcaConfig,
+    ) -> impl std::future::Future<Output = EngineReadiness> + Send + 'a {
+        // Only the (Sync) check is held across the await, so a host behind a lock can switch
+        // from a Send future.
+        let check = self.readiness_check.clone();
+        async move {
+            let result = match check {
+                Some(check) => check(engine_id, config).await,
+                None => readiness::check(engine_id, config, &CancelToken::new()).await,
+            };
+            result.unwrap_or_else(|e| EngineReadiness {
+                engine_id: engine_id.to_string(),
+                state: EngineReadinessState::Error,
+                message: e.to_string(),
+                executable: None,
+                version: None,
+                login_command: None,
+            })
+        }
     }
 
     /// Switch engines mid-session (`SwitchAsync`). A bridge is checked first; until that passes

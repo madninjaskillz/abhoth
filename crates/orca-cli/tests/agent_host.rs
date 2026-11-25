@@ -85,7 +85,7 @@ fn create(
     o.set_use_streaming(true);
     let bus = Arc::new(LiveEventBus::new());
     let host = Arc::new(WebAgentHost::new(o.clone(), config, Arc::new(|| false)));
-    host.attach(bus.clone());
+    host.attach(bus.clone(), None);
     (o, host, bus)
 }
 

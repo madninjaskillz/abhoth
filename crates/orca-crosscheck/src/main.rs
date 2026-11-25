@@ -907,8 +907,7 @@ fn mask_known_gaps(mut request: Value) -> Value {
     request
 }
 
-/// The system prompt with the AVAILABLE TOOLS lines replaced by `<tool list>` and the LEAD MODE
-/// section (present only when a `lead_mode` tool is advertised) removed.
+/// The system prompt with the AVAILABLE TOOLS lines replaced by `<tool list>`.
 fn mask_tool_derived_prompt(text: &str) -> String {
     let mut out = text.to_string();
     const LIST: &str = "AVAILABLE TOOLS:
@@ -948,20 +947,6 @@ PROGRESS:",
             out.replace_range(start..end, "<tool list>");
             break;
         }
-    }
-    const LEAD: &str = "
-
-LEAD MODE (auto):
-";
-    if let Some(start) = out.find(LEAD) {
-        let end = out[start + LEAD.len()..]
-            .find(
-                "
-
-",
-            )
-            .map_or(out.len(), |e| start + LEAD.len() + e);
-        out.replace_range(start..end, "");
     }
     out
 }

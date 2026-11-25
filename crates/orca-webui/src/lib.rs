@@ -5,6 +5,7 @@
 pub mod audit;
 pub mod auth;
 pub mod bench;
+pub mod bridge;
 pub mod files;
 pub mod git;
 pub mod hostui;

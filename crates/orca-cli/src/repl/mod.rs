@@ -197,9 +197,11 @@ impl Repl {
                 escape(p)
             ));
         }
-        self.session.prompter = Some(Box::new(permission::ConsolePermissionPrompter::new(
-            self.console.clone(),
-        )));
+        // Foreground sub-agents ask here too (background ones are refused).
+        self.session
+            .set_prompter(Box::new(permission::ConsolePermissionPrompter::new(
+                self.console.clone(),
+            )));
         self.show_bridge_progress();
         self.refresh_system_prompt();
         // BrowserUncensored asks each chat server what it is (in the background) at start.

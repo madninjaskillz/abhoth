@@ -89,6 +89,9 @@ pub struct AgentSession {
     pub plan_mode: bool,
     /// Asks the user about calls that need approval (none: they are refused).
     pub prompter: Option<Box<dyn permissions::PermissionPrompter>>,
+    /// The prompter [`set_prompter`](Self::set_prompter) installed, which foreground
+    /// sub-agents ask through too (background ones never prompt).
+    pub shared_prompter: Option<permissions::SharedPrompter>,
     /// Scopes approved with "yes to all" this session (lowercase keys).
     pub approved_scopes: std::collections::HashSet<String>,
     /// Builds the system prompt (`SystemPromptBuilder`); also remembers which prompts it built
@@ -188,6 +191,7 @@ impl AgentSession {
             native_tools: true,
             plan_mode: false,
             prompter: None,
+            shared_prompter: None,
             approved_scopes: Default::default(),
             tool_call_history: Vec::new(),
             files_modified: Vec::new(),
@@ -641,6 +645,14 @@ impl AgentSession {
             tool.permission_arg_name(),
             args,
         )
+    }
+
+    /// Ask `prompter` for approvals, in this session and in its foreground sub-agents.
+    pub fn set_prompter(&mut self, prompter: Box<dyn permissions::PermissionPrompter>) {
+        let shared: permissions::SharedPrompter =
+            std::sync::Arc::new(std::sync::Mutex::new(prompter));
+        self.prompter = Some(Box::new(permissions::ForwardingPrompter(shared.clone())));
+        self.shared_prompter = Some(shared);
     }
 
     /// [`Self::check_permission`] for a tool by name and risk (a bridge CLI's tool request):

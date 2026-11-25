@@ -29,6 +29,8 @@ pub struct SharedPipelineState {
     pub files_read: HashMap<PathBuf, Option<SystemTime>>,
     pub approved_scopes: HashSet<String>,
     pub plan_mode: bool,
+    /// The Lead's prompter: foreground sub-agents' calls that need approval ask through it.
+    pub prompter: Option<super::permissions::SharedPrompter>,
     /// Sub-agent calls not yet in the Lead's history, oldest first.
     pub journal: Vec<ToolCallRecord>,
     /// Files sub-agents changed (as their calls named them).
@@ -57,6 +59,7 @@ impl SharedPipeline {
         s.approved_scopes
             .extend(session.approved_scopes.iter().cloned());
         s.plan_mode = session.plan_mode;
+        s.prompter = session.shared_prompter.clone();
     }
 
     /// After a spawn tool returned: take what its sub-agents did into the Lead's session.
@@ -121,9 +124,14 @@ impl SessionToolExecutor {
 #[async_trait::async_trait]
 impl SubAgentToolExecutor for SessionToolExecutor {
     async fn execute(&self, tool_name: &str, args_json: &str) -> ToolResult {
-        let (plan_mode, files_read, scopes) = {
+        let (plan_mode, files_read, scopes, prompter) = {
             let s = self.shared.lock();
-            (s.plan_mode, s.files_read.clone(), s.approved_scopes.clone())
+            (
+                s.plan_mode,
+                s.files_read.clone(),
+                s.approved_scopes.clone(),
+                s.prompter.clone(),
+            )
         };
         // The pipeline's policies (input size, plan mode, sandbox); the Lead-only policy is not
         // among them.
@@ -159,6 +167,12 @@ impl SubAgentToolExecutor for SessionToolExecutor {
         copy.plan_mode = plan_mode;
         copy.files_read = files_read;
         copy.approved_scopes = scopes;
+        // Foreground agents ask the user as the Lead does; background ones run non-interactive
+        // and are refused before the prompter is reached.
+        copy.prompter = prompter.map(|p| {
+            Box::new(super::permissions::ForwardingPrompter(p))
+                as Box<dyn super::permissions::PermissionPrompter>
+        });
         let call = ToolCall {
             id: String::new(),
             name: tool_name.to_string(),

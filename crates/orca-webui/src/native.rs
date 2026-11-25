@@ -17,12 +17,18 @@ use orca_core::chat::conversation::TEXT_TOOL_RESULTS_PREFIX;
 use orca_core::client::{ChatMessage, Role, ToolCall};
 use orca_core::config::schema::{self, ProfileOverlay};
 use orca_core::config::{ConfigManager, OrcaConfig};
-use orca_core::live::{
-    LiveEngineResult, LiveEventBus, LivePermission, LiveQuestion, LiveSnapshot, LiveTranscriptItem,
-    truncate, types,
+use orca_core::engines::session_sink::SessionBridgeSink;
+use orca_core::engines::{
+    AgentEngines, AgentTurnMode, BridgeTurnRequest, CancelToken, EngineError, EngineHost,
 };
+use orca_core::live::{
+    LiveAgent, LiveEngineResult, LiveEventBus, LivePermission, LiveQuestion, LiveSnapshot,
+    LiveTranscriptItem, truncate, types,
+};
+use orca_core::session::EngineRef;
 use serde_json::json;
 
+use crate::bridge::{EngineView, LiveBridgeView, SharedEngineView, auth_of, decorate_agents};
 use crate::live::{
     AgentHost, LiveAgentMessageResult, LiveAgentTranscript, LiveSession, SettingChange,
     engine_result,
@@ -260,6 +266,8 @@ pub struct NativeOptions {
     pub rebuild: Option<RebuildFn>,
     /// The session's sub-agents (agent tabs and bars).
     pub agents: Option<Arc<dyn AgentHost>>,
+    /// Runs bridge turns (`None`: a new [`EngineHost`]; tests pass one with fakes).
+    pub engines: Option<EngineHost>,
 }
 
 #[derive(Default)]
@@ -352,9 +360,78 @@ struct Shared {
     questions: Option<Arc<QuestionBroker>>,
     rebuild: Option<RebuildFn>,
     choice: Mutex<Choice>,
+    /// The bridge engines (`AttachEngines`): switched from the browser, held while a bridge
+    /// turn runs.
+    engines: tokio::sync::Mutex<EngineHost>,
+    engine_view: SharedEngineView,
+    /// The conversation's bridge engine and its CLI session (resumed on the next bridge turn).
+    engine_ref: Mutex<EngineRef>,
+    agents: Option<Arc<dyn AgentHost>>,
 }
 
 impl Shared {
+    /// The agent bars as the browser shows them (the engine's Lead bar and CLI bars added).
+    fn agents(&self) -> Vec<LiveAgent> {
+        let view = self.engine_view.lock().unwrap().clone();
+        decorate_agents(
+            self.agents.as_ref().map(|a| a.agents()),
+            &view,
+            self.bus.in_turn(),
+        )
+    }
+
+    fn publish_agents(&self) {
+        if self.bus.is_active() {
+            self.bus
+                .publish(types::AGENTS, json!({ "agents": self.agents() }));
+        }
+    }
+
+    fn engine_id(&self) -> &'static str {
+        self.engine_view.lock().unwrap().id
+    }
+
+    /// `SetEngineAsync`.
+    async fn set_engine(&self, engine: &str) -> LiveEngineResult {
+        let current = self.engine_id();
+        let Some(id) = AgentEngines::normalize(Some(engine)) else {
+            return engine_result(false, current, Some(&format!("Unknown engine '{engine}'.")));
+        };
+        if id == current {
+            return engine_result(true, id, None);
+        }
+        if self.bus.in_turn() || self.queue.len() > 0 {
+            return engine_result(
+                false,
+                current,
+                Some("Wait for the current turn to finish, then switch engines."),
+            );
+        }
+        let mut config = self.config.lock().unwrap().clone();
+        let result = self.engines.lock().await.switch(id, &mut config).await;
+        if !result.switched {
+            let mut r = engine_result(
+                false,
+                current,
+                Some(
+                    result
+                        .error
+                        .as_deref()
+                        .unwrap_or("The engine isn't available."),
+                ),
+            );
+            r.auth = auth_of(id, result.readiness.as_ref());
+            return r;
+        }
+        self.config.lock().unwrap().agent.engine = id.to_string();
+        self.config_dirty.store(true, Ordering::SeqCst);
+        *self.engine_ref.lock().unwrap() = EngineRef::default();
+        self.engine_view.lock().unwrap().id = id;
+        self.bus.publish(types::ENGINE, json!({ "engine": id }));
+        self.publish_agents();
+        engine_result(true, id, None)
+    }
+
     fn publish_busy(&self) {
         self.bus.publish(
             types::BUSY,
@@ -374,6 +451,12 @@ pub struct AgentLiveSession {
 }
 
 impl AgentLiveSession {
+    /// What the agent host's own `agents` events go through, so a bridge's Lead bar and CLI
+    /// bars stay on them.
+    pub fn agents_decorator(&self) -> crate::bridge::AgentsDecorator {
+        crate::bridge::decorator(self.shared.engine_view.clone(), self.shared.bus.clone())
+    }
+
     /// Start the worker for `session`; its approvals go to the browser.
     pub fn start(session: AgentSession, bus: Arc<LiveEventBus>, mode: &str) -> Arc<Self> {
         Self::start_with(session, bus, mode, NativeOptions::default())
@@ -405,7 +488,22 @@ impl AgentLiveSession {
         options: NativeOptions,
     ) -> Arc<Self> {
         let permissions = Arc::new(PermissionBroker::new(bus.clone()));
-        session.prompter = Some(Box::new(BrowserPrompter(permissions.clone())));
+        // The browser answers the Lead's and foreground sub-agents' approvals.
+        session.set_prompter(Box::new(BrowserPrompter(permissions.clone())));
+        let engine_view: SharedEngineView = Arc::new(Mutex::new(EngineView {
+            id: EngineHost::engine_id(&session.config),
+            bars: Vec::new(),
+        }));
+        let mut engines = options.engines.unwrap_or_default();
+        // A bridge that needs a login: the browser offers it (`AuthRequired`).
+        let auth_bus = bus.clone();
+        engines.on_auth_required(Arc::new(move |a| {
+            auth_bus.publish(
+                types::ENGINE_AUTH,
+                json!({"engine": a.engine_id, "message": a.message, "loginCommand": a.login_command_line()}),
+            );
+        }));
+        let agents = options.agents.clone();
         let shared = Arc::new(Shared {
             bus,
             queue: Queue {
@@ -423,7 +521,21 @@ impl AgentLiveSession {
             questions: options.questions,
             rebuild: options.rebuild,
             choice: Mutex::new(Choice::default()),
+            engines: tokio::sync::Mutex::new(engines),
+            engine_view,
+            engine_ref: Mutex::new(EngineRef::default()),
+            agents,
         });
+        // The bridge CLI's progress.js bars show with the agents.
+        let weak = Arc::downgrade(&shared);
+        if let Ok(engines) = shared.engines.try_lock() {
+            engines.on_progress_changed(Arc::new(move |bars| {
+                if let Some(shared) = weak.upgrade() {
+                    shared.engine_view.lock().unwrap().bars = bars.to_vec();
+                    shared.publish_agents();
+                }
+            }));
+        }
         let working_directory = session.ctx.cwd.to_string_lossy().to_string();
         let worker = shared.clone();
         let thread = std::thread::Builder::new()
@@ -464,6 +576,9 @@ fn worker_loop(mut session: AgentSession, shared: Arc<Shared>) {
             return;
         }
     };
+    // A bridge selected at startup is checked first (`PrepareEngineAsync`): not usable, native
+    // for now.
+    rt.block_on(verify_engine(&mut session, &shared));
     let mut prepared = false;
     while let Some((text, source)) = shared.queue.wait() {
         let choice = {
@@ -477,7 +592,10 @@ fn worker_loop(mut session: AgentSession, shared: Arc<Shared>) {
                     let mut next = r.session;
                     next.messages = std::mem::take(&mut session.messages);
                     next.prompter = session.prompter.take();
+                    next.shared_prompter = session.shared_prompter.take();
                     session = next;
+                    // The engine is the project's, not the profile's.
+                    session.config.agent.engine = shared.engine_id().to_string();
                     *shared.config.lock().unwrap() = session.config.clone();
                     *shared.overlay.lock().unwrap() = r.overlay;
                     shared.config_dirty.store(false, Ordering::SeqCst);
@@ -501,6 +619,96 @@ fn worker_loop(mut session: AgentSession, shared: Arc<Shared>) {
     }
 }
 
+async fn verify_engine(session: &mut AgentSession, shared: &Shared) {
+    let wanted = EngineHost::engine_id(&session.config);
+    let readiness = shared
+        .engines
+        .lock()
+        .await
+        .verify_selected(&mut session.config)
+        .await;
+    let Some(r) = readiness.filter(|r| !r.is_ready()) else {
+        return;
+    };
+    tracing::warn!("{} (using the native engine for now)", r.message);
+    shared.config.lock().unwrap().agent.engine = session.config.agent.engine.clone();
+    shared.engine_view.lock().unwrap().id = EngineHost::engine_id(&session.config);
+    shared.bus.publish(
+        types::NOTICE,
+        json!({"level": "warning", "text": format!("{} Using the native engine for now; pick {} again to retry.", r.message, AgentEngines::display_name_of(wanted))}),
+    );
+}
+
+/// A turn on the bridge (`EngineHost.RunTurnAsync`): the user's message joins the session, the
+/// CLI runs the turn, its events go on the bus. Cancelling interrupts the CLI and waits for it.
+async fn run_bridge(
+    session: &mut AgentSession,
+    shared: &Shared,
+    text: &str,
+    rx: tokio::sync::oneshot::Receiver<()>,
+) -> &'static str {
+    session.messages.push(ChatMessage::user(text));
+    let mut conversation = session.conversation();
+    {
+        let r = shared.engine_ref.lock().unwrap();
+        conversation.engine_id = r.engine.clone();
+        conversation.engine_session_id = r.engine_session_id.clone();
+    }
+    let host_tools = orca_core::engines::print::host_tools(Some(&session.registry));
+    let config = session.config.clone();
+    let cwd = session.ctx.cwd.clone();
+    let cancel = CancelToken::new();
+    let mut view = LiveBridgeView {
+        bus: shared.bus.clone(),
+    };
+    let result = {
+        let mut engines = shared.engines.lock().await;
+        let mut sink = SessionBridgeSink::new(session, &mut view);
+        let mut turn = Box::pin(engines.run_bridge_turn(
+            BridgeTurnRequest {
+                config: &config,
+                cwd: &cwd,
+                conversation: &mut conversation,
+                session_id: None,
+                host_tools,
+                sink: &mut sink,
+                mode: AgentTurnMode::Normal,
+            },
+            &cancel,
+        ));
+        let r = tokio::select! {
+            r = &mut turn => r,
+            _ = rx => { cancel.cancel(); (&mut turn).await }
+        };
+        drop(turn);
+        r
+    };
+    *shared.engine_ref.lock().unwrap() = EngineRef {
+        engine: conversation.engine_id.clone(),
+        engine_session_id: conversation.engine_session_id.clone(),
+    };
+    session.set_conversation(conversation);
+    match result {
+        Ok(()) => "done",
+        // C# prints this in its console only; the browser is told too (D103).
+        Err(EngineError::Unavailable(m)) => {
+            shared.bus.publish(
+                types::NOTICE,
+                json!({"level": "error", "text": format!("\u{2717} {m}")}),
+            );
+            "done"
+        }
+        Err(EngineError::Cancelled) => "cancelled",
+        Err(EngineError::Failed(m)) => {
+            shared.bus.publish(
+                types::NOTICE,
+                json!({"level": "error", "text": format!("Error: {m}")}),
+            );
+            "error"
+        }
+    }
+}
+
 async fn run_one(session: &mut AgentSession, shared: &Shared, text: &str, source: &str) {
     let bus = shared.bus.clone();
     *shared.history.lock().unwrap() = session.messages.clone();
@@ -516,7 +724,11 @@ async fn run_one(session: &mut AgentSession, shared: &Shared, text: &str, source
         bus: bus.clone(),
         started: HashMap::new(),
     };
-    let outcome = tokio::select! {
+    let bridge = EngineHost::is_bridge(&session.config);
+    let outcome = if bridge {
+        run_bridge(session, shared, text, rx).await
+    } else {
+        tokio::select! {
         r = session.run_turn(text, &mut observer) => match r {
             Ok(_) => "done",
             Err(e) => {
@@ -525,8 +737,9 @@ async fn run_one(session: &mut AgentSession, shared: &Shared, text: &str, source
             }
         },
         _ = rx => "cancelled",
+        }
     };
-    if outcome == "cancelled" {
+    if outcome == "cancelled" && !bridge {
         session.close_dangling_tool_calls();
     }
     shared.cancel.lock().unwrap().take();
@@ -580,10 +793,10 @@ impl LiveSession for AgentLiveSession {
             last_seq: seq,
             history: to_transcript(&messages[..up_to]),
             current_turn: if in_turn { turn } else { Vec::new() },
-            agents: self.agents.as_ref().map(|a| a.agents()).unwrap_or_default(),
+            agents: self.shared.agents(),
             slots: None,
             pending_permissions: self.shared.permissions.pending(),
-            engine: Some("native".into()),
+            engine: Some(self.shared.engine_id().into()),
             pending_questions: Some(
                 self.shared
                     .questions
@@ -636,6 +849,34 @@ impl LiveSession for AgentLiveSession {
 
     async fn resolve_permission(&self, id: &str, decision: &str) -> bool {
         self.shared.permissions.resolve(id, decision)
+    }
+
+    async fn set_engine(&self, engine: &str) -> LiveEngineResult {
+        self.shared.set_engine(engine).await
+    }
+
+    /// `SetPreferredEngine`: the project's saved engine, switched to as soon as the session is
+    /// idle (a failed login check stays native).
+    fn set_preferred_engine(&self, engine: Option<&str>) {
+        let Some(id) = engine.and_then(|e| AgentEngines::normalize(Some(e))) else {
+            return;
+        };
+        if id == self.shared.engine_id() {
+            return;
+        }
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let shared = self.shared.clone();
+        handle.spawn(async move {
+            for _ in 0..600 {
+                if !shared.bus.in_turn() && shared.queue.len() == 0 {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            shared.set_engine(id).await;
+        });
     }
 
     async fn answer_question(&self, id: &str, answer: &str) -> bool {

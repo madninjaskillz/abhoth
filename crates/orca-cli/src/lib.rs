@@ -252,6 +252,7 @@ pub fn wire_agents(
     let manager = AgentManager::new(orchestrator.clone());
     // The Pi agent tools (subagent, progress, lead_mode) go through the manager.
     pi_agents::wire_pi_agent_tools(&mut session.registry, &manager, &config, slots);
+    pi_agents::register_auto_lead_mode(&mut session.registry, &manager, &config, slots);
     // Sub-agents never choose a Lead mode.
     orchestrator.set_tools(
         session

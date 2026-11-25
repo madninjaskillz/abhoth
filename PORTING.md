@@ -433,3 +433,17 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   scripted by `FAKE_CLAUDE_SCRIPT` (`<CWD>`, `<RESUMED>` filled in). Scenarios 119-122: `--print`,
   REPL turns with the saved engine fields and `/engine`, `-c` resuming the CLI session, the login
   offer.
+- **D103** Bridge engines under `--hostui` (and in bench runs, whose config picks the engine):
+  the web session (`orca_webui::native`) holds an `EngineHost`; `SetEngine`, the project's
+  preferred engine, `engine` / `engineAuth` events, the engine in the snapshot and the Lead bar
+  (engine id as slot, `claude-code` as model, the CLI's progress.js bars as `bar:<key>` agents
+  of kind `progress`) follow `LiveSessionAdapter`. The agent host's own `agents` events go through
+  the same decoration. A CLI that can't run (`✗ message`) and a startup check that falls back to
+  native are also published as notices (C# shows them in its console only). A profile/mode
+  rebuild keeps the session's engine.
+- **D104** Foreground sub-agents ask the Lead's prompter (console or browser) for approvals:
+  `AgentSession::set_prompter` shares it through the sub-agent pipeline (C#: one
+  `PermissionManager`), one prompt at a time; background agents are still refused.
+- **D105** The OpenOrca profile registers `lead_mode` in `agent.leadMode` "auto" when the Lead has
+  `spawn_agents` (`ToolWiring`); the cross-check no longer masks the `LEAD MODE (auto)` prompt
+  section (scenario 123).

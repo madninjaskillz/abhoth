@@ -138,7 +138,7 @@ fn ready(id: &str, state: EngineReadinessState, message: &str) -> EngineReadines
 
 fn host_with(state: EngineReadinessState, message: &'static str) -> EngineHost {
     let mut host = EngineHost::new();
-    host.readiness_check = Some(Box::new(move |id, _| {
+    host.readiness_check = Some(Arc::new(move |id, _| {
         let r = ready(id, state, message);
         Box::pin(async move { Ok(r) })
     }));
