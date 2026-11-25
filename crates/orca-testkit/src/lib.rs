@@ -274,3 +274,30 @@ async fn chat(
         .body(Body::from(sse))
         .unwrap()
 }
+
+/// The path of one of this crate's helper programs (`fake-mcp-server`, `fake-lsp-server`):
+/// the nearest `target/<profile>/<name>` above the running test executable. `cargo test
+/// --workspace` builds them before any test runs; a narrower `cargo test -p <crate>` builds
+/// them here on first use.
+pub fn fake_bin(name: &str) -> std::path::PathBuf {
+    static BUILD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    let exe = std::env::current_exe().expect("current exe");
+    let find = || {
+        exe.ancestors()
+            .skip(1)
+            .map(|d| d.join(&file))
+            .find(|p| p.is_file())
+    };
+    let _guard = BUILD.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(p) = find() {
+        return p;
+    }
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let status = std::process::Command::new(cargo)
+        .args(["build", "-p", "orca-testkit", "--bin", name])
+        .status()
+        .expect("running cargo build for a fake server");
+    assert!(status.success(), "building {name} failed");
+    find().unwrap_or_else(|| panic!("{file} not found above {}", exe.display()))
+}
