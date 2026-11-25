@@ -544,3 +544,26 @@ fn raw_arguments_that_are_not_an_object_are_kept() {
         r#"{"_raw_json":"not json"}"#
     );
 }
+
+#[test]
+fn engine_and_engine_session_id_round_trip_like_csharp() {
+    let (_d, m) = manager();
+    let messages = vec![ChatMessage::user("hi"), ChatMessage::assistant("hello")];
+    let engine = orca_core::session::EngineRef {
+        engine: Some("claude".into()),
+        engine_session_id: Some("00000000-0000-4000-8000-000000000001".into()),
+    };
+    let id = m.save_with_engine(&messages, None, None, &engine).unwrap();
+    let text = std::fs::read_to_string(m.dir().join(format!("{id}.json"))).unwrap();
+    assert!(text.contains("\"engine\": \"claude\""), "{text}");
+    assert!(
+        text.contains("\"engineSessionId\": \"00000000-0000-4000-8000-000000000001\""),
+        "{text}"
+    );
+    let data = m.load(&id).unwrap().unwrap();
+    assert_eq!(orca_core::session::EngineRef::of(&data), engine);
+    // The native loop writes neither (C# leaves out nulls).
+    let native = m.save(&messages, None, None).unwrap();
+    let text = std::fs::read_to_string(m.dir().join(format!("{native}.json"))).unwrap();
+    assert!(!text.contains("\"engine"), "{text}");
+}

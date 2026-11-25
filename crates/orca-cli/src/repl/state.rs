@@ -21,6 +21,8 @@ pub struct ReplState {
     pub total_turns: u32,
     pub started: Instant,
     pub current_session_id: Option<String>,
+    /// The bridge engine the current session ran on, kept in its file on save.
+    pub engine: orca_core::session::EngineRef,
     /// The model's suggested next prompt (ghost text at the next prompt).
     pub suggested_next_prompt: Option<String>,
 }
@@ -33,6 +35,7 @@ impl Default for ReplState {
             total_turns: 0,
             started: Instant::now(),
             current_session_id: None,
+            engine: Default::default(),
             suggested_next_prompt: None,
         }
     }

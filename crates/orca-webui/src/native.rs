@@ -4,6 +4,8 @@
 //! results, notices, turnEnd, busy); tool approvals go to the browser (`LivePermissionBroker`).
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -13,12 +15,18 @@ use orca_core::agent::permissions::{PermissionDecision, PermissionPrompter};
 use orca_core::agent::{AgentObserver, AgentSession};
 use orca_core::chat::conversation::TEXT_TOOL_RESULTS_PREFIX;
 use orca_core::client::{ChatMessage, Role, ToolCall};
+use orca_core::config::schema::{self, ProfileOverlay};
+use orca_core::config::{ConfigManager, OrcaConfig};
 use orca_core::live::{
-    LiveEventBus, LivePermission, LiveSnapshot, LiveTranscriptItem, truncate, types,
+    LiveEngineResult, LiveEventBus, LivePermission, LiveQuestion, LiveSnapshot, LiveTranscriptItem,
+    truncate, types,
 };
 use serde_json::json;
 
-use crate::live::{AgentHost, LiveAgentMessageResult, LiveAgentTranscript, LiveSession};
+use crate::live::{
+    AgentHost, LiveAgentMessageResult, LiveAgentTranscript, LiveSession, SettingChange,
+    engine_result,
+};
 use crate::util::{group_thousands, utf16_len};
 
 pub const MAX_PROMPT_CHARS: usize = 200_000;
@@ -117,6 +125,151 @@ impl PermissionPrompter for BrowserPrompter {
     }
 }
 
+/// ask_user questions answered in the browser (`LiveQuestionBroker`): the web UI's question
+/// picker. The turn waits for the answer; a cancelled turn takes its question back.
+pub struct QuestionBroker {
+    bus: Arc<LiveEventBus>,
+    pending: Mutex<BTreeMap<String, (LiveQuestion, tokio::sync::oneshot::Sender<String>)>>,
+    next: AtomicU32,
+}
+
+impl QuestionBroker {
+    pub fn new(bus: Arc<LiveEventBus>) -> Self {
+        Self {
+            bus,
+            pending: Mutex::new(BTreeMap::new()),
+            next: AtomicU32::new(0),
+        }
+    }
+
+    /// The questions waiting for an answer, by id.
+    pub fn pending(&self) -> Vec<LiveQuestion> {
+        self.pending
+            .lock()
+            .unwrap()
+            .values()
+            .map(|(q, _)| q.clone())
+            .collect()
+    }
+
+    /// `AskAsync`: ask in the browser and wait for the answer (the chosen option, or the user's
+    /// own text). `Err` when the question was withdrawn (the web UI stopped).
+    pub async fn ask(&self, question: &str, options: &[String]) -> Result<String, String> {
+        let id = format!("q{:04}", self.next.fetch_add(1, Ordering::SeqCst) + 1);
+        let q = LiveQuestion {
+            id: id.clone(),
+            question: question.to_string(),
+            options: options.to_vec(),
+        };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.pending
+            .lock()
+            .unwrap()
+            .insert(id.clone(), (q.clone(), tx));
+        self.bus.publish(
+            types::QUESTION,
+            serde_json::to_value(&q).unwrap_or_default(),
+        );
+        // Dropped unanswered (the turn was cancelled): the browser closes the picker.
+        struct Withdraw<'a>(&'a QuestionBroker, String);
+        impl Drop for Withdraw<'_> {
+            fn drop(&mut self) {
+                if self.0.pending.lock().unwrap().remove(&self.1).is_some() {
+                    self.0.bus.publish(
+                        types::QUESTION_RESOLVED,
+                        json!({"id": self.1, "answer": null}),
+                    );
+                }
+            }
+        }
+        let _withdraw = Withdraw(self, id);
+        rx.await
+            .map_err(|_| "The question was cancelled.".to_string())
+    }
+
+    /// `Answer`: false when the id isn't pending or the answer is empty.
+    pub fn answer(&self, id: &str, answer: &str) -> bool {
+        let text = answer.trim();
+        if text.is_empty() {
+            return false;
+        }
+        let text: String = if text.encode_utf16().count() > 4000 {
+            let mut out = String::new();
+            let mut n = 0;
+            for c in text.chars() {
+                n += c.len_utf16();
+                if n > 4000 {
+                    break;
+                }
+                out.push(c);
+            }
+            out
+        } else {
+            text.to_string()
+        };
+        let Some((_, tx)) = self.pending.lock().unwrap().remove(id) else {
+            return false;
+        };
+        if tx.send(text.clone()).is_err() {
+            return false;
+        }
+        self.bus
+            .publish(types::QUESTION_RESOLVED, json!({"id": id, "answer": text}));
+        true
+    }
+
+    /// `CancelAll`: withdraw everything still waiting (the web UI stopped).
+    pub fn cancel_all(&self) {
+        let all: Vec<String> = self.pending.lock().unwrap().keys().cloned().collect();
+        for id in all {
+            if self.pending.lock().unwrap().remove(&id).is_some() {
+                self.bus
+                    .publish(types::QUESTION_RESOLVED, json!({"id": id, "answer": null}));
+            }
+        }
+    }
+}
+
+/// A session made again with another profile and/or agent mode (C# restarts the project's
+/// worker with `--profile` / `--mode`), and the paths that profile and mode set.
+pub struct Rebuilt {
+    pub session: AgentSession,
+    pub overlay: Option<ProfileOverlay>,
+}
+
+/// Makes the session again for (profile, mode); the conversation is carried over.
+pub type RebuildFn = Arc<
+    dyn Fn(
+            Option<String>,
+            Option<String>,
+        ) -> futures_util::future::BoxFuture<'static, Result<Rebuilt, String>>
+        + Send
+        + Sync,
+>;
+
+/// What a native session can do beyond running turns.
+#[derive(Default)]
+pub struct NativeOptions {
+    /// The OpenOrca home whose config.json settings changes are saved to (`None`: the default).
+    pub config_home: Option<PathBuf>,
+    /// The paths the session's profile and mode set (the settings page marks and refuses them).
+    pub overlay: Option<ProfileOverlay>,
+    /// ask_user questions go to the browser.
+    pub questions: Option<Arc<QuestionBroker>>,
+    /// Profile and mode switching (`None`: the C# primary session's answer, set where started).
+    pub rebuild: Option<RebuildFn>,
+    /// The session's sub-agents (agent tabs and bars).
+    pub agents: Option<Arc<dyn AgentHost>>,
+}
+
+#[derive(Default)]
+struct Choice {
+    profile: Option<String>,
+    mode: Option<String>,
+    /// Make the session again before the next turn.
+    pending: bool,
+}
+
 /// Streams one turn onto the bus.
 struct LiveObserver {
     bus: Arc<LiveEventBus>,
@@ -189,6 +342,16 @@ struct Shared {
     permissions: Arc<PermissionBroker>,
     /// Set while a turn runs: sending on it cancels the turn.
     cancel: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    /// The session's config as the settings page sees and changes it; copied into the
+    /// session before the next turn when `config_dirty`.
+    config: Mutex<OrcaConfig>,
+    config_dirty: AtomicBool,
+    overlay: Mutex<Option<ProfileOverlay>>,
+    config_home: Option<PathBuf>,
+    settings_gate: tokio::sync::Mutex<()>,
+    questions: Option<Arc<QuestionBroker>>,
+    rebuild: Option<RebuildFn>,
+    choice: Mutex<Choice>,
 }
 
 impl Shared {
@@ -205,8 +368,6 @@ pub struct AgentLiveSession {
     shared: Arc<Shared>,
     working_directory: String,
     mode: String,
-    model: Option<String>,
-    uncensored: bool,
     session_id: Option<String>,
     agents: Option<Arc<dyn AgentHost>>,
     thread: Mutex<Option<std::thread::JoinHandle<()>>>,
@@ -215,15 +376,33 @@ pub struct AgentLiveSession {
 impl AgentLiveSession {
     /// Start the worker for `session`; its approvals go to the browser.
     pub fn start(session: AgentSession, bus: Arc<LiveEventBus>, mode: &str) -> Arc<Self> {
-        Self::start_with_agents(session, bus, mode, None)
+        Self::start_with(session, bus, mode, NativeOptions::default())
     }
 
     /// [`Self::start`] with the session's sub-agents (agent tabs and bars).
     pub fn start_with_agents(
-        mut session: AgentSession,
+        session: AgentSession,
         bus: Arc<LiveEventBus>,
         mode: &str,
         agents: Option<Arc<dyn AgentHost>>,
+    ) -> Arc<Self> {
+        Self::start_with(
+            session,
+            bus,
+            mode,
+            NativeOptions {
+                agents,
+                ..Default::default()
+            },
+        )
+    }
+
+    /// [`Self::start`] with settings, questions and profile / mode switching.
+    pub fn start_with(
+        mut session: AgentSession,
+        bus: Arc<LiveEventBus>,
+        mode: &str,
+        options: NativeOptions,
     ) -> Arc<Self> {
         let permissions = Arc::new(PermissionBroker::new(bus.clone()));
         session.prompter = Some(Box::new(BrowserPrompter(permissions.clone())));
@@ -236,10 +415,16 @@ impl AgentLiveSession {
             history: Mutex::new(session.messages.clone()),
             permissions,
             cancel: Mutex::new(None),
+            config: Mutex::new(session.config.clone()),
+            config_dirty: AtomicBool::new(false),
+            overlay: Mutex::new(options.overlay),
+            config_home: options.config_home,
+            settings_gate: tokio::sync::Mutex::new(()),
+            questions: options.questions,
+            rebuild: options.rebuild,
+            choice: Mutex::new(Choice::default()),
         });
         let working_directory = session.ctx.cwd.to_string_lossy().to_string();
-        let model = session.config.lm_studio.primary_model().map(str::to_string);
-        let uncensored = session.config.agent.uncensored.is_on();
         let worker = shared.clone();
         let thread = std::thread::Builder::new()
             .name("orca-webui-session".into())
@@ -249,10 +434,8 @@ impl AgentLiveSession {
             shared,
             working_directory,
             mode: mode.into(),
-            model,
-            uncensored,
             session_id: None,
-            agents,
+            agents: options.agents,
             thread: Mutex::new(Some(thread)),
         })
     }
@@ -260,6 +443,11 @@ impl AgentLiveSession {
     /// The broker (the CLI denies everything still waiting when it stops).
     pub fn permissions(&self) -> &Arc<PermissionBroker> {
         &self.shared.permissions
+    }
+
+    /// The session's config as it is now (settings page changes included).
+    pub fn config(&self) -> OrcaConfig {
+        self.shared.config.lock().unwrap().clone()
     }
 }
 
@@ -278,6 +466,31 @@ fn worker_loop(mut session: AgentSession, shared: Arc<Shared>) {
     };
     let mut prepared = false;
     while let Some((text, source)) = shared.queue.wait() {
+        let choice = {
+            let mut c = shared.choice.lock().unwrap();
+            let pending = std::mem::take(&mut c.pending);
+            pending.then(|| (c.profile.clone(), c.mode.clone()))
+        };
+        if let (Some((profile, mode)), Some(rebuild)) = (choice, shared.rebuild.as_ref()) {
+            match rt.block_on(rebuild(profile, mode)) {
+                Ok(r) => {
+                    let mut next = r.session;
+                    next.messages = std::mem::take(&mut session.messages);
+                    next.prompter = session.prompter.take();
+                    session = next;
+                    *shared.config.lock().unwrap() = session.config.clone();
+                    *shared.overlay.lock().unwrap() = r.overlay;
+                    shared.config_dirty.store(false, Ordering::SeqCst);
+                    prepared = false;
+                }
+                Err(e) => shared
+                    .bus
+                    .publish(types::NOTICE, json!({"level": "error", "text": e})),
+            }
+        }
+        if shared.config_dirty.swap(false, Ordering::SeqCst) {
+            session.config = shared.config.lock().unwrap().clone();
+        }
         if !prepared {
             session.native_tools = session.resolve_native_tools();
             let system = session.default_system_prompt();
@@ -349,12 +562,19 @@ impl LiveSession for AgentLiveSession {
         } else {
             messages.len()
         };
+        let (model, uncensored) = {
+            let config = self.shared.config.lock().unwrap();
+            (
+                config.lm_studio.primary_model().map(str::to_string),
+                config.agent.uncensored.is_on(),
+            )
+        };
         Ok(LiveSnapshot {
             session_id: self.session_id.clone(),
             title: None,
             working_directory: self.working_directory.clone(),
             mode: self.mode.clone(),
-            model: self.model.clone(),
+            model,
             busy: in_turn,
             queued: self.shared.queue.len() as i32,
             last_seq: seq,
@@ -364,8 +584,14 @@ impl LiveSession for AgentLiveSession {
             slots: None,
             pending_permissions: self.shared.permissions.pending(),
             engine: Some("native".into()),
-            pending_questions: Some(Vec::new()),
-            uncensored: self.uncensored,
+            pending_questions: Some(
+                self.shared
+                    .questions
+                    .as_ref()
+                    .map(|q| q.pending())
+                    .unwrap_or_default(),
+            ),
+            uncensored,
         })
     }
 
@@ -399,6 +625,9 @@ impl LiveSession for AgentLiveSession {
             Some(tx) => {
                 // A turn waiting for an approval is blocked in it: deny, then stop the turn.
                 self.shared.permissions.deny_all();
+                if let Some(q) = &self.shared.questions {
+                    q.cancel_all();
+                }
                 tx.send(()).is_ok()
             }
             None => false,
@@ -407,6 +636,114 @@ impl LiveSession for AgentLiveSession {
 
     async fn resolve_permission(&self, id: &str, decision: &str) -> bool {
         self.shared.permissions.resolve(id, decision)
+    }
+
+    async fn answer_question(&self, id: &str, answer: &str) -> bool {
+        self.shared
+            .questions
+            .as_ref()
+            .is_some_and(|q| q.answer(id, answer))
+    }
+
+    async fn get_settings(&self) -> Option<serde_json::Value> {
+        let config = self.shared.config.lock().unwrap().clone();
+        let overlay = self.shared.overlay.lock().unwrap().clone();
+        let mut d = schema::describe(&config, overlay.as_ref());
+        d["configFile"] = json!(
+            ConfigManager::new(self.shared.config_home.as_deref())
+                .file_path()
+                .to_string_lossy()
+        );
+        Some(d)
+    }
+
+    /// `SetSettingAsync`: applied to the session's config (live settings take effect with the
+    /// next turn) and saved to config.json as /config saves it.
+    async fn set_setting(
+        &self,
+        key: &str,
+        value: Option<serde_json::Value>,
+        reset: bool,
+    ) -> SettingChange {
+        let _gate = self.shared.settings_gate.lock().await;
+        let overlay = self.shared.overlay.lock().unwrap().clone();
+        let (change, config) = {
+            let mut config = self.shared.config.lock().unwrap();
+            let c = schema::apply(&mut config, key, value.as_ref(), reset, overlay.as_ref());
+            (c, config.clone())
+        };
+        let mut change = crate::settings::from_core(change);
+        if change.ok {
+            self.shared.config_dirty.store(true, Ordering::SeqCst);
+            let mut manager = ConfigManager::new(self.shared.config_home.as_deref());
+            // The file as it is (what the overridden paths are restored from).
+            let _ = manager.load();
+            manager.adopt(config, overlay.map(|o| o.paths).unwrap_or_default());
+            if let Err(e) = manager.save() {
+                change = SettingChange::failed(key, &e.to_string());
+            }
+        }
+        change
+    }
+
+    async fn set_profile(&self, profile: Option<&str>) -> LiveEngineResult {
+        if self.shared.rebuild.is_none() {
+            return engine_result(
+                false,
+                "",
+                Some(
+                    "This session's profile is set where it was started (--profile, or /profile in its terminal).",
+                ),
+            );
+        }
+        let mut c = self.shared.choice.lock().unwrap();
+        if self.shared.bus.in_turn() || self.shared.queue.len() > 0 {
+            return engine_result(
+                false,
+                c.profile.as_deref().unwrap_or(""),
+                Some("A turn is running: switch the profile when it ends."),
+            );
+        }
+        c.profile = profile.map(str::to_string);
+        c.pending = true;
+        engine_result(true, profile.unwrap_or(""), None)
+    }
+
+    fn set_preferred_profile(&self, profile: Option<&str>) {
+        let mut c = self.shared.choice.lock().unwrap();
+        if c.profile.as_deref() != profile {
+            c.profile = profile.map(str::to_string);
+            c.pending = self.shared.rebuild.is_some();
+        }
+    }
+
+    async fn set_mode(&self, mode: Option<&str>) -> LiveEngineResult {
+        if self.shared.rebuild.is_none() {
+            return engine_result(
+                false,
+                "",
+                Some("This session's mode is set where it was started (--mode)."),
+            );
+        }
+        let mut c = self.shared.choice.lock().unwrap();
+        if self.shared.bus.in_turn() || self.shared.queue.len() > 0 {
+            return engine_result(
+                false,
+                c.mode.as_deref().unwrap_or(""),
+                Some("A turn is running: change the mode when it ends."),
+            );
+        }
+        c.mode = mode.map(str::to_string);
+        c.pending = true;
+        engine_result(true, mode.unwrap_or(""), None)
+    }
+
+    fn set_preferred_mode(&self, mode: Option<&str>) {
+        let mut c = self.shared.choice.lock().unwrap();
+        if c.mode.as_deref() != mode {
+            c.mode = mode.map(str::to_string);
+            c.pending = self.shared.rebuild.is_some();
+        }
     }
 
     async fn get_agent_transcript(&self, agent_id: &str) -> Option<LiveAgentTranscript> {
@@ -440,6 +777,9 @@ impl LiveSession for AgentLiveSession {
         self.shared.queue.ready.notify_all();
         self.cancel().await;
         self.shared.permissions.deny_all();
+        if let Some(q) = &self.shared.questions {
+            q.cancel_all();
+        }
         let handle = self.thread.lock().unwrap().take();
         if let Some(h) = handle {
             let _ = tokio::task::spawn_blocking(move || h.join()).await;

@@ -246,10 +246,11 @@ impl Command for SessionCommand {
             }
             "save" => {
                 let title = (args.len() > 1).then(|| args[1..].join(" "));
-                match ctx.sessions.save(
+                match ctx.sessions.save_with_engine(
                     &ctx.session.messages,
                     title.as_deref(),
                     ctx.state.current_session_id.as_deref(),
+                    &ctx.state.engine,
                 ) {
                     Ok(id) => {
                         ctx.console
@@ -301,6 +302,7 @@ impl Command for SessionCommand {
                     orca_core::chat::Conversation::from_api_messages(messages, Default::default());
                 ctx.session.set_conversation(conversation);
                 ctx.state.current_session_id = Some(data.id.clone());
+                ctx.state.engine = orca_core::session::EngineRef::of(&data);
                 ctx.session.tool_hooks.session_id = Some(data.id.clone());
                 ctx.console.markup_line(&format!(
                     "[green]Session loaded: {} ({} messages)[/]",

@@ -3,6 +3,23 @@
 use std::path::{Path, PathBuf};
 
 use super::data::{SessionData, messages_to_session, new_session_id};
+
+/// The bridge engine ("claude", "codex") a conversation ran on and that CLI's own session id;
+/// both `None` for the native loop.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EngineRef {
+    pub engine: Option<String>,
+    pub engine_session_id: Option<String>,
+}
+
+impl EngineRef {
+    pub fn of(session: &SessionData) -> Self {
+        Self {
+            engine: session.engine.clone(),
+            engine_session_id: session.engine_session_id.clone(),
+        }
+    }
+}
 use crate::client::{ChatMessage, Role};
 use crate::config::{OrcaConfig, default_config_dir, dotnet_json};
 
@@ -52,8 +69,22 @@ impl SessionManager {
         title: Option<&str>,
         existing_id: Option<&str>,
     ) -> Result<String, SessionError> {
+        self.save_with_engine(messages, title, existing_id, &EngineRef::default())
+    }
+
+    /// [`Self::save`] recording the bridge engine that ran the conversation and its own session
+    /// id (C# `ConversationToSession` takes `EngineId` / `EngineSessionId`).
+    pub fn save_with_engine(
+        &self,
+        messages: &[ChatMessage],
+        title: Option<&str>,
+        existing_id: Option<&str>,
+        engine: &EngineRef,
+    ) -> Result<String, SessionError> {
         std::fs::create_dir_all(&self.dir)?;
         let mut session = messages_to_session(messages);
+        session.engine = engine.engine.clone();
+        session.engine_session_id = engine.engine_session_id.clone();
         if let Some(id) = existing_id {
             session.id = id.to_string();
         }

@@ -202,6 +202,14 @@ impl Repl {
         orca_core::client::tool_images::set_on_vision_refused(Some(Arc::new(move |text: &str| {
             notice_console.markup_line(&format!("[yellow]{}[/]", escape(text)));
         })));
+        // A server that answers the /uncensored field with a 400 (speed_projection_not_supported)
+        // likewise.
+        let notice_console = self.console.clone();
+        orca_core::client::uncensored_gate::set_on_field_refused(Some(Arc::new(
+            move |text: &str| {
+                notice_console.markup_line(&format!("[yellow]{}[/]", escape(text)));
+            },
+        )));
         let exit = self.input_loop().await;
         if exit == ReplExit::Quit {
             self.save_auto_memory().await;
@@ -492,16 +500,11 @@ impl Repl {
     }
 
     fn render_loop_error(&self, error: &orca_core::agent::AgentError) {
-        let (message, hint) = crate::render::friendly_errors::describe(
+        render_loop_error(
+            &self.console,
             error,
             &self.session.config.lm_studio.base_url,
         );
-        self.console
-            .markup_line(&format!("\n[red]✗ {}[/]", escape(&message)));
-        if let Some(h) = hint {
-            self.console
-                .markup_line(&format!("  [dim]{}[/]", escape(&h)));
-        }
     }
 
     /// `HandlePlanApprovalAsync`.
@@ -588,10 +591,11 @@ impl Repl {
         if !self.session.config.session.auto_save {
             return;
         }
-        match self.sessions.save(
+        match self.sessions.save_with_engine(
             &self.session.messages,
             None,
             self.state.current_session_id.as_deref(),
+            &self.state.engine,
         ) {
             Ok(id) => {
                 self.session.tool_hooks.session_id = Some(id.clone());
@@ -930,6 +934,19 @@ enum Handled {
     Restart(ReplExit),
     /// Run an agent turn with this user message.
     RunTurn(String),
+}
+
+/// How a failed turn is shown (`AgentLoopRunner`'s error rendering).
+pub(crate) fn render_loop_error(
+    console: &Console,
+    error: &orca_core::agent::AgentError,
+    base_url: &str,
+) {
+    let (message, hint) = crate::render::friendly_errors::describe(error, base_url);
+    console.markup_line(&format!("\n[red]✗ {}[/]", escape(&message)));
+    if let Some(h) = hint {
+        console.markup_line(&format!("  [dim]{}[/]", escape(&h)));
+    }
 }
 
 /// `FormatUserEcho`: the submitted prompt, bold after a blue chevron.

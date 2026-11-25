@@ -31,6 +31,9 @@ pub struct TurnObserver {
     /// Text streamed since the last line break (to end the line before a tool header).
     mid_line: bool,
     in_reasoning: bool,
+    /// `StreamingRenderer.Suppressed`: model text and thinking are not shown (the benchmark
+    /// runner); tool calls still are.
+    suppressed: bool,
 }
 
 impl TurnObserver {
@@ -50,7 +53,14 @@ impl TurnObserver {
             next_prompt: NextPromptTagFilter::new(),
             mid_line: false,
             in_reasoning: false,
+            suppressed: false,
         }
+    }
+
+    /// Hide streamed text and thinking (`StreamingRenderer.Suppressed = true`).
+    pub fn suppressed(mut self) -> Self {
+        self.suppressed = true;
+        self
     }
 
     fn end_line(&mut self) {
@@ -84,6 +94,9 @@ impl TurnObserver {
 
 impl AgentObserver for TurnObserver {
     fn on_text(&mut self, text: &str) {
+        if self.suppressed {
+            return;
+        }
         if self.in_reasoning {
             self.end_line();
         }
@@ -103,7 +116,7 @@ impl AgentObserver for TurnObserver {
     }
 
     fn on_reasoning(&mut self, text: &str) {
-        if !self.state.show_thinking() {
+        if self.suppressed || !self.state.show_thinking() {
             return;
         }
         if !self.in_reasoning {

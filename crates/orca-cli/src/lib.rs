@@ -7,6 +7,7 @@ pub mod commands;
 pub mod custom_commands;
 pub mod file_log;
 pub mod hostui;
+pub mod hostui_password;
 pub mod input_preprocessor;
 pub mod model_discovery;
 pub mod pi_agents;
@@ -67,6 +68,15 @@ pub fn build_registry(config: &OrcaConfig) -> ToolRegistry {
 
 /// [`build_registry`] for a working folder, with the services its tools run on.
 pub fn build_registry_in(config: &OrcaConfig, cwd: &Path) -> (ToolRegistry, ToolServices) {
+    build_registry_with(config, cwd, Arc::new(prompter::ConsolePrompter))
+}
+
+/// [`build_registry_in`] with `ask_user` answered by `asker` (the web UI's question picker).
+pub fn build_registry_with(
+    config: &OrcaConfig,
+    cwd: &Path,
+    asker: Arc<dyn orca_tools_utility::UserPrompter>,
+) -> (ToolRegistry, ToolServices) {
     let mut r = ToolRegistry::new();
     #[allow(unused_mut)]
     let mut services = ToolServices::default();
@@ -83,9 +93,7 @@ pub fn build_registry_in(config: &OrcaConfig, cwd: &Path) -> (ToolRegistry, Tool
             config.agent.uncensored.clone(),
         ))),
     ));
-    r.register_all(orca_tools_utility::interactive_tools(Some(Arc::new(
-        prompter::ConsolePrompter,
-    ))));
+    r.register_all(orca_tools_utility::interactive_tools(Some(asker)));
     #[cfg(feature = "lsp")]
     {
         services.lsp = lsp_manager(config, cwd);
@@ -462,10 +470,17 @@ async fn run_bridge_prompt(
     let system = native.default_system_prompt();
     let registry = std::mem::take(&mut native.registry);
     let session_id = restored.as_ref().map(|r| r.id.clone());
+    let engine = restored
+        .as_ref()
+        .map(|r| r.engine.clone())
+        .unwrap_or_default();
     let mut conversation = orca_core::chat::Conversation::from_api_messages(
         restored.map(|r| r.messages).unwrap_or_default(),
         Default::default(),
     );
+    // A session the engine ran before resumes that CLI's own session (SessionToConversation).
+    conversation.engine_id = engine.engine;
+    conversation.engine_session_id = engine.engine_session_id;
     let outcome = orca_core::engines::run_print_turn(
         orca_core::engines::PrintTurnRequest {
             config: &config,
@@ -531,6 +546,10 @@ pub fn version() -> &'static str {
 /// The whole program; returns the process exit code.
 pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
     let cwd = std::env::current_dir().context("reading the current directory")?;
+    // --hostui-set-password / --hostui-reset-2fa: manage the web UI's sign-in account, then exit.
+    if let Some(code) = hostui_password::try_run(&raw) {
+        return Ok(code);
+    }
     let args = CliArgs::parse(&raw, &cwd);
     if args.show_version {
         println!("OpenOrca v{} (Rust port)", version());
@@ -612,7 +631,8 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         for notice in &profile_notices {
             eprintln!("{notice}");
         }
-        return hostui::run(h, config, cwd).await;
+        let overlay = orca_core::config::schema::ProfileOverlay::of(&manager);
+        return hostui::run(h, config, cwd, overlay).await;
     }
 
     // Sweep checkpoint snapshots older than a week (best effort, in the background).
@@ -693,10 +713,12 @@ async fn run_interactive(
     session.startup_probes = !session.config.demo_mode;
     session.tool_hooks = tool_hooks;
     let mut session_id = None;
+    let mut engine = orca_core::session::EngineRef::default();
     if let Some(r) = restored {
         session.messages = r.messages;
         session.tool_hooks.session_id = Some(r.id.clone());
         session_id = Some(r.id);
+        engine = r.engine;
     }
     // Sub-agents (ToolWiring): the agent tools, /review, /workflow, /agent and the planner.
     let manager = wire_agents(
@@ -715,6 +737,7 @@ async fn run_interactive(
     let mut repl = repl::Repl::new(console, session, config_dir.to_path_buf(), session_id);
     repl.agents = Some(Box::new(agent_host::ReplAgentHost::new(manager)));
     repl.planner = planner;
+    repl.state.engine = engine;
     repl.startup_notices = startup_notices;
     repl.active_profile = active_profile;
     let exit = repl.run().await;

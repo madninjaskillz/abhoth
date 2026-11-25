@@ -14,7 +14,7 @@ pub use data::{
     new_session_id, session_to_messages,
 };
 pub use datetime::DotNetDateTime;
-pub use manager::{SessionError, SessionManager, generate_title};
+pub use manager::{EngineRef, SessionError, SessionManager, generate_title};
 
 /// The checkpoint session id when no session is active (`CurrentSessionId ?? "default"`).
 pub const DEFAULT_CHECKPOINT_SESSION: &str = "default";

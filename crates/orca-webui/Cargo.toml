@@ -25,6 +25,11 @@ rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+sha1.workspace = true
+hmac.workspace = true
+pbkdf2.workspace = true
+qrcode.workspace = true
+image.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -33,6 +38,7 @@ tracing.workspace = true
 [dev-dependencies]
 orca-testkit.workspace = true
 orca-tools-fs.workspace = true
+orca-tools-utility.workspace = true
 tokio-tungstenite.workspace = true
 
 [lints]

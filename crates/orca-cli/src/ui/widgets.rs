@@ -159,6 +159,27 @@ pub fn write_panel(console: &Console, content: &str, header: &str, border: &str)
     }
 }
 
+/// `Rule(title)`: a horizontal line across `width` with the title markup in it, at the left
+/// (`LeftJustified`) or centred.
+pub fn rule_line(title: &str, left: bool, width: usize) -> String {
+    let width = width.max(10);
+    let tw = plain_width(title);
+    if tw + 6 > width {
+        return format!("── {title}");
+    }
+    let rest = width - tw - 2;
+    let (l, r) = if left {
+        (2, rest - 2)
+    } else {
+        (rest / 2, rest - rest / 2)
+    };
+    format!("{} {title} {}", "─".repeat(l), "─".repeat(r))
+}
+
+pub fn write_rule(console: &Console, title: &str, left: bool) {
+    console.markup_line(&rule_line(title, left, console.width()));
+}
+
 /// `Grid` of two columns: the first padded to its widest cell plus two spaces.
 pub fn write_grid(console: &Console, rows: &[(String, String)]) {
     let w = rows.iter().map(|(a, _)| plain_width(a)).max().unwrap_or(0);

@@ -382,3 +382,22 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   client (`ProviderRoutes`); Anthropic/Ollama agents fall back to the local model with a
   warning. Named-provider usage lines go to the process log. The web UI republishes agent bars
   on each event rather than streaming agent text live.
+- **D81** (`rust-port/rest`) `/benchmark` runs `BenchmarkRunner`'s three scripted prompts per
+  model in a temp folder and restores the session afterwards (also on Ctrl+C); the cross-check
+  masks the benchmark run folders.
+- **D82** `UncensoredGate` is process-wide: the `/uncensored` field goes only to servers that
+  read it (or can't be told apart); a 400 `speed_projection_not_supported` retries once without
+  it and remembers the server. The web host forwards the one-time notice on the live bus.
+- **D83** Web UI settings changes go to a shared config copy that the session picks up before
+  its next turn (saved like `/config`); project sessions switch profile/mode by being made again
+  (`RebuildFn`) on the same conversation, the primary session keeps C#'s 409.
+- **D84** ask_user in the browser goes through a `QuestionBroker` (`q0001` ids, pending
+  questions in the snapshot, withdrawn on cancel).
+- **D85** Sign-in mode ports LoginAuth/AccountStore/SessionStore/LoginThrottle/Totp as
+  `orca_webui::login` with pinned hmac 0.12.1, pbkdf2 0.12.2, qrcode 0.14.1 (PNG drawn with
+  `image`), sha1 0.10.7.
+- **D86** Sessions keep `engine` / `engineSessionId` (C# `ConversationToSession`); `--print`,
+  `-c`/`-r` and the REPL carry them so a bridge engine resumes its CLI session.
+- **D87** (merge) `NativeOptions` carries the sub-agent host; a project session rebuilt for
+  another profile/mode gets the agent tools again, while its agent tabs keep showing the first
+  session's orchestrator (C# restarts the worker process, so its tabs restart empty).

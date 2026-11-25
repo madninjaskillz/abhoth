@@ -45,6 +45,8 @@ pub struct WebUiOptions {
     pub session_factory: Option<SessionFactory>,
     /// Audit log (JSON lines); `None`: none (token mode).
     pub audit_file: Option<PathBuf>,
+    /// Sign-in mode (`--hostui-login`) in place of the token.
+    pub login: Option<crate::login::LoginOptions>,
     /// The inference server's profiles API; `None` = off.
     pub profiles_url: Option<String>,
     pub profiles_cache_file: Option<PathBuf>,
@@ -72,6 +74,7 @@ impl WebUiOptions {
             projects_file: None,
             session_factory: None,
             audit_file: None,
+            login: None,
             profiles_url: None,
             profiles_cache_file: None,
             image_directory: None,
@@ -102,6 +105,8 @@ pub struct AppState {
     pub bench_queue: Option<Arc<crate::bench::BenchQueue>>,
     pub http: reqwest::Client,
     pub clones: crate::projects::clone::CloneService,
+    /// Sign-in mode; `None`: the token.
+    pub login: Option<Arc<crate::login::LoginAuth>>,
 }
 
 #[derive(rust_embed::RustEmbed)]
@@ -146,7 +151,7 @@ impl WebUiServer {
         options: WebUiOptions,
         session: Arc<dyn LiveSession>,
     ) -> Result<Self, StartError> {
-        if options.token.is_empty() {
+        if options.token.is_empty() && options.login.is_none() {
             return Err(StartError::BadOptions("A token is required.".into()));
         }
         let address = parse_address(&options.host).map_err(StartError::BadOptions)?;
@@ -171,7 +176,18 @@ impl WebUiServer {
         let projects = ProjectManager::new(store, session, options.session_factory.clone());
         let hub = Hub::new(options.resume_grace);
         hub.attach_projects(&projects);
-        let audit = Arc::new(AuditLog::new(options.audit_file.clone()));
+        let audit = Arc::new(AuditLog::new(options.audit_file.clone().or_else(|| {
+            options
+                .login
+                .as_ref()
+                .map(|l| l.state_dir.join("audit.log"))
+        })));
+        let login = match options.login.clone() {
+            Some(l) => Some(Arc::new(
+                crate::login::LoginAuth::new(l, &audit).map_err(StartError::BadOptions)?,
+            )),
+            None => None,
+        };
         let profiles = options.profiles_url.as_deref().map(|url| {
             Arc::new(orca_core::profiles::ProfileService::new(
                 Some(url),
@@ -189,6 +205,7 @@ impl WebUiServer {
         let state = Arc::new(AppState {
             options: options.clone(),
             clones,
+            login,
             projects,
             hub,
             audit,
@@ -315,6 +332,16 @@ fn router(state: Arc<AppState>) -> Router {
     if state.bench.is_some() {
         api = api.merge(crate::bench::endpoints::routes());
     }
+    if state.login.is_some() {
+        api = api
+            .merge(crate::login::routes())
+            .fallback(static_or_index)
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                crate::login::login_auth,
+            ));
+        return api.with_state(state);
+    }
     api.fallback(static_or_index)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -336,7 +363,7 @@ async fn info(State(state): State<Arc<AppState>>) -> Response {
         "caseInsensitivePaths": crate::paths::case_insensitive(),
         "version": env!("CARGO_PKG_VERSION"),
         "terminal": crate::pty::is_supported(),
-        "auth": "token",
+        "auth": if state.login.is_some() { "login" } else { "token" },
         "bench": state.bench.is_some(),
         "profiles": state.options.profiles_url.is_some(),
         // The React client picks its hub transport from this (absent: the C# SignalR hub).
@@ -357,10 +384,11 @@ async fn hub_socket(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    let caller = Caller {
+    // Sign-in mode: the signed-in user and the client IP behind the proxy.
+    let caller = crate::audit::request_caller().unwrap_or(Caller {
         ip: Some(addr.ip().to_string()),
         user: None,
-    };
+    });
     let hub = state.hub.clone();
     ws.max_message_size(crate::hub::MAX_RECEIVE_BYTES)
         .on_upgrade(move |socket| hub.serve_socket(socket, state, q.resume, q.last, caller))

@@ -1,0 +1,22 @@
+{
+  "_comment": "agent.uncensored.enabled with a server that says it is ninfer (/v1/models owned_by ninfer): the field is never sent there, and no request is refused.",
+  "prompt": "Say hello.",
+  "config": {
+    "agent": {
+      "uncensored": {
+        "enabled": true
+      }
+    }
+  },
+  "server_routes": {
+    "GET /v1/models": [
+      200,
+      "{\"data\":[{\"id\":\"fake-model\",\"max_model_len\":131072,\"object\":\"model\",\"owned_by\":\"ninfer\"}],\"object\":\"list\"}"
+    ]
+  },
+  "replies": [
+    {
+      "text": "Hello! How can I help you with your project today?"
+    }
+  ]
+}
