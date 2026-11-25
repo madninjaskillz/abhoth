@@ -32,6 +32,7 @@ pub fn startup(apply_pending: bool) {
         .on_after_install_fast_callback(|_| user_path::edit_for_current_exe(true))
         .on_after_update_fast_callback(|_| user_path::edit_for_current_exe(true))
         .on_before_uninstall_fast_callback(|_| user_path::edit_for_current_exe(false));
+    let mut app = app;
     app.run();
 }
 
