@@ -1546,3 +1546,61 @@ async fn a_copy_that_does_not_list_its_models_gets_the_configured_id_and_is_aske
         .unwrap();
     assert_eq!(copy.model_lists.load(Ordering::SeqCst), 1);
 }
+
+// ---- Slot usage lines (SlottedChatClient.Record) ----
+
+#[tokio::test]
+async fn requests_on_a_slot_log_slot_usage_with_owner_and_slot_and_the_fallback_does_not() {
+    use crate::logging::{LogSink, MemoryLog};
+    for streaming in [false, true] {
+        let wire = Capture::with_text("hello there");
+        let log = Arc::new(MemoryLog::default());
+        let client = pin_client(
+            pin_allocator(pin_config(false)),
+            LEAD_KIND,
+            &wire,
+            None,
+            None,
+        )
+        .await
+        .with_usage_log(Some(log.clone() as Arc<dyn LogSink>));
+        send(&client, &hi(), &ChatOptions::default(), streaming).await;
+        let lines = log.messages();
+        if !streaming {
+            // A whole response without usage or calls has nothing to log (as in C#).
+            assert!(lines.is_empty(), "{lines:?}");
+            continue;
+        }
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(
+            lines[0].starts_with("Slot usage lead on A1: prompt 0, cached 0, re-read 0, output "),
+            "{}",
+            lines[0]
+        );
+        // No server usage came back: logged from what streamed, marked aborted.
+        assert!(lines[0].ends_with(" aborted=1"), "{}", lines[0]);
+        assert_eq!(log.lines.lock().unwrap()[0].1, "OpenOrca.Slots");
+    }
+    // Without a slot the request goes to the fallback, which logs it itself (when it logs).
+    let config = SlotsConfig {
+        copies: Vec::new(),
+        ..pin_config(false)
+    };
+    let wire = Capture::new();
+    let fallback = Capture::new();
+    let log = Arc::new(MemoryLog::default());
+    let allocator = pin_allocator(config);
+    let lease = allocator.new_lease(SlotRequest::new("lead", LEAD_KIND, "t"));
+    let w = backend(&wire);
+    let client = SlottedChatClient::new(
+        allocator,
+        lease,
+        Arc::new(move |_: &str| w.clone()),
+        backend(&fallback),
+        None,
+    )
+    .with_usage_log(Some(log.clone() as Arc<dyn LogSink>));
+    send(&client, &hi(), &ChatOptions::default(), true).await;
+    assert_eq!(fallback.bodies().len(), 1);
+    assert!(log.messages().is_empty());
+}

@@ -49,6 +49,12 @@ pub struct Reply {
     pub die_after_events: Option<usize>,
     /// Pause this long before each SSE event (a slow model: time to cancel mid-stream).
     pub chunk_delay_ms: u64,
+    /// `usage.prompt_tokens_details.cached_tokens`, when set.
+    pub cached_tokens: Option<i64>,
+    /// `usage.completion_tokens_details.reasoning_tokens`, when set.
+    pub reasoning_tokens: Option<i64>,
+    /// llama.cpp / Strata `timings`, sent next to the usage when set.
+    pub timings: Option<Value>,
 }
 
 impl Reply {
@@ -476,8 +482,14 @@ async fn chat(
             "tool_calls".into()
         }
     });
-    let usage = json!({"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens,
+    let mut usage = json!({"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens,
         "total_tokens": reply.prompt_tokens + reply.completion_tokens});
+    if let Some(c) = reply.cached_tokens {
+        usage["prompt_tokens_details"] = json!({"cached_tokens": c});
+    }
+    if let Some(r) = reply.reasoning_tokens {
+        usage["completion_tokens_details"] = json!({"reasoning_tokens": r});
+    }
     if !stream {
         let calls: Vec<Value> = reply
             .tool_calls
@@ -492,8 +504,11 @@ async fn chat(
         if !calls.is_empty() {
             message["tool_calls"] = Value::Array(calls);
         }
-        let v = json!({"id":"chatcmpl-fake","object":"chat.completion","model":model,
+        let mut v = json!({"id":"chatcmpl-fake","object":"chat.completion","model":model,
             "choices":[{"index":0,"message":message,"finish_reason":finish}],"usage":usage});
+        if let Some(t) = &reply.timings {
+            v["timings"] = t.clone();
+        }
         return builder
             .header("content-type", "application/json")
             .body(Body::from(v.to_string()))
@@ -554,7 +569,11 @@ async fn chat(
     events.push(chunk(json!({}), Some(&finish)));
     // A reply without token counts sends no usage chunk (an empty stream stays empty).
     if reply.prompt_tokens + reply.completion_tokens > 0 {
-        events.push(json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","model":model,"choices":[],"usage":usage}));
+        let mut last = json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","model":model,"choices":[],"usage":usage});
+        if let Some(t) = &reply.timings {
+            last["timings"] = t.clone();
+        }
+        events.push(last);
     }
     let builder = builder.header("content-type", "text/event-stream");
     if let Some(n) = reply.die_after_events {

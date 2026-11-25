@@ -114,7 +114,7 @@ elif cmd == "check":
 "#;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn hostui_bench_runs_a_suite_in_its_own_home_and_records_the_row() {
+async fn hostui_bench_runs_a_suite_in_its_own_home_and_records_the_row_with_token_metrics() {
     let python = if cfg!(windows) { "python" } else { "python3" };
     if !Command::new(python)
         .arg("--version")
@@ -137,8 +137,16 @@ async fn hostui_bench_runs_a_suite_in_its_own_home_and_records_the_row() {
     let server = FakeOpenAi::start(vec![
         // The run's session starts with a probe ("hi").
         Reply::text("hello"),
-        Reply::tool("write_file", json!({"path": "answer.txt", "content": "42"})),
-        Reply::text("Wrote 42 to answer.txt."),
+        // Strata-shaped usage: cached prompt tokens and the server's timings.
+        Reply {
+            cached_tokens: Some(60),
+            timings: Some(json!({"cache_n": 60, "prompt_n": 40, "prompt_ms": 50.0, "predicted_n": 20, "predicted_ms": 400.0})),
+            ..Reply::tool("write_file", json!({"path": "answer.txt", "content": "42"}))
+        },
+        Reply {
+            timings: Some(json!({"cache_n": 0, "prompt_n": 100, "prompt_ms": 80.0, "predicted_n": 10, "predicted_ms": 100.0})),
+            ..Reply::text("Wrote 42 to answer.txt.")
+        },
         Reply::text("Done."),
         Reply::text("Done."),
     ])
@@ -296,4 +304,25 @@ stderr: {}",
     assert_eq!(cfg["lmStudio"]["baseUrl"], server.base_url());
     let line = std::fs::read_to_string(bench.join("results.jsonl")).unwrap();
     assert_eq!(line.lines().count(), 1);
+    // Token metrics, from the "Slot usage" lines the run's session wrote to its own home's
+    // log (BenchRunner.Metrics): every request of the run, the cached tokens, decode speed.
+    let n = |k: &str| row[k].as_i64().unwrap_or_else(|| panic!("{k} in {row}"));
+    assert!(n("requests") >= 2, "{row}");
+    assert!(n("prompt_tokens") >= 200, "{row}");
+    assert_eq!(n("cached_tokens"), 60, "{row}");
+    assert!(n("output_tokens") >= 30, "{row}");
+    // (20 + 10) tokens in (400 + 100) ms.
+    assert_eq!(row["decode_tps"], 60.0, "{row}");
+    assert_eq!(row["lead_tps"], 60.0, "{row}");
+    assert_eq!(row["helpers"], 0, "{row}");
+    let logs = bench.join("runs").join(run).join("home").join("logs");
+    let text: String = std::fs::read_dir(&logs)
+        .unwrap()
+        .flatten()
+        .map(|e| std::fs::read_to_string(e.path()).unwrap_or_default())
+        .collect();
+    assert!(
+        text.contains("[INF] Usage: Slot usage lead on provider: prompt 100, cached 60, re-read 40, output 20,"),
+        "{text}"
+    );
 }

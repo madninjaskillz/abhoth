@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use orca_abstractions::ToolContext;
 use orca_core::agent::AgentSession;
-use orca_core::client::{ServedModels, client_from_config};
 use orca_core::config::OrcaConfig;
 use orca_core::live::{LiveEvent, LiveEventBus, types};
 use orca_webui::hostui::HostUiArgs;
@@ -19,7 +18,16 @@ use orca_webui::{LiveSession, SessionFactory, WebUiOptions, WebUiServer};
 use crate::{ToolServices, build_registry_in};
 
 fn session_for(config: &OrcaConfig, cwd: &Path) -> Result<(AgentSession, ToolServices)> {
-    let client = client_from_config(config, Arc::new(ServedModels::new()))?;
+    session_logged(config, cwd, orca_core::logging::process_sink())
+}
+
+/// [`session_for`] with its usage lines going to `log` (a bench run: its own home's log).
+fn session_logged(
+    config: &OrcaConfig,
+    cwd: &Path,
+    log: Option<Arc<dyn orca_core::logging::LogSink>>,
+) -> Result<(AgentSession, ToolServices)> {
+    let (client, _) = crate::wire_client(config, log, false)?;
     let (registry, services) = build_registry_in(config, cwd);
     let mut session = AgentSession::new(config.clone(), client, registry, ToolContext::new(cwd));
     session.startup_probes = true;
@@ -227,7 +235,12 @@ fn bench_options(
                     config.agent.engine
                 ));
             }
-            match session_for(&config, Path::new(folder)) {
+            // The run's "Slot usage" lines go to its own home's log, where the bench reads
+            // them (C#: the worker process logs to its OPENORCA_HOME).
+            let log = run_home.as_deref().map(|h| {
+                orca_core::logging::FileLog::open(h) as Arc<dyn orca_core::logging::LogSink>
+            });
+            match session_logged(&config, Path::new(folder), log) {
                 Ok((s, svc)) => {
                     others.lock().unwrap().push(svc);
                     AgentLiveSession::start(s, Arc::new(LiveEventBus::new()), "worker")

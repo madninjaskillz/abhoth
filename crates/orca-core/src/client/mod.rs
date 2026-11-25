@@ -11,12 +11,16 @@ pub mod served_models;
 pub mod server_identity;
 pub mod tool_images;
 pub mod types;
+pub mod usage;
 
 pub use backend::{ChatBackend, is_transport_failure};
 pub use openai::{ChatError, ClientSettings, OpenAiClient, SseParser};
 pub use served_models::{ServedModel, ServedModels};
 pub use server_identity::{ServerIdentity, ServerInfo, ServerKind};
 pub use types::*;
+pub use usage::{
+    ProviderUsage, ProviderUsageLedger, RequestStats, ServerTimings, UsageLoggingBackend,
+};
 
 use serde_json::Value;
 

@@ -13,7 +13,10 @@
 //! - the files in the work folder afterwards,
 //! - the checkpoints in the config home (`checkpoints/`: manifests with times blanked and the
 //!   backup names checked against the path hash, backup contents),
-//! - the exit code and the session notices on stderr (resumed / not found / none to continue).
+//! - the exit code and the session notices on stderr (resumed / not found / none to continue),
+//! - the "Slot usage" / "Provider usage" lines of the config home's `logs/*.log` (times and
+//!   durations masked; `usage_log: false` skips them). Replies can report `cached_tokens`,
+//!   `reasoning_tokens`, `completion_tokens` and llama.cpp `timings` for them.
 //!
 //! A scenario can plant files in the config home first (`home_files`, e.g. a saved session;
 //! `<WORK_JSON>` in them becomes the work folder as a JSON string body) and pass extra
@@ -144,6 +147,10 @@ struct Scenario {
     /// Answers for other endpoints: `"METHOD /path"` -> `[status, body]`.
     #[serde(default)]
     server_routes: BTreeMap<String, (u16, String)>,
+    /// Compare the per-request usage lines of the file log (default on; off for scenarios
+    /// whose request ends at a timing-dependent point, such as a Ctrl+C mid-stream).
+    #[serde(default = "yes")]
+    usage_log: bool,
     replies: Vec<ScriptReply>,
 }
 
@@ -155,6 +162,10 @@ struct WebPage {
     content_type: String,
     #[serde(default)]
     body: String,
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn ok_status() -> u16 {
@@ -194,6 +205,16 @@ struct ScriptReply {
     /// Pause before each streamed event (a slow reply, e.g. to cancel with Ctrl+C).
     #[serde(default)]
     chunk_delay_ms: u64,
+    /// Usage details and llama.cpp timings for the usage chunk.
+    #[serde(default)]
+    cached_tokens: Option<i64>,
+    #[serde(default)]
+    reasoning_tokens: Option<i64>,
+    #[serde(default)]
+    timings: Option<Value>,
+    /// The completion tokens the usage reports (default 10, or 20 with tool calls).
+    #[serde(default)]
+    completion_tokens: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -229,9 +250,12 @@ impl ScriptReply {
             },
             completion_tokens: match (self.no_usage, self.tools.is_empty()) {
                 (true, _) => 0,
-                (false, true) => 10,
-                (false, false) => 20,
+                (false, true) => self.completion_tokens.unwrap_or(10),
+                (false, false) => self.completion_tokens.unwrap_or(20),
             },
+            cached_tokens: self.cached_tokens,
+            reasoning_tokens: self.reasoning_tokens,
+            timings: self.timings.clone(),
             reasoning_chunk_chars: self.reasoning_chunk_chars,
             null_role_content: self.null_role_content,
             die_after_events: self.die_after_events,
@@ -254,6 +278,8 @@ struct RunResult {
     stderr: String,
     /// Interactive runs: the failed steps (empty when every step passed).
     steps: Vec<String>,
+    /// The file log's usage lines, normalised (see [`usage_lines`]).
+    usage_log: Vec<String>,
     /// Interactive runs: the semantic screen (scrollback + screen, trimmed lines).
     screen: Vec<String>,
     /// Interactive runs: `snap` steps' screens, and the raw VT stream.
@@ -641,8 +667,10 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         }
         None => Default::default(),
     };
+    let usage_log = usage_lines(&home.path().join("logs"));
     Ok(RunResult {
         output: norm(output),
+        usage_log,
         home_files,
         exit_code,
         notices,
@@ -660,6 +688,35 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
         snaps,
         raw,
     })
+}
+
+/// The "Slot usage" and "Provider usage" lines of the logs in `dir`, in file order, without
+/// the time stamp and with the measured times masked (`<MS>`).
+fn usage_lines(dir: &Path) -> Vec<String> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e == "log"))
+        .collect();
+    files.sort();
+    let stamp = regex::Regex::new(r"^\d\d:\d\d:\d\d\.\d{3} ").unwrap();
+    let ms = regex::Regex::new(r", \d+ ms \|").unwrap();
+    let first = regex::Regex::new(r"(first_think_ms|first_answer_ms)=\d+").unwrap();
+    let mut out = Vec::new();
+    for f in files {
+        let text = String::from_utf8_lossy(&std::fs::read(&f).unwrap_or_default()).into_owned();
+        for line in text.lines() {
+            if !line.contains("Slot usage ") && !line.contains("Provider usage ") {
+                continue;
+            }
+            let l = stamp.replace(line, "");
+            let l = ms.replace_all(&l, ", <MS> ms |");
+            let l = first.replace_all(&l, "$1=<MS>");
+            out.push(l.into_owned());
+        }
+    }
+    out
 }
 
 /// Scenario placeholders in the config: `<FAKE_MCP>` / `<FAKE_LSP>` (the fake servers built
@@ -900,6 +957,7 @@ fn compare(
     rs: &RunResult,
     strict: bool,
     interactive: Option<&pty::Interactive>,
+    usage_log: bool,
 ) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(inter) = interactive {
@@ -962,6 +1020,14 @@ fn compare(
     }
     diff("notices", &json!(cs.notices), &json!(rs.notices), &mut out);
     diff("probes", &json!(cs.probes), &json!(rs.probes), &mut out);
+    if usage_log {
+        diff(
+            "usage_log",
+            &json!(cs.usage_log),
+            &json!(rs.usage_log),
+            &mut out,
+        );
+    }
     out
 }
 
@@ -1011,7 +1077,7 @@ async fn main() -> Result<()> {
         if let Some(out) = &out_dir {
             std::fs::create_dir_all(out)?;
             for (tag, r) in [("csharp", &cs), ("rust", &rs)] {
-                let mut dump = json!({"output": r.output, "requests": r.requests, "files": r.files, "home_files": r.home_files, "exit_code": r.exit_code, "image_requests": r.image_requests, "notices": r.notices, "probes": r.probes, "stderr": r.stderr});
+                let mut dump = json!({"output": r.output, "requests": r.requests, "files": r.files, "home_files": r.home_files, "exit_code": r.exit_code, "image_requests": r.image_requests, "notices": r.notices, "probes": r.probes, "stderr": r.stderr, "usage_log": r.usage_log});
                 if scenario.interactive.is_some() {
                     dump["failed_steps"] = json!(r.steps);
                     // The semantic screen, each `snap`, and the raw VT stream.
@@ -1039,6 +1105,7 @@ async fn main() -> Result<()> {
             &rs,
             strict || scenario.strict,
             scenario.interactive.as_ref(),
+            scenario.usage_log,
         );
         if diffs.is_empty() {
             passed += 1;

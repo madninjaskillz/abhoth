@@ -343,6 +343,13 @@ impl Command for StatsCommand {
         if turns > 0 {
             table.row(&["Avg tokens/turn".into(), n0(tokens / turns)]);
         }
+        // Usage per provider (local vs a named provider such as Haiku in a mixed swarm).
+        for usage in orca_core::client::ProviderUsageLedger::shared().snapshot() {
+            table.row(&[
+                format!("Usage: {}", escape(&usage.provider)),
+                escape(&usage.to_string()),
+            ]);
+        }
         table.write(ctx.console);
         CommandResult::Ok
     }

@@ -1,4 +1,5 @@
 {
+  "usage_log": false,
   "_comment": "Interactive: Ctrl+C during a slowly streamed reply cancels the turn (Generation cancelled.); the partial reply is dropped but the prompt stays, so the next request has both user messages.",
   "replies": [
     {
