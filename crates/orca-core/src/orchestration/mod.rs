@@ -28,3 +28,5 @@ pub use events::AgentEvent;
 pub use orchestrator::*;
 pub mod manager;
 pub use manager::{AgentManager, SubagentOutcome, SubagentTask};
+pub mod workflow_runner;
+pub mod planner_phase;
