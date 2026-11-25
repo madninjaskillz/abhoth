@@ -1,5 +1,6 @@
 {
   "prompt": "Run echo",
+  "stderr_last": true,
   "replies": [
     {
       "tools": [

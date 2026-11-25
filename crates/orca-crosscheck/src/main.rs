@@ -170,6 +170,11 @@ struct Scenario {
     /// stamp written into an exported file).
     #[serde(default)]
     file_masks: Vec<(String, String)>,
+    /// Move `[stderr] ` lines to the end of each text before comparing: C#'s bash tool reads
+    /// stdout and stderr on separate async readers, so its stderr line sometimes lands before
+    /// the cmd banner (Rust's order is stable). For scenarios whose commands write to stderr.
+    #[serde(default)]
+    stderr_last: bool,
     replies: Vec<ScriptReply>,
 }
 
@@ -506,7 +511,7 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
 
     let work_str = work.path().display().to_string();
     let norm = |v: Value| {
-        normalize(
+        let v = normalize(
             v,
             &[
                 (&work_str, "<WORK>"),
@@ -515,7 +520,12 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
                 (&closed, "<CLOSED>"),
                 (&server_root, "<SERVER_ROOT>"),
             ],
-        )
+        );
+        if scenario.stderr_last {
+            map_strings(v, &stderr_last)
+        } else {
+            v
+        }
     };
     let masks = scenario
         .file_masks
@@ -942,6 +952,37 @@ fn normalize(v: Value, paths: &[(&str, &str)]) -> Value {
     }
 }
 
+/// Every string in `v` passed through `f`.
+fn map_strings(v: Value, f: &dyn Fn(&str) -> String) -> Value {
+    match v {
+        Value::String(s) => Value::String(f(&s)),
+        Value::Array(a) => Value::Array(a.into_iter().map(|x| map_strings(x, f)).collect()),
+        Value::Object(o) => {
+            Value::Object(o.into_iter().map(|(k, x)| (k, map_strings(x, f))).collect())
+        }
+        other => other,
+    }
+}
+
+/// The text with its `[stderr] ` lines moved to the end, in their order (`stderr_last`).
+fn stderr_last(text: &str) -> String {
+    if !text.contains("[stderr] ") {
+        return text.to_string();
+    }
+    let (err, out): (Vec<&str>, Vec<&str>) =
+        text.split('\n').partition(|l| l.starts_with("[stderr] "));
+    let mut lines = out;
+    // Keep a trailing empty line (text ending in a newline) last.
+    let tail = if lines.len() > 1 && lines.last() == Some(&"") {
+        lines.pop()
+    } else {
+        None
+    };
+    lines.extend(err);
+    lines.extend(tail);
+    lines.join("\n")
+}
+
 /// Remove what the port knowingly does differently (see PORTING.md, "Known gaps"): the tool
 /// list. The system prompt is compared with its tool-derived parts masked.
 fn mask_known_gaps(mut request: Value) -> Value {
@@ -1254,4 +1295,19 @@ async fn main() -> Result<()> {
         bail!("{failed} scenario(s) differ");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stderr_last;
+
+    #[test]
+    fn stderr_lines_move_to_the_end() {
+        assert_eq!(
+            stderr_last("Exit code: 0\n[stderr] oops \nbanner\nhello "),
+            "Exit code: 0\nbanner\nhello \n[stderr] oops "
+        );
+        assert_eq!(stderr_last("a\n[stderr] e\nb\n"), "a\nb\n[stderr] e\n");
+        assert_eq!(stderr_last("no stderr\n"), "no stderr\n");
+    }
 }

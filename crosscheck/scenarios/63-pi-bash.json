@@ -3,6 +3,7 @@
   "strict": true,
   "config": {"toolProfile": "pi"},
   "files": {"data.txt": "one\ntwo\n"},
+  "stderr_last": true,
   "replies": [
     {"tools": [{"name": "bash", "args": {"command": "cat data.txt && echo done"}}]},
     {"tools": [{"name": "bash", "args": {"command": "echo failing >&2; exit 3"}}]},

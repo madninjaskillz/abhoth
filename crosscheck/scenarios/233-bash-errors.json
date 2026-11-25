@@ -1,6 +1,7 @@
 {
   "_comment": "bash: a failing exit code, stderr only, an unknown command, and an empty command.",
   "prompt": "Run some commands",
+  "stderr_last": true,
   "replies": [
     {
       "tools": [

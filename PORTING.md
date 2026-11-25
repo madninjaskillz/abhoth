@@ -630,3 +630,7 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   mirror `openorca.git` and the suite text about past OpenOrca commits (the repository's name),
   `--version`'s "the Rust successor of OpenOrca", and the demo client's reply (it describes the
   C# solution).
+- **D109a** Cross-check: a scenario's `stderr_last` moves `[stderr] ` lines to the end of every
+  compared text. C#'s bash tool reads stdout and stderr on separate async readers, so its
+  stderr line sometimes lands before cmd's banner; Rust's order is stable. Set on 08-bash,
+  63-pi-bash and 233-bash-errors (the scenarios whose commands write to stderr).
