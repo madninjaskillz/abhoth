@@ -146,7 +146,11 @@ fn write_temp_once(name: &str, content: &str) -> String {
     if current.as_deref() != Some(content) {
         let write = || -> std::io::Result<()> {
             std::fs::create_dir_all(&dir)?;
-            let tmp = dir.join(format!("{name}.{}.tmp", std::process::id()));
+            // Unique per call, not just per process: two threads writing one shared temp file
+            // could rename it while the other was mid-write and leave `path` empty.
+            static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let tmp = dir.join(format!("{name}.{}.{seq}.tmp", std::process::id()));
             std::fs::write(&tmp, content)?;
             std::fs::rename(&tmp, &path)
         };
