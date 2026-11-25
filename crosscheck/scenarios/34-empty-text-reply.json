@@ -1,0 +1,12 @@
+{
+  "prompt": "Say nothing at all.",
+  "replies": [
+    {
+      "text": "",
+      "no_usage": true
+    },
+    {
+      "text": "never asked"
+    }
+  ]
+}

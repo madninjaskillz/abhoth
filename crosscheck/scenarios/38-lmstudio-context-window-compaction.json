@@ -1,0 +1,59 @@
+{
+  "prompt": "Read a.txt and b.txt and tell me how many lines each has.",
+  "config": {
+    "context": {
+      "contextWindowSize": 262144,
+      "keepRecentTokens": 500,
+      "keepFirstTokens": 0,
+      "thinkingAwareCompaction": false,
+      "autoDetectContextWindow": true
+    },
+    "agent": {
+      "taskReminderInterval": 0
+    }
+  },
+  "files": {
+    "a.txt": "Line 001 of file a: the quick brown fox jumps over the lazy dog.\nLine 002 of file a: the quick brown fox jumps over the lazy dog.\nLine 003 of file a: the quick brown fox jumps over the lazy dog.\nLine 004 of file a: the quick brown fox jumps over the lazy dog.\nLine 005 of file a: the quick brown fox jumps over the lazy dog.\nLine 006 of file a: the quick brown fox jumps over the lazy dog.\nLine 007 of file a: the quick brown fox jumps over the lazy dog.\nLine 008 of file a: the quick brown fox jumps over the lazy dog.\nLine 009 of file a: the quick brown fox jumps over the lazy dog.\nLine 010 of file a: the quick brown fox jumps over the lazy dog.\nLine 011 of file a: the quick brown fox jumps over the lazy dog.\nLine 012 of file a: the quick brown fox jumps over the lazy dog.\nLine 013 of file a: the quick brown fox jumps over the lazy dog.\nLine 014 of file a: the quick brown fox jumps over the lazy dog.\nLine 015 of file a: the quick brown fox jumps over the lazy dog.\nLine 016 of file a: the quick brown fox jumps over the lazy dog.\nLine 017 of file a: the quick brown fox jumps over the lazy dog.\nLine 018 of file a: the quick brown fox jumps over the lazy dog.\nLine 019 of file a: the quick brown fox jumps over the lazy dog.\nLine 020 of file a: the quick brown fox jumps over the lazy dog.\nLine 021 of file a: the quick brown fox jumps over the lazy dog.\nLine 022 of file a: the quick brown fox jumps over the lazy dog.\nLine 023 of file a: the quick brown fox jumps over the lazy dog.\nLine 024 of file a: the quick brown fox jumps over the lazy dog.\n",
+    "b.txt": "Line 001 of file b: pack my box with five dozen liquor jugs now.\nLine 002 of file b: pack my box with five dozen liquor jugs now.\nLine 003 of file b: pack my box with five dozen liquor jugs now.\nLine 004 of file b: pack my box with five dozen liquor jugs now.\nLine 005 of file b: pack my box with five dozen liquor jugs now.\nLine 006 of file b: pack my box with five dozen liquor jugs now.\nLine 007 of file b: pack my box with five dozen liquor jugs now.\nLine 008 of file b: pack my box with five dozen liquor jugs now.\nLine 009 of file b: pack my box with five dozen liquor jugs now.\nLine 010 of file b: pack my box with five dozen liquor jugs now.\nLine 011 of file b: pack my box with five dozen liquor jugs now.\nLine 012 of file b: pack my box with five dozen liquor jugs now.\nLine 013 of file b: pack my box with five dozen liquor jugs now.\nLine 014 of file b: pack my box with five dozen liquor jugs now.\nLine 015 of file b: pack my box with five dozen liquor jugs now.\nLine 016 of file b: pack my box with five dozen liquor jugs now.\nLine 017 of file b: pack my box with five dozen liquor jugs now.\nLine 018 of file b: pack my box with five dozen liquor jugs now.\nLine 019 of file b: pack my box with five dozen liquor jugs now.\nLine 020 of file b: pack my box with five dozen liquor jugs now.\nLine 021 of file b: pack my box with five dozen liquor jugs now.\nLine 022 of file b: pack my box with five dozen liquor jugs now.\nLine 023 of file b: pack my box with five dozen liquor jugs now.\nLine 024 of file b: pack my box with five dozen liquor jugs now.\n"
+  },
+  "replies": [
+    {
+      "reasoning": "Start with a.txt.",
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "a.txt"
+          }
+        }
+      ],
+      "prompt_tokens": 1000
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "b.txt"
+          }
+        }
+      ],
+      "prompt_tokens": 26000
+    },
+    {
+      "text": "## Original Request\nCount the lines of a.txt and b.txt.\n\n## Progress So Far\n- Read a.txt: 24 lines.\n\n## Context Needed to Continue\n- b.txt still to count."
+    },
+    {
+      "text": "Both files have 24 lines each: a.txt has 24 lines and b.txt has 24 lines."
+    },
+    {
+      "text": "Both files have 24 lines each: a.txt has 24 lines and b.txt has 24 lines."
+    }
+  ],
+  "server_routes": {
+    "GET /api/v0/models": [
+      200,
+      "{\"data\":[{\"id\":\"fake-model\",\"max_context_length\":32768}]}"
+    ]
+  }
+}
