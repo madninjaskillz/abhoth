@@ -5,6 +5,7 @@ mod common;
 
 use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
 
 use common::{FakeSession, Host, TOKEN};
 use reqwest::{Method, StatusCode};
@@ -801,4 +802,97 @@ async fn profiles_are_not_mapped_without_an_api() {
     assert_eq!(info["profiles"], false);
     let r = host.api(Method::GET, "/api/profiles").send().await.unwrap();
     assert_ne!(r.status(), StatusCode::OK);
+}
+
+/// A settings page with one setting, `temperature`, kept in memory.
+struct FakeSchema(std::sync::Mutex<f64>);
+
+#[async_trait::async_trait]
+impl orca_webui::settings::SettingsSchema for FakeSchema {
+    async fn describe_file(&self, home: Option<&Path>) -> Result<Value, String> {
+        Ok(json!({
+            "configFile": home.map(|h| h.join("config.json").display().to_string()),
+            "settings": [{"key": "temperature", "value": *self.0.lock().unwrap()}],
+        }))
+    }
+
+    async fn apply_file(
+        &self,
+        _home: Option<&Path>,
+        key: &str,
+        value: Option<Value>,
+        reset: bool,
+    ) -> orca_webui::live::SettingChange {
+        let Some(v) = value.and_then(|v| v.as_f64()).or(reset.then_some(0.7)) else {
+            return orca_webui::live::SettingChange::failed(key, "Not a number.");
+        };
+        if key != "temperature" {
+            return orca_webui::live::SettingChange::failed(key, "No such setting.");
+        }
+        let old = std::mem::replace(&mut *self.0.lock().unwrap(), v);
+        orca_webui::live::SettingChange {
+            ok: true,
+            key: key.into(),
+            error: None,
+            old: Some(old.to_string()),
+            new: Some(v.to_string()),
+            live: false,
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_page_reads_and_changes_the_config() {
+    let work = tempfile::tempdir().unwrap();
+    let none = Host::start(FakeSession::new(work.path())).await;
+    let r = none.api(Method::GET, "/api/settings").send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::CONFLICT);
+
+    let host = Host::start_with(FakeSession::new(work.path()), |o| {
+        o.settings = Some(Arc::new(FakeSchema(std::sync::Mutex::new(0.2))));
+        o.config_home = Some(work.path().to_path_buf());
+    })
+    .await;
+    let page: Value = host
+        .api(Method::GET, "/api/settings")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(page["settings"][0]["value"], 0.2);
+    assert!(
+        page["configFile"]
+            .as_str()
+            .unwrap()
+            .ends_with("config.json")
+    );
+    let ok: Value = host
+        .api(Method::PUT, "/api/settings")
+        .json(&json!({"key": "temperature", "value": 0.5}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        ok,
+        json!({"ok": true, "key": "temperature", "old": "0.2", "new": "0.5", "live": false})
+    );
+    let bad = host
+        .api(Method::PUT, "/api/settings")
+        .json(&json!({"key": "nope", "value": 1}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
+    let pid = host.primary();
+    let proj = host
+        .api(Method::GET, &format!("/api/projects/{pid}/settings"))
+        .send()
+        .await
+        .unwrap();
+    assert!(proj.status() == StatusCode::OK || proj.status() == StatusCode::CONFLICT);
 }
