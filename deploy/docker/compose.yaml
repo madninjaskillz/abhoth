@@ -1,0 +1,49 @@
+# TrueNAS custom app "openorca-web" (now runs Abhoth) (Apps > Discover > Custom App > YAML), or plain docker compose.
+# Hardened: non-root, read-only root filesystem, no capabilities, no new privileges, limits.
+# No docker socket, nothing of the model servers' app folders; writable: /projects and /state only.
+services:
+  openorca:
+    image: local/abhoth-web:1
+    restart: unless-stopped
+    network_mode: host            # reaches the model servers on gpu-host; npm reaches it at 172.16.11.1:8093
+    user: "568:568"
+    group_add: ["545"]          # builtin_users on nas-host: the Projects share's existing folders
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 8g
+    cpus: 8
+    pids_limit: 4096
+    environment:
+      PORT: "8093"
+      TRUSTED_PROXIES: "172.16.11.2"   # npm on the webchat bridge; X-Forwarded-* only from it
+      REQUIRE_2FA: "0"                 # 1 = an authenticator code at every sign-in
+      BENCH: "1"                       # the Benchmarks page (runs in /state/bench)
+      # Project locations offered by the wizard, main (default) first.
+      OPENORCA_PROJECT_ROOTS: "Projects share=/projects-share;local (fast)=/projects"
+    volumes:
+      - projects-share:/projects-share    # nas-host Projects share (P:) over NFS (polled for changes)
+      - $AI_ROOT/orca/projects:/projects
+      - $AI_ROOT/orca/state:/state
+      - $AI_ROOT/orca/secrets/strata-api-key:/run/secrets/strata-api-key:ro
+      - $AI_ROOT/orca/secrets/ha.env:/run/secrets/ha.env:ro   # HA_URL/HA_TOKEN: bench power readings
+      # Git credentials (pick one, both optional):
+      # - $AI_ROOT/orca/secrets/git-deploy-key:/run/secrets/git-deploy-key:ro
+      # - $AI_ROOT/orca/secrets/git-credentials:/run/secrets/git-credentials:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8093/api/auth/state"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  # nas-host exports /export/projects to gpu-host only, as the container's uid 568 + group 545 (no squash; root squashed).
+  projects-share:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=nas-host,nfsvers=4.1,rw,hard,noatime,actimeo=1   # 1 s attribute cache: edits from P: show up quickly
+      device: ":/export/projects"
