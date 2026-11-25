@@ -265,7 +265,7 @@ pub fn run(raw: Vec<String>) -> i32 {
             &cwd,
             &install_roots(),
             || ProjectStore::new(ProjectStore::default_path()).last_opened(),
-            &orca_core::config::user_profile(),
+            &orca_core::config::manager::user_profile(),
         )
     {
         tracing::info!(
