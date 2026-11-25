@@ -31,6 +31,10 @@ x-env: &env
   CARGO_BUILD_JOBS: "16"
   RUST_TEST_THREADS: "16"
   XWIN_ACCEPT_LICENSE: "1"
+  # A cold registry fetch on the first run stalled ("failed to transfer more than 10 bytes in
+  # 30s") on HTTP/2 with many crates at once; plain HTTP/1.1 and more retries ride it out.
+  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_MULTIPLEXING: "false"
 
 services:
   runner-1:
