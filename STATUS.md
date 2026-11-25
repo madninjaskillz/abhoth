@@ -84,11 +84,11 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 ### Tests
 
-- Rust: 1784 tests (`cargo test --workspace --no-fail-fast`), clippy `-D warnings` and fmt
+- Rust: 1784+ tests (`cargo test --workspace --no-fail-fast`), clippy `-D warnings` and fmt
   clean.
-- Cross-check: 103 scenarios, all identical between the C# and Rust builds, two runs (phase 1
+- Cross-check: 105 scenarios, all identical between the C# and Rust builds, two runs (phase 1
   and 2 sets, stream guards 30-39, tools 40-45, git/web 50-55, Pi 60-69 strict, MCP/LSP/image
-  70-76, profiles/slots/engines 80-84, agents 85-94b, interactive PTY 95-107, tool images
+  70-76, profiles/slots/engines 80-84, agents 85-94d (slots spawn, Pi subagent strict), interactive PTY 95-107, tool images
   108-109, usage lines 110-114). Bench API: 42 calls identical against both hosts (one-off
   script).
 - Live smoke 2026-11-25 (qwen3.8-27b via LiteLLM, `--print`): task_list, edit_file, git_diff,
@@ -96,20 +96,19 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 ## Next
 
-1. In progress (`rust-port/orch`, 🟪D): slots-backed `AgentClientProvider`, Pi subagent /
-   progress / lead_mode on the orchestrator, `AgentHost` for the REPL (/review, /workflow,
-   /agent) and the WebUi snapshot, planner cost line from the usage ledger, sub-agent tool
-   exposure / think / images / compaction, non-interactive scope for background agents.
-2. Remaining ports: `/benchmark` command runner, sign-in mode (TOTP) and GitHub App device flow
-   in the WebUi, bridge engines under `--hostui`, `UncensoredGate`, `job screenshot` (by design
-   not ported).
-3. Phase 6: parity sweep, side-by-side benches (3 runs each), live smoke on agents and the REPL.
+1. In progress (`rust-port/rest`): `/benchmark` runner, `UncensoredGate`, WebUi settings
+   schema, profile/mode switching, ask_user in the browser, tool-result images in chat, TOTP
+   sign-in, GitHub App device flow, bridge engines under `--hostui`, session `engine` fields.
+2. Phase 6: parity sweep, side-by-side benches (3 runs each), live smoke on agents and the REPL.
+3. Phase 7: `openorca --desktop` (PORTING.md).
 
 ## Known gaps
 
-- Until the orch wiring lands: Pi subagent / lead_mode answer "not available"; /review,
-  /workflow and WebUi agent tabs say sub-agents are unavailable; sub-agents ignore slots and
-  named providers fall back to the local model; background agents can still prompt.
+- Sub-agent tool calls that need approval are refused, also in foreground agents (C# asks the
+  user): the sub-agent pipeline has no prompter.
+- No Anthropic or Ollama clients (named providers of those kinds fall back to the local model).
+- `lead_mode` is not registered for the OpenOrca profile with `leadMode: auto`; agent badges are
+  not coloured in note lines; `/agents` is a plain list, not the interactive picker.
 - WebUi: no settings schema passed yet (settings page empty), profile/mode switching answers
   409, ask_user questions not forwarded, generated images only via the raw-file endpoint.
 - Bench runs in the Rust host are native-engine only; kit timeouts kill only the process.

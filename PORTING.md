@@ -376,3 +376,9 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D56** Pair voting: a winning alternate's message starts with an empty text part as C# sends
   it (`empty_first_part`); alternates and voters use their own clients. Fake-server replies can
   carry `for_model` and scenarios can set `unordered_requests`.
+- **D50a** (orch wiring) `SlotClientProvider` implements `AgentClientProvider`: sub-agents lease
+  sticky slots (balanced placement), Haiku agents take none, a waiting agent gets the next free
+  slot, nested spawns borrow the spawner's slot. Only openai-compatible named providers get a
+  client (`ProviderRoutes`); Anthropic/Ollama agents fall back to the local model with a
+  warning. Named-provider usage lines go to the process log. The web UI republishes agent bars
+  on each event rather than streaming agent text live.
