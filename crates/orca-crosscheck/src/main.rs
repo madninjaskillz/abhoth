@@ -744,7 +744,7 @@ fn usage_lines(dir: &Path) -> Vec<String> {
     out
 }
 
-/// Scenario placeholders in the config: `<FAKE_MCP>` / `<FAKE_LSP>` (the fake servers built
+/// Scenario placeholders in the config: `<FAKE_MCP>` / `<FAKE_LSP>` / `<FAKE_CLAUDE>` (the fakes built
 /// next to this program, as JSON string bodies) and `<IMAGE_URL>` (the fake server's `/v1`,
 /// which also answers the images API).
 fn fill_placeholders(text: &str, base_url: &str) -> String {
@@ -759,6 +759,7 @@ fn fill_placeholders(text: &str, base_url: &str) -> String {
     };
     text.replace("<FAKE_MCP>", &json_path("fake-mcp-server"))
         .replace("<FAKE_LSP>", &json_path("fake-lsp-server"))
+        .replace("<FAKE_CLAUDE>", &json_path("fake-claude"))
         .replace("<IMAGE_URL>", base_url)
 }
 

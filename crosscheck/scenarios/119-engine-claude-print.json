@@ -1,0 +1,22 @@
+{
+  "_comment": "A --print turn on the Claude Code bridge, played by the fake CLI (orca-testkit's fake-claude): the Write is approved by autoApproveAll, the JSON result carries the tool call, the edited file and the CLI's answer.",
+  "prompt": "Create hello.txt",
+  "config": {
+    "agent": {
+      "engine": "claude"
+    },
+    "bridges": {
+      "claude": {
+        "path": "<FAKE_CLAUDE>",
+        "progressBars": false
+      }
+    }
+  },
+  "env": {
+    "FAKE_CLAUDE_SCRIPT": "claude-script.jsonl"
+  },
+  "files": {
+    "claude-script.jsonl": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"<CWD>\",\"session_id\":\"00000000-0000-4000-8000-0000000000aa\",\"tools\":[\"Bash\",\"Read\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-fake\",\"permissionMode\":\"default\"}\n{\"type\":\"assistant\",\"message\":{\"model\":\"claude-fake\",\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"Write\",\"input\":{\"file_path\":\"<CWD>\\\\hello.txt\",\"content\":\"hi\"}}],\"usage\":{\"input_tokens\":2,\"output_tokens\":17}},\"parent_tool_use_id\":null,\"session_id\":\"00000000-0000-4000-8000-0000000000aa\"}\n{\"type\":\"control_request\",\"request_id\":\"req-1\",\"request\":{\"subtype\":\"can_use_tool\",\"tool_name\":\"Write\",\"display_name\":\"Write\",\"input\":{\"file_path\":\"<CWD>\\\\hello.txt\",\"content\":\"hi\"},\"tool_use_id\":\"toolu_1\"}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"tool_use_id\":\"toolu_1\",\"type\":\"tool_result\",\"content\":\"File created successfully at: <CWD>\\\\hello.txt\"}]},\"parent_tool_use_id\":null,\"session_id\":\"00000000-0000-4000-8000-0000000000aa\"}\n{\"type\":\"assistant\",\"message\":{\"model\":\"claude-fake\",\"id\":\"msg_2\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"I created hello.txt with hi. BRIDGE-DONE\"}],\"usage\":{\"input_tokens\":2,\"output_tokens\":20}},\"parent_tool_use_id\":null,\"session_id\":\"00000000-0000-4000-8000-0000000000aa\"}\n{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"duration_ms\":1234,\"num_turns\":2,\"result\":\"I created hello.txt with hi. BRIDGE-DONE\",\"session_id\":\"00000000-0000-4000-8000-0000000000aa\",\"total_cost_usd\":0.001,\"usage\":{\"input_tokens\":4,\"output_tokens\":37}}\n{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"<CWD>\",\"session_id\":\"00000000-0000-4000-8000-0000000000aa\",\"tools\":[\"Bash\",\"Read\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-fake\",\"permissionMode\":\"default\"}\n{\"type\":\"assistant\",\"message\":{\"model\":\"claude-fake\",\"id\":\"msg_3\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Second turn, resumed from <RESUMED>. TURN-TWO\"}],\"usage\":{\"input_tokens\":2,\"output_tokens\":9}},\"parent_tool_use_id\":null,\"session_id\":\"00000000-0000-4000-8000-0000000000aa\"}\n{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"duration_ms\":50,\"num_turns\":1,\"result\":\"Second turn, resumed from <RESUMED>. TURN-TWO\",\"session_id\":\"00000000-0000-4000-8000-0000000000aa\",\"total_cost_usd\":0.0005,\"usage\":{\"input_tokens\":2,\"output_tokens\":9}}\n"
+  },
+  "replies": []
+}

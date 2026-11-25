@@ -635,11 +635,28 @@ impl AgentSession {
 
     /// `PermissionManager.CheckPermissionAsync`: the configured rules, then the prompter.
     fn check_permission(&mut self, tool: &dyn Tool, args: &Value) -> bool {
-        match permissions::evaluate_permission(
-            &self.config.permissions,
+        self.check_permission_for(
             tool.name(),
             tool.risk_level(),
             tool.permission_arg_name(),
+            args,
+        )
+    }
+
+    /// [`Self::check_permission`] for a tool by name and risk (a bridge CLI's tool request):
+    /// the configured rules, the session's "yes to all" scopes, then the prompter.
+    pub fn check_permission_for(
+        &mut self,
+        tool_name: &str,
+        risk: orca_abstractions::ToolRiskLevel,
+        permission_arg_name: &str,
+        args: &Value,
+    ) -> bool {
+        match permissions::evaluate_permission(
+            &self.config.permissions,
+            tool_name,
+            risk,
+            permission_arg_name,
             args,
             &self.approved_scopes,
         ) {
@@ -653,7 +670,7 @@ impl AgentSession {
                 let Some(prompter) = self.prompter.as_mut() else {
                     return false;
                 };
-                match prompter.prompt(tool.name(), permissions::risk_name(tool.risk_level())) {
+                match prompter.prompt(tool_name, permissions::risk_name(risk)) {
                     permissions::PermissionDecision::Approved => true,
                     permissions::PermissionDecision::ApproveAll => {
                         self.approved_scopes.insert(scope_key.to_lowercase());

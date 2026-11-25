@@ -2,6 +2,7 @@
 //! turns with streaming output, Ctrl+C cancel, plan approval and session auto-save.
 
 pub mod command_parser;
+pub mod engine;
 pub mod line_editor;
 pub mod observer;
 pub mod panel;
@@ -61,6 +62,8 @@ pub struct Repl {
     pub custom: CustomCommandLoader,
     pub parser: CommandParser,
     pub agents: Option<Box<dyn AgentHost>>,
+    /// The engine turns run on (`EngineHost`): native here, or a bridge CLI.
+    pub engines: orca_core::engines::EngineHost,
     /// agent.planner: writes the plan before the first turn (`ReplLoop.Planner`).
     pub planner: Option<orca_core::orchestration::planner_phase::PlannerPhase>,
     /// Lines printed after the banner (profile notices, resume notices).
@@ -110,6 +113,7 @@ impl Repl {
             custom,
             parser,
             agents: None,
+            engines: orca_core::engines::EngineHost::new(),
             planner: None,
             startup_notices: Vec::new(),
             active_profile: None,
@@ -137,6 +141,13 @@ impl Repl {
             profile = Some(match profile {
                 None => inference.to_string(),
                 Some(p) => format!("{p} · {inference}"),
+            });
+        }
+        // A bridge engine's name stands where C# shows it on the Lead bar (D101).
+        if let Some(engine) = orca_core::engines::EngineHost::footer_label(config) {
+            profile = Some(match profile {
+                None => engine.to_string(),
+                Some(p) => format!("{p} · {engine}"),
             });
         }
         let window = config.context.context_window_size;
@@ -189,6 +200,7 @@ impl Repl {
         self.session.prompter = Some(Box::new(permission::ConsolePermissionPrompter::new(
             self.console.clone(),
         )));
+        self.show_bridge_progress();
         self.refresh_system_prompt();
         // BrowserUncensored asks each chat server what it is (in the background) at start.
         if !self.session.config.demo_mode {
@@ -215,6 +227,8 @@ impl Repl {
             self.save_auto_memory().await;
         }
         self.panel.teardown();
+        // The bridge CLI ends with the session.
+        self.engines.dispose().await;
         exit
     }
 
@@ -368,7 +382,11 @@ impl Repl {
                     expanded = format!("{notes}\n\n[User message]\n{expanded}");
                 }
                 self.console.blank();
-                if let Some(planner) = self.planner.as_mut() {
+                if let Some(planner) = self
+                    .planner
+                    .as_mut()
+                    .filter(|_| !orca_core::engines::EngineHost::is_bridge(&self.session.config))
+                {
                     expanded = planner
                         .prepare_first_message(
                             &expanded,
@@ -395,6 +413,24 @@ impl Repl {
 
     /// Run a turn for the user message already at the end of the conversation.
     async fn run_agent_turn(&mut self) -> TurnOutcome {
+        self.run_agent_turn_as(None).await
+    }
+
+    /// [`Self::run_agent_turn`] in a turn mode (`None`: Plan in plan mode, else Normal; Ask for
+    /// /ask and Ask mode). A bridge engine runs the turn when one is selected.
+    async fn run_agent_turn_as(
+        &mut self,
+        mode: Option<orca_core::engines::AgentTurnMode>,
+    ) -> TurnOutcome {
+        if orca_core::engines::EngineHost::is_bridge(&self.session.config) {
+            use orca_core::engines::AgentTurnMode;
+            let mode = mode.unwrap_or(if self.state.plan_mode() {
+                AgentTurnMode::Plan
+            } else {
+                AgentTurnMode::Normal
+            });
+            return self.run_bridge_turn(mode).await;
+        }
         // run_turn adds the user message itself: take it back off.
         let Some(last) = self.session.messages.pop() else {
             return TurnOutcome::Failed;
@@ -470,8 +506,16 @@ impl Repl {
         self.console.blank();
         self.session.messages.push(ChatMessage::user(question));
         let saved = std::mem::take(&mut self.session.registry);
-        self.run_agent_turn().await;
-        self.session.registry = saved;
+        let bridge = orca_core::engines::EngineHost::is_bridge(&self.session.config);
+        if bridge {
+            // The bridge offers ask_user from the registry; Ask mode keeps the CLI tool-less.
+            self.session.registry = saved;
+            self.run_agent_turn_as(Some(orca_core::engines::AgentTurnMode::Ask))
+                .await;
+        } else {
+            self.run_agent_turn().await;
+            self.session.registry = saved;
+        }
         self.console.blank();
     }
 
@@ -753,40 +797,9 @@ impl Repl {
                 })
             }
             SlashCommand::Engine => {
-                self.handle_engine_command(&command.args);
+                self.handle_engine_command(&command.args).await;
                 Handled::Continue
             }
-        }
-    }
-
-    /// `/engine`: the bridge engines run only in `--print` mode in this build.
-    fn handle_engine_command(&mut self, args: &[String]) {
-        let current =
-            orca_core::engines::AgentEngines::display_name_of(&self.session.config.agent.engine);
-        if args.is_empty() {
-            self.console.markup_line(&format!(
-                "[grey]Engine:[/] [cyan]{}[/] [dim]— /engine native | claude | codex[/]",
-                escape(current)
-            ));
-            return;
-        }
-        match orca_core::engines::AgentEngines::normalize(Some(&args[0])) {
-            Some(id) if id == "native" => {
-                self.session.config.agent.engine = id.to_string();
-                self.console.markup_line(&format!(
-                    "[grey]Engine {}: fresh session; it doesn't see the earlier turns.[/]",
-                    escape(orca_core::engines::AgentEngines::display_name_of(id))
-                ));
-            }
-            Some(_) => self.console.markup_line(&format!(
-                "[yellow]The Claude Code and Codex engines run only with --print in the Rust build.[/] [dim](still {})[/]",
-                escape(current)
-            )),
-            None => self.console.markup_line(&format!(
-                "[yellow]Unknown engine '{}' (native, claude or codex).[/] [dim](still {})[/]",
-                escape(&args[0]),
-                escape(current)
-            )),
         }
     }
 
@@ -821,6 +834,8 @@ impl Repl {
             CommandResult::RunAgent(prompt) => match prompt.as_str() {
                 CLEAR_SENTINEL => {
                     self.session.messages.clear();
+                    self.engines.reset().await;
+                    self.state.engine = Default::default();
                     self.refresh_system_prompt();
                     self.panel.teardown();
                     self.console.clear();

@@ -104,11 +104,18 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   `~/.openorca`), `ABHOTH_*` env vars first. See [`README.md`](README.md) and
   [`CUTOVER.md`](CUTOVER.md).
 
+### Bridge engines (`rust-port/bridge`, 2026-11-26)
+
+- Claude Code / Codex bridges in the REPL (D100-D102): `EngineHost` (switching, startup check with
+  native fallback and the login offer, `/engine`, `/clear` ends the CLI session, `--resume` of the
+  CLI session from a saved bridged session, which also selects its engine at startup),
+  `SessionBridgeSink` + the REPL view, progress.js bars on the info row, the engine on the status
+  line. Cross-check 119-122 with the fake Claude CLI.
+
 ## Next
 
 1. GitHub App device flow; Anthropic/Ollama clients; tool-argument number formatting.
-2. Bridge engines under `--hostui` and in the REPL; sub-agent approval prompter; `lead_mode` for
-   `leadMode: auto`.
+2. Bridge engines under `--hostui`; sub-agent approval prompter; `lead_mode` for `leadMode: auto`.
 3. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).
 4. Phase 7: `abhoth --desktop`.
 
@@ -122,7 +129,7 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 - WebUi: no settings schema passed yet (settings page empty), profile/mode switching answers
   409, ask_user questions not forwarded, generated images only via the raw-file endpoint.
 - Bench runs in the Rust host are native-engine only; kit timeouts kill only the process.
-- Sessions: check `engine` / `engineSessionId` round-trip in the parity sweep (dropped on save before the engines port).
+- REPL: no agent footer bars; a bridge's progress.js bars show on the info row (D101).
 - Numbers inside re-serialized tool arguments use serde's shortest form (`1.0` -> `1`), C#
   keeps the model's digits.
 - grep: Rust regex syntax (no lookaround/backreferences); files in sorted order.

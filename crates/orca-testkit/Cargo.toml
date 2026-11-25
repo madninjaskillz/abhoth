@@ -1,6 +1,6 @@
 [package]
 name = "orca-testkit"
-description = "Test helpers: a scripted fake OpenAI-compatible server (port of OpenOrca.TestKit's fake model server), plus fake MCP and LSP servers."
+description = "Test helpers: a scripted fake OpenAI-compatible server (port of OpenOrca.TestKit's fake model server), plus fake MCP and LSP servers and a fake Claude Code CLI."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,6 +14,10 @@ path = "src/bin/fake_mcp_server.rs"
 [[bin]]
 name = "fake-lsp-server"
 path = "src/bin/fake_lsp_server.rs"
+
+[[bin]]
+name = "fake-claude"
+path = "src/bin/fake_claude.rs"
 
 [dependencies]
 axum.workspace = true

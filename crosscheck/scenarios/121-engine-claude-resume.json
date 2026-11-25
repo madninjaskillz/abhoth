@@ -1,0 +1,25 @@
+{
+  "_comment": "-c on a session the Claude Code bridge ran: the engine comes back from the session (no --engine) and the CLI is started with --resume <its session id>.",
+  "prompt": "Carry on",
+  "args": [
+    "-c"
+  ],
+  "config": {
+    "bridges": {
+      "claude": {
+        "path": "<FAKE_CLAUDE>",
+        "progressBars": false
+      }
+    }
+  },
+  "env": {
+    "FAKE_CLAUDE_SCRIPT": "claude-script.jsonl"
+  },
+  "files": {
+    "claude-script.jsonl": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"<CWD>\",\"session_id\":\"00000000-0000-4000-8000-0000000000aa\",\"tools\":[\"Bash\",\"Read\",\"Write\"],\"mcp_servers\":[],\"model\":\"claude-fake\",\"permissionMode\":\"default\"}\n{\"type\":\"assistant\",\"message\":{\"model\":\"claude-fake\",\"id\":\"msg_3\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Second turn, resumed from <RESUMED>. TURN-TWO\"}],\"usage\":{\"input_tokens\":2,\"output_tokens\":9}},\"parent_tool_use_id\":null,\"session_id\":\"00000000-0000-4000-8000-0000000000aa\"}\n{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"duration_ms\":50,\"num_turns\":1,\"result\":\"Second turn, resumed from <RESUMED>. TURN-TWO\",\"session_id\":\"00000000-0000-4000-8000-0000000000aa\",\"total_cost_usd\":0.0005,\"usage\":{\"input_tokens\":2,\"output_tokens\":9}}\n"
+  },
+  "home_files": {
+    "sessions/cccc3333.json": "{\n  \"id\": \"cccc3333\",\n  \"title\": \"Bridged\",\n  \"createdAt\": \"2026-01-01T00:00:00Z\",\n  \"updatedAt\": \"2026-01-01T00:00:00Z\",\n  \"workingDirectory\": \"<WORK_JSON>\",\n  \"engine\": \"claude\",\n  \"engineSessionId\": \"00000000-0000-4000-8000-0000000000aa\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"Create hello.txt\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"text\": \"I created hello.txt with hi.\"\n    }\n  ]\n}"
+  },
+  "replies": []
+}

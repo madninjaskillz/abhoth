@@ -417,3 +417,19 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D90** The cross-check reads the Rust build's "Abhoth"/"abhoth" as "OpenOrca"/"openorca" in
   every compared string (outputs, requests, files, screens), so the rebrand is not a difference.
   Both builds still get the same `OPENORCA_HOME`.
+- **D100** (`rust-port/bridge`) Bridge engines run in the REPL through
+  `orca_core::engines::EngineHost`, the front-end-neutral part of C# `EngineHost` (switch,
+  startup check with native fallback, one CLI process per session, `--resume` of the
+  conversation's CLI session, the progress.js bucket, auth listeners); the native loop stays in
+  the front end. `engines::session_sink::SessionBridgeSink` is the shared half of
+  `EngineEventRenderer` (session state, approvals through the session's rules and prompter, host
+  tools); each front end supplies a `BridgeView`. A readiness check that fails outright reads as
+  an `Error` readiness with its message (C# lets the exception escape to the command loop).
+- **D101** The REPL has no agent footer yet, so a bridge's name goes on the status line after the
+  profile (C#: the Lead bar), its progress.js bars on the info row (`[D] label 37%`), and there is
+  no thinking indicator during bridge turns (the Rust native loop has none either).
+- **D102** Bridge scenarios in the cross-check run `orca-testkit`'s `fake-claude` (`<FAKE_CLAUDE>`
+  in config): `--version`, `auth status --json` (`FAKE_CLAUDE_LOGGED_OUT`) and stream-json turns
+  scripted by `FAKE_CLAUDE_SCRIPT` (`<CWD>`, `<RESUMED>` filled in). Scenarios 119-122: `--print`,
+  REPL turns with the saved engine fields and `/engine`, `-c` resuming the CLI session, the login
+  offer.

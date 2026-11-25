@@ -1,0 +1,83 @@
+{
+  "_comment": "Interactive: /engine claude while the CLI is logged out: the readiness message, the login offer (declined), and the engine stays native.",
+  "config": {
+    "bridges": {
+      "claude": {
+        "path": "<FAKE_CLAUDE>",
+        "progressBars": false
+      }
+    }
+  },
+  "env": {
+    "FAKE_CLAUDE_LOGGED_OUT": "1"
+  },
+  "replies": [],
+  "interactive": {
+    "cols": 100,
+    "rows": 32,
+    "steps": [
+      {
+        "action": "waitFor",
+        "text": "❯",
+        "timeoutMs": 45000
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "/engine claude"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "here now?"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "n"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "waitFor",
+        "text": "still native"
+      },
+      {
+        "action": "waitQuiet",
+        "ms": 500
+      },
+      {
+        "action": "type",
+        "text": "/exit"
+      },
+      {
+        "action": "key",
+        "name": "enter"
+      },
+      {
+        "action": "exit",
+        "timeoutMs": 15000
+      },
+      {
+        "action": "expect",
+        "text": "Goodbye!"
+      }
+    ],
+    "compareScreen": [
+      "logged in",
+      "still native",
+      "Goodbye!"
+    ]
+  }
+}
