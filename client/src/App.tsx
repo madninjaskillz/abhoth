@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { brandName } from "@/lib/brand";
-import { authState, signOut, startEnroll } from "@/lib/auth";
-import { Check, LogOut, Menu, ShieldCheck, UserRound } from "lucide-react";
+import { authState, isAdmin, signOut } from "@/lib/auth";
+import { Check, LogOut, Menu, UserRound, Users } from "lucide-react";
+import { AccountDialog } from "@/features/auth/AccountDialog";
+import { UsersDialog } from "@/features/auth/UsersDialog";
 import { SettingsButton } from "@/features/settings/SettingsDialog";
 import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
@@ -82,8 +84,8 @@ export default function App() {
         projects={list}
         canAdd={projects.data?.canAdd ?? false}
         narrow={narrow}
-        bench={info.data?.bench ? { open: benchOpen, toggle: () => setBenchOpen((b) => !b) } : null}
-        profilesOn={!!info.data?.profiles}
+        bench={info.data?.bench && isAdmin() ? { open: benchOpen, toggle: () => setBenchOpen((b) => !b) } : null}
+        profilesOn={!!info.data?.profiles && isAdmin()}
       />
       <div className="relative min-h-0 flex-1">
         {benchOpen && (
@@ -106,6 +108,7 @@ export default function App() {
             </div>
           ))}
         {projects.isLoading && <div className="p-6 text-sm text-muted-foreground">Loading…</div>}
+        {projects.isSuccess && list.length === 0 && <NoProjects canAdd={projects.data?.canAdd ?? false} onAdded={(id) => setActive(id)} />}
       </div>
     </div>
   );
@@ -439,7 +442,7 @@ function Header({
             </Tip>
           ))}
         <SettingsButton project={projects.find((p) => p.id === active)} narrow={narrow} menu={collapsed} />
-        {authState().mode === "login" && <AccountMenu narrow={narrow} menu={collapsed} />}
+        <AccountMenu narrow={narrow} menu={collapsed} />
       </div>
       <AddProjectDialog
         open={adding}
@@ -512,50 +515,115 @@ function ProjectTab({ project, active, onSelect, onClose }: { project: Project; 
   );
 }
 
-/** Sign-in mode: who is signed in, 2FA setup (when not on yet) and sign out. `menu`: labelled rows of the header's menu. */
+/** No projects yet (a new user starts with none): say so and offer to add one. */
+function NoProjects({ canAdd, onAdded }: { canAdd: boolean; onAdded: (id: string) => void }) {
+  const [adding, setAdding] = useState(false);
+  return (
+    <div className="flex h-full items-center justify-center p-8" data-testid="no-projects">
+      <div className="max-w-md text-center">
+        <Mascot size={96} className="mb-4" />
+        <h1 className="mb-2 text-lg font-semibold">No projects yet</h1>
+        <p className="mb-4 text-sm text-muted-foreground">
+          {canAdd ? "Add a folder (or clone a repository) to start a session in it." : "This server doesn't let you add projects; ask an admin."}
+        </p>
+        {canAdd && (
+          <button
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            onClick={() => setAdding(true)}
+            data-testid="add-first-project"
+          >
+            <Plus className="size-4" /> Add a project
+          </button>
+        )}
+        <AddProjectDialog
+          open={adding}
+          onOpenChange={setAdding}
+          onAdded={(p) => {
+            setAdding(false);
+            onAdded(p.id);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Who is signed in, their account, the users page (admins) and sign out. `menu`: labelled rows of the header's menu. */
 function AccountMenu({ narrow, menu }: { narrow: boolean; menu?: boolean }) {
   const auth = authState();
-  const enroll = () => void startEnroll().then(() => location.reload());
+  const [dialog, setDialog] = useState<"account" | "users" | null>(null);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onPress = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", onPress, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPress, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+  const dialogs = (
+    <>
+      {dialog === "account" && <AccountDialog onClose={() => setDialog(null)} />}
+      {dialog === "users" && <UsersDialog onClose={() => setDialog(null)} />}
+    </>
+  );
+  const rows = (
+    <>
+      <button role="menuitem" className={menuRow} onClick={() => { setOpen(false); setDialog("account"); }} data-testid="account-open">
+        <UserRound className="size-4 shrink-0 text-muted-foreground" />
+        <span>Account</span>
+      </button>
+      {auth.admin && (
+        <button role="menuitem" className={menuRow} onClick={() => { setOpen(false); setDialog("users"); }} data-testid="users-open">
+          <Users className="size-4 shrink-0 text-muted-foreground" />
+          <span>Users</span>
+        </button>
+      )}
+      <button role="menuitem" className={menuRow} onClick={() => void signOut()} data-testid="sign-out">
+        <LogOut className="size-4 shrink-0 text-muted-foreground" />
+        <span>Sign out</span>
+      </button>
+    </>
+  );
   if (menu) {
     return (
       <div className="mt-0.5 flex flex-col gap-0.5 border-t pt-1" data-testid="account">
         <div className="flex min-h-10 items-center gap-2.5 px-3 text-sm text-muted-foreground">
           <UserRound className="size-4 shrink-0" />
           <span className="truncate">{auth.user}</span>
+          {auth.admin && <span className="ml-auto rounded border px-1 text-[9px] uppercase">admin</span>}
         </div>
-        {!auth.totp && (
-          <button role="menuitem" className={menuRow} onClick={enroll} data-testid="enable-2fa" title="An authenticator app code at each sign-in">
-            <ShieldCheck className="size-4 shrink-0 text-muted-foreground" />
-            <span>Turn on two-factor sign-in</span>
-          </button>
-        )}
-        <button role="menuitem" className={menuRow} onClick={() => void signOut()} data-testid="sign-out">
-          <LogOut className="size-4 shrink-0 text-muted-foreground" />
-          <span>Sign out</span>
-        </button>
+        {rows}
+        {dialogs}
       </div>
     );
   }
   return (
-    <span className="flex shrink-0 items-center gap-1 text-xs" data-testid="account">
-      {!narrow && <span className="max-w-[12rem] truncate text-muted-foreground">{auth.user}</span>}
-      {!auth.totp && (
-        <Tip label="Turn on two-factor sign-in (an authenticator app code at each sign-in)">
-          <button
-            className="rounded px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            onClick={enroll}
-            data-testid="enable-2fa"
-            aria-label="Turn on two-factor sign-in"
-          >
-            <ShieldCheck className="size-4" />
-          </button>
-        </Tip>
-      )}
-      <Tip label="Sign out">
-        <button className="rounded px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground" onClick={() => void signOut()} data-testid="sign-out" aria-label="Sign out">
-          <LogOut className="size-4" />
+    <span ref={ref} className="relative flex shrink-0 items-center text-xs" data-testid="account">
+      <Tip label={`Signed in as ${auth.user ?? "?"}${auth.admin ? " (admin)" : ""}`}>
+        <button
+          className={cn("flex items-center gap-1.5 rounded px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground", open && "bg-accent text-foreground")}
+          onClick={() => setOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          data-testid="account-menu-button"
+        >
+          <UserRound className="size-4" />
+          {!narrow && <span className="max-w-[12rem] truncate">{auth.user}</span>}
         </button>
       </Tip>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 flex w-52 flex-col gap-0.5 rounded-md border bg-panel p-1 shadow-lg" role="menu">
+          {rows}
+        </div>
+      )}
+      {dialogs}
     </span>
   );
 }
@@ -565,10 +633,11 @@ function Unauthorized() {
     <div className="flex h-full items-center justify-center p-8">
       <div className="max-w-md text-center">
         <Mascot size={128} className="mb-5" />
-        <h1 className="mb-2 text-lg font-semibold">Token required</h1>
-        <p className="text-sm text-muted-foreground">
-          Open the URL {brandName()} printed (it ends in <code>?token=…</code>). In the TUI, <code>/hostui status</code> shows it again.
-        </p>
+        <h1 className="mb-2 text-lg font-semibold">Signed out</h1>
+        <p className="mb-4 text-sm text-muted-foreground">Your session has ended. Sign in to {brandName()} again.</p>
+        <button className="text-sm text-primary underline-offset-4 hover:underline" onClick={() => location.assign("/")}>
+          Sign in
+        </button>
       </div>
     </div>
   );

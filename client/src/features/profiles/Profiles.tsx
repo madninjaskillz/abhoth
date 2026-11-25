@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { api, type CardPick, type LayoutDefinition, type ProfileInfo, type ProfileList, type SwitchJob, type SwitchPlan } from "@/lib/api";
 import { menuRow } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
+import { isAdmin } from "@/lib/auth";
 import { engineProfileOptions, hiddenModels, modelOptions, pickProblem } from "@/features/bench/queueLogic";
 
 /**
@@ -265,7 +266,7 @@ export function cardsText(p: ProfileInfo | undefined | null): string {
   return `A: ${one(c.A)} · B: ${one(c.B)}`;
 }
 
-function LayoutTable({ data, onSwitch, onDelete }: { data: ProfileList; onSwitch: (profile: string) => void; onDelete?: (profile: string) => void }) {
+function LayoutTable({ data, onSwitch, onDelete }: { data: ProfileList; onSwitch?: (profile: string) => void; onDelete?: (profile: string) => void }) {
   const entries = Object.entries(data.profiles ?? {}).filter(([, p]) => !p.hidden);
   return (
     <div className="max-h-[50vh] overflow-auto">
@@ -296,7 +297,7 @@ function LayoutTable({ data, onSwitch, onDelete }: { data: ProfileList; onSwitch
               <td className="space-y-1 px-2 text-right">
                 {p.fits ? (
                   <span className="text-[11px] text-success">{p.layout ? "live" : "no server needed"}</span>
-                ) : (
+                ) : onSwitch && (
                   <Button size="sm" variant="outline" className="h-6" disabled={data.offline} onClick={() => onSwitch(name)} data-testid={`switch-${name}`}>
                     Switch…
                   </Button>
@@ -433,9 +434,11 @@ function ProfileBuilder({ d, open, onClose, onUse }: { d: ProfileList; open: boo
         </label>
         <div className="flex flex-wrap items-center gap-2 border-t pt-2 text-xs">
           <input className="h-7 w-48 rounded border bg-background px-1" placeholder="name to save it as" value={name} onChange={(e) => setName(e.target.value)} data-testid="builder-name" />
-          <Button size="sm" variant="outline" disabled={!ready || !name.trim() || busy} onClick={() => void go(true)} data-testid="builder-save">
-            Save and use
-          </Button>
+          {isAdmin() && (
+            <Button size="sm" variant="outline" disabled={!ready || !name.trim() || busy} onClick={() => void go(true)} data-testid="builder-save">
+              Save and use
+            </Button>
+          )}
           <Button size="sm" disabled={!ready || busy} onClick={() => void go(false)} data-testid="builder-use">
             Use without saving
           </Button>
@@ -545,9 +548,13 @@ export function ProfilePicker({ pid, busy, onChanged }: { pid: string; busy: boo
       {current && prof && !prof.fits && (
         <span className="text-warning">
           needs layout <span className="font-mono">{prof.layout}</span> (live: {d.live?.layout ?? "?"}){" "}
-          <button className="underline" onClick={() => void sw.start(current)} data-testid="profile-switch-server">
-            switch server…
-          </button>
+          {isAdmin() ? (
+            <button className="underline" onClick={() => void sw.start(current)} data-testid="profile-switch-server">
+              switch server…
+            </button>
+          ) : (
+            "an admin can switch the server"
+          )}
         </span>
       )}
       {error && <span className="text-destructive">{error}</span>}
@@ -585,13 +592,13 @@ export function ProfilePicker({ pid, busy, onChanged }: { pid: string; busy: boo
           <p className="text-xs text-muted-foreground">Modes work with any layout; a profile's own mode is only its default. {MODE_HELP}</p>
           <LayoutTable
             data={d}
-            onSwitch={(p) => {
+            onSwitch={isAdmin() ? (p) => {
               setAbout(false);
               void sw.start(p);
-            }}
-            onDelete={(p) => {
+            } : undefined}
+            onDelete={isAdmin() ? (p) => {
               if (confirm(`Delete the saved profile ${p}?`)) void api.profileDelete(p).then(() => qc.invalidateQueries({ queryKey: ["profiles"] }));
-            }}
+            } : undefined}
           />
         </DialogContent>
       </Dialog>

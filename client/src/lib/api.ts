@@ -1,7 +1,6 @@
-// REST calls to the server. Auth is an HttpOnly cookie: the token's (opened with ?token=) or, in
-// sign-in mode, the session's, plus its CSRF header on state-changing requests.
-import { authState, csrfHeaders, sessionEnded } from "@/lib/auth";
-import { brandName } from "@/lib/brand";
+// REST calls to the server. Auth is the session's HttpOnly cookie, plus its CSRF header on
+// state-changing requests.
+import { csrfHeaders, sessionEnded } from "@/lib/auth";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -57,9 +56,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     const err = (data as { error?: string } | undefined)?.error || text || res.statusText;
     if (res.status === 401) sessionEnded();
     const e = new ApiError(
-      res.status === 401
-        ? authState().mode === "login" ? "Signed out." : `Not signed in: open the URL ${brandName()} printed (with ?token=).`
-        : err,
+      res.status === 401 ? "Signed out." : err,
       res.status,
     );
     (e as ApiError & { data?: unknown }).data = data;
@@ -567,6 +564,8 @@ export interface Project {
   exists: boolean;
   /** A bench run's tab: watched, not driven. */
   readOnly?: boolean;
+  /** Who owns it (username; an admin's `?all=1` list). */
+  owner?: string;
 }
 
 export interface ProjectList {

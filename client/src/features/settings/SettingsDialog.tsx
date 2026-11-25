@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Tip, menuRow } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
+import { isAdmin } from "@/lib/auth";
 
 const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
 
@@ -47,7 +48,28 @@ type Scope = "project" | "server";
  * restart).
  */
 export function SettingsDialog({ project, onClose }: { project: Project | undefined; onClose: () => void }) {
+  // Settings are saved to the server's shared config.json: admins only (the server refuses the rest).
+  if (!isAdmin()) return <SettingsAdminOnly onClose={onClose} />;
+  return <AdminSettingsDialog project={project} onClose={onClose} />;
+}
+
+function SettingsAdminOnly({ onClose }: { onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md" data-testid="settings-dialog">
+        <DialogTitle>Settings</DialogTitle>
+        <DialogDescription data-testid="settings-admin-only">
+          Settings are saved to this server's shared configuration, so only an admin can change them. A project's profile and
+          mode are picked in the chat footer.
+        </DialogDescription>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AdminSettingsDialog({ project, onClose }: { project: Project | undefined; onClose: () => void }) {
   const canProject = !!project && !project.readOnly && project.exists;
+  // The server's defaults (config.json) are the admins' to change.
   const [scope, setScope] = useState<Scope>(canProject ? "project" : "server");
   const pid = scope === "project" && project ? project.id : null;
   const [query, setQuery] = useState("");

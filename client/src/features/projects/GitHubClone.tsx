@@ -7,6 +7,7 @@ import {
 import { api, ApiError, type CloneStatus, type GitHubDeviceStart, type GitHubRepo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isAdmin } from "@/lib/auth";
 import { FolderPicker } from "./FolderPicker";
 import { CloneProgress, useClonePolling } from "./CloneProgress";
 import { deviceEndMessage, pageCount, pageRange, pollDelayMs, repoFolderName, timeAgo } from "./cloneHelpers";
@@ -22,6 +23,19 @@ const signedOut = (e: unknown) => e instanceof ApiError && (e as ApiError & { da
  * server; the new project's fetch, pull and push use the sign-in.
  */
 export function GitHubCloneStep({ onAdded }: { onAdded: (p: { id: string }) => void }) {
+  // The GitHub App sign-in is the server's (one account), so an admin's to use.
+  if (!isAdmin()) {
+    return (
+      <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3 text-xs" data-testid="github-admin-only">
+        <div className="flex items-center gap-2 font-medium"><Github className="size-4" /> Clone from GitHub is for admins</div>
+        <p className="text-muted-foreground">It uses the server's GitHub sign-in. Use "Clone a repository" with a URL (and a token if it's private).</p>
+      </div>
+    );
+  }
+  return <GitHubCloneAdmin onAdded={onAdded} />;
+}
+
+function GitHubCloneAdmin({ onAdded }: { onAdded: (p: { id: string }) => void }) {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: ["github-app"], queryFn: api.githubApp });
   const refresh = useCallback(() => void qc.invalidateQueries({ queryKey: ["github-app"] }), [qc]);
