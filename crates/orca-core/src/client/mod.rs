@@ -1,5 +1,6 @@
 //! The OpenAI-compatible chat client and request shaping.
 
+pub mod backend;
 pub mod context_overflow;
 pub mod context_window_detector;
 pub mod max_tokens_negotiator;
@@ -9,6 +10,7 @@ pub mod served_models;
 pub mod server_identity;
 pub mod types;
 
+pub use backend::{ChatBackend, is_transport_failure};
 pub use openai::{ChatError, ClientSettings, OpenAiClient, SseParser};
 pub use served_models::{ServedModel, ServedModels};
 pub use server_identity::{ServerIdentity, ServerInfo, ServerKind};

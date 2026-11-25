@@ -27,6 +27,7 @@ tracing.workspace = true
 windows-version.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
 indexmap.workspace = true
 tempfile.workspace = true
 orca-testkit.workspace = true

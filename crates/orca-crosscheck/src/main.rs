@@ -29,6 +29,12 @@
 //! both runs; `<HOME>` in a value becomes the config home), so fixed author/committer dates
 //! give the same commit hashes in both runs. `.git/` is left out of the file comparison.
 //!
+//! Config values can name the fake server (`<SERVER>`: its `/v1` base URL, `<SERVER_ROOT>`:
+//! without `/v1`, e.g. a slot copy or the profiles API) and the config home (`<HOME_JSON>`,
+//! JSON-escaped, e.g. `slots.localStateFile`) or the work folder (`<WORK_JSON>`, e.g. a fake
+//! bridge CLI's path). Profile, mode and engine errors on stderr are
+//! compared with the session notices.
+//!
 //! For the web tools a scenario can serve pages from a local server (`web`: path -> status,
 //! content type, body); `<WEB>` in the prompt and the scripted tool arguments becomes its base
 //! URL, and `<CLOSED>` becomes `127.0.0.1:<port>` of a port nothing listens on. Both are
@@ -250,10 +256,19 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
     let work = tempfile::tempdir()?;
     let mut config = base_config(&server.base_url());
     merge(&mut config, &scenario.config);
-    std::fs::write(
-        home.path().join("config.json"),
-        fill_placeholders(&serde_json::to_string_pretty(&config)?, &server.base_url()),
-    )?;
+    // `<SERVER>` / `<SERVER_ROOT>` / `<HOME_JSON>` / `<WORK_JSON>` in config values: the fake
+    // server's base URL (with and without `/v1`), the config home (the local slot state file)
+    // and the work folder; then the fake MCP / LSP / images placeholders.
+    let server_url = server.base_url();
+    let server_root = server_url.trim_end_matches("/v1").to_string();
+    let home_json = serde_json::to_string(&home.path().display().to_string())?;
+    let work_json = serde_json::to_string(&work.path().display().to_string())?;
+    let config_text = fill_placeholders(&serde_json::to_string_pretty(&config)?, &server_url)
+        .replace("<SERVER_ROOT>", &server_root)
+        .replace("<SERVER>", &server_url)
+        .replace("<HOME_JSON>", &home_json[1..home_json.len() - 1])
+        .replace("<WORK_JSON>", &work_json[1..work_json.len() - 1]);
+    std::fs::write(home.path().join("config.json"), config_text)?;
     let work_json = serde_json::to_string(&work.path().display().to_string())?;
     let work_json = &work_json[1..work_json.len() - 1];
     for (rel, content) in &scenario.home_files {
@@ -359,6 +374,7 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
                 (&home_str, "<HOME>"),
                 (&web_url, "<WEB>"),
                 (&closed, "<CLOSED>"),
+                (&server_root, "<SERVER_ROOT>"),
             ],
         )
     };
@@ -449,11 +465,19 @@ async fn run_one(exe: &Path, scenario: &Scenario) -> Result<RunResult> {
                 "Session not found:",
                 "No saved sessions",
                 "No session for this directory",
+                "Unknown profile",
+                "Profile '",
+                "Unknown mode",
+                "Unknown agent.engine",
+                "Unknown --engine",
             ]
             .iter()
             .any(|p| l.starts_with(p))
         })
-        .map(str::to_string)
+        .map(|l| {
+            l.replace(&server_root, "<SERVER_ROOT>")
+                .replace(&home_str, "<HOME>")
+        })
         .collect();
 
     Ok(RunResult {

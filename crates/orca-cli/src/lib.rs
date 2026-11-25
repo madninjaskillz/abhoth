@@ -219,8 +219,21 @@ pub async fn run_single_prompt_in_session(
     config_dir: Option<&Path>,
     restored: Option<sessions::RestoredSession>,
 ) -> Result<SinglePromptResult> {
+    if orca_core::engines::selected_bridge(&config).is_some() {
+        return run_bridge_prompt(config, cwd, prompt, quiet, restored).await;
+    }
     let served = Arc::new(ServedModels::new());
-    let client = client_from_config(&config, served)?;
+    let mut client = client_from_config(&config, served)?;
+    // Sticky slots (config "slots"): the app-wide client is the Lead's pinned client, with
+    // the normal provider as its fallback.
+    let slots = if config.demo_mode {
+        None
+    } else {
+        orca_core::slots::SlotRuntime::create(&config, Arc::new(client.clone()))
+    };
+    if let Some(rt) = &slots {
+        client = client.with_router(rt.lead_client());
+    }
     let (mut registry, mut services) = build_registry_in(&config, &cwd);
     services.start_mcp(&config, &cwd, &mut registry).await;
     let tool_hooks = config_dir.map(|d| orca_core::agent::ToolHooks::from_config(&config, d));
@@ -237,6 +250,10 @@ pub async fn run_single_prompt_in_session(
         session.tool_hooks.session_id = Some(r.id);
     }
     let result = run_prepared(&mut session, prompt, quiet).await;
+    // Every lease goes back on exit.
+    if let Some(rt) = &slots {
+        rt.shutdown().await;
+    }
     // Post-hooks run in the background; give them a moment before the process exits.
     session
         .tool_hooks
@@ -245,6 +262,60 @@ pub async fn run_single_prompt_in_session(
     services.shutdown().await;
     pi_profile::kill_jobs();
     result
+}
+
+/// `--print` with a bridge engine (agent.engine claude / codex): the CLI runs the turn.
+async fn run_bridge_prompt(
+    config: OrcaConfig,
+    cwd: PathBuf,
+    prompt: &str,
+    quiet: bool,
+    restored: Option<sessions::RestoredSession>,
+) -> Result<SinglePromptResult> {
+    // The tools (ask_user is offered to the CLI as a host tool) and the system prompt the
+    // native loop would use (C# adds it before the prompt).
+    let (registry, mut services) = build_registry_in(&config, &cwd);
+    let mut native = AgentSession::new(
+        config.clone(),
+        client_from_config(&config, Arc::new(ServedModels::new()))?,
+        registry,
+        ToolContext::new(cwd.clone()),
+    );
+    native.native_tools = native.resolve_native_tools();
+    let system = native.default_system_prompt();
+    let registry = std::mem::take(&mut native.registry);
+    let session_id = restored.as_ref().map(|r| r.id.clone());
+    let mut conversation = orca_core::chat::Conversation::from_api_messages(
+        restored.map(|r| r.messages).unwrap_or_default(),
+        Default::default(),
+    );
+    let outcome = orca_core::engines::run_print_turn(
+        orca_core::engines::PrintTurnRequest {
+            config: &config,
+            cwd: &cwd,
+            conversation: &mut conversation,
+            system_prompt: Some(system),
+            prompt,
+            registry: Some(&registry),
+            session_id: session_id.as_deref(),
+            quiet,
+        },
+        &orca_core::engines::CancelToken::new(),
+    )
+    .await;
+    services.shutdown().await;
+    let outcome = outcome.map_err(|e| anyhow::anyhow!("{e}"))?;
+    if let Some(message) = &outcome.unavailable {
+        eprintln!("✗ {message}");
+    }
+    Ok(SinglePromptResult {
+        response: outcome.response,
+        tokens: outcome.tokens,
+        duration_ms: outcome.duration_ms,
+        tool_calls: outcome.tool_calls,
+        files_modified: outcome.files_modified,
+        success: outcome.success,
+    })
 }
 
 async fn run_prepared(
@@ -294,15 +365,68 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         );
         return Ok(2);
     };
-    let mut config = load_config(None)?;
-    args.apply_to(&mut config);
+    let mut manager = ConfigManager::new(None);
+    manager
+        .load()
+        .with_context(|| format!("loading {}", manager.file_path().display()))?;
+    let config_dir = orca_core::config::default_config_dir();
+    // An inference profile (--profile, else profiles.active) is applied over config.json first,
+    // so explicit flags such as --engine still win.
+    let mut profile_notices = Vec::new();
+    let profile_name = args
+        .profile
+        .clone()
+        .or_else(|| manager.config.profiles.active.clone());
+    if let Some(name) = profile_name.filter(|_| !args.demo_mode)
+        && let Some(error) = orca_core::profiles::apply_at_startup(
+            &mut manager,
+            &config_dir,
+            &name,
+            &mut profile_notices,
+        )
+        .await
+    {
+        eprintln!("{error}");
+        if args.profile.is_some() {
+            return Ok(2);
+        }
+    }
+    // --mode (the web UI's per-project mode): over the profile's own agent.leadMode / peerMode.
+    if let Some(mode) = args
+        .mode
+        .as_deref()
+        .filter(|m| !m.is_empty() && !args.demo_mode)
+    {
+        if orca_core::profiles::agent_modes::normalize(Some(mode)).is_none() {
+            eprintln!(
+                "{}",
+                orca_core::profiles::agent_modes::unknown_mode_message(mode)
+            );
+            return Ok(2);
+        }
+        if let Err(e) = manager.apply_mode(mode) {
+            eprintln!("{e}");
+            return Ok(2);
+        }
+    }
+    let mut config = manager.config.clone();
+    if let Err(e) = args.apply_to(&mut config) {
+        eprintln!("{e}");
+        return Ok(2);
+    }
+    if orca_core::engines::AgentEngines::normalize(Some(&config.agent.engine)).is_none() {
+        eprintln!(
+            "Unknown agent.engine '{}' in config (native, claude or codex).",
+            config.agent.engine
+        );
+        return Ok(2);
+    }
     // Ensure the default prompt template exists and is current (Program.cs does it at startup).
     if let Err(e) = orca_core::config::prompt_manager::PromptManager::new().ensure_default_prompt()
     {
         tracing::warn!("could not write the default prompt template: {e}");
     }
 
-    let config_dir = orca_core::config::default_config_dir();
     // Sweep checkpoint snapshots older than a week (best effort, in the background).
     let sweeper = orca_core::session::CheckpointManager::new(config_dir.join("checkpoints"));
     tokio::task::spawn_blocking(move || {
@@ -318,6 +442,26 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         sessions::Restore::NotFound => return Ok(0),
         sessions::Restore::Unreadable => return Ok(1),
     };
+    for notice in &profile_notices {
+        eprintln!("{notice}");
+    }
+    // A bridge engine must be ready (installed, logged in) before the turn.
+    match orca_core::engines::prepare_engine_non_interactive(
+        &config,
+        &orca_core::engines::CancelToken::new(),
+    )
+    .await
+    {
+        Ok(Some(message)) => {
+            eprintln!("{message}");
+            return Ok(2);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            eprintln!("{e}");
+            return Ok(2);
+        }
+    }
     // --print does not auto-save (only the interactive loop does, after each turn).
     let result = run_single_prompt_in_session(
         config,

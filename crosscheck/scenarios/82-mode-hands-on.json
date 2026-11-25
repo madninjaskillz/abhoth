@@ -1,0 +1,9 @@
+{
+  "prompt": "Say hello",
+  "args": ["--mode", "hands-on"],
+  "replies": [
+    {
+      "text": "Hello, working hands-on."
+    }
+  ]
+}
