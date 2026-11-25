@@ -47,8 +47,7 @@ impl PromptTool {
     /// Every tool of `registry`, in registration order.
     pub fn from_registry(registry: &ToolRegistry) -> Vec<PromptTool> {
         registry
-            .all()
-            .iter()
+            .advertised()
             .map(|t| PromptTool::new(t.name(), t.description(), t.parameter_schema()))
             .collect()
     }

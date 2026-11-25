@@ -154,8 +154,7 @@ impl FakeOpenAi {
 }
 
 /// A 1x1 PNG, the "image" every images API call returns.
-pub const TINY_PNG_BASE64: &str =
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+pub const TINY_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
 /// The images answer: the tiny PNG, or a 500 when the prompt asks for a failure (`FAIL`).
 fn image_reply(prompt_fails: bool) -> Response<Body> {
@@ -260,6 +259,10 @@ fn parse_multipart(content_type: &str, body: &[u8]) -> Vec<Value> {
             } else if lower.starts_with("content-type:") {
                 ctype = json!(line["content-type:".len()..].trim());
             }
+        }
+        // Text parts' content types differ by client (.NET labels them text/plain): not kept.
+        if filename.is_null() {
+            ctype = Value::Null;
         }
         let mut v = json!({"name": name, "filename": filename, "content_type": ctype});
         if filename.is_null() {

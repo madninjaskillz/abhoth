@@ -1,6 +1,9 @@
 //! The `lsp_*` tools (`DiagnosticsTool`, `HoverTool`, `GoToDefinitionTool`,
 //! `FindReferencesTool`, `DocumentSymbolsTool`, `WorkspaceSymbolsTool`, `CallHierarchyTool`).
 
+// The helpers return the tool's finished error result; it is built once per call.
+#![allow(clippy::result_large_err)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -15,9 +18,9 @@ use crate::protocol::{
 };
 
 const NOT_CONFIGURED: &str = "LSP is not configured.";
-const NOT_CONFIGURED_HINT: &str = "LSP is not configured. Add language server configurations to config.json under 'lsp.servers'.";
-const BAD_POSITION: &str =
-    "line must be an integer >= 1 (1-based) and character an integer >= 0.";
+const NOT_CONFIGURED_HINT: &str =
+    "LSP is not configured. Add language server configurations to config.json under 'lsp.servers'.";
+const BAD_POSITION: &str = "line must be an integer >= 1 (1-based) and character an integer >= 0.";
 
 fn schema(text: &str) -> Value {
     serde_json::from_str(text).expect("valid schema")
@@ -193,9 +196,7 @@ impl Tool for DiagnosticsTool {
         let diagnostics = manager.get_diagnostics(&path);
         let name = file_name(&path);
         if diagnostics.is_empty() {
-            return ToolResult::success(format!(
-                "No diagnostics for {name}. File appears clean."
-            ));
+            return ToolResult::success(format!("No diagnostics for {name}. File appears clean."));
         }
         let wanted = match severity.as_deref() {
             Some("error") => Some(1),
@@ -296,10 +297,11 @@ impl Tool for HoverTool {
         let Some(manager) = &self.manager else {
             return ToolResult::error(NOT_CONFIGURED_HINT);
         };
-        let (path, (line, character)) = match full_path(args, ctx).and_then(|p| Ok((p, position(args)?))) {
-            Ok(v) => v,
-            Err(e) => return e,
-        };
+        let (path, (line, character)) =
+            match full_path(args, ctx).and_then(|p| Ok((p, position(args)?))) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
         let conn = match open_document(manager, &path, no_suffix).await {
             Ok(c) => c,
             Err(e) => return e,
@@ -344,10 +346,11 @@ impl Tool for GoToDefinitionTool {
         let Some(manager) = &self.manager else {
             return ToolResult::error(NOT_CONFIGURED_HINT);
         };
-        let (path, (line, character)) = match full_path(args, ctx).and_then(|p| Ok((p, position(args)?))) {
-            Ok(v) => v,
-            Err(e) => return e,
-        };
+        let (path, (line, character)) =
+            match full_path(args, ctx).and_then(|p| Ok((p, position(args)?))) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
         let conn = match open_document(manager, &path, |lang| {
             format!(" Add it to config.json under 'lsp.servers.{lang}'.")
         })
@@ -415,10 +418,11 @@ impl Tool for FindReferencesTool {
         let Some(manager) = &self.manager else {
             return ToolResult::error(NOT_CONFIGURED_HINT);
         };
-        let (path, (line, character)) = match full_path(args, ctx).and_then(|p| Ok((p, position(args)?))) {
-            Ok(v) => v,
-            Err(e) => return e,
-        };
+        let (path, (line, character)) =
+            match full_path(args, ctx).and_then(|p| Ok((p, position(args)?))) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
         let conn = match open_document(manager, &path, no_suffix).await {
             Ok(c) => c,
             Err(e) => return e,
@@ -432,10 +436,7 @@ impl Tool for FindReferencesTool {
                     return ToolResult::success("No references found.");
                 }
                 let mut sb = String::new();
-                append_line(
-                    &mut sb,
-                    &format!("Found {} reference(s):", locations.len()),
-                );
+                append_line(&mut sb, &format!("Found {} reference(s):", locations.len()));
                 // Grouped by file in first-seen order, each group by line (a stable sort).
                 let mut groups: Vec<(&str, Vec<_>)> = Vec::new();
                 for loc in &locations {
@@ -617,8 +618,7 @@ impl Tool for WorkspaceSymbolsTool {
             Ok(r) => r,
             Err(e) => return ToolResult::error(format!("LSP error: {e}")),
         };
-        let symbols: Vec<SymbolInformation> =
-            serde_json::from_value(result).unwrap_or_default();
+        let symbols: Vec<SymbolInformation> = serde_json::from_value(result).unwrap_or_default();
         if symbols.is_empty() {
             return ToolResult::success(format!("No symbols found matching '{query}'."));
         }
@@ -693,10 +693,11 @@ impl Tool for CallHierarchyTool {
         let Some(manager) = &self.manager else {
             return ToolResult::error(NOT_CONFIGURED);
         };
-        let (path, (line, character)) = match full_path(args, ctx).and_then(|p| Ok((p, position(args)?))) {
-            Ok(v) => v,
-            Err(e) => return e,
-        };
+        let (path, (line, character)) =
+            match full_path(args, ctx).and_then(|p| Ok((p, position(args)?))) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
         let direction = args
             .get("direction")
             .and_then(Value::as_str)
@@ -747,10 +748,7 @@ async fn call_hierarchy(
         let calls: Option<Vec<CallHierarchyIncomingCall>> = serde_json::from_value(result).ok();
         append_line(
             &mut sb,
-            &format!(
-                "\nIncoming calls ({}):",
-                calls.as_ref().map_or(0, Vec::len)
-            ),
+            &format!("\nIncoming calls ({}):", calls.as_ref().map_or(0, Vec::len)),
         );
         for call in calls.iter().flatten().take(20) {
             append_line(
@@ -771,10 +769,7 @@ async fn call_hierarchy(
         let calls: Option<Vec<CallHierarchyOutgoingCall>> = serde_json::from_value(result).ok();
         append_line(
             &mut sb,
-            &format!(
-                "\nOutgoing calls ({}):",
-                calls.as_ref().map_or(0, Vec::len)
-            ),
+            &format!("\nOutgoing calls ({}):", calls.as_ref().map_or(0, Vec::len)),
         );
         for call in calls.iter().flatten().take(20) {
             append_line(

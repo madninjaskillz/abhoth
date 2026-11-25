@@ -593,7 +593,9 @@ impl AgentSession {
     async fn execute_native_calls(&mut self, calls: &[ToolCall], observer: &mut dyn AgentObserver) {
         let several = calls.len() > 1;
         for (i, call) in calls.iter().enumerate() {
-            self.record_raw_arguments = several && i == 0;
+            // C# starts the first call early while the response streams (and records its raw
+            // arguments) only when it is one of the ReadOnlyCommand tools.
+            self.record_raw_arguments = several && i == 0 && early_start_tool(&call.name);
             let mut result = self.run_one_call(call, true, observer).await;
             if self.config.agent.repeat_call_notes
                 && let Some(note) =
@@ -1008,6 +1010,22 @@ fn is_command_runner(name: &str) -> bool {
         name,
         "bash" | "shell" | "run_command" | "execute_command" | "get_process_output" | "run_tests"
     )
+}
+
+/// `ReadOnlyCommand.Tools`: the only tools `EarlyToolStarter` may start before a response ends.
+fn early_start_tool(name: &str) -> bool {
+    [
+        "read",
+        "read_file",
+        "grep",
+        "find",
+        "ls",
+        "glob",
+        "list_directory",
+        "bash",
+    ]
+    .iter()
+    .any(|t| t.eq_ignore_ascii_case(name))
 }
 
 /// Arguments in one canonical form for loop detection (compact JSON, or the raw text).

@@ -170,7 +170,10 @@ async fn unknown_extension_and_missing_server_are_errors() {
     let f = Fixture::new();
     let hover = HoverTool::new(Some(f.manager.clone()));
     let (err, text) = f
-        .run(&hover, json!({"path": "notes.txt", "line": 1, "character": 0}))
+        .run(
+            &hover,
+            json!({"path": "notes.txt", "line": 1, "character": 0}),
+        )
         .await;
     assert!(err);
     assert_eq!(text, "No language detected for .txt files.");
@@ -225,21 +228,30 @@ async fn hover_definition_and_references() {
 
     let hover = HoverTool::new(m.clone());
     assert_eq!(
-        f.run(&hover, json!({"path": "main.rs", "line": "2", "character": 4}))
-            .await,
+        f.run(
+            &hover,
+            json!({"path": "main.rs", "line": "2", "character": 4})
+        )
+        .await,
         (false, "hover at 2:4".into())
     );
     assert_eq!(
-        f.run(&hover, json!({"path": "main.rs", "line": 100, "character": 0}))
-            .await,
+        f.run(
+            &hover,
+            json!({"path": "main.rs", "line": 100, "character": 0})
+        )
+        .await,
         (
             false,
             "No hover information available at this position.".into()
         )
     );
     assert_eq!(
-        f.run(&hover, json!({"path": "main.rs", "line": 50, "character": 0}))
-            .await,
+        f.run(
+            &hover,
+            json!({"path": "main.rs", "line": 50, "character": 0})
+        )
+        .await,
         (true, "LSP error: fake hover failure".into())
     );
 
@@ -253,8 +265,11 @@ async fn hover_definition_and_references() {
         )
     );
     assert_eq!(
-        f.run(&def, json!({"path": "main.rs", "line": 100, "character": 0}))
-            .await,
+        f.run(
+            &def,
+            json!({"path": "main.rs", "line": 100, "character": 0})
+        )
+        .await,
         (false, "No definition found.".into())
     );
 

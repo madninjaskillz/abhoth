@@ -1118,6 +1118,9 @@ dependencies = [
  "orca-core",
  "orca-testkit",
  "orca-tools-fs",
+ "orca-tools-image",
+ "orca-tools-lsp",
+ "orca-tools-mcp",
  "orca-tools-shell",
  "serde",
  "serde_json",
@@ -1202,11 +1205,11 @@ name = "orca-tools-image"
 version = "0.15.0"
 dependencies = [
  "async-trait",
- "axum",
  "base64",
  "image",
  "orca-abstractions",
  "orca-core",
+ "orca-testkit",
  "orca-tools-common",
  "reqwest",
  "serde_json",

@@ -14,11 +14,21 @@ path = "src/main.rs"
 [lib]
 path = "src/lib.rs"
 
+[features]
+# Optional tool groups (C# plugin assemblies); all on by default.
+default = ["mcp", "lsp", "image"]
+mcp = ["dep:orca-tools-mcp"]
+lsp = ["dep:orca-tools-lsp"]
+image = ["dep:orca-tools-image"]
+
 [dependencies]
 orca-abstractions.workspace = true
 orca-core.workspace = true
 orca-tools-fs.workspace = true
 orca-tools-shell.workspace = true
+orca-tools-mcp = { workspace = true, optional = true }
+orca-tools-lsp = { workspace = true, optional = true }
+orca-tools-image = { workspace = true, optional = true }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

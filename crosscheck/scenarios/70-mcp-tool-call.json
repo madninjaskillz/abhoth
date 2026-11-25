@@ -1,0 +1,14 @@
+{
+  "prompt": "Use the fake MCP server's tools",
+  "config": {
+    "mcpServers": {
+      "fake": {"command": "<FAKE_MCP>", "env": {"FAKE_MCP_VAR": "from config"}},
+      "Other.Server": {"command": "<FAKE_MCP>", "enabled": false}
+    }
+  },
+  "replies": [
+    {"tools": [{"name": "mcp_fake_echo", "args": {"text": "hello <mcp> & 'friends'"}}]},
+    {"tools": [{"name": "mcp_fake_add", "args": {"a": 2, "b": 3.5}}, {"name": "mcp_fake_env", "args": {}}]},
+    {"text": "The echo tool repeated my text, add gave 5.5 and the env tool showed the configured value."}
+  ]
+}
