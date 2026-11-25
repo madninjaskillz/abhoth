@@ -3,6 +3,7 @@
 //! streamed), friendly error lines, the welcome banner, the thinking spinner, and the
 //! stream-time tag filters. Output goes through `ui::console::Console` as Spectre-style markup.
 
+pub mod agent_badge;
 pub mod diff;
 pub mod friendly_errors;
 pub mod links;

@@ -335,17 +335,18 @@ impl ToolCallRenderer {
         for line in &lines[..to_show] {
             let line = line.as_ref();
             // Collapsed previews cut long lines instead of letting them wrap to column 0.
-            // (Agent badges — AgentBadge.DecorateMarkup — need the orchestrator: not ported.)
+            // Spawn results name agents ("Agent A …"): badge them like their footer bars.
+            let badges = super::agent_badge::count_badges(line);
             let text = if expanded {
                 line.to_string()
             } else {
-                ellipsize(line, cells.max(8))
+                ellipsize(line, cells.saturating_sub(4 * badges).max(8))
             };
-            body.push(if text.is_empty() {
-                String::new()
-            } else {
-                format!("[dim]{}[/]", escape(&text))
-            });
+            body.push(super::agent_badge::decorate_markup(
+                &text,
+                Some("dim"),
+                None,
+            ));
         }
         if !expanded && lines.len() > max_lines {
             body.push(more_lines_hint(lines.len() - max_lines));

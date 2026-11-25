@@ -1033,8 +1033,8 @@ pub fn attached_notes_line(notes: &str) -> String {
         return "[dim]  (attached results of finished background agents)[/]".into();
     }
     format!(
-        "[dim]  (attached results of finished background agents:[/] [dim]{}[/][dim])[/]",
-        tags.join(", ")
+        "[dim]  (attached results of finished background agents:[/] {}[dim])[/]",
+        crate::render::agent_badge::decorate_markup(&tags.join(", "), Some("dim"), None)
     )
 }
 

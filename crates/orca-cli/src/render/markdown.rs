@@ -770,8 +770,12 @@ fn render_inlines(src: &str, plain: bool) -> String {
         if plain {
             out.push_str(text);
         } else {
-            // File paths in prose become links (agent badges are not ported).
-            out.push_str(&links::text_markup(text));
+            // File paths in prose become links; "Agent A" gets the agent's badge.
+            out.push_str(&super::agent_badge::decorate_markup(
+                text,
+                None,
+                Some(&links::text_markup),
+            ));
         }
         text.clear();
     };

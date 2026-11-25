@@ -127,6 +127,7 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   engine, the login offer, bridge turns on the bus, the Lead bar and the CLI's bars.
 - Foreground sub-agents ask the user for approvals in the REPL and the browser (D104).
 - `lead_mode` for the OpenOrca profile in `leadMode: auto` (D105, scenario 123).
+- Coloured agent badges in chat lines and the `/agents` picker (D106).
 
 ### Phase 7: desktop app (2026-11-25, D110)
 
@@ -139,8 +140,7 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 1. Phase 6: parity sweep (cross-check coverage, `rust-port/sweep`); bench parity run
    (user-scheduled).
-2. Agent badge colours in note lines and the interactive `/agents` picker; an agent footer in
-   the REPL.
+2. An agent footer in the REPL.
 3. Phase 7 follow-ups: close-to-tray setting, Linux/macOS desktop builds in CI, installer.
 
 ### Live smoke 2026-11-25 (third run)
@@ -187,8 +187,7 @@ worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
 
 ## Known gaps
 
-- Agent badges are not coloured in note lines; `/agents` is a plain list, not the interactive
-  picker; the REPL has no agent footer (a bridge's progress.js bars show on the info row, D101).
+- The REPL has no agent footer (a bridge's progress.js bars show on the info row, D101).
 - No end-to-end scenario yet for bridges under `--hostui` or the foreground sub-agent approval
   prompt in the terminal (Rust tests only).
 - Anthropic: a turn with several signed thinking blocks keeps no signature (its reasoning is not

@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use orca_core::orchestration::palette;
 use orca_core::orchestration::transcript::AgentTranscriptKind;
 use orca_core::orchestration::types::AgentStatus;
-use orca_core::orchestration::{AgentMessageResult, manager::preview};
+use orca_core::orchestration::{AgentContext, AgentMessageResult, manager::preview};
+use std::sync::Arc;
 
 use super::{Command, CommandContext, CommandResult};
 use crate::ui::markup::escape;
@@ -150,31 +151,13 @@ impl Command for AgentsCommand {
                 return CommandResult::Ok;
             }
             let running: Vec<_> = agents.iter().filter(|a| a.is_active()).collect();
-            if running.len() == 1 {
-                watch(ctx, running[0]);
+            let target = if running.len() == 1 {
+                Some(running[0].clone())
             } else {
-                // No arrow-key picker here: list them, newest running first.
-                let mut list = agents.clone();
-                list.sort_by_key(|a| {
-                    (
-                        std::cmp::Reverse(a.is_active()),
-                        std::cmp::Reverse(a.number),
-                    )
-                });
-                for a in list {
-                    let state = if a.is_active() {
-                        a.current_activity().unwrap_or_else(|| "running".into())
-                    } else {
-                        a.status().as_str().to_lowercase()
-                    };
-                    ctx.console.write_line(&format!(
-                        "{} \u{b7} #{} {} \u{b7} {state} \u{2014} {}",
-                        a.tag(),
-                        a.number,
-                        a.agent_type,
-                        preview(&a.task, 60)
-                    ));
-                }
+                pick(ctx, &agents)
+            };
+            if let Some(a) = target {
+                watch(ctx, &a);
             }
             return CommandResult::Ok;
         }
@@ -240,5 +223,102 @@ impl Command for AgentsCommand {
         ctx.console
             .markup_line("[yellow]Usage: /agents [[n | cancel n | msg n <text> | result n]][/]");
         CommandResult::Ok
+    }
+}
+
+/// `AgentPanelLayout.ProgressText`: the reported percentage, else iteration/max, else "…".
+fn progress_text(a: &AgentContext) -> String {
+    match a.reported_progress() {
+        Some(p) => format!("{}%", (p * 100.0).round() as i32),
+        None if a.max_iterations() > 0 => format!("{}/{}", a.iteration_count(), a.max_iterations()),
+        None => "\u{2026}".into(),
+    }
+}
+
+/// `AgentRowModel.ActivityText`: the running tool, or the last progress note while it only
+/// thinks or writes.
+fn activity_text(a: &AgentContext) -> Option<String> {
+    let activity = a.current_activity();
+    let note = a.progress_note().filter(|n| !n.trim().is_empty());
+    match activity.as_deref() {
+        None | Some("thinking") | Some("writing") if note.is_some() => note,
+        _ => activity,
+    }
+}
+
+/// `AgentPanelLayout.FormatElapsed`: m:ss, or h:mm:ss from an hour.
+fn format_elapsed(t: std::time::Duration) -> String {
+    let s = t.as_secs();
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
+}
+
+/// `AgentCommands.Label`: one picker row.
+fn pick_label(a: &AgentContext) -> String {
+    let state = if a.is_active() {
+        format!(
+            "{} \u{b7} {}",
+            progress_text(a),
+            activity_text(a).unwrap_or_else(|| "running".into())
+        )
+    } else {
+        a.status().as_str().to_lowercase()
+    };
+    let (started, completed) = {
+        let st = a.state();
+        (st.started_at, st.completed_at)
+    };
+    let elapsed = started
+        .and_then(|s| {
+            completed
+                .unwrap_or_else(std::time::SystemTime::now)
+                .duration_since(s)
+                .ok()
+        })
+        .unwrap_or_default();
+    escape(&format!(
+        "{} \u{b7} #{} {} \u{b7} {state} \u{b7} {} \u{2014} {}",
+        a.tag(),
+        a.number,
+        a.agent_type,
+        format_elapsed(elapsed),
+        preview(&a.task, 60)
+    ))
+}
+
+/// `AgentCommands.Pick`: the arrow-key picker, running agents first, newest first; `None` for
+/// "← back" or a cancelled prompt.
+fn pick(ctx: &CommandContext<'_>, agents: &[Arc<AgentContext>]) -> Option<Arc<AgentContext>> {
+    let mut list = agents.to_vec();
+    list.sort_by_key(|a| {
+        (
+            std::cmp::Reverse(a.is_active()),
+            std::cmp::Reverse(a.number),
+        )
+    });
+    let mut labels: Vec<String> = list.iter().map(|a| pick_label(a)).collect();
+    labels.push("\u{2190} back".into());
+    // Like the other pickers (/config), the prompt reads the console in place.
+    let chosen = crate::ui::prompt::select(
+        ctx.console,
+        "[bold]Agents[/] [dim](\u{2191}\u{2193} choose \u{b7} Enter watch)[/]",
+        &labels,
+    )?;
+    list.get(chosen).cloned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_elapsed;
+    use std::time::Duration;
+
+    #[test]
+    fn elapsed_reads_like_the_bars() {
+        assert_eq!(format_elapsed(Duration::from_secs(5)), "0:05");
+        assert_eq!(format_elapsed(Duration::from_secs(754)), "12:34");
+        assert_eq!(format_elapsed(Duration::from_secs(3725)), "1:02:05");
     }
 }

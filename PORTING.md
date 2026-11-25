@@ -503,3 +503,9 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D112** grep compiles patterns with fancy-regex 0.20.2: lookahead/lookbehind and
   backreferences work as in .NET; patterns without them run on the regex crate as before. A line
   that hits the backtracking limit counts as no match.
+- **D106** Agent badges (`AgentBadge.DecorateMarkup`) in markdown prose, tool-result previews
+  and the attached-notes line: `render::agent_badge` with a process-wide "known letter" check
+  wired to the orchestrator in `wire_agents`. The mention scan is hand-written (Rust's regex
+  has no lookbehind) with the same rule: `Agent [A-KM-Z]` not inside a word. `/agents` with no
+  single running agent opens the arrow-key picker (`AgentCommands.Pick`: running first, newest
+  first, "← back"); its rows carry progress, activity and elapsed time as in C#.

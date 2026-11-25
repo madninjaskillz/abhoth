@@ -290,6 +290,12 @@ pub fn wire_agents(
         manager.set_line_sink(Some(Arc::new(|line: &str| eprintln!("{line}"))));
     }
     handle.set(Some(manager.clone()));
+    // Chat lines naming a known agent get its badge (`AgentBadge.IsKnownLetter`).
+    let weak = Arc::downgrade(&orchestrator);
+    crate::render::agent_badge::set_known_letter(Some(Arc::new(move |letter| {
+        weak.upgrade()
+            .is_some_and(|o| o.get_all_agents().iter().any(|a| a.letter() == letter))
+    })));
     session.orchestrator = Some(orchestrator);
     session.sub_agent_pipeline = Some(shared);
     Ok(manager)
