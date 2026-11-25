@@ -31,12 +31,12 @@ impl fmt::Display for HostUiEndpoint {
 }
 
 fn try_port(text: &str) -> Result<u16, String> {
-    if !text.is_empty() && text.chars().all(|c| c.is_ascii_digit()) {
-        if let Ok(p) = text.parse::<u32>()
-            && p <= 65535
-        {
-            return Ok(p as u16);
-        }
+    if !text.is_empty()
+        && text.chars().all(|c| c.is_ascii_digit())
+        && let Ok(p) = text.parse::<u32>()
+        && p <= 65535
+    {
+        return Ok(p as u16);
     }
     Err(format!("Not a port number: {text} (1-65535)."))
 }
