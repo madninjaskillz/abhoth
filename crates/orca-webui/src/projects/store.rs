@@ -159,7 +159,7 @@ impl ProjectStore {
             .iter()
             .filter_map(|u| file.users.get(&user_key(*u)))
             .collect();
-        entries.sort_by(|a, b| b.seq.cmp(&a.seq));
+        entries.sort_by_key(|e| std::cmp::Reverse(e.seq));
         entries.into_iter().find_map(|e| {
             let listed = list.iter().any(|p| paths::same_path(&p.path, &e.path));
             let dir = PathBuf::from(&e.path);
