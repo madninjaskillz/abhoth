@@ -1,0 +1,19 @@
+{
+  "prompt": "Create notes.md",
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "docs/notes.md",
+            "content": "# Notes\n\nFirst line.\n"
+          }
+        }
+      ]
+    },
+    {
+      "text": "I created docs/notes.md with a heading and a first line of notes for you."
+    }
+  ]
+}

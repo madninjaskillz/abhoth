@@ -13,6 +13,8 @@ use super::registry::ToolRegistry;
 
 /// `PromptConstants.SummaryRequestMessage`: asked after a turn that ran tools ends without a
 /// substantive wrap-up.
+/// The C# raw string literal keeps the source file's line breaks (CRLF in a Windows checkout);
+/// [`summary_request_message`] gives the platform form.
 pub const SUMMARY_REQUEST_MESSAGE: &str = "All tool calls are complete. Provide a final summary of what you did.
 Use markdown formatting (headers, bold, bullets, inline code) directly in your response \u{2014} do NOT wrap it in a code fence.
 Structure:
@@ -26,6 +28,51 @@ IMPORTANT: At the very end of your response, on its own line, add a <next-prompt
 a short follow-up prompt the user might type next (under 80 chars).
 Example: <next-prompt>run the tests</next-prompt>
 If there is no natural follow-up, omit the tag.";
+
+/// [`SUMMARY_REQUEST_MESSAGE`] with platform line breaks, as the C# build sends it.
+pub fn summary_request_message() -> String {
+    platform_lines(SUMMARY_REQUEST_MESSAGE)
+}
+
+/// A multi-line prompt constant with platform line breaks (see [`SUMMARY_REQUEST_MESSAGE`]).
+pub fn platform_lines(text: &str) -> String {
+    text.replace('\n', orca_tools_common::NEWLINE)
+}
+
+/// `PromptConstants.VerificationMessage`: sent once after a turn modified files and nothing
+/// since shows the code working (`agent.verificationMode` "auto").
+pub const VERIFICATION_MESSAGE: &str = "VERIFICATION STEP \u{2014} You MUST verify your implementation before finishing.
+
+STEP 1: Use read_file to re-read every file you created or modified. Do NOT rely on memory.
+   (Exception: a file you already re-read AFTER your last edit to it does not need reading again \u{2014} read each file at most once in this step.)
+STEP 2: For EACH requirement from the user's original request, trace through the code you just read:
+   - Quote the specific line numbers that implement the requirement.
+   - Mentally execute the code: what ACTUALLY happens at runtime? Follow variable assignments,
+     function return values, and control flow step by step.
+   - Common bugs to check for:
+     * Score/counter incrementing every frame instead of only on specific events
+     * Return values from functions not being used by the caller
+     * Visual effects (fading, transparency) that don't actually change over time
+     * Missing initial state (e.g., empty lists when something should start with an item)
+     * Math that produces unexpected values (e.g., integer division by increasing index makes NEWER items darker)
+STEP 3: If you find ANY issue, fix it NOW using edit_file. Then re-read the file to confirm the fix.
+STEP 4: If you used build/test commands earlier (e.g., dotnet build, dotnet test, npm run build, pytest, cargo build),
+   re-run them NOW to confirm the code still compiles and all tests pass. Edits made after the initial build
+   may have introduced new errors (duplicate definitions, missing imports, syntax errors).
+STEP 5: After all fixes, respond with \"Verified.\" and nothing else.
+
+IMPORTANT: Using the think tool alone is NOT sufficient. You MUST use read_file.
+Do NOT run GUI/interactive programs with bash \u{2014} they will time out.
+Do NOT launch or relaunch GUI apps (games, windows) to verify them \u{2014} they produce no
+readable output. Verify with compile/syntax checks and code reading; ask the user to test visuals.";
+
+/// `PromptConstants.VerificationRetryMessage`: the verification reply used no tools.
+pub const VERIFICATION_RETRY_MESSAGE: &str =
+    "You said \"Verified\" but you did NOT actually use read_file to check the code.
+Saying \"Verified\" without reading the files is NOT acceptable \u{2014} you could be missing bugs.
+
+You MUST call read_file NOW on every file you created or modified, then check each requirement.
+If you find issues, fix them with edit_file. Do NOT skip this step.";
 
 /// Asked when a summary was cut off at the output limit.
 pub const SUMMARY_CONTINUE_MESSAGE: &str = "Your response was cut off. Continue exactly where you stopped \u{2014} do NOT repeat anything you already wrote.";

@@ -1,0 +1,25 @@
+{
+  "prompt": "What does hello.txt say?",
+  "files": {
+    "hello.txt": "hi there\n"
+  },
+  "replies": [
+    {
+      "reasoning": "I should read it.",
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "hello.txt"
+          }
+        }
+      ]
+    },
+    {
+      "text": "The file says hi."
+    },
+    {
+      "text": "The file says hi."
+    }
+  ]
+}

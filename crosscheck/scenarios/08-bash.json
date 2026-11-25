@@ -1,0 +1,18 @@
+{
+  "prompt": "Run echo",
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "bash",
+          "args": {
+            "command": "echo hello && echo oops 1>&2"
+          }
+        }
+      ]
+    },
+    {
+      "text": "The command printed hello on stdout and oops on stderr, and it exited with code 0."
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "prompt": "Edit things",
+  "files": {
+    "a.txt": "Hello Hello\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "edit_file",
+          "args": {
+            "path": "a.txt",
+            "old_string": "Hello",
+            "new_string": "Hi"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "edit_file",
+          "args": {
+            "path": "a.txt",
+            "old_string": "Missing",
+            "new_string": "x"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "edit_file",
+          "args": {
+            "path": "a.txt",
+            "old_string": "Hello",
+            "new_string": "Hi",
+            "replace_all": true
+          }
+        }
+      ]
+    },
+    {
+      "text": "I replaced both Hello occurrences in a.txt with Hi after the first attempts failed."
+    }
+  ]
+}

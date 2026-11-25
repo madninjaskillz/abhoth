@@ -1,0 +1,28 @@
+{
+  "prompt": "Read both",
+  "files": {
+    "a.txt": "A\n",
+    "b.txt": "B\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "a.txt"
+          }
+        },
+        {
+          "name": "read_file",
+          "args": {
+            "path": "b.txt"
+          }
+        }
+      ]
+    },
+    {
+      "text": "a.txt contains A and b.txt contains B, each on a single line of its own."
+    }
+  ]
+}

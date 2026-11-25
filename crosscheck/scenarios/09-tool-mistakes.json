@@ -1,0 +1,47 @@
+{
+  "prompt": "Do it",
+  "files": {
+    "f.txt": "x\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_files",
+          "args": {
+            "path": "f.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "raw": "{\"path\": \"f.txt\""
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "args": {
+            "path": "missing.txt"
+          }
+        }
+      ]
+    },
+    {
+      "text": "I tried several reads; the last one failed because missing.txt does not exist."
+    }
+  ]
+}

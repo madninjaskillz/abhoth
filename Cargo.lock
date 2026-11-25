@@ -823,6 +823,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "orca-crosscheck"
+version = "0.15.0"
+dependencies = [
+ "anyhow",
+ "orca-testkit",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "walkdir",
+]
+
+[[package]]
 name = "orca-testkit"
 version = "0.15.0"
 dependencies = [

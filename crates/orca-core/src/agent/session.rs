@@ -16,9 +16,7 @@ use orca_abstractions::{Tool, ToolCapabilities, ToolContext, ToolResult};
 use orca_tools_common::keep_head_and_tail;
 
 use super::permissions;
-use super::prompts::{
-    self, MAX_SUMMARY_CONTINUATIONS, SUMMARY_CONTINUE_MESSAGE, SUMMARY_REQUEST_MESSAGE,
-};
+use super::prompts::{self, MAX_SUMMARY_CONTINUATIONS, SUMMARY_CONTINUE_MESSAGE};
 use super::registry::ToolRegistry;
 use crate::client::{
     ChatError, ChatMessage, ChatOptions, OpenAiClient, StreamEvent, ToolCall, request_parameters,
@@ -89,6 +87,29 @@ pub struct AgentSession {
     pub files_modified: Vec<String>,
     pub total_output_tokens: i64,
     pub last_assistant_response: Option<String>,
+    /// Files read (or written) this session with their mtime then: read-before-edit.
+    pub files_read: std::collections::HashMap<std::path::PathBuf, Option<std::time::SystemTime>>,
+    /// The current call is the first of several in one response: C# records its argument
+    /// text compact (the rest indented).
+    record_raw_arguments: bool,
+    /// Successful file modifications so far (`MutationEpoch`).
+    pub mutation_epoch: u64,
+    turn_history_start: usize,
+    /// The wrap-up a turn ended on when it is not the last response text (verification
+    /// changed nothing and the model then answered "Verified.").
+    pub final_prose: Option<String>,
+}
+
+/// Per-turn wind-down state (`AgentLoopState`).
+#[derive(Default)]
+struct WindDown {
+    tools_executed: bool,
+    verification_requested: bool,
+    verification_tools_used: bool,
+    summary_requested: bool,
+    summary_continuations: u32,
+    pre_verification_wrap_up: Option<String>,
+    pre_verification_epoch: u64,
 }
 
 impl AgentSession {
@@ -110,6 +131,11 @@ impl AgentSession {
             files_modified: Vec::new(),
             total_output_tokens: 0,
             last_assistant_response: None,
+            files_read: Default::default(),
+            record_raw_arguments: false,
+            mutation_epoch: 0,
+            turn_history_start: 0,
+            final_prose: None,
         }
     }
 
@@ -152,10 +178,10 @@ impl AgentSession {
         observer: &mut dyn AgentObserver,
     ) -> Result<TurnEnd, AgentError> {
         self.messages.push(ChatMessage::user(user_message));
+        self.turn_history_start = self.tool_call_history.len();
+        self.final_prose = None;
         let max_iterations = self.config.agent.main_loop_max_iterations.max(1);
-        let mut tools_executed = false;
-        let mut summary_requested = false;
-        let mut summary_continuations = 0;
+        let mut w = WindDown::default();
 
         for _ in 0..max_iterations {
             let options = self.build_options();
@@ -175,43 +201,181 @@ impl AgentSession {
             };
             self.total_output_tokens += response.usage.completion_tokens.unwrap_or(chunks);
             self.last_assistant_response = Some(prompts::strip_next_prompt_tag(&response.text));
-            self.messages.push(response.to_message());
 
             if !response.tool_calls.is_empty() {
-                for call in &response.tool_calls {
+                // A native call without arguments for a tool that needs some: the server lost
+                // the payload. Drop the response and fall back to text tool calling.
+                if self.native_tools && self.has_missing_required_args(&response.tool_calls) {
+                    tracing::warn!(
+                        "native tool call(s) have empty args; downgrading to text-based calling"
+                    );
+                    self.native_tools = false;
+                    continue;
+                }
+                self.messages.push(response.to_message());
+                let several = response.tool_calls.len() > 1;
+                for (i, call) in response.tool_calls.iter().enumerate() {
+                    self.record_raw_arguments = several && i == 0;
                     observer.on_tool_start(call);
                     let result = self.execute_tool_call(call, observer).await;
                     observer.on_tool_end(call, &result);
                     self.messages
                         .push(ChatMessage::tool_result(call.id.clone(), result.content));
                 }
-                tools_executed = true;
+                w.tools_executed = true;
+                if w.verification_requested {
+                    w.verification_tools_used = true;
+                }
                 continue;
             }
 
-            // No tool calls: wind down (ToolCallDispatcher.HandleNoToolCallResponse).
-            if tools_executed && !summary_requested {
-                let prose = prompts::extract_final_prose(&response.text);
-                if prompts::is_substantive_final_message(&prose) {
-                    return Ok(TurnEnd::Done);
-                }
-                summary_requested = true;
-                self.messages
-                    .push(ChatMessage::user(SUMMARY_REQUEST_MESSAGE));
-                continue;
-            }
-            if summary_requested
-                && response.finish_reason.as_deref() == Some("length")
-                && summary_continuations < MAX_SUMMARY_CONTINUATIONS
-            {
-                summary_continuations += 1;
-                self.messages
-                    .push(ChatMessage::user(SUMMARY_CONTINUE_MESSAGE));
+            self.messages.push(response.to_message());
+            if self.handle_no_tool_call_response(&response, &mut w) {
                 continue;
             }
             return Ok(TurnEnd::Done);
         }
         Ok(TurnEnd::IterationLimit)
+    }
+
+    /// `ToolCallDispatcher.HandleNoToolCallResponse` (verification and summary wind-down).
+    /// True when a follow-up message was added and the loop goes on.
+    fn handle_no_tool_call_response(
+        &mut self,
+        response: &crate::client::ChatResponse,
+        w: &mut WindDown,
+    ) -> bool {
+        if w.tools_executed && !w.verification_requested {
+            w.verification_requested = true;
+            if self.should_request_verification() {
+                let wrap_up = prompts::extract_final_prose(&response.text);
+                w.pre_verification_wrap_up =
+                    prompts::is_substantive_final_message(&wrap_up).then_some(wrap_up);
+                w.pre_verification_epoch = self.mutation_epoch;
+                self.messages
+                    .push(ChatMessage::user(prompts::platform_lines(
+                        prompts::VERIFICATION_MESSAGE,
+                    )));
+                return true;
+            }
+            w.verification_tools_used = true;
+        }
+        if w.tools_executed && w.verification_requested && !w.summary_requested {
+            if !w.verification_tools_used {
+                w.verification_tools_used = true;
+                self.messages
+                    .push(ChatMessage::user(prompts::platform_lines(
+                        prompts::VERIFICATION_RETRY_MESSAGE,
+                    )));
+                return true;
+            }
+            let mut prose = prompts::extract_final_prose(&response.text);
+            if !prompts::is_substantive_final_message(&prose)
+                && self.mutation_epoch == w.pre_verification_epoch
+                && let Some(wrap_up) = w.pre_verification_wrap_up.take()
+            {
+                prose = wrap_up;
+            }
+            w.pre_verification_wrap_up = None;
+            if prompts::is_substantive_final_message(&prose) {
+                self.final_prose = Some(prose);
+                return false;
+            }
+            w.summary_requested = true;
+            self.messages
+                .push(ChatMessage::user(prompts::summary_request_message()));
+            return true;
+        }
+        if w.summary_requested
+            && response.finish_reason.as_deref() == Some("length")
+            && w.summary_continuations < MAX_SUMMARY_CONTINUATIONS
+        {
+            w.summary_continuations += 1;
+            self.messages
+                .push(ChatMessage::user(SUMMARY_CONTINUE_MESSAGE));
+            return true;
+        }
+        false
+    }
+
+    /// `ToolCallExecutor.HasMissingRequiredArgs`.
+    fn has_missing_required_args(&self, calls: &[ToolCall]) -> bool {
+        calls.iter().any(|c| {
+            let empty = match serde_json::from_str::<Value>(&c.arguments) {
+                Ok(Value::Object(o)) => o.is_empty(),
+                _ => true,
+            };
+            empty
+                && self.registry.resolve(&c.name).is_some_and(|t| {
+                    t.name() == c.name
+                        && t.parameter_schema()
+                            .get("required")
+                            .and_then(Value::as_array)
+                            .is_some_and(|r| !r.is_empty())
+                })
+        })
+    }
+
+    /// `ShouldRequestVerification` for `agent.verificationMode`.
+    fn should_request_verification(&self) -> bool {
+        match self
+            .config
+            .agent
+            .verification_mode
+            .trim()
+            .to_lowercase()
+            .as_str()
+        {
+            "off" | "never" | "false" => false,
+            "always" | "true" => true,
+            _ => self.turn_modified_files() && !self.has_recent_test_pass_evidence(),
+        }
+    }
+
+    fn turn_history(&self) -> &[ToolCallRecord] {
+        &self.tool_call_history[self.turn_history_start.min(self.tool_call_history.len())..]
+    }
+
+    fn is_successful_mutation(&self, r: &ToolCallRecord) -> bool {
+        !r.is_error
+            && self
+                .registry
+                .resolve(&r.name)
+                .is_some_and(|t| t.capabilities().contains(ToolCapabilities::MODIFIES_FILES))
+    }
+
+    fn turn_modified_files(&self) -> bool {
+        self.turn_history()
+            .iter()
+            .any(|r| self.is_successful_mutation(r))
+    }
+
+    /// The latest command run this turn passed and nothing was modified after it. (C# also
+    /// keeps the pass when the turn deletes a scratch file it created; no delete tool yet.)
+    fn has_recent_test_pass_evidence(&self) -> bool {
+        use super::run_evidence::{RunOutcome, classify};
+        for r in self.turn_history().iter().rev() {
+            if self.is_successful_mutation(r) {
+                return false;
+            }
+            if !matches!(
+                r.name.as_str(),
+                "bash"
+                    | "shell"
+                    | "run_command"
+                    | "execute_command"
+                    | "get_process_output"
+                    | "run_tests"
+            ) {
+                continue;
+            }
+            match classify(r.result.as_deref(), r.is_error, r.arguments.as_deref()) {
+                RunOutcome::Pass => return true,
+                RunOutcome::Fail => return false,
+                _ => {}
+            }
+        }
+        false
     }
 
     /// The tool pipeline: resolve → parse → permission → validate → directory restriction →
@@ -241,7 +405,13 @@ impl AgentSession {
             Ok(v @ Value::Object(_)) => v,
             _ => Value::Object(serde_json::Map::new()),
         };
-        let args_json = pretty_args(&args);
+        // The record shows the arguments re-serialized (indented, JavaScriptEncoder escaping),
+        // except the first of several calls in one response, which C# records compact.
+        let args_json = if self.record_raw_arguments {
+            call.arguments.clone()
+        } else {
+            crate::config::dotnet_json::to_string_dotnet(&args).unwrap_or_default()
+        };
 
         if !permissions::check_permission(
             &self.config.permissions,
@@ -258,11 +428,23 @@ impl AgentSession {
         if let Some(err) = self.check_directory_restriction(tool.as_ref(), &args) {
             return ToolResult::blocked(err);
         }
+        if let Some(err) = self.check_read_before_edit(tool.as_ref(), &args) {
+            return ToolResult::blocked(err);
+        }
 
         let started = Instant::now();
         let result = self.run_tool(&tool, &args, observer).await;
         let elapsed = started.elapsed().as_millis() as i64;
 
+        if !result.is_error {
+            self.track_file_access(tool.as_ref(), &args);
+            if tool
+                .capabilities()
+                .contains(ToolCapabilities::MODIFIES_FILES)
+            {
+                self.mutation_epoch += 1;
+            }
+        }
         self.tool_call_history.push(ToolCallRecord {
             name: tool.name().to_string(),
             arguments: Some(args_json),
@@ -334,6 +516,55 @@ impl AgentSession {
         result
     }
 
+    /// `CheckReadBeforeEdit`: a content-modifying tool may not touch an existing file that was
+    /// not read this session, or that changed on disk since it was read.
+    fn check_read_before_edit(&self, tool: &dyn Tool, args: &Value) -> Option<String> {
+        let caps = tool.capabilities();
+        let content_modifying = caps.contains(ToolCapabilities::MODIFIES_FILES)
+            && (caps.contains(ToolCapabilities::MODIFIES_FILE_CONTENT)
+                || ["write_file", "edit_file", "multi_edit", "apply_patch"]
+                    .iter()
+                    .any(|n| n.eq_ignore_ascii_case(tool.name())));
+        if !content_modifying {
+            return None;
+        }
+        for path in tool.affected_file_paths(args) {
+            let full = self.ctx.full_path(&path);
+            if !full.is_file() {
+                continue;
+            }
+            let Some(read_mtime) = self.files_read.get(&full) else {
+                return Some(format!(
+                    "ERROR: '{path}' exists but has not been read this session. Use read_file first so the edit is based on the file's actual content."
+                ));
+            };
+            let now = std::fs::metadata(&full).and_then(|m| m.modified()).ok();
+            if now != *read_mtime {
+                return Some(format!(
+                    "ERROR: '{path}' has changed on disk since it was read. Use read_file again before editing to avoid clobbering the newer content."
+                ));
+            }
+        }
+        None
+    }
+
+    /// `TrackFileAccess`: remember what was read, and refresh the mtime after a write.
+    fn track_file_access(&mut self, tool: &dyn Tool, args: &Value) {
+        let caps = tool.capabilities();
+        let reads = tool.name().eq_ignore_ascii_case("read_file")
+            || caps.contains(ToolCapabilities::READS_FILE_CONTENT);
+        if !reads && !caps.contains(ToolCapabilities::MODIFIES_FILES) {
+            return;
+        }
+        for path in tool.affected_file_paths(args) {
+            let full = self.ctx.full_path(&path);
+            if full.is_file() {
+                let mtime = std::fs::metadata(&full).and_then(|m| m.modified()).ok();
+                self.files_read.insert(full, mtime);
+            }
+        }
+    }
+
     fn check_directory_restriction(&self, tool: &dyn Tool, args: &Value) -> Option<String> {
         let allowed = self.config.allowed_directory.as_deref()?;
         if !tool
@@ -388,16 +619,6 @@ pub fn validate_required_args(tool: &dyn Tool, args: &Value) -> Option<String> {
         prompts::format_parameters(&schema),
         serde_json::to_string(args).unwrap_or_default()
     ))
-}
-
-/// The arguments as the C# record shows them (indented JSON).
-fn pretty_args(args: &Value) -> String {
-    let s = serde_json::to_string_pretty(args).unwrap_or_default();
-    if cfg!(windows) {
-        s.replace('\n', "\r\n")
-    } else {
-        s
-    }
 }
 
 /// `ToolOutputTruncator.Truncate`: over the cap, the full output is spilled to a temp file and

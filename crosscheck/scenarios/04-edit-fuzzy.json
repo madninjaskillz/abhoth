@@ -1,0 +1,23 @@
+{
+  "prompt": "Rename the call",
+  "files": {
+    "app.js": "class Foo {\n    update() {\n        this.platforms.create(x, 'brick');\n    }\n}\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "edit_file",
+          "args": {
+            "path": "app.js",
+            "old_string": "this.platforms.create(x, 'brick');",
+            "new_string": "this.blocks.create(x, 'brick');"
+          }
+        }
+      ]
+    },
+    {
+      "text": "I renamed platforms to blocks in app.js, keeping the original indentation intact."
+    }
+  ]
+}

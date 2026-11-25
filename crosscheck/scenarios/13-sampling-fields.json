@@ -1,0 +1,22 @@
+{
+  "prompt": "Say hi",
+  "config": {
+    "lmStudio": {
+      "sampling": {
+        "preset": "qwen-thinking-coding",
+        "minP": 0.05,
+        "repetitionPenalty": 1.05
+      },
+      "temperature": 0.6
+    },
+    "thinking": {
+      "level": "medium",
+      "reasoningEffort": "low"
+    }
+  },
+  "replies": [
+    {
+      "text": "Hi there, this is a plain answer with enough words to count."
+    }
+  ]
+}

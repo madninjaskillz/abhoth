@@ -1,0 +1,36 @@
+{
+  "prompt": "What is here?",
+  "files": {
+    "b.txt": "x",
+    "a.txt": "",
+    "sub/c.txt": "ccc",
+    ".hidden": "h",
+    "node_modules/m.js": "m",
+    ".gitignore": "*.log\n",
+    "x.log": "l"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "list_directory",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "list_directory",
+          "args": {
+            "recursive": true,
+            "show_size": true
+          }
+        }
+      ]
+    },
+    {
+      "text": "The folder has a.txt, b.txt and a sub folder with c.txt inside it, plus ignored files."
+    }
+  ]
+}

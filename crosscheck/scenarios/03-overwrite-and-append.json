@@ -1,0 +1,37 @@
+{
+  "prompt": "Update log.txt",
+  "files": {
+    "log.txt": "one\ntwo\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "log.txt",
+            "content": "one\ntwo\nthree\n"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "log.txt",
+            "content": "four\n",
+            "append": true
+          }
+        }
+      ]
+    },
+    {
+      "text": "Done."
+    },
+    {
+      "text": "Summary: I rewrote log.txt with three lines and then appended a fourth line."
+    }
+  ]
+}

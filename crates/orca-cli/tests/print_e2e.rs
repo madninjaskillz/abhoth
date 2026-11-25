@@ -162,7 +162,16 @@ async fn print_write_then_denied_bash_reports_files_and_failure() {
     );
     assert_eq!(v["success"], true);
     let reqs = server.requests();
-    assert_eq!(reqs.len(), 3);
+    // write, denied bash, answer; then (a file changed and nothing ran since) the
+    // verification step, its retry when the reply used no tools, and the final answer.
+    assert_eq!(reqs.len(), 5);
+    let last = reqs[4].body["messages"].as_array().unwrap();
+    assert!(
+        last[last.len() - 1]["content"]
+            .as_str()
+            .unwrap()
+            .starts_with("You said \"Verified\"")
+    );
     let msgs = reqs[2].body["messages"].as_array().unwrap();
     let denied = &msgs[msgs.len() - 1];
     assert_eq!(denied["role"], "tool");

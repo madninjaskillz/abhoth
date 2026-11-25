@@ -1,0 +1,61 @@
+{
+  "prompt": "Find Foo",
+  "files": {
+    "src/a.cs": "public class Foo\n{\n}\n",
+    "src/b.cs": "// Foo here\n",
+    "README.md": "Foo docs\n",
+    "bin/x.cs": "class Foo {}\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "grep",
+          "args": {
+            "pattern": "Foo",
+            "path": "src",
+            "context": 1
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "grep",
+          "args": {
+            "pattern": "foo",
+            "case_insensitive": true,
+            "output_mode": "files_only"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "grep",
+          "args": {
+            "pattern": "Foo",
+            "glob": "**/*.cs",
+            "output_mode": "count"
+          }
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "glob",
+          "args": {
+            "pattern": "**/*.cs",
+            "exclude": "bin/**"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Foo is defined in src/a.cs and mentioned in src/b.cs, README.md and bin/x.cs."
+    }
+  ]
+}

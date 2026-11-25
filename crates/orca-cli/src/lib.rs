@@ -94,7 +94,11 @@ pub async fn run_single_prompt(
 
     let success = !session.tool_call_history.last().is_some_and(|r| r.is_error);
     Ok(SinglePromptResult {
-        response: session.last_assistant_response.clone().unwrap_or_default(),
+        response: session
+            .final_prose
+            .clone()
+            .or_else(|| session.last_assistant_response.clone())
+            .unwrap_or_default(),
         tokens: session.total_output_tokens,
         duration_ms,
         tool_calls: (!session.tool_call_history.is_empty())

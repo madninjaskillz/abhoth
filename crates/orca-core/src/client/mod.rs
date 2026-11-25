@@ -14,6 +14,10 @@ use serde_json::Value;
 /// An `f32` as JSON with its shortest decimal form (`0.05`, not `0.05000000074505806`), as the
 /// C# SDK writes a `float`.
 pub fn f32_json(v: f32) -> Value {
+    // System.Text.Json writes a whole float without a fraction ("0", "1").
+    if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
+        return Value::from(v as i64);
+    }
     format!("{v}")
         .parse::<f64>()
         .map(Value::from)

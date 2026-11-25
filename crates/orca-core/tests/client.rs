@@ -164,11 +164,12 @@ async fn session_field_goes_last_unless_the_request_sets_it() {
     assert_eq!(
         keys.iter()
             .rev()
-            .take(3)
+            .take(4)
             .rev()
             .map(|k| k.as_str())
             .collect::<Vec<_>>(),
-        ["top_k", "min_p", "uncensored"]
+        ["top_k", "min_p", "uncensored", "model"],
+        "extra-body fields, the session field, then model (as the SDK writes it)"
     );
     options.set("uncensored", json!(false));
     let body = c
@@ -243,7 +244,11 @@ fn preset_fills_unset_fields_and_explicit_fields_win() {
         (o.temperature, o.top_p, o.top_k, o.presence_penalty),
         (Some(0.6), Some(0.95), Some(20), Some(0.0))
     );
-    assert_eq!(o.additional["min_p"], json!(0.0));
+    assert_eq!(
+        o.additional["min_p"],
+        json!(0),
+        "a whole float is written without a fraction"
+    );
 
     let mut c = qwen_config("qwen-thinking-coding");
     let s = c.lm_studio.sampling.as_mut().unwrap();

@@ -3,6 +3,7 @@
 pub mod permissions;
 pub mod prompts;
 pub mod registry;
+pub mod run_evidence;
 pub mod session;
 
 pub use registry::ToolRegistry;

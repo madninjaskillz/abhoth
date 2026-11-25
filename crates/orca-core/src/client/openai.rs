@@ -119,25 +119,27 @@ impl OpenAiClient {
             .clone()
             .or_else(|| self.settings.default_model.clone())
             .ok_or(ChatError::NoModel)?;
+        // Key order as the OpenAI .NET SDK writes it (checked by the cross-check harness):
+        // temperature, top_p, messages, max_completion_tokens, presence_penalty, stream,
+        // stream_options, tools, tool_choice; the ExtraBodyChatClient fields; model.
         let mut body = serde_json::Map::new();
-        body.insert("model".into(), json!(model));
-        let wire: Vec<Value> = messages
-            .iter()
-            .map(|m| m.to_wire(self.settings.echo_reasoning))
-            .collect();
-        body.insert("messages".into(), Value::Array(wire));
         if let Some(t) = options.temperature {
             body.insert("temperature".into(), f32_json(t));
         }
         if let Some(p) = options.top_p {
             body.insert("top_p".into(), f32_json(p));
         }
-        if let Some(p) = options.presence_penalty {
-            body.insert("presence_penalty".into(), f32_json(p));
-        }
+        let wire: Vec<Value> = messages
+            .iter()
+            .map(|m| m.to_wire(self.settings.echo_reasoning))
+            .collect();
+        body.insert("messages".into(), Value::Array(wire));
         if let Some(n) = options.max_output_tokens {
             // The OpenAI .NET SDK (2.x) sends MaxOutputTokenCount as max_completion_tokens.
             body.insert("max_completion_tokens".into(), json!(n));
+        }
+        if let Some(p) = options.presence_penalty {
+            body.insert("presence_penalty".into(), f32_json(p));
         }
         if stream {
             body.insert("stream".into(), json!(true));
@@ -163,6 +165,8 @@ impl OpenAiClient {
         {
             body.insert(k.clone(), v.clone());
         }
+        // The SDK writes `model` after the patched extra-body fields.
+        body.insert("model".into(), json!(model));
         Ok(Value::Object(body))
     }
 
@@ -401,6 +405,7 @@ struct Accumulator {
     finish_reason: Option<String>,
     usage: Usage,
     model: Option<String>,
+    leading_empty_part: bool,
 }
 
 impl Accumulator {
@@ -437,6 +442,9 @@ impl Accumulator {
         if let Some(r) = reasoning.filter(|r| !r.is_empty()) {
             self.reasoning.push_str(r);
             on_event(StreamEvent::Reasoning(r.to_string()));
+        }
+        if delta["content"].as_str() == Some("") && self.text.is_empty() {
+            self.leading_empty_part = true;
         }
         if let Some(t) = delta["content"].as_str().filter(|t| !t.is_empty()) {
             self.text.push_str(t);
@@ -490,6 +498,7 @@ impl Accumulator {
             usage: self.usage,
             model: self.model,
             served_model: None,
+            leading_empty_part: self.leading_empty_part,
         }
     }
 }

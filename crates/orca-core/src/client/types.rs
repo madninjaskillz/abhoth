@@ -43,6 +43,9 @@ pub struct ChatMessage {
     pub tool_calls: Vec<ToolCall>,
     /// For `Role::Tool`: the call this answers.
     pub tool_call_id: Option<String>,
+    /// The stream opened with an empty content delta before the text. The C# client keeps
+    /// that as a separate empty text part and so sends the content as a parts array.
+    pub leading_empty_part: bool,
 }
 
 impl ChatMessage {
@@ -53,6 +56,7 @@ impl ChatMessage {
             reasoning: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
+            leading_empty_part: false,
         }
     }
 
@@ -93,15 +97,19 @@ impl ChatMessage {
             }
             Role::Assistant => {
                 // The C# client sends "" (not null) for a tool-call-only turn.
-                m.insert(
-                    "content".into(),
-                    json!(self.content.clone().unwrap_or_default()),
-                );
+                let text = self.content.clone().unwrap_or_default();
+                let content =
+                    if self.leading_empty_part && !text.is_empty() && self.tool_calls.is_empty() {
+                        json!([{"type": "text", "text": ""}, {"type": "text", "text": text}])
+                    } else {
+                        json!(text)
+                    };
+                m.insert("content".into(), content);
                 if !self.tool_calls.is_empty() {
                     let calls: Vec<Value> = self
                         .tool_calls
                         .iter()
-                        .map(|c| json!({"id": c.id, "type": "function", "function": {"name": c.name, "arguments": c.arguments}}))
+                        .map(|c| json!({"id": c.id, "type": "function", "function": {"name": c.name, "arguments": echo_arguments(&c.arguments)}}))
                         .collect();
                     m.insert("tool_calls".into(), Value::Array(calls));
                 }
@@ -192,6 +200,8 @@ pub struct ChatResponse {
     pub model: Option<String>,
     /// What served the request (header or body), see [`super::ServedModels`].
     pub served_model: Option<String>,
+    /// See [`ChatMessage::leading_empty_part`].
+    pub leading_empty_part: bool,
 }
 
 impl ChatResponse {
@@ -211,6 +221,43 @@ impl ChatResponse {
             },
             tool_calls: self.tool_calls.clone(),
             tool_call_id: None,
+            leading_empty_part: self.leading_empty_part,
         }
     }
+}
+
+/// Tool-call arguments as the C# client sends them back in history: parsed and re-serialized
+/// indented (platform line breaks), or `null` when they were not valid JSON.
+pub fn echo_arguments(raw: &str) -> String {
+    match serde_json::from_str::<Value>(raw) {
+        Ok(v) => {
+            let s = serde_json::to_string_pretty(&v).unwrap_or_default();
+            let s = if cfg!(windows) {
+                s.replace('\n', "\r\n")
+            } else {
+                s
+            };
+            escape_non_bmp(&s)
+        }
+        Err(_) => "null".into(),
+    }
+}
+
+/// The relaxed encoder the C# client echoes arguments with escapes characters outside the
+/// Basic Multilingual Plane as UTF-16 surrogate pairs (uppercase hex).
+fn escape_non_bmp(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if (c as u32) > 0xFFFF {
+            let mut units = [0u16; 2];
+            for u in c.encode_utf16(&mut units) {
+                out.push('\\');
+                out.push('u');
+                out.push_str(&format!("{u:04X}"));
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }

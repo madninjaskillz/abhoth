@@ -1,0 +1,19 @@
+{
+  "prompt": "Write unicode",
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "write_file",
+          "args": {
+            "path": "u.txt",
+            "content": "caf\u00e9 <b> & 'q' \"d\" \ud83d\ude00"
+          }
+        }
+      ]
+    },
+    {
+      "text": "I wrote u.txt with some unicode text, markup characters and quotes in it."
+    }
+  ]
+}
