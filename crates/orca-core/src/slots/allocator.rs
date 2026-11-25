@@ -693,7 +693,7 @@ impl SlotAllocator {
                 if via_registry {
                     self.start_heartbeat(result.ttl);
                 }
-                tracing::info!(
+                tracing::info!(target: "orca_core::Slots",
                     "Slot {} leased to {} ({}){}",
                     result.slot.as_deref().unwrap_or_default(),
                     lease.owner(),

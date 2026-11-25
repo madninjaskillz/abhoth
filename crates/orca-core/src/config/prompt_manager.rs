@@ -94,7 +94,7 @@ impl PromptManager {
         let default_path = self.prompts_dir.join(DEFAULT_PROMPT_FILE_NAME);
         if !default_path.exists() {
             std::fs::write(&default_path, generate_default_template())?;
-            tracing::info!(
+            tracing::info!(target: "orca_core::PromptManager",
                 "Created default prompt template: {}",
                 default_path.display()
             );

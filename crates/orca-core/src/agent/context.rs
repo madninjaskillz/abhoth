@@ -60,7 +60,7 @@ impl AgentSession {
         let settings = CompactionSettings::from_config(context);
         let mut conversation = self.conversation();
         let tokens = conversation.estimate_context_tokens(context.chars_per_token);
-        tracing::debug!(
+        tracing::debug!(target: crate::agent::log_lines::LOOP,
             "Context ~{tokens} tokens ({}); planned compaction at {}, hard limit {}",
             if conversation.has_usage_base() {
                 "server usage + estimate"
@@ -75,10 +75,10 @@ impl AgentSession {
         }
         let plan = planner::plan(&conversation, &settings, context, None, None);
         if plan.action == CompactionAction::None {
-            tracing::debug!("Compaction check: {plan}");
+            tracing::debug!(target: crate::agent::log_lines::LOOP, "Compaction check: {plan}");
             return false;
         }
-        tracing::info!(
+        tracing::info!(target: crate::agent::log_lines::LOOP,
             "Auto-compacting (window {}, planned {}, hard {}; keep ~{} recent): {plan}",
             settings.context_window,
             settings.planned_trigger_tokens,
@@ -96,7 +96,7 @@ impl AgentSession {
             )
             .await
         };
-        tracing::info!(
+        tracing::info!(target: crate::agent::log_lines::LOOP,
             "Compaction done: ~{} -> ~{} tokens ({})",
             plan.tokens_before,
             conversation.estimate_context_tokens(self.config.context.chars_per_token),
@@ -145,7 +145,7 @@ impl AgentSession {
             self.notice("Context window exceeded and auto-compaction is disabled — run /compact, or enable context.autoCompactEnabled.");
             return false;
         }
-        tracing::warn!("Context overflow reported by server — compacting and retrying once: {err}");
+        tracing::warn!(target: crate::agent::log_lines::LOOP, "Context overflow reported by server — compacting and retrying once: {err}");
         self.notice("Context window exceeded — compacting the conversation and retrying...");
 
         let cpt = self.config.context.chars_per_token;

@@ -64,7 +64,10 @@ pub async fn probe(
 pub async fn negotiate(config: &OrcaConfig, http: &reqwest::Client) -> Option<i32> {
     let lm = &config.lm_studio;
     if let Some(v) = lm.max_tokens {
-        tracing::debug!("maxTokens already set to {v}; skipping negotiation");
+        tracing::debug!(
+            target: crate::agent::log_lines::LOOP,
+            "MaxTokens already set to {v} \u{2014} skipping negotiation"
+        );
         return None;
     }
     let base_url = lm.base_url.trim_end_matches('/');

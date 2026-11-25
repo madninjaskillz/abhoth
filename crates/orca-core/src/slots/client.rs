@@ -572,7 +572,7 @@ impl SlottedChatClient {
         if logged.as_deref() != Some(copy.as_str()) {
             *logged = Some(copy.clone());
             if matches!(kind, ServerKind::Ninfer | ServerKind::Other) {
-                tracing::info!(
+                tracing::info!(target: "orca_core::Slots",
                     "Copy {copy} is not a Strata server ({kind:?}): the Lead's prefix pin and its release are not sent"
                 );
             } else {

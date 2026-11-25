@@ -143,7 +143,7 @@ pub fn lead_mode_chooser(
                 Some(p) if p != mode => format!(" (was {p})"),
                 _ => String::new(),
             };
-            tracing::info!(
+            tracing::info!(target: "orca_cli::Program",
                 "Lead mode for this request: {mode}{was} \u{2014} {}",
                 reason.as_deref().unwrap_or("no reason given")
             );

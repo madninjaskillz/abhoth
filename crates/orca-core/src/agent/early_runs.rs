@@ -102,6 +102,7 @@ impl AgentSession {
             && (e.started_count() > 0 || e.used_count() > 0)
         {
             tracing::info!(
+                target: super::log_lines::EXECUTOR,
                 "Early tool runs: {} used, {} unused",
                 e.used_count(),
                 e.started_count()
@@ -118,7 +119,11 @@ impl AgentSession {
         self.early_tool_runs_used += 1;
         Some(match task.await {
             Ok(outcome) => {
-                tracing::debug!("Tool {} used its early run", call.name);
+                tracing::debug!(
+                    target: super::log_lines::EXECUTOR,
+                    "Tool {} used its early run",
+                    call.name
+                );
                 outcome
             }
             Err(e) => {
@@ -184,7 +189,7 @@ impl AgentSession {
                     // C# records the hands-on choice while checking eligibility, as the
                     // policy does when the call runs.
                     policies::AutoLeadVerdict::ChooseHandsOn(reason) => {
-                        tracing::info!(
+                        tracing::info!(target: "orca_core::Program",
                             "Lead mode for this request: {} \u{2014} {reason}",
                             policies::LEAD_MODE_HANDS_ON
                         );

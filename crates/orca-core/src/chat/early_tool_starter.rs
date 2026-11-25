@@ -141,7 +141,10 @@ impl<T: Send + 'static> EarlyToolStarter<T> {
             call.id.clone().unwrap_or_default(),
             call.name.clone().unwrap_or_default(),
         );
-        tracing::debug!("Starting {name} ({id}) while the response is still streaming");
+        tracing::debug!(
+            target: crate::agent::log_lines::EXECUTOR,
+            "Starting {name} ({id}) while the response is still streaming"
+        );
         let task = tokio::spawn((self.run)(name.clone(), args));
         self.started.insert(
             id,

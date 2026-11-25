@@ -53,7 +53,7 @@ async fn try_lm_studio(root: &str, model: Option<&str>, http: &reqwest::Client) 
     }
     .await;
     result.unwrap_or_else(|e| {
-        tracing::debug!("LM Studio context window probe failed: {e}");
+        tracing::debug!(target: crate::agent::log_lines::LOOP, "LM Studio context window probe failed: {e}");
         None
     })
 }
@@ -85,7 +85,7 @@ async fn try_ollama(root: &str, model: Option<&str>, http: &reqwest::Client) -> 
     }
     .await;
     result.unwrap_or_else(|e| {
-        tracing::debug!("Ollama context window probe failed: {e}");
+        tracing::debug!(target: crate::agent::log_lines::LOOP, "Ollama context window probe failed: {e}");
         None
     })
 }

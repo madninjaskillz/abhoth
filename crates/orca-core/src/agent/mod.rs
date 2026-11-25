@@ -3,6 +3,7 @@
 mod context;
 mod early_runs;
 pub mod llm_tags;
+pub mod log_lines;
 pub mod long_task;
 pub mod loop_messages;
 pub mod pair_vote;
