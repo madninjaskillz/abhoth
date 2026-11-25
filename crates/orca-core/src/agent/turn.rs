@@ -8,8 +8,12 @@
 //! its complete text tool call runs), adaptive reasoning, the server error probe after an
 //! empty reply, and the startup probes (`MaxTokensNegotiator`, the context-window detection).
 //!
-//! Not ported yet (see STATUS.md): pair voting, early read-only runs, the parameter
-//! auto-correction and the non-streaming fallback of the loop's catch-all error handler.
+//! Also pair model programming (`pair_vote.rs`: the alternates' requests go out with each
+//! request, the vote runs once the primary's stream ended) and the early read-only tool runs
+//! (`early_runs.rs`: started while the response still streams, taken when the call runs).
+//!
+//! Not ported yet (see STATUS.md): the parameter auto-correction and the non-streaming
+//! fallback of the loop's catch-all error handler.
 
 use std::time::Duration;
 
@@ -93,6 +97,19 @@ impl AgentSession {
         user_message: &str,
         observer: &mut dyn AgentObserver,
     ) -> Result<TurnEnd, AgentError> {
+        self.turn_pair_stats = Default::default();
+        let end = self.run_turn_loop(user_message, observer).await;
+        // The `finally` of `RunAgentLoopAsync`: unused early runs stop, the pair tallies show.
+        self.end_early_runs();
+        self.finish_pair_stats(observer);
+        end
+    }
+
+    async fn run_turn_loop(
+        &mut self,
+        user_message: &str,
+        observer: &mut dyn AgentObserver,
+    ) -> Result<TurnEnd, AgentError> {
         self.messages.push(ChatMessage::user(user_message));
         self.begin_turn();
         // A new request: no Lead mode chosen yet, and the Lead's bar starts at 0%.
@@ -149,6 +166,11 @@ impl AgentSession {
                     .is_some_and(|a| a.should_skip(&self.messages)),
             };
             let options = self.build_options_for(s.runaway_recovery_active, skip_thinking);
+            // Pair model programming: the alternates' requests run alongside the stream (left
+            // running when the loop moves on without voting, as C# leaves its tasks).
+            let pair_tasks = self.fire_parallel_requests(&options);
+            // Read-only calls may start while the rest of the response is still streaming.
+            self.begin_early_runs();
             // The cap watches this request only (not the wind-down requests made elsewhere).
             if let Some(cap) = reasoning_cap.as_mut() {
                 cap.begin_request();
@@ -266,7 +288,7 @@ impl AgentSession {
                 outcome.thinking_token_count,
                 self.config.thinking.budget_tokens,
             );
-            let response = outcome.response;
+            let mut response = outcome.response;
             if let Some(err) = &outcome.stream_error {
                 // Partial output survived a mid-stream death: run it if it holds a complete
                 // tool call (the generation wasn't wasted); otherwise retry.
@@ -310,6 +332,12 @@ impl AgentSession {
                         continue;
                     }
                 }
+            }
+
+            // Pair model voting: the winner's text and tool calls replace the primary's.
+            if let Some(tasks) = pair_tasks {
+                self.handle_pair_voting(tasks, &mut response, observer)
+                    .await;
             }
 
             // Prefer the server's real output count over stream-chunk counting.
@@ -1388,7 +1416,7 @@ fn normalized_args(raw: &str) -> String {
 }
 
 /// `StripReason`: drop a `_reason` argument before the tool sees it.
-fn strip_reason(raw: &str) -> String {
+pub(super) fn strip_reason(raw: &str) -> String {
     if !raw.contains("_reason") {
         return raw.to_string();
     }

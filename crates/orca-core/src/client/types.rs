@@ -46,6 +46,10 @@ pub struct ChatMessage {
     /// The stream opened with an empty content delta before the text. The C# client keeps
     /// that as a separate empty text part and so sends the content as a parts array.
     pub leading_empty_part: bool,
+    /// The C# message was built as `new ChatMessage(Assistant, "")` plus the text whatever its
+    /// tool calls (a pair-vote winner): non-empty text goes as a parts array with an empty
+    /// first part, tool calls or not.
+    pub empty_first_part: bool,
 }
 
 impl ChatMessage {
@@ -57,6 +61,7 @@ impl ChatMessage {
             tool_calls: Vec::new(),
             tool_call_id: None,
             leading_empty_part: false,
+            empty_first_part: false,
         }
     }
 
@@ -98,12 +103,13 @@ impl ChatMessage {
             Role::Assistant => {
                 // The C# client sends "" (not null) for a tool-call-only turn.
                 let text = self.content.clone().unwrap_or_default();
-                let content =
-                    if self.leading_empty_part && !text.is_empty() && self.tool_calls.is_empty() {
-                        json!([{"type": "text", "text": ""}, {"type": "text", "text": text}])
-                    } else {
-                        json!(text)
-                    };
+                let parts = (self.leading_empty_part && self.tool_calls.is_empty())
+                    || self.empty_first_part;
+                let content = if parts && !text.is_empty() {
+                    json!([{"type": "text", "text": ""}, {"type": "text", "text": text}])
+                } else {
+                    json!(text)
+                };
                 m.insert("content".into(), content);
                 if !self.tool_calls.is_empty() {
                     let calls: Vec<Value> = self
@@ -197,6 +203,17 @@ pub enum StreamEvent {
     },
 }
 
+/// One raw tool-call fragment of a streamed update, as the server sent it (the C# client's
+/// `StreamingChatToolCallUpdate`): the call's index, and whichever of its id, name and argument
+/// text this chunk carries.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolCallDelta {
+    pub index: usize,
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub arguments: Option<String>,
+}
+
 /// What a streaming caller wants after an event: go on, or stop the request now (the stream
 /// is dropped, which ends the request; the response so far is returned with `stopped` set).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,6 +236,8 @@ pub struct ChatResponse {
     pub served_model: Option<String>,
     /// See [`ChatMessage::leading_empty_part`].
     pub leading_empty_part: bool,
+    /// See [`ChatMessage::empty_first_part`].
+    pub empty_first_part: bool,
     /// Content items as Microsoft.Extensions.AI reports them: each `content` string (an empty
     /// one too), each reasoning piece, each usage report and each finished tool call. A stream
     /// with none is the C# client's "empty response".
@@ -249,6 +268,7 @@ impl ChatResponse {
             tool_calls: self.tool_calls.clone(),
             tool_call_id: None,
             leading_empty_part: self.leading_empty_part,
+            empty_first_part: self.empty_first_part,
         }
     }
 }

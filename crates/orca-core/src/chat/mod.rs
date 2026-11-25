@@ -10,6 +10,7 @@ pub mod compaction;
 pub mod compaction_prompts;
 pub mod compactor;
 pub mod conversation;
+pub mod early_tool_starter;
 pub mod planner;
 pub mod reasoning_cap;
 pub mod repeat_call_note;
@@ -20,6 +21,7 @@ pub use compaction::{
 };
 pub use compactor::{CompactionReport, ConversationCompactor, LlmCompactor};
 pub use conversation::{ContextUsage, Conversation};
+pub use early_tool_starter::EarlyToolStarter;
 pub use planner::{CompactionAction, CompactionCostModel, CompactionPlan};
 pub use reasoning_cap::ReasoningCap;
 

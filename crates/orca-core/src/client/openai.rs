@@ -11,7 +11,8 @@ use serde_json::{Value, json};
 use super::f32_json;
 use super::served_models::{self, ServedModels};
 use super::types::{
-    ChatMessage, ChatOptions, ChatResponse, StreamControl, StreamEvent, ToolCall, Usage,
+    ChatMessage, ChatOptions, ChatResponse, StreamControl, StreamEvent, ToolCall, ToolCallDelta,
+    Usage,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -287,6 +288,21 @@ impl OpenAiClient {
         options: &ChatOptions,
         on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
     ) -> Result<ChatResponse, ChatError> {
+        self.stream_observed(actor, messages, options, on_event, None)
+            .await
+    }
+
+    /// [`Self::stream_with_control`] that also hands every raw tool-call fragment to
+    /// `on_tool_delta` as it arrives (the early read-only tool runs: the C# client's raw
+    /// `StreamingChatCompletionUpdate.ToolCallUpdates`), before the update's other events.
+    pub async fn stream_observed(
+        &self,
+        actor: &str,
+        messages: &[ChatMessage],
+        options: &ChatOptions,
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+        mut on_tool_delta: Option<&mut (dyn FnMut(&ToolCallDelta) + Send)>,
+    ) -> Result<ChatResponse, ChatError> {
         let body = self.build_body(messages, options, true)?;
         let requested = body["model"].as_str().map(str::to_string);
         self.served.begin(actor);
@@ -322,7 +338,7 @@ impl OpenAiClient {
                 if data.trim() == "[DONE]" {
                     break 'outer;
                 }
-                match acc.apply(&data, on_event) {
+                match acc.apply_observed(&data, on_event, on_tool_delta.as_deref_mut()) {
                     Ok(StreamControl::Continue) => {}
                     Ok(StreamControl::Stop) => {
                         stopped = true;
@@ -349,7 +365,7 @@ impl OpenAiClient {
                 if data.trim() == "[DONE]" {
                     continue;
                 }
-                match acc.apply(&data, on_event) {
+                match acc.apply_observed(&data, on_event, on_tool_delta.as_deref_mut()) {
                     Ok(StreamControl::Continue) => {}
                     Ok(StreamControl::Stop) => {
                         stopped = true;
@@ -523,10 +539,21 @@ struct Accumulator {
 impl Accumulator {
     /// Apply one SSE data chunk; the events go to `on_event`, ending with
     /// [`StreamEvent::UpdateEnd`]. Stops early when `on_event` says so.
+    #[cfg(test)]
     fn apply(
         &mut self,
         data: &str,
         on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+    ) -> Result<StreamControl, ChatError> {
+        self.apply_observed(data, on_event, None)
+    }
+
+    /// [`Self::apply`] that also reports each raw tool-call fragment to `on_tool_delta`.
+    fn apply_observed<'d>(
+        &mut self,
+        data: &str,
+        on_event: &mut (dyn FnMut(StreamEvent) -> StreamControl + Send),
+        on_tool_delta: Option<&mut (dyn FnMut(&ToolCallDelta) + Send + 'd)>,
     ) -> Result<StreamControl, ChatError> {
         let v: Value =
             serde_json::from_str(data).map_err(|e| ChatError::Protocol(format!("{e}: {data}")))?;
@@ -548,6 +575,18 @@ impl Accumulator {
         // Microsoft.Extensions.AI reports an update's text and reasoning before its usage.
         let mut tool_call_delta = false;
         if let Some(choice) = v["choices"].as_array().and_then(|c| c.first()) {
+            if let Some(observe) = on_tool_delta
+                && let Some(calls) = choice["delta"]["tool_calls"].as_array()
+            {
+                for (pos, c) in calls.iter().enumerate() {
+                    observe(&ToolCallDelta {
+                        index: c["index"].as_u64().map(|i| i as usize).unwrap_or(pos),
+                        id: c["id"].as_str().map(str::to_string),
+                        name: c["function"]["name"].as_str().map(str::to_string),
+                        arguments: c["function"]["arguments"].as_str().map(str::to_string),
+                    });
+                }
+            }
             tool_call_delta = self.apply_choice(choice, &mut emit);
         }
         if v.get("usage").is_some_and(|u| u.is_object()) {
@@ -642,6 +681,7 @@ impl Accumulator {
             model: self.model,
             served_model: None,
             leading_empty_part: self.leading_empty_part,
+            empty_first_part: false,
             text_parts: self.text_parts,
             updates: self.updates,
             stopped: false,

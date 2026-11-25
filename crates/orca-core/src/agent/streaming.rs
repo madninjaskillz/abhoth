@@ -121,8 +121,21 @@ impl AgentSession {
                 }
                 StreamControl::Continue
             };
+            // Read-only calls may start while the rest of the response is still streaming.
+            let mut on_tool_delta = self
+                .early_runs
+                .as_mut()
+                .map(|early| move |d: &crate::client::ToolCallDelta| early.observe(d));
             self.client
-                .stream_with_control(&self.actor, &self.messages, options, &mut on_event)
+                .stream_observed(
+                    &self.actor,
+                    &self.messages,
+                    options,
+                    &mut on_event,
+                    on_tool_delta
+                        .as_mut()
+                        .map(|f| f as &mut (dyn FnMut(&crate::client::ToolCallDelta) + Send)),
+                )
                 .await
         };
 

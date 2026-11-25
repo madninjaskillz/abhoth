@@ -22,7 +22,9 @@
 //! startup context-window probes) is compared too. A reply can stream its reasoning in small
 //! chunks (`reasoning_chunk_chars`), open with a null-content role chunk
 //! (`null_role_content`), break off after some events (`die_after_events`) or be an HTTP error
-//! (`error`: `[status, body]`).
+//! (`error`: `[status, body]`). A reply with `for_model` only answers requests for that model,
+//! and `unordered_requests` compares the request bodies sorted instead of in arrival order:
+//! together they make concurrent requests (pair programming) deterministic.
 //!
 //! For the git tools a scenario can run `setup` commands in the work folder after its files
 //! are written (e.g. `["git", "init"]`) with extra environment variables (`env`, also given to
@@ -77,6 +79,10 @@ struct Scenario {
     /// Answers for other endpoints: `"METHOD /path"` -> `[status, body]`.
     #[serde(default)]
     server_routes: BTreeMap<String, (u16, String)>,
+    /// Compare the request bodies as a set (sorted) instead of in arrival order: requests sent
+    /// concurrently (pair programming) reach the server in either order.
+    #[serde(default)]
+    unordered_requests: bool,
     replies: Vec<ScriptReply>,
 }
 
@@ -124,6 +130,9 @@ struct ScriptReply {
     /// `[status, body]`: answer with an HTTP error instead.
     #[serde(default)]
     error: Option<(u16, String)>,
+    /// Answer only a request for this model (concurrent requests to several models).
+    #[serde(default)]
+    for_model: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -166,6 +175,7 @@ impl ScriptReply {
             null_role_content: self.null_role_content,
             die_after_events: self.die_after_events,
             error: self.error.clone(),
+            for_model: self.for_model.clone(),
             ..Reply::default()
         }
     }
@@ -606,7 +616,7 @@ fn short(v: &Value) -> String {
     }
 }
 
-fn compare(cs: &RunResult, rs: &RunResult, strict: bool) -> Vec<String> {
+fn compare(cs: &RunResult, rs: &RunResult, strict: bool, unordered: bool) -> Vec<String> {
     let mut out = Vec::new();
     diff("output", &cs.output, &rs.output, &mut out);
     if cs.requests.len() != rs.requests.len() {
@@ -616,13 +626,25 @@ fn compare(cs: &RunResult, rs: &RunResult, strict: bool) -> Vec<String> {
             rs.requests.len()
         ));
     }
-    for (i, (a, b)) in cs.requests.iter().zip(&rs.requests).enumerate() {
-        let (a, b) = if strict {
-            (a.clone(), b.clone())
-        } else {
-            (mask_known_gaps(a.clone()), mask_known_gaps(b.clone()))
-        };
-        diff(&format!("request[{i}]"), &a, &b, &mut out);
+    let prepare = |requests: &[Value]| {
+        let mut v: Vec<Value> = requests
+            .iter()
+            .map(|r| {
+                if strict {
+                    r.clone()
+                } else {
+                    mask_known_gaps(r.clone())
+                }
+            })
+            .collect();
+        if unordered {
+            v.sort_by_cached_key(|r| r.to_string());
+        }
+        v
+    };
+    let (c_requests, r_requests) = (prepare(&cs.requests), prepare(&rs.requests));
+    for (i, (a, b)) in c_requests.iter().zip(&r_requests).enumerate() {
+        diff(&format!("request[{i}]"), a, b, &mut out);
     }
     let files = |r: &RunResult| serde_json::to_value(&r.files).unwrap();
     diff("files", &files(cs), &files(rs), &mut out);
@@ -691,7 +713,7 @@ async fn main() -> Result<()> {
                 )?;
             }
         }
-        let diffs = compare(&cs, &rs, strict);
+        let diffs = compare(&cs, &rs, strict, scenario.unordered_requests);
         if diffs.is_empty() {
             passed += 1;
             println!("PASS  {}", scenario.name);
