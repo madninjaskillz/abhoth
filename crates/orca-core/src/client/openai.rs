@@ -702,6 +702,7 @@ fn parse_usage(u: &Value) -> Usage {
         completion_tokens: u["completion_tokens"].as_i64(),
         cached_tokens: u["prompt_tokens_details"]["cached_tokens"].as_i64(),
         reasoning_tokens: u["completion_tokens_details"]["reasoning_tokens"].as_i64(),
+        cache_creation_tokens: None,
     }
 }
 
@@ -923,6 +924,7 @@ impl Accumulator {
         ChatResponse {
             text: self.text,
             reasoning: self.reasoning,
+            reasoning_signature: None,
             content_items: self.content_items + tool_calls.len(),
             tool_calls,
             finish_reason: self.finish_reason,

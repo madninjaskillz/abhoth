@@ -353,7 +353,7 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   (`<config home>/logs/openorca-{date}.log`, `HH:mm:ss.fff [INF] Category: msg`, `.1`/`.2`
   fallbacks), local time via `chrono`.
 - **D79** `Usage` has `reasoning_tokens`; `ChatResponse` has `usage_reported` and `timings`
-  (llama.cpp / Strata). Cache-write tokens are 0 (no Anthropic client).
+  (llama.cpp / Strata). Cache-write tokens are 0 (no Anthropic client; see D92).
 - **D80** The cross-check compares every scenario's usage log lines (times masked) unless the
   scenario sets `usage_log: false`.
 - **D50** Agent model/endpoint selection sits behind `AgentClientProvider` (`default_client`,
@@ -380,7 +380,7 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   sticky slots (balanced placement), Haiku agents take none, a waiting agent gets the next free
   slot, nested spawns borrow the spawner's slot. Only openai-compatible named providers get a
   client (`ProviderRoutes`); Anthropic/Ollama agents fall back to the local model with a
-  warning. Named-provider usage lines go to the process log. The web UI republishes agent bars
+  warning (superseded by D92/D93). Named-provider usage lines go to the process log. The web UI republishes agent bars
   on each event rather than streaming agent text live.
 - **D81** (`rust-port/rest`) `/benchmark` runs `BenchmarkRunner`'s three scripted prompts per
   model in a temp folder and restores the session afterwards (also on Ctrl+C); the cross-check
@@ -417,6 +417,42 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
 - **D90** The cross-check reads the Rust build's "Abhoth"/"abhoth" as "OpenOrca"/"openorca" in
   every compared string (outputs, requests, files, screens), so the rebrand is not a difference.
   Both builds still get the same `OPENORCA_HOME`.
+- **D91** (`rust-port/ghapp`) The GitHub App device flow ports as `orca_webui::git::github_app`
+  (+ `github_app_endpoints`), JSON shapes as the React client reads them. The clock is a
+  `Clock` trait (tests use `ManualClock`); a finished device flow is forgotten on the next poll a
+  minute later (C# runs a one-minute timer). Timestamps without an offset from GitHub are read
+  as UTC (C# uses the local offset). `ProjectManager::git_token` is async and asks the service
+  (refreshing near expiry), replacing the sync `github_app_token` hook. Config reads
+  `ABHOTH_GITHUB_APP_*` then `OPENORCA_GITHUB_APP_*`, and `ABHOTH_GITHUB_URL` / `_API_URL`; the
+  setup hint names the `ABHOTH_*` variables.
+- **D92** (`rust-port/ghapp`) Anthropic client (`orca_core::client::anthropic`), written against
+  the public Messages API (no SDK): `x-api-key`, `anthropic-version: 2023-06-01`, top-level
+  `system` blocks, `tool_use` / `tool_result` blocks (a tool's images inside its result,
+  consecutive same-role turns merged), automatic `cache_control`, `output_config.effort`, no
+  sampling or extra-body fields, the "claude" model-id guard, 32000 default output cap, `/v1`
+  stripped from base URLs, as `AnthropicChatClient`. Used for `lmStudio.provider: "anthropic"`
+  (the main client routes to it) and named providers of type anthropic. Signed thinking goes
+  back (`ChatMessage::reasoning_signature`, not saved in sessions, dropped with the reasoning);
+  a turn with several thinking blocks keeps no signature, so its reasoning is not sent. Usage:
+  **fix** - `prompt` is input + cache read + cache creation (C#'s adapter reports the uncached
+  input only, so its ledger counts Anthropic's uncached input as 0); `Usage` gains
+  `cache_creation_tokens` (the ledger's cache write and ` cache_write=N` in the usage line,
+  as C# logs it; supersedes the D79 note). `stop_reason` maps to the OpenAI finish reasons.
+- **D93** (`rust-port/ghapp`) Ollama client (`orca_core::client::ollama`, OllamaSharp's role):
+  `POST /api/chat`, NDJSON streaming, native tools (arguments as objects; Ollama gives calls no
+  ids, so they are `call_0`, `call_1`, ...), sampling settings and extra fields named like
+  Ollama options under `options`, `num_predict` from the output cap. **Fix**: the provider's
+  `contextWindow` goes as `num_ctx` unless the request sets one (C# sends none, so Ollama
+  truncated prompts to its small default window). An unknown provider type is refused with
+  C#'s message; agents scheduled on it run on the local model as before (D50a).
+- **D94** (`rust-port/ghapp`) Tool-call arguments keep the model's number digits (`1.0`, `2.50`,
+  `1e3`) where they are re-serialized: the echo into history (`echo_arguments`) and the
+  `--print` tool-call record. A small reader (`RawArguments`) keeps each number's source text
+  and writes it through serde_json's `RawValue` (the `raw_value` feature, now on); strings and
+  key order still go through serde_json. serde_json's `arbitrary_precision` was not used: it
+  breaks `#[serde(flatten)]` (`OrcaConfig.extra`) and changes `Number` equality workspace-wide.
+  The Anthropic and Ollama clients send arguments as parsed objects (digits normalized; those
+  APIs read values). Cross-check scenario 119.
 - **D110** `abhoth --desktop` (feature `desktop`, phase 7): wry 0.57.4 + tao 0.37.0 (0.38 needs
   gtk 0.19 while wry's webkit2gtk needs 0.18) + tray-icon 0.26.1 without its GTK default
   (`ksni` on Linux) + rfd 0.18.0. `main()` hands the main thread to the window's event loop; the

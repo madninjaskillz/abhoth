@@ -205,6 +205,7 @@ pub fn session_to_messages(session: &SessionData) -> Vec<ChatMessage> {
                 Some(text)
             },
             reasoning: m.reasoning.clone().filter(|r| !r.is_empty()),
+            reasoning_signature: None,
             tool_calls,
             tool_call_id: None,
             leading_empty_part: false,

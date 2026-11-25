@@ -182,7 +182,29 @@ fn open_ai_compatible_sends_the_image_as_an_image_url_data_uri_part() {
     );
 }
 
-// Anthropic_SendsTheImageAsAnImageBlock: not ported, the Rust port has no Anthropic client.
+#[test]
+fn anthropic_sends_the_image_as_an_image_block() {
+    use base64::Engine;
+    let d = Dir::new();
+    let png = png();
+    let shot = PromptAttachment::for_path(1, d.write("s.png", &png));
+    let message = message_builder::build(
+        &format!("look {}", shot.chip()),
+        std::slice::from_ref(&shot),
+        true,
+        &d.path(),
+    )
+    .message;
+    let (_, wire) = crate::client::anthropic::wire_messages(&[message]);
+    let blocks = &wire[0]["content"];
+    assert_eq!("text", blocks[0]["type"]);
+    assert_eq!("image", blocks[1]["type"]);
+    assert_eq!("image/png", blocks[1]["source"]["media_type"]);
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(&png),
+        blocks[1]["source"]["data"]
+    );
+}
 
 // ── dropped / pasted paths ─────────────────────────────────────────────
 

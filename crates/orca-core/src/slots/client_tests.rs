@@ -254,6 +254,7 @@ fn history() -> Vec<ChatMessage> {
         role: Role::Assistant,
         content: None,
         reasoning: None,
+        reasoning_signature: None,
         tool_calls: calls
             .into_iter()
             .map(|(id, name)| ToolCall {

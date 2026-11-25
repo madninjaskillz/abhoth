@@ -59,6 +59,14 @@ pub struct WebUiOptions {
     pub resume_grace: Duration,
     /// GitHub's API (token validation); OPENORCA_GITHUB_API_URL overrides it.
     pub github_api: String,
+    /// github.com: the GitHub App's device flow and token endpoints, and clone URLs;
+    /// OPENORCA_GITHUB_URL overrides it.
+    pub github_web: String,
+    /// The GitHub App for "Clone from GitHub" (`None`: `GitHubAppConfig::load` from the
+    /// environment or github-app.json next to the project list, asked on each use).
+    pub github_app: Option<crate::git::github_app::GitHubAppConfigFn>,
+    /// The clock the GitHub sign-in reads (`None`: the system clock; tests).
+    pub github_clock: Option<Arc<dyn crate::git::github_app::Clock>>,
     /// The bench runner (Benchmarks page); `None` = off.
     pub bench: Option<crate::bench::BenchOptions>,
     /// Set when the server backs the desktop window (`abhoth --desktop`, D110).
@@ -102,6 +110,11 @@ impl WebUiOptions {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "https://api.github.com".into()),
+            github_web: orca_core::brand::env_var("GITHUB_URL")
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "https://github.com".into()),
+            github_app: None,
+            github_clock: None,
             bench: None,
             desktop: None,
         }
@@ -123,6 +136,8 @@ pub struct AppState {
     pub bench_queue: Option<Arc<crate::bench::BenchQueue>>,
     pub http: reqwest::Client,
     pub clones: crate::projects::clone::CloneService,
+    /// The GitHub sign-in ("Clone from GitHub").
+    pub github_app: Arc<crate::git::github_app::GitHubAppService>,
     /// Sign-in mode; `None`: the token.
     pub login: Option<Arc<crate::login::LoginAuth>>,
 }
@@ -220,7 +235,24 @@ impl WebUiServer {
             crate::bench::BenchQueue::new(b.clone(), b.options.dir.clone(), profiles.clone(), true)
         });
         let clones = crate::projects::clone::CloneService::new(projects.clone());
+        let github_app = {
+            use crate::git::github_app::{GitHubAccountStore, GitHubAppConfig, GitHubAppService};
+            let state_dir = projects.store().state_dir();
+            let config = options.github_app.clone().unwrap_or_else(|| {
+                let dir = state_dir.clone();
+                Arc::new(move || GitHubAppConfig::load(&dir))
+            });
+            Arc::new(GitHubAppService::new(
+                config,
+                &options.github_web,
+                &options.github_api,
+                GitHubAccountStore::new(&state_dir),
+                options.github_clock.clone(),
+            ))
+        };
+        let _ = projects.github_app.set(github_app.clone());
         let state = Arc::new(AppState {
+            github_app,
             options: options.clone(),
             clones,
             login,
@@ -340,6 +372,7 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/hub/ws", get(hub_socket))
         .merge(crate::projects::endpoints::routes())
         .merge(crate::git::endpoints::routes())
+        .merge(crate::git::github_app_endpoints::routes())
         .merge(crate::settings::routes())
         .merge(crate::files::attachments::routes())
         .merge(crate::files::preview::routes())

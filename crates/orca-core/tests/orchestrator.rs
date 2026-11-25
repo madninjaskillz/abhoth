@@ -1260,6 +1260,7 @@ async fn reported_prompt_size_run(input: i64, cached: i64) {
                     cached_tokens: Some(cached),
                     completion_tokens: Some(10),
                     reasoning_tokens: None,
+                    cache_creation_tokens: None,
                 },
                 ..call_id(&format!("c{n}"), "read_file", json!({"path": "x"}), "")
             };
@@ -1483,6 +1484,7 @@ impl SwarmClient {
                 cached_tokens: Some(self.prompt_tokens / 2),
                 completion_tokens: Some(100),
                 reasoning_tokens: None,
+                cache_creation_tokens: None,
             },
             usage_reported: true,
             ..text(&format!("Done on {}.", self.name))
@@ -1761,6 +1763,7 @@ async fn pinned_provider_read_only_runs_off_the_schedule_and_refuses_writes() {
                 completion_tokens: Some(300),
                 cached_tokens: None,
                 reasoning_tokens: None,
+                cache_creation_tokens: None,
             },
             ..r
         }
@@ -1862,6 +1865,7 @@ async fn read_only_agent_has_a_hard_step_limit_and_is_asked_for_its_answer() {
                 completion_tokens: Some(10),
                 cached_tokens: None,
                 reasoning_tokens: None,
+                cache_creation_tokens: None,
             },
             ..r
         }
@@ -2011,8 +2015,13 @@ async fn provider_usage_is_added_up_per_provider_and_costed() {
 
 #[tokio::test]
 async fn an_unbuildable_provider_runs_its_agent_on_the_local_model() {
-    // haiku is "anthropic", which has no Rust client: the agent falls back to local.
-    let config = swarm_config(10, None, None);
+    // haiku of a type no client speaks: the agent falls back to local.
+    let mut config = swarm_config(10, None, None);
+    for (name, p) in config.providers.iter_mut() {
+        if name.eq_ignore_ascii_case("haiku") {
+            p.kind = "gemini".into();
+        }
+    }
     let local = SwarmClient::new("local", 1000);
     let provider = ProviderRoutes::new(
         Arc::new(DefaultClientProvider::new(local.clone())),

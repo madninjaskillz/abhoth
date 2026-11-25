@@ -488,7 +488,12 @@ impl AgentSession {
                 let args_json = if self.record_raw_arguments {
                     call.arguments.clone()
                 } else {
-                    crate::config::dotnet_json::to_string_dotnet(&args).unwrap_or_default()
+                    // Numbers keep the model's digits (C# re-serializes JsonElements).
+                    match crate::client::types::RawArguments::parse(&call.arguments) {
+                        Some(raw) => crate::config::dotnet_json::to_string_dotnet(&raw),
+                        None => crate::config::dotnet_json::to_string_dotnet(&args),
+                    }
+                    .unwrap_or_default()
                 };
                 (args, args_json, call.arguments.clone())
             }

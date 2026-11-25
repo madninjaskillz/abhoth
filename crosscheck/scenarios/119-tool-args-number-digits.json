@@ -1,0 +1,30 @@
+{
+  "prompt": "Read lines of hello.txt",
+  "files": {
+    "hello.txt": "one\ntwo\nthree\n"
+  },
+  "replies": [
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "raw": "{\"path\": \"hello.txt\", \"scale\": 1.0, \"price\": 2.50, \"nested\": {\"ratio\": 0.10, \"list\": [1.0, 2.50, 1e3, -0.0]}}"
+        }
+      ]
+    },
+    {
+      "tools": [
+        {
+          "name": "read_file",
+          "raw": "{\"path\":\"hello.txt\",\"weight\":10.00}"
+        }
+      ]
+    },
+    {
+      "text": "Three lines."
+    },
+    {
+      "text": "Three lines."
+    }
+  ]
+}

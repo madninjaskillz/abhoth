@@ -84,12 +84,12 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 ### Tests
 
-- Rust: 1784+ tests (`cargo test --workspace --no-fail-fast`), clippy `-D warnings` and fmt
+- Rust: 1909 tests (`cargo test --workspace --no-fail-fast`), clippy `-D warnings` and fmt
   clean.
 - Cross-check: 105 scenarios, all identical between the C# and Rust builds, two runs (phase 1
   and 2 sets, stream guards 30-39, tools 40-45, git/web 50-55, Pi 60-69 strict, MCP/LSP/image
   70-76, profiles/slots/engines 80-84, agents 85-94d (slots spawn, Pi subagent strict), interactive PTY 95-107, tool images
-  108-109, usage lines 110-114). Bench API: 42 calls identical against both hosts (one-off
+  108-109, usage lines 110-114, tool-argument digits 119). 110/110 on 2026-11-25 (`rust-port/ghapp`). Bench API: 42 calls identical against both hosts (one-off
   script).
 - Live smoke 2026-11-25 (qwen3.8-27b via LiteLLM, `--print`): task_list, edit_file, git_diff,
   git_commit on a temp repo; bug fixed and committed.
@@ -104,6 +104,17 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
   `~/.openorca`), `ABHOTH_*` env vars first. See [`README.md`](README.md) and
   [`CUTOVER.md`](CUTOVER.md).
 
+### `rust-port/ghapp` (2026-11-25)
+
+- GitHub App "Clone from GitHub" (D91): device flow with interval / slow_down, token refresh
+  (5-minute margin, single flight, rotation), sign-out, repositories across installations
+  (60 s cache, search, paging), branches, clone linked to the sign-in so fetch/pull/push get a
+  fresh token through the credential helper. C# tests ported against a fake GitHub (API and
+  `git http-backend`).
+- Anthropic Messages API and Ollama clients (D92, D93): named providers of those types and
+  `lmStudio.provider: "anthropic"`; prompt caching, effort, signed thinking, tool results with
+  images, cache read/write usage; tested against fake local servers only.
+- Tool-call arguments keep the model's number digits in history and `--print` records (D94).
 ### Phase 7: desktop app (2026-11-25, D110)
 
 - `abhoth --desktop` / `abhoth-desktop.exe` (feature `desktop`): in-process host on loopback with
@@ -113,11 +124,10 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 
 ## Next
 
-1. GitHub App device flow; Anthropic/Ollama clients; tool-argument number formatting.
-2. Bridge engines under `--hostui` and in the REPL; sub-agent approval prompter; `lead_mode` for
+1. Bridge engines under `--hostui` and in the REPL; sub-agent approval prompter; `lead_mode` for
    `leadMode: auto`.
-3. Phase 6: parity sweep, live smoke on agents and the REPL; bench parity run (user-scheduled).
-4. Phase 7 follow-ups: close-to-tray setting, Linux/macOS desktop builds in CI, installer.
+2. Phase 6: parity sweep (cross-check coverage); bench parity run (user-scheduled).
+3. Phase 7 follow-ups: close-to-tray setting, Linux/macOS desktop builds in CI, installer.
 
 ### Live smoke 2026-11-25 (third run)
 
@@ -165,15 +175,12 @@ worse at passing than the C# `openorca` it replaces (CUTOVER.md gate 3).
 
 - Sub-agent tool calls that need approval are refused, also in foreground agents (C# asks the
   user): the sub-agent pipeline has no prompter.
-- No Anthropic or Ollama clients (named providers of those kinds fall back to the local model).
 - `lead_mode` is not registered for the OpenOrca profile with `leadMode: auto`; agent badges are
   not coloured in note lines; `/agents` is a plain list, not the interactive picker.
 - WebUi: no settings schema passed yet (settings page empty), profile/mode switching answers
   409, ask_user questions not forwarded, generated images only via the raw-file endpoint.
 - Bench runs in the Rust host are native-engine only; kit timeouts kill only the process.
 - Sessions: check `engine` / `engineSessionId` round-trip in the parity sweep (dropped on save before the engines port).
-- Numbers inside re-serialized tool arguments use serde's shortest form (`1.0` -> `1`), C#
-  keeps the model's digits.
 - grep: files in sorted order; regex error texts differ from .NET (lookaround/backreferences work, D112).
 - Console output decoding is lossy UTF-8 rather than the OEM code page; hook stdin is UTF-8.
 - list_directory ordering approximates .NET culture-aware sorting.

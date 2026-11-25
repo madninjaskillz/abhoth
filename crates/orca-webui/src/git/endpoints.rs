@@ -237,7 +237,7 @@ async fn remote_op(
     let Some(svc) = service(s, pid, wt).await else {
         return not_found();
     };
-    let r = match s.projects.git_token(pid) {
+    let r = match s.projects.git_token(pid).await {
         Ok(token) => guard(svc.remote(op, token.as_deref()).await),
         Err(e) => GitResult::failed(2, &e),
     };
@@ -351,7 +351,7 @@ async fn branch_op(
             _ => return bad_request("Bad request body."),
         }
     };
-    let token = match s.projects.git_token(&pid) {
+    let token = match s.projects.git_token(&pid).await {
         Ok(t) => t,
         Err(e) => {
             let r = GitResult::failed(2, &e);
@@ -493,7 +493,10 @@ async fn get_token(State(s): State<Arc<AppState>>, Path(pid): Path<String>) -> R
     }
     match s.projects.tokens.get(&pid) {
         Some(t) if t == APP_LINK => axum::Json(json!({
-            "token": "GitHub sign-in (signed out)",
+            "token": match s.github_app.account().and_then(|a| a.login) {
+                Some(who) => format!("GitHub sign-in (@{who})"),
+                None => "GitHub sign-in (signed out)".to_string(),
+            },
             "githubApp": true,
         }))
         .into_response(),
@@ -554,7 +557,7 @@ async fn validate(State(s): State<Arc<AppState>>, axum::Json(req): axum::Json<Va
     let token = match s_of(&req, "token").filter(|t| !t.trim().is_empty()) {
         Some(t) => Some(t.trim().to_string()),
         None => match &pid {
-            Some(p) => match s.projects.git_token(p) {
+            Some(p) => match s.projects.git_token(p).await {
                 Ok(t) => t,
                 Err(e) => return axum::Json(json!({"ok": false, "error": e})).into_response(),
             },
