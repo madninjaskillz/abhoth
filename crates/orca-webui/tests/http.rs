@@ -681,3 +681,124 @@ async fn attachments_upload_and_raw_files_with_ranges() {
         .unwrap();
     assert_eq!(outside.status(), StatusCode::FORBIDDEN);
 }
+
+/// A stand-in for the inference server's profiles API (never a live server).
+async fn fake_profiles_api() -> String {
+    use axum::routing::{get, post};
+    let app = axum::Router::new()
+        .route(
+            "/profiles",
+            get(|| async {
+                axum::Json(json!({
+                    "version": 3,
+                    "layouts": {"solo": {"title": "Solo"}},
+                    "profiles": {
+                        "coder": {"title": "Coder", "layout": "solo", "mode": "orchestrator"},
+                    },
+                    "aliases": {"old-coder": "coder"},
+                }))
+            }),
+        )
+        .route(
+            "/compose",
+            post(|axum::Json(b): axum::Json<Value>| async move {
+                let n = b["cards"].as_object().map_or(0, |m| m.len());
+                axum::Json(json!({"profile": format!("composed-{n}")}))
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://127.0.0.1:{port}")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn profiles_catalog_compose_and_the_project_pickers() {
+    let work = tempfile::tempdir().unwrap();
+    let api = fake_profiles_api().await;
+    let host = Host::start_with(FakeSession::new(work.path()), |o| {
+        o.profiles_url = Some(api.clone());
+    })
+    .await;
+    let pid = host.primary();
+    let cat: Value = host
+        .api(Method::GET, "/api/profiles")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(cat["available"], true, "{cat}");
+    assert_eq!(cat["profiles"]["coder"]["title"], "Coder");
+    assert_eq!(cat["profiles"]["coder"]["bridge"], false);
+    assert!(cat["allModes"].as_array().unwrap().len() == 4);
+    assert!(cat["projects"].as_object().unwrap().contains_key(&pid));
+
+    let composed: Value = host
+        .api(Method::POST, "/api/profiles/compose")
+        .json(&json!({"cards": {"0": {}, "1": {}}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(composed["profile"], "composed-2");
+    let no_cards = host
+        .api(Method::POST, "/api/profiles/compose")
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(no_cards.status(), StatusCode::BAD_REQUEST);
+
+    // Unknown names are refused; a known one reaches the session (which, here, says no).
+    let unknown = host
+        .api(Method::POST, &format!("/api/projects/{pid}/profile"))
+        .json(&json!({"profile": "nope"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unknown.status(), StatusCode::BAD_REQUEST);
+    let r = host
+        .api(Method::POST, &format!("/api/projects/{pid}/profile"))
+        .json(&json!({"profile": "old-coder"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::CONFLICT);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["profile"], "coder");
+    let bad_mode = host
+        .api(Method::POST, &format!("/api/projects/{pid}/mode"))
+        .json(&json!({"mode": "wizard"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad_mode.status(), StatusCode::BAD_REQUEST);
+    let err: Value = bad_mode.json().await.unwrap();
+    assert!(
+        err["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("Unknown mode wizard")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn profiles_are_not_mapped_without_an_api() {
+    let work = tempfile::tempdir().unwrap();
+    let host = Host::start(FakeSession::new(work.path())).await;
+    let info: Value = host
+        .api(Method::GET, "/api/info")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(info["profiles"], false);
+    let r = host.api(Method::GET, "/api/profiles").send().await.unwrap();
+    assert_ne!(r.status(), StatusCode::OK);
+}
