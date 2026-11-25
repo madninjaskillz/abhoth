@@ -921,6 +921,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "orca-tools-pi"
+version = "0.15.0"
+dependencies = [
+ "async-trait",
+ "orca-abstractions",
+ "regex",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "orca-tools-shell"
 version = "0.15.0"
 dependencies = [
@@ -1705,6 +1718,15 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a56d1686db2308d901306f92a263857ef59ea39678a5458e7cb17f01415101f5"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "untrusted"

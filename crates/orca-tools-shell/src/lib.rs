@@ -67,7 +67,7 @@ impl Tool for BashTool {
         "command"
     }
 
-    fn affected_file_paths(&self, _args: &Value) -> Vec<String> {
+    fn affected_file_paths(&self, _args: &Value, _ctx: &ToolContext) -> Vec<String> {
         Vec::new()
     }
 

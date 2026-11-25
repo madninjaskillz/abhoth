@@ -436,7 +436,7 @@ impl AgentSession {
                 .capabilities()
                 .contains(ToolCapabilities::MODIFIES_FILES)
         {
-            for path in tool.affected_file_paths(&args) {
+            for path in tool.affected_file_paths(&args, &self.ctx) {
                 if !self
                     .files_modified
                     .iter()
@@ -535,7 +535,7 @@ impl AgentSession {
         if !content_modifying {
             return None;
         }
-        for path in tool.affected_file_paths(args) {
+        for path in tool.affected_file_paths(args, &self.ctx) {
             let full = self.ctx.full_path(&path);
             if !full.is_file() {
                 continue;
@@ -563,7 +563,7 @@ impl AgentSession {
         if !reads && !caps.contains(ToolCapabilities::MODIFIES_FILES) {
             return;
         }
-        for path in tool.affected_file_paths(args) {
+        for path in tool.affected_file_paths(args, &self.ctx) {
             let full = self.ctx.full_path(&path);
             if full.is_file() {
                 let mtime = std::fs::metadata(&full).and_then(|m| m.modified()).ok();

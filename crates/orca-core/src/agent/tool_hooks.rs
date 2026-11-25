@@ -71,7 +71,7 @@ impl ToolHooks {
             .session_id
             .as_deref()
             .unwrap_or(DEFAULT_CHECKPOINT_SESSION);
-        for path in tool.affected_file_paths(args) {
+        for path in tool.affected_file_paths(args, ctx) {
             if let Err(e) = cp.snapshot(&ctx.full_path(&path), sid) {
                 tracing::warn!("Failed to create checkpoint for {}: {e}", tool.name());
                 return;
@@ -105,7 +105,7 @@ impl ToolHooks {
             return content;
         }
         let mut appendages = Vec::new();
-        for path in tool.affected_file_paths(args) {
+        for path in tool.affected_file_paths(args, ctx) {
             if let Some(out) = f.format_file(&path, &ctx.cwd).await {
                 appendages.push(out);
             }
