@@ -1,5 +1,10 @@
 //! Helpers shared by the tool crates (port of `OpenOrca.Tools.Common`).
 
+pub mod git;
+pub mod html;
+pub mod http;
+pub mod process;
+
 use std::future::Future;
 use std::time::Duration;
 

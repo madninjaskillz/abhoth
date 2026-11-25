@@ -274,3 +274,89 @@ async fn chat(
         .body(Body::from(sse))
         .unwrap()
 }
+
+/// One page a [`StaticServer`] serves.
+#[derive(Debug, Clone)]
+pub struct Page {
+    pub status: u16,
+    pub content_type: String,
+    pub body: Vec<u8>,
+}
+
+impl Page {
+    pub fn new(status: u16, content_type: impl Into<String>, body: impl Into<Vec<u8>>) -> Self {
+        Self {
+            status,
+            content_type: content_type.into(),
+            body: body.into(),
+        }
+    }
+
+    pub fn html(body: impl Into<Vec<u8>>) -> Self {
+        Self::new(200, "text/html; charset=utf-8", body)
+    }
+}
+
+/// A local web server with fixed pages (keyed by path, query ignored; anything else is a
+/// 404), for the web tools' tests and the cross-check. It records each request's path and
+/// query.
+pub struct StaticServer {
+    pub addr: SocketAddr,
+    requests: Arc<Mutex<Vec<String>>>,
+    _shutdown: tokio::sync::oneshot::Sender<()>,
+}
+
+impl StaticServer {
+    /// Start on an ephemeral 127.0.0.1 port.
+    pub async fn start(pages: impl IntoIterator<Item = (String, Page)>) -> Self {
+        let pages: Arc<std::collections::HashMap<String, Page>> =
+            Arc::new(pages.into_iter().collect());
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = requests.clone();
+        let app = Router::new().fallback(move |uri: axum::http::Uri| {
+            let pages = pages.clone();
+            let recorded = recorded.clone();
+            async move {
+                recorded.lock().unwrap().push(uri.to_string());
+                match pages.get(uri.path()) {
+                    Some(p) => Response::builder()
+                        .status(StatusCode::from_u16(p.status).unwrap_or(StatusCode::OK))
+                        .header("content-type", p.content_type.as_str())
+                        .body(Body::from(p.body.clone()))
+                        .unwrap(),
+                    None => Response::builder()
+                        .status(StatusCode::NOT_FOUND)
+                        .body(Body::empty())
+                        .unwrap(),
+                }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind static server");
+        let addr = listener.local_addr().expect("local addr");
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app)
+                .with_graceful_shutdown(async {
+                    let _ = rx.await;
+                })
+                .await;
+        });
+        Self {
+            addr,
+            requests,
+            _shutdown: tx,
+        }
+    }
+
+    /// `http://127.0.0.1:port`
+    pub fn base_url(&self) -> String {
+        format!("http://{}", self.addr)
+    }
+
+    /// The path and query of every request so far.
+    pub fn requests(&self) -> Vec<String> {
+        self.requests.lock().unwrap().clone()
+    }
+}

@@ -31,13 +31,15 @@ pub struct SinglePromptResult {
     pub success: bool,
 }
 
-/// The phase-1 tool set: the core file and shell tools, registered at compile time.
+/// The tool set, registered at compile time (D3): file, shell, git/GitHub and web tools.
 pub fn build_registry(config: &OrcaConfig) -> ToolRegistry {
     let mut r = ToolRegistry::new();
     r.register_all(orca_tools_fs::all_tools());
     r.register_all(orca_tools_shell::all_tools(
         config.shell.idle_timeout_seconds,
     ));
+    r.register_all(orca_tools_git::all_tools());
+    r.register_all(orca_tools_web::all_tools());
     // Disabled tools stay registered; the permission check refuses them (as in C#).
     r
 }
