@@ -3405,6 +3405,7 @@ dependencies = [
  "async-trait",
  "axum 0.8.9",
  "futures-util",
+ "orca-alerts",
  "orca-gpuctl",
  "orca-homeassistant",
  "orca-hostd",

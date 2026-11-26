@@ -16,6 +16,7 @@ orca-sensors.workspace = true
 orca-hostd.workspace = true
 orca-gpuctl.workspace = true
 orca-homeassistant.workspace = true
+orca-alerts.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 futures-util.workspace = true

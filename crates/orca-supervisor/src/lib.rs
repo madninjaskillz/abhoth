@@ -7,10 +7,12 @@
 //!   `[homeassistant]`);
 //! - [`hostd`]: the hostd client (telemetry into the hub, status → `clocks`, requests);
 //! - [`router`]: the router admin API poller (`engines`, `leases`) and the `ControlPort`;
+//! - [`alerts`]: orca-alerts over the hub (built-in conditions, expression rules, sinks);
 //! - [`run`]: `abhoth-supervisor run|check --config FILE`.
 //!
 //! Standalone binary `abhoth-supervisor`; not wired into the `abhoth` CLI yet.
 
+pub mod alerts;
 pub mod config;
 pub mod hostd;
 pub mod hub;

@@ -30,13 +30,22 @@ impl Router {
             base: base.trim_end_matches('/').to_string(),
             key,
             server: server.to_string(),
-            http: reqwest::Client::builder().timeout(Duration::from_secs(10)).build().unwrap_or_default(),
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .unwrap_or_default(),
             card_ids: Mutex::new(BTreeMap::new()),
         }
     }
 
     async fn get(&self, path: &str) -> Result<Value, String> {
-        let r = self.http.get(format!("{}/admin/api/{path}", self.base)).bearer_auth(&self.key).send().await.map_err(|e| e.to_string())?;
+        let r = self
+            .http
+            .get(format!("{}/admin/api/{path}", self.base))
+            .bearer_auth(&self.key)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         let st = r.status();
         let v: Value = r.json().await.map_err(|e| e.to_string())?;
         if !st.is_success() {
@@ -46,7 +55,14 @@ impl Router {
     }
 
     async fn post(&self, path: &str, body: Value) -> (u16, Value) {
-        match self.http.post(format!("{}/admin/api/{path}", self.base)).bearer_auth(&self.key).json(&body).send().await {
+        match self
+            .http
+            .post(format!("{}/admin/api/{path}", self.base))
+            .bearer_auth(&self.key)
+            .json(&body)
+            .send()
+            .await
+        {
             Ok(r) => {
                 let st = r.status().as_u16();
                 (st, r.json().await.unwrap_or(Value::Null))
@@ -64,7 +80,10 @@ impl Router {
         if let Ok(l) = self.get("leases").await {
             let arr = match l {
                 Value::Array(a) => Value::Array(a),
-                Value::Object(mut m) => m.remove("leases").filter(Value::is_array).unwrap_or(json!([])),
+                Value::Object(mut m) => m
+                    .remove("leases")
+                    .filter(Value::is_array)
+                    .unwrap_or(json!([])),
                 _ => json!([]),
             };
             sink.set_section(sections::LEASES, strip_nulls(arr));
@@ -72,7 +91,11 @@ impl Router {
         Ok(())
     }
 
-    pub fn spawn_poller(self: &Arc<Self>, sink: Arc<dyn TelemetrySink>, every: Duration) -> tokio::task::JoinHandle<()> {
+    pub fn spawn_poller(
+        self: &Arc<Self>,
+        sink: Arc<dyn TelemetrySink>,
+        every: Duration,
+    ) -> tokio::task::JoinHandle<()> {
         let me = self.clone();
         tokio::spawn(async move {
             let mut t = tokio::time::interval(every);
@@ -87,7 +110,12 @@ impl Router {
     }
 
     fn card_id(&self, label: &str) -> String {
-        self.card_ids.lock().unwrap_or_else(|e| e.into_inner()).get(label).cloned().unwrap_or_else(|| label.to_string())
+        self.card_ids
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(label)
+            .cloned()
+            .unwrap_or_else(|| label.to_string())
     }
 }
 
@@ -110,19 +138,42 @@ fn strip_nulls(mut v: Value) -> Value {
 /// plus label → router card id.
 pub fn engines_section(st: &Value, server: &str) -> (Value, BTreeMap<String, String>) {
     let servers = st["servers"].as_array().cloned().unwrap_or_default();
-    let srv = servers.iter().find(|s| s["id"] == server).or_else(|| servers.first()).cloned().unwrap_or(Value::Null);
+    let srv = servers
+        .iter()
+        .find(|s| s["id"] == server)
+        .or_else(|| servers.first())
+        .cloned()
+        .unwrap_or(Value::Null);
     let sid = srv["id"].as_str().unwrap_or(server).to_string();
     let mut out = Map::new();
     let active = srv["active_layout"].as_str().map(String::from);
-    let layouts: Vec<&Value> = st["layouts"].as_array().map(|a| a.iter().filter(|l| l["server"] == sid.as_str()).collect()).unwrap_or_default();
+    let layouts: Vec<&Value> = st["layouts"]
+        .as_array()
+        .map(|a| a.iter().filter(|l| l["server"] == sid.as_str()).collect())
+        .unwrap_or_default();
     if let Some(a) = &active {
         out.insert("layout".into(), json!(a));
         if let Some(l) = layouts.iter().find(|l| l["id"] == a.as_str()) {
             out.insert("layout_title".into(), l["title"].clone());
         }
     }
-    out.insert("layouts".into(), json!(layouts.iter().filter_map(|l| l["id"].as_str()).collect::<Vec<_>>()));
-    out.insert("switch_state".into(), json!(if st["job"].is_object() { "switching" } else { "idle" }));
+    out.insert(
+        "layouts".into(),
+        json!(
+            layouts
+                .iter()
+                .filter_map(|l| l["id"].as_str())
+                .collect::<Vec<_>>()
+        ),
+    );
+    out.insert(
+        "switch_state".into(),
+        json!(if st["job"].is_object() {
+            "switching"
+        } else {
+            "idle"
+        }),
+    );
     if st["job"].is_object() {
         out.insert("last_switch".into(), st["job"].clone());
     }
@@ -131,20 +182,50 @@ pub fn engines_section(st: &Value, server: &str) -> (Value, BTreeMap<String, Str
     let mut ids = BTreeMap::new();
     let (mut busy, mut total) = (0u64, 0u64);
     for c in srv["cards"].as_array().cloned().unwrap_or_default() {
-        let label = c["label"].as_str().or(c["id"].as_str()).unwrap_or("").to_string();
+        let label = c["label"]
+            .as_str()
+            .or(c["id"].as_str())
+            .unwrap_or("")
+            .to_string();
         if label.is_empty() {
             continue;
         }
-        ids.insert(label.clone(), c["id"].as_str().unwrap_or(&label).to_string());
+        ids.insert(
+            label.clone(),
+            c["id"].as_str().unwrap_or(&label).to_string(),
+        );
         let e = &c["engine"];
         let mut m = Map::new();
-        m.insert("online".into(), json!(c["admin_state"].as_str().unwrap_or("online") == "online"));
+        m.insert(
+            "online".into(),
+            json!(c["admin_state"].as_str().unwrap_or("online") == "online"),
+        );
         if e.is_object() {
             m.insert("engine".into(), e["engine"].clone());
             m.insert("state".into(), e["state"].clone());
             m.insert("model".into(), e["model"].clone());
-            m.insert("summary".into(), json!(format!("{} {}", e["engine"].as_str().unwrap_or(""), e["model"].as_str().unwrap_or("")).trim()));
-            let eid = e["served_id"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| format!("{}-{}", e["engine"].as_str().unwrap_or("engine"), label.to_lowercase()));
+            m.insert(
+                "summary".into(),
+                json!(
+                    format!(
+                        "{} {}",
+                        e["engine"].as_str().unwrap_or(""),
+                        e["model"].as_str().unwrap_or("")
+                    )
+                    .trim()
+                ),
+            );
+            let eid = e["served_id"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .unwrap_or_else(|| {
+                    format!(
+                        "{}-{}",
+                        e["engine"].as_str().unwrap_or("engine"),
+                        label.to_lowercase()
+                    )
+                });
             let ent = engines.entry(eid).or_insert_with(|| {
                 json!({"title": e["model"], "kind": "llm", "cards": [], "state": e["state"], "healthy": e["healthy"]})
             });
@@ -176,32 +257,79 @@ pub struct Controls {
 
 fn outcome(st: u16, v: &Value, ok: &str) -> ControlOutcome {
     match st {
-        200..=299 => ControlOutcome::Accepted { message: ok.into(), job: v["id"].as_str().map(String::from) },
-        409 if v["error"].as_str().is_some_and(|e| e.contains("already")) => ControlOutcome::Already { message: v["error"].as_str().unwrap_or("").into() },
-        0 => ControlOutcome::Refused { reason: format!("router unreachable: {}", v["error"].as_str().unwrap_or("")) },
-        _ => ControlOutcome::Refused { reason: v["error"].as_str().unwrap_or("refused").to_string() },
+        200..=299 => ControlOutcome::Accepted {
+            message: ok.into(),
+            job: v["id"].as_str().map(String::from),
+        },
+        409 if v["error"].as_str().is_some_and(|e| e.contains("already")) => {
+            ControlOutcome::Already {
+                message: v["error"].as_str().unwrap_or("").into(),
+            }
+        }
+        0 => ControlOutcome::Refused {
+            reason: format!("router unreachable: {}", v["error"].as_str().unwrap_or("")),
+        },
+        _ => ControlOutcome::Refused {
+            reason: v["error"].as_str().unwrap_or("refused").to_string(),
+        },
     }
 }
 
 #[async_trait]
 impl ControlPort for Controls {
     async fn switch_layout(&self, who: &ServicePrincipal, layout: &str) -> ControlOutcome {
-        let Some(r) = &self.router else { return ControlOutcome::Refused { reason: "no router configured".into() } };
-        let (st, v) = r.post("switch", json!({"server": r.server, "layout": layout, "reason": format!("{who:?}")})).await;
+        let Some(r) = &self.router else {
+            return ControlOutcome::Refused {
+                reason: "no router configured".into(),
+            };
+        };
+        let (st, v) = r
+            .post(
+                "switch",
+                json!({"server": r.server, "layout": layout, "reason": format!("{who:?}")}),
+            )
+            .await;
         outcome(st, &v, &format!("switching to {layout}"))
     }
 
-    async fn set_card_online(&self, who: &ServicePrincipal, card: &str, online: bool) -> ControlOutcome {
-        let Some(r) = &self.router else { return ControlOutcome::Refused { reason: "no router configured".into() } };
+    async fn set_card_online(
+        &self,
+        who: &ServicePrincipal,
+        card: &str,
+        online: bool,
+    ) -> ControlOutcome {
+        let Some(r) = &self.router else {
+            return ControlOutcome::Refused {
+                reason: "no router configured".into(),
+            };
+        };
         let act = if online { "online" } else { "offline" };
-        let (st, v) = r.post(&format!("cards/{}/{act}", r.card_id(card)), json!({"reason": format!("{who:?}")})).await;
+        let (st, v) = r
+            .post(
+                &format!("cards/{}/{act}", r.card_id(card)),
+                json!({"reason": format!("{who:?}")}),
+            )
+            .await;
         outcome(st, &v, &format!("card {card} {act}"))
     }
 
-    async fn set_clock_cap(&self, _who: &ServicePrincipal, card: &str, mhz: Option<u32>, ttl: Duration) -> ControlOutcome {
+    async fn set_clock_cap(
+        &self,
+        _who: &ServicePrincipal,
+        card: &str,
+        mhz: Option<u32>,
+        ttl: Duration,
+    ) -> ControlOutcome {
         let o = match mhz {
-            Some(m) => Override::ClockCap { card: card.into(), mhz: m, ttl_s: ttl.as_secs().max(1) },
-            None => Override::Clear { fan: None, card: Some(card.into()) },
+            Some(m) => Override::ClockCap {
+                card: card.into(),
+                mhz: m,
+                ttl_s: ttl.as_secs().max(1),
+            },
+            None => Override::Clear {
+                fan: None,
+                card: Some(card.into()),
+            },
         };
         match self.hostd.call(ToHostd::Override(o)).await {
             Ok(FromHostd::Ack) => ControlOutcome::Accepted {
@@ -212,13 +340,22 @@ impl ControlPort for Controls {
                 job: None,
             },
             Ok(FromHostd::Error { message, .. }) => ControlOutcome::Refused { reason: message },
-            Ok(other) => ControlOutcome::Refused { reason: format!("unexpected hostd reply {other:?}") },
+            Ok(other) => ControlOutcome::Refused {
+                reason: format!("unexpected hostd reply {other:?}"),
+            },
             Err(e) => ControlOutcome::Refused { reason: e },
         }
     }
 
-    async fn set_fan_mode(&self, _who: &ServicePrincipal, _mode: FanMode, _ttl: Option<Duration>) -> ControlOutcome {
-        ControlOutcome::Refused { reason: "fan modes are not wired in this build (calendar fan_profile)".into() }
+    async fn set_fan_mode(
+        &self,
+        _who: &ServicePrincipal,
+        _mode: FanMode,
+        _ttl: Option<Duration>,
+    ) -> ControlOutcome {
+        ControlOutcome::Refused {
+            reason: "fan modes are not wired in this build (calendar fan_profile)".into(),
+        }
     }
 }
 
@@ -256,7 +393,10 @@ mod tests {
         let snap = orca_homeassistant::feed::snapshot_from_state(
             &json!({"engines": e}),
             &Default::default(),
-            &[orca_homeassistant::feed::CardConfig { id: "B".into(), allow_cap: true }],
+            &[orca_homeassistant::feed::CardConfig {
+                id: "B".into(),
+                allow_cap: true,
+            }],
         );
         assert_eq!(snap.control.layout.as_deref(), Some("flash-x2"));
         assert_eq!(snap.card("B").unwrap().engine.as_deref(), Some("strata"));
