@@ -2750,6 +2750,7 @@ dependencies = [
  "chrono",
  "flate2",
  "futures-util",
+ "hmac",
  "indexmap",
  "orca-abstractions",
  "orca-testkit",

@@ -68,6 +68,11 @@ const MIGRATIONS: &[&str] = &[
         detail TEXT NOT NULL DEFAULT '{}'
     );
     CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    // 2: service keys (ROUTER-CONFIG.md 11.1): API keys of kind 'service', owned by the admin
+    // who issued them, limited to their scopes, valid only at the router.
+    "ALTER TABLE api_keys ADD COLUMN kind TEXT NOT NULL DEFAULT 'user';
+    ALTER TABLE api_keys ADD COLUMN scopes TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE api_keys ADD COLUMN note TEXT;",
 ];
 
 /// SHA-256 of a high-entropy secret (a cookie, an API key, a recovery code).
@@ -132,6 +137,38 @@ pub struct ApiKey {
     pub prefix: String,
     pub created: i64,
     pub last_used: Option<i64>,
+    /// `user` (the owner's own key) or `service` (a named key for a client such as Jarvis).
+    #[serde(skip_serializing_if = "is_user_kind")]
+    pub kind: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+fn is_user_kind(k: &str) -> bool {
+    k == KEY_USER
+}
+
+/// API key kinds.
+pub const KEY_USER: &str = "user";
+pub const KEY_SERVICE: &str = "service";
+
+const KEY_COLS: &str = "id, user_id, name, prefix, created, last_used, kind, scopes, note";
+
+fn key_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ApiKey> {
+    let scopes: String = r.get(7)?;
+    Ok(ApiKey {
+        id: r.get(0)?,
+        user_id: r.get(1)?,
+        name: r.get(2)?,
+        prefix: r.get(3)?,
+        created: r.get(4)?,
+        last_used: r.get(5)?,
+        kind: r.get(6)?,
+        scopes: serde_json::from_str(&scopes).unwrap_or_default(),
+        note: r.get(8)?,
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -649,10 +686,41 @@ impl UserDb {
         prefix: &str,
         now: i64,
     ) -> Option<ApiKey> {
+        self.insert_key(user_id, name, key, prefix, now, KEY_USER, &[], None)
+    }
+
+    /// A service key owned by `admin_id` (the admin who issues it).
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_service_key(
+        &self,
+        admin_id: i64,
+        name: &str,
+        key: &str,
+        prefix: &str,
+        now: i64,
+        scopes: &[String],
+        note: Option<&str>,
+    ) -> Option<ApiKey> {
+        self.insert_key(admin_id, name, key, prefix, now, KEY_SERVICE, scopes, note)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_key(
+        &self,
+        user_id: i64,
+        name: &str,
+        key: &str,
+        prefix: &str,
+        now: i64,
+        kind: &str,
+        scopes: &[String],
+        note: Option<&str>,
+    ) -> Option<ApiKey> {
         let conn = self.conn.lock().unwrap();
+        let scopes_json = serde_json::to_string(scopes).ok()?;
         conn.execute(
-            "INSERT INTO api_keys(user_id, name, prefix, key_hash, created) VALUES(?1, ?2, ?3, ?4, ?5)",
-            params![user_id, name, prefix, secret_hash(key), now],
+            "INSERT INTO api_keys(user_id, name, prefix, key_hash, created, kind, scopes, note) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![user_id, name, prefix, secret_hash(key), now, kind, scopes_json, note],
         )
         .ok()?;
         Some(ApiKey {
@@ -662,51 +730,58 @@ impl UserDb {
             prefix: prefix.into(),
             created: now,
             last_used: None,
+            kind: kind.into(),
+            scopes: scopes.to_vec(),
+            note: note.map(str::to_string),
         })
     }
 
+    /// Any key (user or service) by its secret.
     pub fn api_key_by_secret(&self, key: &str) -> Option<ApiKey> {
+        self.api_key_by_hash(&secret_hash(key))
+    }
+
+    /// Any key by the SHA-256 of its secret (the router's introspection sends only that).
+    pub fn api_key_by_hash(&self, hash: &[u8]) -> Option<ApiKey> {
         self.conn
             .lock()
             .unwrap()
             .query_row(
-                "SELECT id, user_id, name, prefix, created, last_used FROM api_keys WHERE key_hash=?1",
-                [secret_hash(key)],
-                |r| {
-                    Ok(ApiKey {
-                        id: r.get(0)?,
-                        user_id: r.get(1)?,
-                        name: r.get(2)?,
-                        prefix: r.get(3)?,
-                        created: r.get(4)?,
-                        last_used: r.get(5)?,
-                    })
-                },
+                &format!("SELECT {KEY_COLS} FROM api_keys WHERE key_hash=?1"),
+                [hash],
+                key_row,
             )
             .optional()
             .ok()
             .flatten()
     }
 
+    /// A user's own keys (not the service keys an admin issued).
     pub fn api_keys_of(&self, user_id: i64) -> Vec<ApiKey> {
+        self.keys_where("user_id=?1 AND kind='user'", params![user_id])
+    }
+
+    /// Every service key, oldest first.
+    pub fn service_keys(&self) -> Vec<ApiKey> {
+        self.keys_where("kind='service'", params![])
+    }
+
+    pub fn service_key(&self, id: i64) -> Option<ApiKey> {
+        self.keys_where("id=?1 AND kind='service'", params![id])
+            .into_iter()
+            .next()
+    }
+
+    fn keys_where(&self, cond: &str, args: impl rusqlite::Params) -> Vec<ApiKey> {
         let conn = self.conn.lock().unwrap();
-        let Ok(mut st) = conn.prepare(
-            "SELECT id, user_id, name, prefix, created, last_used FROM api_keys WHERE user_id=?1 ORDER BY id",
-        ) else {
+        let Ok(mut st) =
+            conn.prepare(&format!("SELECT {KEY_COLS} FROM api_keys WHERE {cond} ORDER BY id"))
+        else {
             return vec![];
         };
-        st.query_map([user_id], |r| {
-            Ok(ApiKey {
-                id: r.get(0)?,
-                user_id: r.get(1)?,
-                name: r.get(2)?,
-                prefix: r.get(3)?,
-                created: r.get(4)?,
-                last_used: r.get(5)?,
-            })
-        })
-        .map(|rows| rows.filter_map(Result::ok).collect())
-        .unwrap_or_default()
+        st.query_map(args, key_row)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
     }
 
     pub fn touch_api_key(&self, id: i64, now: i64) {
@@ -716,11 +791,19 @@ impl UserDb {
         );
     }
 
-    /// Revoke one of `user_id`'s keys.
+    /// Revoke one of `user_id`'s own keys.
     pub fn delete_api_key(&self, user_id: i64, id: i64) -> bool {
         self.exec(
-            "DELETE FROM api_keys WHERE id=?1 AND user_id=?2",
+            "DELETE FROM api_keys WHERE id=?1 AND user_id=?2 AND kind='user'",
             params![id, user_id],
+        )
+    }
+
+    /// Revoke a service key (any admin may).
+    pub fn delete_service_key(&self, id: i64) -> bool {
+        self.exec(
+            "DELETE FROM api_keys WHERE id=?1 AND kind='service'",
+            params![id],
         )
     }
 

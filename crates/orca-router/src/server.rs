@@ -123,13 +123,31 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
             json_response(200, &crate::observe::view(&st, q))
         }
         (Method::GET, "/metrics") => {
-            let mut r = crate::status::metrics_text(&st).into_response();
+            let mut text = crate::status::metrics_text(&st);
+            if let Some(cp) = st.control.get() {
+                text.push_str(&crate::control_api::metrics_text(cp));
+            }
+            let mut r = text.into_response();
             r.headers_mut().insert(
                 "content-type",
                 HeaderValue::from_static("text/plain; version=0.0.4"),
             );
             r
         }
+        (Method::GET, "/v1/abhoth/view" | "/v1/abhoth/events") => match st.control.get() {
+            Some(cp) => {
+                crate::control_api::user_view::handle(cp, &path, &headers, peer.map(|p| p.ip()))
+                    .await
+            }
+            None => not_found(),
+        },
+        (_, p) if p == "/admin/api" || p.starts_with("/admin/api/") => match st.control.get() {
+            Some(cp) => {
+                crate::control_api::handle(cp, &method, &path_q, &headers, peer.map(|p| p.ip()), &raw)
+                    .await
+            }
+            None => proxy::error(404, "the control plane is off (control.enabled)", "not_found", None),
+        },
         (_, p) if p.starts_with("/admin/") => {
             if !loopback && !admin_allowed(&snap, &headers) {
                 return proxy::error(403, "admin endpoints are loopback-only", "forbidden", None);
