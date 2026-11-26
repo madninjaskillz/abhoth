@@ -21,7 +21,7 @@ use serde_json::Value;
 
 use orca_abstractions::{ToolResult, ToolRiskLevel};
 
-use super::log_lines::{self as log, dotnet_bool};
+use super::log_lines::{self, dotnet_bool};
 use super::long_task::LongTaskMonitor;
 use super::loop_messages as msg;
 use super::prompts::{self, MAX_SUMMARY_CONTINUATIONS, SUMMARY_CONTINUE_MESSAGE};
@@ -158,7 +158,7 @@ impl AgentSession {
             }
             s.history_marks.push(self.tool_call_history.len());
             tracing::debug!(
-                target: log::LOOP,
+                target: log_lines::LOOP,
                 "=== Agent loop iteration {}/{} ===",
                 iteration + 1,
                 s.iteration_budget
@@ -170,7 +170,7 @@ impl AgentSession {
             let closed = self.close_dangling_tool_calls();
             if closed > 0 {
                 tracing::warn!(
-                    target: log::LOOP,
+                    target: log_lines::LOOP,
                     "Conversation ended on {closed} tool call(s) without results \u{2014} recorded them as not run before the request"
                 );
             }
@@ -185,13 +185,13 @@ impl AgentSession {
                     .is_some_and(|a| a.should_skip(&self.messages)),
             };
             tracing::debug!(
-                target: log::LOOP,
+                target: log_lines::LOOP,
                 "Conversation has {} messages, sending to LLM",
                 self.messages.len()
             );
             let options = self.build_options_for(s.runaway_recovery_active, skip_thinking);
             tracing::debug!(
-                target: log::LOOP,
+                target: log_lines::LOOP,
                 "Native tool calling: {}, tool count: {}",
                 dotnet_bool(self.native_tools),
                 // The executor's tool list (C# logs it whichever way calls are made).
@@ -209,7 +209,7 @@ impl AgentSession {
             let runaway_cap = s
                 .runaway_cap_override
                 .unwrap_or(self.config.thinking.runaway_cap_chunks);
-            tracing::debug!(target: log::LOOP, "Starting streaming request to LLM...");
+            tracing::debug!(target: log_lines::LOOP, "Starting streaming request to LLM...");
             let outcome = match self
                 .process_stream(&options, observer, reasoning_cap.as_mut(), runaway_cap)
                 .await
@@ -243,7 +243,7 @@ impl AgentSession {
             {
                 // Ask again, appending only (the prompt cache holds).
                 tracing::info!(
-                    target: log::LOOP,
+                    target: log_lines::LOOP,
                     "Reasoning cap: lead step {} cut at {} reasoning tokens (limit {}, fire {}/{})",
                     iteration + 1,
                     cap.reasoning_tokens(),
@@ -287,7 +287,7 @@ impl AgentSession {
             }
 
             if outcome.empty {
-                tracing::warn!(target: log::LOOP, "No tokens received from LLM \u{2014} empty response");
+                tracing::warn!(target: log_lines::LOOP, "No tokens received from LLM \u{2014} empty response");
                 let server_error = crate::client::max_tokens_negotiator::probe_for_server_error(
                     &self.probe_http,
                     &self.config,
@@ -380,7 +380,7 @@ impl AgentSession {
                 .unwrap_or(outcome.token_count);
 
             tracing::debug!(
-                target: log::LOOP,
+                target: log_lines::LOOP,
                 "Native function calls: {}",
                 response.tool_calls.len()
             );
@@ -395,7 +395,7 @@ impl AgentSession {
                 // the payload. Drop the response and fall back to text tool calling.
                 if self.native_tools && self.has_missing_required_args(&response.tool_calls) {
                     tracing::warn!(
-                        target: log::LOOP,
+                        target: log_lines::LOOP,
                         "Native tool call(s) have empty args \u{2014} auto-downgrading to text-based calling."
                     );
                     self.native_tools = false;
@@ -420,7 +420,7 @@ impl AgentSession {
                 self.messages.push(assistant);
                 self.inject_thinking_budget_note(&outcome_note);
                 tracing::info!(
-                    target: log::LOOP,
+                    target: log_lines::LOOP,
                     "Executing {} native tool call(s)",
                     response.tool_calls.len()
                 );
@@ -450,7 +450,7 @@ impl AgentSession {
                     continue;
                 }
                 tracing::info!(
-                    target: log::LOOP,
+                    target: log_lines::LOOP,
                     "Executing {} text-parsed tool call(s)",
                     calls.len()
                 );
@@ -588,7 +588,7 @@ impl AgentSession {
         }
         s.iterations_since_reminder = 0;
         tracing::debug!(
-            target: log::LOOP,
+            target: log_lines::LOOP,
             "Injecting task reminder at iteration {}",
             iteration + 1
         );
@@ -747,7 +747,7 @@ impl AgentSession {
             };
             if doomed {
                 tracing::warn!(
-                    target: log::EXECUTOR,
+                    target: log_lines::EXECUTOR,
                     "Doom loop detected: {} called {DOOM_LOOP_THRESHOLD}+ times with identical arguments",
                     call.name
                 );
@@ -770,7 +770,7 @@ impl AgentSession {
     ) -> Option<bool> {
         let tool = self.detect_doom_loop(calls)?;
         tracing::warn!(
-            target: log::DISPATCHER,
+            target: log_lines::DISPATCHER,
             "Doom loop detected for tool '{tool}' \u{2014} skipping the calls and injecting a redirect"
         );
         observer.on_notice(&format!(
@@ -835,7 +835,7 @@ impl AgentSession {
             let images = std::mem::take(&mut self.last_tool_images);
             if !images.is_empty() {
                 tracing::debug!(
-                    target: log::EXECUTOR,
+                    target: log_lines::EXECUTOR,
                     "Attached {} image(s) to the {} result",
                     images.len(),
                     call.name
@@ -844,7 +844,7 @@ impl AgentSession {
             self.messages
                 .push(ChatMessage::tool_result(call.id.clone(), result).with_images(images));
             tracing::debug!(
-                target: log::EXECUTOR,
+                target: log_lines::EXECUTOR,
                 "Added tool result message to conversation (callId: {})",
                 call.id
             );
@@ -861,7 +861,7 @@ impl AgentSession {
         }
         let injected = msg::text_tool_results_message(&parts);
         tracing::debug!(
-            target: log::EXECUTOR,
+            target: log_lines::EXECUTOR,
             "Injected tool results as user message ({} chars)",
             injected.encode_utf16().count()
         );
@@ -914,7 +914,7 @@ impl AgentSession {
             }
         }
         if let Some(block) = block {
-            tracing::info!(target: log::EXECUTOR, "Blocked tool {}: {}", call.name, block.message);
+            tracing::info!(target: log_lines::EXECUTOR, "Blocked tool {}: {}", call.name, block.message);
             observer.on_notice(&block.message);
             return block.message;
         }
@@ -923,16 +923,16 @@ impl AgentSession {
             ..call.clone()
         };
         tracing::debug!(
-            target: log::EXECUTOR,
+            target: log_lines::EXECUTOR,
             "Preparing tool: {} args: {}",
             call.name,
-            log::head_ellipsis(&call.arguments, log::ARGS_MAX_CHARS)
+            log_lines::head_ellipsis(&call.arguments, log_lines::ARGS_MAX_CHARS)
         );
         observer.on_tool_start(&call);
         let started = std::time::Instant::now();
         let result = self.execute_tool_call(&call, observer).await;
         tracing::debug!(
-            target: log::EXECUTOR,
+            target: log_lines::EXECUTOR,
             "Tool {} returned {} chars in {:.1}s",
             call.name,
             result.content.encode_utf16().count(),
@@ -974,7 +974,7 @@ impl AgentSession {
         }
         if count >= 3 {
             tracing::warn!(
-                target: log::EXECUTOR,
+                target: log_lines::EXECUTOR,
                 "Tool {} has failed {count} times with same error \u{2014} forcing stop",
                 call.name
             );
@@ -982,7 +982,7 @@ impl AgentSession {
         }
         if count >= 2 {
             tracing::warn!(
-                target: log::EXECUTOR,
+                target: log_lines::EXECUTOR,
                 "Tool {} has failed {count} times with same error \u{2014} warning appended",
                 call.name
             );
@@ -1001,7 +1001,7 @@ impl AgentSession {
             .unwrap_or(0);
         if max >= 4 {
             tracing::warn!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "Force-breaking agent loop \u{2014} a tool has failed {max} times identically"
             );
             observer.on_notice(&format!(
@@ -1011,7 +1011,7 @@ impl AgentSession {
         }
         if max >= 3 {
             tracing::warn!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "Injecting user message to redirect model after {max} identical tool failures"
             );
             self.messages
@@ -1057,7 +1057,7 @@ impl AgentSession {
         if !s.summary_requested && has_open && !has_close && s.nudge_attempts < 2 {
             s.nudge_attempts += 1;
             tracing::info!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "Truncated tool call detected (attempt {}) \u{2014} asking model to continue",
                 s.nudge_attempts
             );
@@ -1077,7 +1077,7 @@ impl AgentSession {
         {
             s.nudge_attempts += 1;
             tracing::info!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "Nudging model (attempt {}) \u{2014} response has code blocks but no tool calls",
                 s.nudge_attempts
             );
@@ -1107,7 +1107,7 @@ impl AgentSession {
                 prompts::is_substantive_final_message(&wrap_up).then_some(wrap_up);
             s.pre_verification_epoch = self.mutation_epoch;
             tracing::info!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "Delegated work with no check since the agents finished \u{2014} asking the Lead for the final check"
             );
             self.messages
@@ -1127,7 +1127,7 @@ impl AgentSession {
                     prompts::is_substantive_final_message(&wrap_up).then_some(wrap_up);
                 s.pre_verification_epoch = self.mutation_epoch;
                 tracing::debug!(
-                    target: log::DISPATCHER,
+                    target: log_lines::DISPATCHER,
                     "Files modified without later passing run \u{2014} requesting verification before finishing"
                 );
                 self.messages
@@ -1138,7 +1138,7 @@ impl AgentSession {
             }
             s.verification_tools_used = true;
             tracing::debug!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "Skipping forced verification (mode {}: no unverified modifications)",
                 self.config.agent.verification_mode
             );
@@ -1147,7 +1147,7 @@ impl AgentSession {
             if !s.verification_tools_used {
                 s.verification_tools_used = true;
                 tracing::debug!(
-                    target: log::DISPATCHER,
+                    target: log_lines::DISPATCHER,
                     "Verification response had no tool calls \u{2014} re-prompting for actual file reads"
                 );
                 self.messages
@@ -1168,7 +1168,7 @@ impl AgentSession {
             s.pre_verification_wrap_up = None;
             if prompts::is_substantive_final_message(&prose) {
                 tracing::debug!(
-                    target: log::DISPATCHER,
+                    target: log_lines::DISPATCHER,
                     "Final message already contains a wrap-up ({} chars) \u{2014} no summary request",
                     prose.encode_utf16().count()
                 );
@@ -1179,7 +1179,7 @@ impl AgentSession {
             observer.on_wrap_up(None);
             s.summary_requested = true;
             tracing::debug!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "Verification complete \u{2014} requesting final summary"
             );
             self.messages
@@ -1192,7 +1192,7 @@ impl AgentSession {
         {
             s.summary_continuations += 1;
             tracing::info!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "Summary truncated (attempt {}/{MAX_SUMMARY_CONTINUATIONS}) \u{2014} requesting continuation",
                 s.summary_continuations
             );
@@ -1201,7 +1201,7 @@ impl AgentSession {
             return true;
         }
         tracing::debug!(
-            target: log::DISPATCHER,
+            target: log_lines::DISPATCHER,
             "No tool calls \u{2014} ending agent loop (nudge attempts: {})",
             s.nudge_attempts
         );
@@ -1215,7 +1215,7 @@ impl AgentSession {
             return false;
         }
         tracing::debug!(
-            target: log::DISPATCHER,
+            target: log_lines::DISPATCHER,
             "Skipping code-block nudge \u{2014} this turn already has a passing run after the last edit"
         );
         true
@@ -1228,51 +1228,51 @@ impl AgentSession {
         if lower.contains("<think>") {
             let closed = lower.contains("</think>");
             tracing::debug!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "Model used <think> tags (closed: {})",
                 dotnet_bool(closed)
             );
             if closed {
                 let after = prompts::extract_final_prose(text);
                 tracing::debug!(
-                    target: log::DISPATCHER,
+                    target: log_lines::DISPATCHER,
                     "Content after </think> ({} chars): {}",
                     after.encode_utf16().count(),
-                    log::head(&after, log::PREVIEW_MAX_CHARS)
+                    log_lines::head(&after, log_lines::PREVIEW_MAX_CHARS)
                 );
             } else {
                 tracing::warn!(
-                    target: log::DISPATCHER,
+                    target: log_lines::DISPATCHER,
                     "Model opened <think> but never closed it \u{2014} entire response is reasoning"
                 );
             }
         }
         let parsed = tool_call_parser::parse_tool_calls_from_text(text);
         tracing::debug!(
-            target: log::DISPATCHER,
+            target: log_lines::DISPATCHER,
             "Parsed function calls from text: {}",
             parsed.len()
         );
         if parsed.is_empty() {
             let len = text.chars().count();
             tracing::debug!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "No tool calls found. Full text ({} chars), first 500: {}",
                 text.encode_utf16().count(),
-                log::head(text, log::PREVIEW_MAX_CHARS)
+                log_lines::head(text, log_lines::PREVIEW_MAX_CHARS)
             );
-            if len > log::TAIL_MAX_CHARS {
+            if len > log_lines::TAIL_MAX_CHARS {
                 tracing::debug!(
-                    target: log::DISPATCHER,
+                    target: log_lines::DISPATCHER,
                     "Last {} chars: {}",
-                    log::TAIL_MAX_CHARS,
-                    log::tail(text, log::TAIL_MAX_CHARS)
+                    log_lines::TAIL_MAX_CHARS,
+                    log_lines::tail(text, log_lines::TAIL_MAX_CHARS)
                 );
             }
         }
         for p in &parsed {
             tracing::info!(
-                target: log::DISPATCHER,
+                target: log_lines::DISPATCHER,
                 "Text-parsed tool call: {} args: {}",
                 p.name,
                 parsed_to_call(p).arguments
@@ -1315,7 +1315,7 @@ impl AgentSession {
         {
             Ok(r) => prompts::extract_final_prose(r.text.trim()),
             Err(e) => {
-                tracing::warn!(target: log::LOOP, "Iteration-exhaustion summary request failed: {e}");
+                tracing::warn!(target: log_lines::LOOP, "Iteration-exhaustion summary request failed: {e}");
                 String::new()
             }
         };
@@ -1363,7 +1363,7 @@ impl AgentSession {
         s.stuck_last_fire_count = Some(count);
         let failure = streak.failure.describe();
         tracing::warn!(
-            target: log::LOOP,
+            target: log_lines::LOOP,
             "Stuck probing: {} calls since the last file change, {} still {failure} (strike {})",
             streak.calls,
             streak.failure.key,
@@ -1531,7 +1531,7 @@ impl AgentSession {
             .assess_progress(&self.tool_call_history, start);
         if !verdict.progress {
             tracing::info!(
-                target: log::LOOP,
+                target: log_lines::LOOP,
                 "Iteration budget {} reached without progress: {}",
                 s.iteration_budget,
                 verdict.reason
@@ -1547,7 +1547,7 @@ impl AgentSession {
         s.iteration_budget = hard_cap.min(previous + LongTaskMonitor::EXTENSION_ITERATIONS as i32);
         s.budget_advisory_injected = false;
         tracing::info!(
-            target: log::LOOP,
+            target: log_lines::LOOP,
             "Extending iteration budget {previous} \u{2192} {} (hard cap {hard_cap}): {}",
             s.iteration_budget,
             verdict.reason
