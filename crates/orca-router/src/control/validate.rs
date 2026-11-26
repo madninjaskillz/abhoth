@@ -1051,6 +1051,9 @@ pub fn looks_like_secret(s: &str) -> bool {
 fn inline_secrets(c: &ControlConfig, v: &mut Vec<Issue>) {
     fn walk(path: &str, val: &Value, v: &mut Vec<Issue>) {
         match val {
+            Value::String(s) if s.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\t')) => {
+                v.push(Issue::err(path, "control characters are not allowed in config values"))
+            }
             Value::String(s) if looks_like_secret(s) => v.push(Issue::err(
                 path,
                 "this looks like a key or token; put it in a file or env var and reference it as \"secret:<id>\"",
@@ -1101,4 +1104,4 @@ fn templates(c: &ControlConfig, v: &mut Vec<Issue>) {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

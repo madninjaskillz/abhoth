@@ -12,6 +12,7 @@
 
 pub mod builtins;
 pub mod driver;
+pub mod drivers;
 pub mod exec;
 pub mod hostctl;
 pub mod lifecycle;

@@ -116,8 +116,34 @@ pub fn variables(tpl: &str) -> Result<Vec<String>, TplError> {
         .collect())
 }
 
-/// POSIX shell quoting: a bare word when it is safe, else single quotes.
+/// Prefix of a word that goes into shell text **unquoted** (a `"$(cat /run/…/key)"` the host's
+/// shell expands, so a key never appears in the command text). Only code builds such words,
+/// never config values; [`masked`] shows them as `***`.
+pub const RAW: &str = "\u{1}raw:";
+
+/// A raw word (see [`RAW`]).
+pub fn raw(s: &str) -> String {
+    format!("{RAW}{s}")
+}
+
+/// argv for display and comparison: raw words become `***`.
+pub fn masked(argv: &[String]) -> Vec<String> {
+    argv.iter()
+        .map(|w| {
+            if w.starts_with(RAW) {
+                "***".to_string()
+            } else {
+                w.clone()
+            }
+        })
+        .collect()
+}
+
+/// POSIX shell quoting: a bare word when it is safe, else single quotes. Raw words pass as they are.
 pub fn shell_quote(s: &str) -> String {
+    if let Some(r) = s.strip_prefix(RAW) {
+        return r.to_string();
+    }
     if !s.is_empty()
         && s.bytes()
             .all(|c| c.is_ascii_alphanumeric() || b"-_./:=,@%+".contains(&c))
@@ -240,6 +266,13 @@ mod tests {
             Err(TplError::Unbalanced(_))
         ));
         assert_eq!(variables("{a}-{var:x}{{").unwrap(), vec!["a", "var:x"]);
+    }
+
+    #[test]
+    fn raw_words_are_unquoted_and_masked() {
+        let argv = vec!["--api-key".to_string(), raw("\"$(cat /k)\"")];
+        assert_eq!(argv_to_shell(&argv), "--api-key \"$(cat /k)\"");
+        assert_eq!(masked(&argv), vec!["--api-key", "***"]);
     }
 
     #[test]
