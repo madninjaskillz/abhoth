@@ -984,8 +984,8 @@ mode      = "act"                           # "shadow" during the pusher retirem
 [fan_defaults]                              # inherited by every [fans.*]
 mode         = "device_curve"
 load_gate    = { lo = 52, hi = 64 }         # load counts fully only above 64 °C
-curve        = [[45, 30], [78, 100]]        # mirrors the ESP numbers
-feed_forward = { lo = 20, hi = 90, max_duty = 80 }
+curve        = [[60, 30], [82, 100]]        # mirrors the ESP numbers (live, 2026-11-26)
+feed_forward = { lo = 50, hi = 100, max_duty = 60 }
 min_duty     = 30
 max_temp     = 85                           # ESP Critical Temp
 ramp_down    = "2%/2s"

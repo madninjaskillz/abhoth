@@ -296,9 +296,12 @@ The BMC runs only the CPU fans, in "Optimal" mode.
 [`docs/hardware/esp32-gpu-fans/`](docs/hardware/esp32-gpu-fans/gpu-fans.yaml)):
 
 - **The device runs the curve itself.** Per fan, the target duty is the larger of:
-  - the temperature curve: Min Duty 30 % below 45 °C, a linear ramp to 100 % at 78 °C;
-  - the load feed-forward: Min Duty at or below 20 % load, a linear ramp to FF Max Duty 80 %
-    at 90 % load.
+  - the temperature curve: Min Duty 30 % below 60 °C, a linear ramp to 100 % at 82 °C;
+  - the load feed-forward: Min Duty at or below 50 % load, a linear ramp to FF Max Duty 60 %
+    at 100 % load.
+  (The live numbers as read on 2026-11-26: Curve Low/High 60/82, Min Duty 30, FF Low/High
+  50/100, FF Max Duty 60, Critical 85. The firmware defaults in the YAML differ; the device
+  keeps what was last set.)
 - Critical Temp 85 °C sets 100 %, even in manual mode.
 - Ramp-up is immediate; ramp-down is 2 % per 2 s tick.
 - Each fan goes to **100 % if it has received no temperature for `stale_seconds` = 30 s**,
@@ -486,8 +489,8 @@ both.
 | `temp` | expression → control temperature | `TEMP_SRC=hbm` with fallback to core, EMA 4 s |
 | `load` | expression → load % | `power.draw / enforced limit × 100` |
 | `load_gate` | `{ by = "temp", lo, hi }` scales load to 0 below `lo` | 52 → 64 °C |
-| `curve` | points `[[45, 30], [78, 100]]` (linear between, flat outside) | Curve Low/High, Min Duty |
-| `feed_forward` | `{ lo = 20, hi = 90, max_duty = 80 }`: load → duty floor | FF Low/High Load, FF Max Duty |
+| `curve` | points `[[60, 30], [82, 100]]` (linear between, flat outside) | Curve Low/High 60/82, Min Duty 30 |
+| `feed_forward` | `{ lo = 50, hi = 100, max_duty = 60 }`: load → duty floor | FF Low/High Load 50/100, FF Max Duty 60 |
 | `min_duty` | floor in every mode. It is checked against the limits file, which cannot go below it. | 30 % (ESP Min Duty) |
 | `max_temp` | the **cap**: at or above it the duty is 100 %, whatever the profile or override | 85 °C (ESP Critical Temp) |
 | `ramp_down` | `"2%/2s"`. Ramp-up is always immediate. | ESP: 2 % per 2 s |
@@ -546,11 +549,16 @@ A **profile** may lower the curve, for example a `quiet` profile with `curve = [
 
 **How it is retired:**
 
-1. hostd runs the fan policy in **shadow** for 3 days. It computes what it would send and logs
-   the differences against the pusher, which it reads from the ESP's SSE. It sends nothing.
-2. The pusher is stopped and hostd switches to `act`. Thanks to the device's fail-safe,
+No multi-day shadow or soak period (user decision, 2026-11-26): tests (the parity replay and
+the recorded shadow) plus a short live smoke check, then cut over with the rollback ready.
+
+1. The pusher is stopped and hostd starts in `act`. Thanks to the device's fail-safe,
    nothing can go wrong in between: at worst the fans run at 100 % for 30 s.
-3. After 30 days the POSTINIT script is removed.
+2. A smoke check of about 10 minutes: the ESP receives pushes, duty follows the pusher's
+   behaviour, no fail-safe, temperatures sane. On any doubt: stop hostd, start the pusher.
+3. The old POSTINIT script stays on disk (disabled) for 30 days as the rollback, then goes.
+
+The real safety rails stay: the ESP fail-safe, `max_temp`, the limits file and the probe rule.
 
 ## 6. GPU clocks and power
 
@@ -908,8 +916,8 @@ The keys go in files, never in argv or crontab:
 | Step | When | Effect |
 |---|---|---|
 | 1 | Cutover | Entries `ai-news`, `game-news`, `car-news` created by the importer from cron + the old guards; effects as today (block switch/on-demand, no reservation yet); keys not issued; pipelines still anonymous LAN (ROUTER-CONFIG.md 16, question 6) |
-| 2 | +1 week | Keys issued with `chat` + `use_reserved`; key files written; `env.sh` updated; requests show `event_id` in logs |
-| 3 | +2 weeks | `reserve_card B` turned on for the pipeline entries (`on_reserve = "wait"`); other users' requests go to A during the window |
+| 2 | When ready (no waiting period) | Keys issued with `chat` + `use_reserved`; key files written; `env.sh` updated; requests show `event_id` in logs |
+| 3 | After step 2 works | `reserve_card B` turned on for the pipeline entries (`on_reserve = "wait"`); other users' requests go to A during the window |
 | 4 | +30 days | Anonymous LAN access for the pipelines removed |
 
 ### 9.8 Config
@@ -1366,7 +1374,7 @@ ROUTER-CONFIG.md phase it waits for.
 | SV1 | `orca-sensors`: sources, readings, expression parser and evaluator, EMA/gate/fallbacks, property tests | 1.5 | **Now** |
 | SV2 | `orca-fans`: policy, ESPHome backend (REST push, SSE read, digest auth), fake backend, pusher-parity table tests against recorded `nvidia-smi` traces | 3 | **Now** |
 | SV3 | `orca-gpuctl`: NVML adapter, pin/cap/app clocks/limits, assert, idle state machine, wake sources incl. AF_PACKET sniff | 3 | **Now** |
-| SV4 | `orca-hostd`: daemon, socket protocol, limits file, last-known-good, watchdog, `boot`/`failsafe`, host facts (port of hoststat/bmcstat), journal OOM follower; **shadow mode** for fans | 4 | **Now** (ships standalone; the fan shadow can run on the host before anything else) |
+| SV4 | `orca-hostd`: daemon, socket protocol, limits file, last-known-good, watchdog, `boot`/`failsafe`, host facts (port of hoststat/bmcstat), journal OOM follower; shadow mode for fans (a backend option, not a trial period) | 4 | **Now** (ships standalone and can retire the pusher before anything else) |
 | SV5 | `orca-calendar`: entries, RRULE/cron/iCal, occurrences, lead/tail, detection merge, effects, overlap/priority, event-key scope evaluation (pure) | 3 | **Now** |
 | SV6 | `orca-alerts`: rules, dedupe/grouping, sinks with fakes | 2 | **Now** |
 | SV7 | `orca-homeassistant`: discovery model, legacy id map, LWT, commands, HA REST client; tests against an embedded broker | 2.5 | **Now** |
@@ -1378,7 +1386,7 @@ ROUTER-CONFIG.md phase it waits for.
 | SV13 | Event keys: `abe_` kind in D140 keys (web server side), introspection fields, window checks, scopes, audit, key panel, `secret-put` to host | 2.5 | **Needs** C8 (+ a small change in the D140 key table: coordinate with rc-ui) |
 | SV14 | Admin pages: Fans, Power, Calendar (week grid, edit, preview, key panel), Alerts, Home Assistant | 4 | **Needs** C9 shell |
 | SV15 | Alerts wiring to control-plane events; MQTT commands → orchestrator | 1 | **Needs** C5, C7 |
-| SV16 | Cutovers and retirements: fan pusher (shadow → act), clockctl/gpu-power/boot.sh, ha-bridge (legacy ids), dash (parity week), pipeline keys (9.7); runbooks and rollbacks | 3 | **Needs** SV4, SV9-SV15 |
+| SV16 | Cutovers and retirements: fan pusher, clockctl/gpu-power/boot.sh, ha-bridge (legacy ids), dash (parity check at the switch), pipeline keys (9.7); runbooks and rollbacks | 3 | **Needs** SV4, SV9-SV15 |
 | SV17 | Catalog API: `/supervisor/v1/catalog`, `/v1/models` `abhoth` objects, catalog stream, `[models.X.client]` agent hints, act-as-user for the web server | 2.5 | **Needs** C1, C6, C8 (the schema can be written now) |
 | SV18 | App client: `supervisor` config, Models-tab card, sign-in/connect flow, catalog cache, pickers with warm/cold/loading states and cold UX, source grouping | 3 | **Needs** SV17 and the D140 connect endpoint (touches `orca-core` config and `client/src/features/settings`: coordinate with rc-ui) |
 | SV19 | Profiles feature repointed to plans/switch/jobs; slot client → lease API; images/music via catalog; status strip | 2.5 | **Needs** SV17, C5, C7 |
@@ -1387,8 +1395,8 @@ ROUTER-CONFIG.md phase it waits for.
 
 **Order and parallelism:**
 
-- SV1 → SV2 → SV4 is the fan path. SV4's shadow mode can run on the host weeks before the
-  router cutover and retire the pusher on its own. That is a good first deliverable, because
+- SV1 → SV2 → SV4 is the fan path. SV4 can retire the pusher on its own, before the router
+  cutover, after tests and a short smoke check. That is a good first deliverable, because
   it removes a Python service and proves hostd.
 - SV3 joins SV4 next.
 - SV5-SV8 are independent.
