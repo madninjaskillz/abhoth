@@ -78,6 +78,7 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
         id: st.next_id(),
         client,
         started: Some(Instant::now()),
+        peer: peer.map(|p| p.ip()),
     };
     let method = req.method().clone();
     let path = req.uri().path().to_string();
