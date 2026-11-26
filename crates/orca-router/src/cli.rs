@@ -5,6 +5,9 @@
 //! abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
 //!               [--key-file /run/secrets/ninfer-key] [--base router.json] --out router.json [--watch SECONDS]
 //! abhoth router check --config router.json
+//! abhoth router import --from DIR --out router.toml [--report report.md] [--seed seed.json]
+//!               [--key-delivery file_flag|wrapper|argv] [--enable-on-demand] [--server ID]
+//! abhoth router config-check --config router.toml
 //! ```
 
 use std::path::PathBuf;
@@ -29,6 +32,10 @@ USAGE:
   abhoth router check --config router.json
   abhoth router admin-demo --listen 127.0.0.1:8010 --link-token-file FILE [--accounts-url URL]
                 (the admin API on an in-memory demo host, for the web UI's admin pages)
+  abhoth router import --from DIR --out router.toml [--report report.md] [--seed seed.json]
+                [--key-delivery file_flag|wrapper|argv] [--enable-on-demand] [--server ID]
+                (router.toml for the control plane from a copy of the GPU host's layout files)
+  abhoth router config-check --config router.toml
 ";
 
 fn take(args: &[String], i: &mut usize, flag: &str) -> Result<String> {
@@ -46,6 +53,20 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
             Ok(0)
         }
         Some("import-litellm") => import_cmd(&args[1..]).await,
+        Some("import") => control_import_cmd(&args[1..]),
+        Some("config-check") => {
+            let mut config = None;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--config" => config = Some(take(&args, &mut i, "--config")?),
+                    a => bail!("unknown argument {a}"),
+                }
+                i += 1;
+            }
+            let path = PathBuf::from(config.ok_or_else(|| anyhow!("--config is required"))?);
+            control_check(&path)
+        }
         Some("observe-summary") => {
             let (mut dir, mut date) = (None, None);
             let mut i = 1;
@@ -355,4 +376,79 @@ async fn import_cmd(args: &[String]) -> Result<i32> {
 /// For callers that hold an `Arc<AppState>` already (tests).
 pub fn state_from(cfg: RouterConfig) -> Result<Arc<AppState>, String> {
     Ok(AppState::new(Snapshot::build(cfg, None)?, None))
+}
+
+fn control_import_cmd(args: &[String]) -> Result<i32> {
+    use crate::control::import::{self as ci, KeyChoice, Options, Sources};
+    let (mut from, mut out, mut report, mut seed) = (None, None, None, None);
+    let mut opt = Options::default();
+    let mut key: Option<KeyChoice> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--from" => from = Some(PathBuf::from(take(args, &mut i, "--from")?)),
+            "--out" => out = Some(PathBuf::from(take(args, &mut i, "--out")?)),
+            "--report" => report = Some(PathBuf::from(take(args, &mut i, "--report")?)),
+            "--seed" => seed = Some(PathBuf::from(take(args, &mut i, "--seed")?)),
+            "--server" => opt.server = take(args, &mut i, "--server")?,
+            "--enable-on-demand" => opt.enable_on_demand = true,
+            "--key-delivery" => {
+                key = Some(match take(args, &mut i, "--key-delivery")?.as_str() {
+                    "file_flag" => KeyChoice::FileFlag,
+                    "wrapper" => KeyChoice::Wrapper,
+                    "argv" => KeyChoice::Argv,
+                    k => bail!("--key-delivery {k}: file_flag, wrapper or argv"),
+                })
+            }
+            a => bail!("unknown argument {a}"),
+        }
+        i += 1;
+    }
+    let from = from.ok_or_else(|| anyhow!("--from is required"))?;
+    let out = out.ok_or_else(|| anyhow!("--out is required"))?;
+    // Default: llama-server reads --api-key-file; ninfer has no such flag yet, so its key is
+    // read inside the container by a wrapper.
+    opt.keys.insert("ninfer".into(), key.unwrap_or(KeyChoice::Wrapper));
+    opt.keys.insert("llamacpp".into(), key.unwrap_or(KeyChoice::FileFlag));
+    let src = Sources::from_dir(&from).map_err(|e| anyhow!(e))?;
+    let im = ci::import(&src, &opt).map_err(|e| anyhow!(e))?;
+    std::fs::write(&out, &im.toml).with_context(|| format!("writing {}", out.display()))?;
+    if let Some(r) = &report {
+        std::fs::write(r, ci::report_markdown(&im)).with_context(|| format!("writing {}", r.display()))?;
+    }
+    if let Some(s) = &seed {
+        std::fs::write(s, serde_json::to_string_pretty(&im.seed)?).with_context(|| format!("writing {}", s.display()))?;
+    }
+    let todo = im.report.iter().filter(|r| r.kind == "todo").count();
+    println!(
+        "wrote {}: {} layouts, {} engines, {} routes; {todo} TODOs in the report",
+        out.display(),
+        im.config.layouts.len(),
+        im.config.engines.len(),
+        im.config.routes.len()
+    );
+    control_check(&out)
+}
+
+/// Load and validate a control-plane `router.toml`; exit 1 on errors.
+fn control_check(path: &std::path::Path) -> Result<i32> {
+    use crate::control::{load, validate};
+    let loaded = match load::load(path) {
+        Ok(l) => l,
+        Err(issues) => {
+            for i in issues {
+                eprintln!("{i}");
+            }
+            return Ok(1);
+        }
+    };
+    let issues = validate::validate_loaded(&loaded);
+    for i in &issues {
+        eprintln!("{i}");
+    }
+    if validate::has_errors(&issues) {
+        return Ok(1);
+    }
+    println!("ok: rev {}, {} warnings", loaded.rev, issues.len());
+    Ok(0)
 }

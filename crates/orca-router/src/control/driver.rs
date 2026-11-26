@@ -89,7 +89,7 @@ impl Cmd {
     pub fn text(&self) -> &str {
         match &self.op {
             Op::Command { text, .. } => text,
-            Op::Builtin { .. } => "",
+            Op::Builtin { .. } | Op::Hostd { .. } => "",
         }
     }
 }

@@ -798,6 +798,10 @@ pub struct EngineProfile {
     pub mems: Option<String>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub options: IndexMap<String, Value>,
+    /// Options set to "nothing" (left off the command line, and `null` in the spec label:
+    /// TOML has no null). They override a default the way `false` does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset: Vec<String>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub env: IndexMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -900,6 +904,8 @@ pub struct Model {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Artifact {
+    /// Empty for engines that load no file of their own (Strata).
+    #[serde(default)]
     pub file: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub served_id: Option<String>,
@@ -912,6 +918,9 @@ pub struct Artifact {
     pub restore: Option<Restore>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub options: IndexMap<String, Value>,
+    /// As [`EngineProfile::unset`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<RequestParams>,
     /// Engine profile used when a pick names none.
