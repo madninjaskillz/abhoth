@@ -20,7 +20,7 @@ mod run;
 pub mod wiring;
 
 #[cfg(test)]
-mod fake;
+pub(crate) mod fake;
 #[cfg(test)]
 mod tests;
 
