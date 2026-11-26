@@ -20,6 +20,7 @@ pub mod server;
 pub mod slots;
 pub mod state;
 pub mod status;
+pub mod switch;
 
 /// Per-process services next to the snapshot (slots registry, admission, affinity, on-demand).
 pub struct Extensions {

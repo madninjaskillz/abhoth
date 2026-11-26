@@ -145,6 +145,7 @@ fn calendar_entries_and_card_scope() {
             from: NOW,
             until: NOW + 3600.0,
         },
+        event: Some("comfy-night".into()),
     });
     b.add_guard(cal.clone());
     let a = vec!["A".to_string()];
@@ -196,4 +197,73 @@ fn guard_leases_block_switches() {
     assert!(r[0].blocks_action(Action::Switch));
     assert!(r[0].blocks_action(Action::OnDemand));
     assert!(!r[0].blocks_action(Action::Ensure));
+}
+
+#[test]
+fn event_keys_lift_only_their_own_events_reservations() {
+    let b = board();
+    for id in ["video", "bench", "music"] {
+        b.report(id, NOW, None);
+    }
+    let cal = Arc::new(Calendar::default());
+    let once = When::Once {
+        from: NOW,
+        until: NOW + 3600.0,
+    };
+    cal.entries.lock().unwrap().push(CalendarEntry {
+        id: "demo".into(),
+        reason: "card B reserved for the demo".into(),
+        blocks: vec![Action::Switch, Action::Use],
+        scope: Scope::Cards(vec!["B".into()]),
+        when: once.clone(),
+        event: Some("demo".into()),
+    });
+    cal.entries.lock().unwrap().push(CalendarEntry {
+        id: "other".into(),
+        reason: "another event".into(),
+        blocks: vec![Action::Online],
+        scope: Scope::All,
+        when: once,
+        event: Some("other".into()),
+    });
+    b.add_guard(cal);
+    let bb = vec!["B".to_string()];
+    let t = NOW + 5.0;
+    let anon = Caller::default();
+    assert_eq!(b.check(Action::Use, &bb, &anon, None, t).len(), 1);
+    assert_eq!(b.check(Action::Switch, &bb, &anon, Some("L1"), t).len(), 1);
+    let user = Caller {
+        principal: Some("u1".into()),
+        grants: vec![EventGrant {
+            event: "demo".into(),
+            scopes: vec![
+                EventScope::UseReserved,
+                EventScope::SwitchLayout(Some(vec!["L1".into()])),
+            ],
+        }],
+    };
+    assert!(b.check(Action::Use, &bb, &user, None, t).is_empty());
+    assert!(
+        b.check(Action::Switch, &bb, &user, Some("L1"), t)
+            .is_empty()
+    );
+    assert!(
+        b.check(Action::OnDemand, &bb, &user, Some("L1"), t)
+            .is_empty()
+    );
+    // a layout not on the list, or another event's reservation: still blocked
+    assert_eq!(b.check(Action::Switch, &bb, &user, Some("L2"), t).len(), 1);
+    assert_eq!(b.check(Action::Online, &bb, &user, None, t).len(), 1);
+    // detectors are never lifted by an event key
+    b.report(
+        "video",
+        t,
+        Some("a video pipeline is running (ai-news)".into()),
+    );
+    let x = b.check(Action::OnDemand, &bb, &user, Some("L1"), t + 1.0);
+    assert_eq!(x.len(), 1);
+    assert_eq!(x[0].source, "video");
+    // nor is stale data
+    let y = b.check(Action::OnDemand, &bb, &user, Some("L1"), t + 100.0);
+    assert!(y.len() == 3 && y.iter().all(|b| b.stale));
 }

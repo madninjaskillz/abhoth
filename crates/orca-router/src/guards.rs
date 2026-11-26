@@ -33,6 +33,55 @@ pub enum Action {
     Ensure,
     Offline,
     Online,
+    /// sending requests to a card (a reservation can keep a card for one event's callers)
+    Use,
+}
+
+/// What an event key lets its holder do during its event (SUPERVISOR.md calendar). A grant
+/// only lifts reservations that the same event made; it never lifts detectors (video, bench,
+/// stale data), other events' reservations, excluded cards, thermal limits or the rule that
+/// only chat requests may start a switch (those checks live outside the guard board).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EventScope {
+    /// use the cards the event reserved
+    UseReserved,
+    /// switch layouts during the event; `Some(list)` = only to these layouts
+    SwitchLayout(Option<Vec<String>>),
+    /// bring a card online
+    CardOnline,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventGrant {
+    pub event: String,
+    pub scopes: Vec<EventScope>,
+}
+
+/// Who asks. Anonymous and internal callers have no grants.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Caller {
+    /// user or key id (never the key)
+    pub principal: Option<String>,
+    /// grants of the event keys the request carried, for events active now
+    pub grants: Vec<EventGrant>,
+}
+
+impl Caller {
+    /// Does this caller's grant for `event` lift a reservation blocking `action`?
+    pub fn lifts(&self, event: &str, action: Action, layout: Option<&str>) -> bool {
+        self.grants.iter().filter(|g| g.event == event).any(|g| {
+            g.scopes.iter().any(|s| match (s, action) {
+                (EventScope::UseReserved, Action::Use) => true,
+                (EventScope::CardOnline, Action::Online) => true,
+                (EventScope::SwitchLayout(only), Action::Switch | Action::OnDemand) => match only {
+                    None => true,
+                    Some(list) => layout.is_some_and(|l| list.iter().any(|x| x == l)),
+                },
+                _ => false,
+            })
+        })
+    }
 }
 
 /// Which cards a reservation covers.
@@ -68,6 +117,9 @@ pub struct Reservation {
     pub until: Option<f64>,
     /// `Retry-After` for refused requests.
     pub retry_seconds: u64,
+    /// The calendar event that made it: holders of that event's key may be let through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
 }
 
 impl Reservation {
@@ -151,6 +203,7 @@ impl GuardBoard {
                     scope: det.scope.clone(),
                     until: None,
                     retry_seconds: det.retry_seconds,
+                    event: None,
                 }]
             })
             .unwrap_or_default();
@@ -178,6 +231,19 @@ impl GuardBoard {
     /// What blocks `action` on `cards` (empty = the whole server) at `now`. Stale detectors
     /// block `Switch` / `OnDemand` / `Offline` / `Online` but never `Ensure`.
     pub fn blocks(&self, action: Action, cards: &[String], now: f64) -> Vec<Block> {
+        self.check(action, cards, &Caller::default(), None, now)
+    }
+
+    /// What blocks `caller` doing `action` on `cards` (switching to `layout`, for a switch).
+    /// Reservations of an event the caller holds a fitting grant for are lifted; nothing else.
+    pub fn check(
+        &self,
+        action: Action,
+        cards: &[String],
+        caller: &Caller,
+        layout: Option<&str>,
+        now: f64,
+    ) -> Vec<Block> {
         let mut out = Vec::new();
         for (id, d) in self.detectors.lock().unwrap().iter() {
             let relevant = d.blocks.contains(&action)
@@ -187,7 +253,7 @@ impl GuardBoard {
             }
             let fresh = d.last.as_ref().filter(|(t, _)| now - t <= d.stale_after);
             match fresh {
-                None if action != Action::Ensure => out.push(Block {
+                None if action != Action::Ensure && action != Action::Use => out.push(Block {
                     source: id.clone(),
                     reason: format!(
                         "guard '{id}' has not reported for {} s: waiting",
@@ -214,6 +280,9 @@ impl GuardBoard {
                 if r.until.is_some_and(|u| u <= now)
                     || !r.blocks_action(action)
                     || !r.scope.touches(cards)
+                    || r.event
+                        .as_deref()
+                        .is_some_and(|e| caller.lifts(e, action, layout))
                 {
                     continue;
                 }
@@ -244,6 +313,8 @@ pub struct CalendarEntry {
     pub blocks: Vec<Action>,
     pub scope: Scope,
     pub when: When,
+    /// The event whose key holders it lets through (`None`: nobody, e.g. the quiet window).
+    pub event: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -266,6 +337,7 @@ impl CalendarEntry {
                 start_min: 6 * 60 + 45,
                 end_min: 7 * 60 + 30,
             },
+            event: None,
         }
     }
 
@@ -306,6 +378,7 @@ impl Guard for Calendar {
                     scope: e.scope.clone(),
                     until: Some(until),
                     retry_seconds: 60,
+                    event: e.event.clone(),
                 })
             })
             .collect()
@@ -323,6 +396,7 @@ pub fn lease_reservations(leases: &[crate::leases::GuardLease]) -> Vec<Reservati
             scope: Scope::All,
             until: None,
             retry_seconds: 300,
+            event: None,
         })
         .collect()
 }
