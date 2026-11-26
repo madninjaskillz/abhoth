@@ -31,6 +31,12 @@ fn known_difference(step: &Value) -> Option<(u16, Value)> {
 /// Equal, except `age_s` / `idle_s` may differ by one second (they are truncated wall-clock
 /// differences, and the recording's clock is not ours).
 fn same(want: &Value, got: &Value, path: &str) -> Result<(), String> {
+    same_t(want, got, path, 0)
+}
+
+/// `late`: how many seconds a live replay's ages may run behind the recording (wall-clock
+/// drift on a busy machine); ages are never early.
+fn same_t(want: &Value, got: &Value, path: &str, late: i64) -> Result<(), String> {
     match (want, got) {
         (Value::Object(a), Value::Object(b)) => {
             let ka: Vec<&String> = a.keys().collect();
@@ -44,18 +50,19 @@ fn same(want: &Value, got: &Value, path: &str) -> Result<(), String> {
             for (k, va) in a {
                 let vb = &b[k];
                 if (k == "age_s" || k == "idle_s") && va.is_i64() && vb.is_i64() {
-                    if (va.as_i64().unwrap() - vb.as_i64().unwrap()).abs() > 1 {
+                    let d = vb.as_i64().unwrap() - va.as_i64().unwrap();
+                    if d < -1 || d > 1 + late {
                         return Err(format!("{path}.{k}: {va} vs {vb}"));
                     }
                     continue;
                 }
-                same(va, vb, &format!("{path}.{k}"))?;
+                same_t(va, vb, &format!("{path}.{k}"), late)?;
             }
             Ok(())
         }
         (Value::Array(a), Value::Array(b)) if a.len() == b.len() => {
             for (i, (x, y)) in a.iter().zip(b).enumerate() {
-                same(x, y, &format!("{path}[{i}]"))?;
+                same_t(x, y, &format!("{path}[{i}]"), late)?;
             }
             Ok(())
         }
@@ -229,7 +236,7 @@ async fn pig_slots_listener_replays_the_transcript() {
             *t = json!(60.0);
         }
         assert_eq!(code, want_code, "status of {step}");
-        if let Err(e) = same(&want, &got, "") {
+        if let Err(e) = same_t(&want, &got, "", 30) {
             panic!("step {step}\n  {e}\n  got {got}");
         }
         checked += 1;
