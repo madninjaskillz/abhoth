@@ -73,6 +73,8 @@ pub struct WebUiOptions {
     pub github_clock: Option<Arc<dyn crate::git::github_app::Clock>>,
     /// The bench runner (Benchmarks page); `None` = off.
     pub bench: Option<crate::bench::BenchOptions>,
+    /// The Glance page's live feed and its optional public view; `None` = off.
+    pub glance: Option<crate::glance::GlanceOptions>,
     /// Set when the server backs the desktop window (`abhoth --desktop`, D110).
     pub desktop: Option<DesktopHooks>,
 }
@@ -121,6 +123,7 @@ impl WebUiOptions {
             github_app: None,
             github_clock: None,
             bench: None,
+            glance: None,
             desktop: None,
         }
     }
@@ -139,6 +142,8 @@ pub struct AppState {
     pub profiles: Option<Arc<orca_core::profiles::ProfileService>>,
     pub bench: Option<Arc<crate::bench::BenchRunner>>,
     pub bench_queue: Option<Arc<crate::bench::BenchQueue>>,
+    /// The Glance feeds (SUPERVISOR.md 12); `None` = off.
+    pub glance: Option<Arc<crate::glance::Glance>>,
     pub http: reqwest::Client,
     pub clones: crate::projects::clone::CloneService,
     /// The GitHub sign-in ("Clone from GitHub").
@@ -254,6 +259,7 @@ impl WebUiServer {
         let bench_queue = bench.as_ref().map(|b| {
             crate::bench::BenchQueue::new(b.clone(), b.options.dir.clone(), profiles.clone(), true)
         });
+        let glance = options.glance.clone().map(crate::glance::Glance::new);
         let clones = crate::projects::clone::CloneService::new(projects.clone());
         let github_app = {
             use crate::git::github_app::{GitHubAccountStore, GitHubAppConfig, GitHubAppService};
@@ -285,11 +291,38 @@ impl WebUiServer {
             profiles,
             bench,
             bench_queue,
+            glance,
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(30))
                 .build()
                 .unwrap_or_default(),
         });
+        if let Some(g) = &state.glance {
+            g.start(state.http.clone())
+                .map_err(StartError::BadOptions)?;
+            if let (Some(p), Some(feed)) = (&g.options.public, g.public_feed()) {
+                let dir = state.options.client_dir.clone();
+                let files: crate::glance::public::ClientFiles =
+                    Arc::new(move |rel: &str| client_file_in(dir.as_deref(), rel));
+                let r = crate::glance::public::router(
+                    feed,
+                    p.clone(),
+                    g.options.ping,
+                    files,
+                    state.options.login.trusted_proxies.clone(),
+                );
+                let (task, bound) =
+                    crate::glance::public::serve(r, &p.listen)
+                        .await
+                        .map_err(|e| {
+                            g.stop();
+                            StartError::BadOptions(e)
+                        })?;
+                tracing::info!("public Glance on http://{bound}/");
+                g.set_public_addr(bound);
+                g.add_task(task);
+            }
+        }
         let app = router(state.clone());
 
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
@@ -369,6 +402,9 @@ impl WebUiServer {
                 abort.abort();
             }
         }
+        if let Some(g) = &self.state.glance {
+            g.stop();
+        }
         if let Some(q) = &self.state.bench_queue {
             q.stop().await;
         }
@@ -388,6 +424,9 @@ impl Drop for WebUiServer {
         }
         if let Some(task) = self.task.take() {
             task.abort();
+        }
+        if let Some(g) = &self.state.glance {
+            g.stop();
         }
     }
 }
@@ -411,6 +450,9 @@ fn router(state: Arc<AppState>) -> Router {
     }
     if state.bench.is_some() {
         api = api.merge(crate::bench::endpoints::routes());
+    }
+    if state.glance.is_some() {
+        api = api.merge(crate::glance::endpoints::routes());
     }
     api.merge(crate::login::routes())
         .merge(crate::router_admin::routes())
@@ -463,6 +505,7 @@ async fn info(
         "bench": state.bench.is_some(),
         "profiles": state.options.profiles_url.is_some(),
         "router": admin && state.options.router.is_some(),
+        "glance": state.glance.is_some(),
         // The React client picks its hub transport from this (absent: the C# SignalR hub).
         "hub": "ws",
     });
@@ -496,10 +539,15 @@ async fn hub_socket(
 
 /// A file of the client build, from the override folder or the embedded copy.
 fn client_file(state: &AppState, rel: &str) -> Option<Vec<u8>> {
+    client_file_in(state.options.client_dir.as_deref(), rel)
+}
+
+/// [`client_file`] for a given override folder (the public Glance listener reads it too).
+pub(crate) fn client_file_in(client_dir: Option<&std::path::Path>, rel: &str) -> Option<Vec<u8>> {
     if rel.split('/').any(|p| p == ".." || p.is_empty()) && !rel.is_empty() {
         return None;
     }
-    match &state.options.client_dir {
+    match client_dir {
         Some(dir) => {
             let p = dir.join(rel);
             p.is_file().then(|| std::fs::read(p).ok()).flatten()

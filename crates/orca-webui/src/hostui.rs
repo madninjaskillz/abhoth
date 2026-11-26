@@ -118,6 +118,17 @@ pub struct HostUiArgs {
     pub bench_dir: Option<PathBuf>,
     pub bench_kit: Option<String>,
     pub bench_power: Option<String>,
+    /// `--hostui-glance=<url or file>`: the Glance page's feed (SUPERVISOR.md 12), a URL that
+    /// answers the full state or a recorded JSON-lines fixture. Off without it.
+    pub glance: Option<String>,
+    /// `--hostui-glance-public=<host:port>`: the redacted public view on its own listener.
+    pub glance_public: Option<String>,
+    /// `--hostui-glance-redact=<list>`: what the public view drops (default: requests, oom,
+    /// containers, errors).
+    pub glance_redact: Option<String>,
+    /// `--hostui-glance-control=<url>`: the control plane for the card buttons (default: the
+    /// profiles API).
+    pub glance_control: Option<String>,
 }
 
 fn openorca_home() -> PathBuf {
@@ -244,7 +255,49 @@ impl HostUiArgs {
             }),
             bench_kit: value(args, "--hostui-bench-kit"),
             bench_power: value(args, "--hostui-bench-power"),
+            glance: value(args, "--hostui-glance").filter(|v| !v.is_empty()),
+            glance_public: value(args, "--hostui-glance-public").filter(|v| !v.is_empty()),
+            glance_redact: value(args, "--hostui-glance-redact"),
+            glance_control: value(args, "--hostui-glance-control").filter(|v| !v.is_empty()),
         })
+        .map(|mut a| {
+            if let Err(e) = a.glance_options() {
+                a.error.get_or_insert(e);
+            }
+            a
+        })
+    }
+
+    /// The Glance options these flags ask for; `None` when the page is off.
+    pub fn glance_options(&self) -> Result<Option<crate::glance::GlanceOptions>, String> {
+        let Some(src) = &self.glance else {
+            if self.glance_public.is_some()
+                || self.glance_redact.is_some()
+                || self.glance_control.is_some()
+            {
+                return Err(
+                    "--hostui-glance-public, -redact and -control need --hostui-glance=<feed>."
+                        .into(),
+                );
+            }
+            return Ok(None);
+        };
+        let mut o = crate::glance::GlanceOptions::new(crate::glance::GlanceSource::parse(src));
+        o.control_url = self.glance_control.clone();
+        if let Some(listen) = &self.glance_public {
+            listen.parse::<std::net::SocketAddr>().map_err(|_| {
+                format!("--hostui-glance-public: '{listen}' is not host:port (e.g. 0.0.0.0:8077).")
+            })?;
+            let mut p = crate::glance::PublicOptions::new(listen.clone());
+            if let Some(r) = &self.glance_redact {
+                p.redaction = crate::glance::Redaction::parse(r)
+                    .map_err(|e| format!("--hostui-glance-redact: {e}"))?;
+            }
+            o.public = Some(p);
+        } else if self.glance_redact.is_some() {
+            return Err("--hostui-glance-redact needs --hostui-glance-public.".into());
+        }
+        Ok(Some(o))
     }
 }
 
@@ -361,5 +414,53 @@ mod tests {
         assert_eq!(a.bench_kit.as_deref(), Some("/k"));
         let a = parse(&["--hostui", "--hostui-bench"]).unwrap();
         assert!(a.bench_dir.unwrap().ends_with("bench"));
+    }
+
+    #[test]
+    fn glance_flags() {
+        let a = parse(&["--hostui"]).unwrap();
+        assert!(a.glance_options().unwrap().is_none(), "off by default");
+        let a = parse(&["--hostui", "--hostui-glance=http://h:1/api/state"]).unwrap();
+        let o = a.glance_options().unwrap().unwrap();
+        assert!(o.public.is_none(), "no public view unless asked");
+        assert!(matches!(o.source, crate::glance::GlanceSource::Poll(_)));
+        let a = parse(&[
+            "--hostui",
+            "--hostui-glance=/f.jsonl",
+            "--hostui-glance-public=0.0.0.0:8077",
+            "--hostui-glance-redact=requests,errors",
+        ])
+        .unwrap();
+        assert!(a.error.is_none());
+        let p = a.glance_options().unwrap().unwrap().public.unwrap();
+        assert_eq!(p.listen, "0.0.0.0:8077");
+        assert!(p.redaction.requests && p.redaction.errors && !p.redaction.containers);
+        assert!(
+            parse(&["--hostui", "--hostui-glance-public=0.0.0.0:8077"])
+                .unwrap()
+                .error
+                .is_some()
+        );
+        assert!(
+            parse(&[
+                "--hostui",
+                "--hostui-glance=/f",
+                "--hostui-glance-public=nope"
+            ])
+            .unwrap()
+            .error
+            .is_some()
+        );
+        assert!(
+            parse(&[
+                "--hostui",
+                "--hostui-glance=/f",
+                "--hostui-glance-public=0.0.0.0:1",
+                "--hostui-glance-redact=x"
+            ])
+            .unwrap()
+            .error
+            .is_some()
+        );
     }
 }

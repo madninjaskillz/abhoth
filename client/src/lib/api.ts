@@ -220,6 +220,8 @@ export interface ServerInfo {
   profiles?: boolean;
   /** Admins: an `abhoth router` control plane is linked (the router tabs in the settings). */
   router?: boolean;
+  /** The supervisor's live feed is configured: the Glance page (SUPERVISOR.md 12). */
+  glance?: boolean;
   /** Served to the desktop window (`abhoth --desktop`): native folder dialog available. */
   desktop?: boolean;
 }

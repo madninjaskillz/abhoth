@@ -401,6 +401,8 @@ pub async fn run_with(
     if let Some(dir) = &args.bench_dir {
         options.bench = Some(bench_options(dir, &args, &config, others.clone()));
     }
+    // --hostui-glance: the Glance page (SUPERVISOR.md 12); parse() already checked the flags.
+    options.glance = args.glance_options().ok().flatten();
     // The desktop app makes its own local admin on the first start (D142).
     options.login.local_admin = hooks.is_some();
     options.desktop = hooks;

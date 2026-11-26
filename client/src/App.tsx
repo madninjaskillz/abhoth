@@ -9,9 +9,10 @@ import { DRAG_MIN } from "@/lib/titleRow";
 import { ResizeStrip, WindowControls, onTitleRowPress } from "@/components/TitleBar";
 import { Mascot, MascotBadge } from "@/components/Mascot";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { FlaskConical, FolderGit2, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
+import { FlaskConical, FolderGit2, Gauge, FolderTree, MessagesSquare, Plus, SquareTerminal, X } from "lucide-react";
 import { BenchPage, BenchStatusPill, benchStatus } from "@/features/bench/BenchPage";
 import { ServerLayoutControl } from "@/features/profiles/Profiles";
+import { GlancePage } from "@/pages/supervisor/glance/GlancePage";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EditorArea } from "@/features/editor/EditorArea";
 import { FileTree } from "@/features/files/FileTree";
@@ -53,6 +54,8 @@ export default function App() {
   const info = useQuery({ queryKey: ["info"], queryFn: api.info, staleTime: 60000 });
   // "#bench" in the URL opens the Benchmarks page (a link to the results).
   const [benchOpen, setBenchOpen] = useState(() => location.hash === "#bench");
+  // "#glance": the GPU host's live dashboard (SUPERVISOR.md 12), when the feed is configured.
+  const [glanceOpen, setGlanceOpen] = useState(() => location.hash === "#glance");
   const active = useWorkspace((s) => s.active);
   const mounted = useWorkspace((s) => s.mounted);
   const setActive = useWorkspace((s) => s.setActive);
@@ -93,8 +96,14 @@ export default function App() {
         narrow={narrow}
         bench={info.data?.bench && isAdmin() ? { open: benchOpen, toggle: () => setBenchOpen((b) => !b) } : null}
         profilesOn={!!info.data?.profiles && isAdmin()}
+        glance={info.data?.glance ? { open: glanceOpen, toggle: () => setGlanceOpen((g) => !g) } : null}
       />
       <div className="relative min-h-0 flex-1">
+        {glanceOpen && info.data?.glance && (
+          <div className="absolute inset-0 z-20 bg-background">
+            <GlancePage streamUrl="/api/glance/stream" admin={isAdmin()} onClose={() => setGlanceOpen(false)} />
+          </div>
+        )}
         {benchOpen && (
           <div className="absolute inset-0 z-10 bg-background">
             <BenchPage
@@ -215,6 +224,7 @@ function Header({
   narrow,
   bench,
   profilesOn,
+  glance,
 }: {
   projects: Project[];
   canAdd: boolean;
@@ -222,6 +232,8 @@ function Header({
   bench: { open: boolean; toggle: () => void } | null;
   /** The inference server's profiles API is there: show the live server layout. */
   profilesOn: boolean;
+  /** The Glance page's toggle (the supervisor feed is configured). */
+  glance: { open: boolean; toggle: () => void } | null;
 }) {
   const qc = useQueryClient();
   // The desktop app's frameless window (D144): this header is the title row, Chrome-style: the
@@ -445,6 +457,29 @@ function Header({
           </div>
         )}
         {profilesOn && <ServerLayoutControl narrow={narrow} menu={collapsed} />}
+        {glance &&
+          (collapsed ? (
+            <button role="menuitemcheckbox" aria-checked={glance.open} onClick={glance.toggle} className={menuRow} data-testid="glance-toggle">
+              <Gauge className="size-4 shrink-0 text-muted-foreground" />
+              <span>Glance</span>
+              {glance.open && <Check className="ml-auto size-4 text-primary" aria-hidden />}
+            </button>
+          ) : (
+            <Tip label="Glance: the GPU host live">
+              <button
+                onClick={glance.toggle}
+                className={cn(
+                  "flex shrink-0 items-center gap-1 self-center rounded-md px-2 py-1 text-xs hover:bg-accent",
+                  glance.open ? "bg-accent text-foreground" : "text-muted-foreground",
+                )}
+                data-testid="glance-toggle"
+                aria-pressed={glance.open}
+              >
+                <Gauge className="size-4" />
+                {!narrow && <span>Glance</span>}
+              </button>
+            </Tip>
+          ))}
         {bench &&
           (collapsed ? (
             <button role="menuitemcheckbox" aria-checked={bench.open} onClick={bench.toggle} className={menuRow} data-testid="bench-toggle">

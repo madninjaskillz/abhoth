@@ -725,6 +725,8 @@ pub fn admin_only(path: &str, method: &Method) -> bool {
         || seg(path, "/api/bench")
         || seg(path, "/api/github/app")
         || seg(path, "/api/desktop")
+        // Glance: reading is for everyone signed in; card online/offline is for admins.
+        || (method != Method::GET && seg(path, "/api/glance"))
         // A project's settings are saved to the shared config.json.
         || project_of(path).is_some_and(|pid| path == format!("/api/projects/{pid}/settings"))
         || (method != Method::GET
@@ -1055,6 +1057,8 @@ mod tests {
         assert!(admin_only("/api/projects/abc/settings", &Method::PUT));
         assert!(!admin_only("/api/projects/abc/file", &Method::PUT));
         assert!(!admin_only("/api/settingsx", &Method::GET));
+        assert!(admin_only("/api/glance/cards/A/offline", &Method::POST));
+        assert!(!admin_only("/api/glance/stream", &Method::GET));
         assert_eq!(project_of("/api/projects/abc/file"), Some("abc"));
         assert_eq!(project_of("/api/projects/abc"), Some("abc"));
         assert_eq!(project_of("/api/projects/clone"), None);

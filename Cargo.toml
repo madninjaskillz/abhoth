@@ -60,6 +60,7 @@ orca-testkit = { path = "crates/orca-testkit" }
 orca-webui = { path = "crates/orca-webui" }
 orca-router = { path = "crates/orca-router" }
 orca-sensors = { path = "crates/orca-sensors" }
+orca-supervisor = { path = "crates/orca-supervisor" }
 orca-fans = { path = "crates/orca-fans" }
 orca-gpuctl = { path = "crates/orca-gpuctl" }
 

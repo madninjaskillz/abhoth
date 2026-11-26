@@ -13,10 +13,16 @@ export default defineConfig({
     sourcemap: false,
     chunkSizeWarningLimit: 4096,
     rollupOptions: {
+      // glance.html: the public Glance page's own bundle (SUPERVISOR.md 12.1).
+      input: { main: path.resolve(__dirname, "index.html"), glance: path.resolve(__dirname, "glance.html") },
       output: {
-        manualChunks: {
-          monaco: ["monaco-editor/esm/vs/editor/editor.api"],
-          xterm: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-webgl"],
+        // By path, so shared helpers stay out of these chunks (the Glance page loads neither).
+        manualChunks(id) {
+          // Monaco's core; its languages stay lazy chunks of their own.
+          if (id.includes("/node_modules/monaco-editor/") && !/\/(basic-languages|language)\//.test(id)) return "monaco";
+          if (id.includes("/node_modules/@xterm/")) return "xterm";
+          if (id.includes("commonjsHelpers")) return "cjs";
+          return undefined;
         },
       },
     },
@@ -24,6 +30,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": { target: "http://127.0.0.1:8192", ws: true, headers: { "X-OpenOrca-Token": "dev-token-1" } },
+      "/public": { target: "http://127.0.0.1:8192" },
       "/hub": { target: "http://127.0.0.1:8192", ws: true, headers: { "X-OpenOrca-Token": "dev-token-1" } },
     },
   },

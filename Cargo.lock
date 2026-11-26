@@ -3092,6 +3092,8 @@ dependencies = [
  "orca-abstractions",
  "orca-core",
  "orca-router",
+ "orca-sensors",
+ "orca-supervisor",
  "orca-testkit",
  "orca-tools-fs",
  "orca-tools-utility",
