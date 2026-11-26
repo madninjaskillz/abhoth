@@ -363,11 +363,13 @@ impl Engine {
                 a.last_sent = Some(at);
                 let n = self.notify(&rule, &a, kind, at);
                 match (&a.cause, kind) {
-                    (Some(c), NotifyKind::Firing) if self.group_window > 0 => self.queue.push(Queued {
-                        n,
-                        cause: c.clone(),
-                        ready_at: at + self.group_window,
-                    }),
+                    (Some(c), NotifyKind::Firing) if self.group_window > 0 => {
+                        self.queue.push(Queued {
+                            n,
+                            cause: c.clone(),
+                            ready_at: at + self.group_window,
+                        })
+                    }
                     _ => out.push(n),
                 }
             }
@@ -385,7 +387,9 @@ impl Engine {
         // Event alerts close themselves after cooldown (no resolve message: nothing to clear).
         let mut changed = Vec::new();
         for a in self.alerts.values_mut() {
-            let Some(rule) = self.rules.get(&a.rule) else { continue };
+            let Some(rule) = self.rules.get(&a.rule) else {
+                continue;
+            };
             if a.event && a.state == AlertState::Open && now - a.last >= rule.cooldown {
                 a.state = AlertState::Resolved;
                 a.resolved_at = Some(now);

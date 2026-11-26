@@ -46,7 +46,13 @@ pub struct Live {
 
 impl Live {
     /// A reading for `entry` taken at `at`. Readings older than the last one are ignored.
-    pub fn report(&mut self, entry: &str, at: i64, present: bool, detail: Option<String>) -> Option<Change> {
+    pub fn report(
+        &mut self,
+        entry: &str,
+        at: i64,
+        present: bool,
+        detail: Option<String>,
+    ) -> Option<Change> {
         if self.last_report.get(entry).is_some_and(|t| *t > at) {
             return None;
         }

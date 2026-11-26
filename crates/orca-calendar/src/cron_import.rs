@@ -58,13 +58,22 @@ fn slug(s: &str) -> String {
 pub fn schedule_line(s: &Value) -> Option<String> {
     let f = |k: &str| s.get(k).and_then(Value::as_str).unwrap_or("*").to_string();
     s.as_object()?;
-    Some(format!("{} {} {} {} {}", f("minute"), f("hour"), f("dom"), f("month"), f("dow")))
+    Some(format!(
+        "{} {} {} {} {}",
+        f("minute"),
+        f("hour"),
+        f("dom"),
+        f("month"),
+        f("dow")
+    ))
 }
 
 /// The server the pipeline entries block (`server:<name>`).
 pub fn import(jobs: &Value, server: &str, owner: &str) -> Vec<Imported> {
     let mut out = Vec::new();
-    let Some(list) = jobs.as_array() else { return out };
+    let Some(list) = jobs.as_array() else {
+        return out;
+    };
     for j in list {
         let id = j.get("id").and_then(Value::as_i64).unwrap_or(0);
         let enabled = j.get("enabled").and_then(Value::as_bool).unwrap_or(true);
@@ -87,7 +96,11 @@ pub fn import(jobs: &Value, server: &str, owner: &str) -> Vec<Imported> {
             .take(3)
             .any(|a| a.rsplit('/').next() == Some("run_daily.sh"));
         let base = EntryConfig {
-            title: if desc.is_empty() { format!("cron job {id}") } else { desc.clone() },
+            title: if desc.is_empty() {
+                format!("cron job {id}")
+            } else {
+                desc.clone()
+            },
             owner: Some(owner.to_string()),
             at: None,
             rrule: None,
@@ -112,7 +125,8 @@ pub fn import(jobs: &Value, server: &str, owner: &str) -> Vec<Imported> {
             let channel = word_after(&argv, "--channel").unwrap_or_else(|| "ai-news".into());
             let after = word_after(&argv, "--after").or_else(|| {
                 // `--wait-lock` without `--after`: it queues behind AI News on the run lock.
-                (argv.contains(&"--wait-lock") && channel != "ai-news").then(|| "ai-news".to_string())
+                (argv.contains(&"--wait-lock") && channel != "ai-news")
+                    .then(|| "ai-news".to_string())
             });
             let srv = format!("server:{server}");
             let mut e = base;
@@ -139,7 +153,10 @@ pub fn import(jobs: &Value, server: &str, owner: &str) -> Vec<Imported> {
                 ..Default::default()
             });
             e.after = after;
-            e.effects = vec![json!({"block_switch": srv}), json!({"block_on_demand": srv})];
+            e.effects = vec![
+                json!({"block_switch": srv}),
+                json!({"block_on_demand": srv}),
+            ];
             e.key = Some(KeyPolicy::default());
             out.push(Imported {
                 id: channel,

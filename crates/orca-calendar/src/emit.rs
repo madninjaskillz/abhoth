@@ -22,7 +22,10 @@ fn quote(s: &str) -> String {
 }
 
 fn bare_key(k: &str) -> String {
-    if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !k.is_empty()
+        && k.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         k.to_string()
     } else {
         quote(k)
@@ -55,7 +58,9 @@ pub fn inline(v: &Value) -> String {
 /// One entry as `[calendar.entries.<id>]` (+ `.key`).
 pub fn entry(id: &str, e: &EntryConfig) -> String {
     let v = serde_json::to_value(e).unwrap_or(Value::Null);
-    let Value::Object(mut o) = v else { return String::new() };
+    let Value::Object(mut o) = v else {
+        return String::new();
+    };
     let key = o.remove("key");
     let mut out = format!("[calendar.entries.{}]\n", bare_key(id));
     for (k, val) in &o {
@@ -80,7 +85,10 @@ pub fn entry(id: &str, e: &EntryConfig) -> String {
 }
 
 /// Several entries, separated by blank lines, under an optional header comment.
-pub fn entries<'a>(header: &str, list: impl IntoIterator<Item = (&'a String, &'a EntryConfig)>) -> String {
+pub fn entries<'a>(
+    header: &str,
+    list: impl IntoIterator<Item = (&'a String, &'a EntryConfig)>,
+) -> String {
     let mut out = String::new();
     for l in header.lines() {
         out.push_str(&format!("# {l}\n"));

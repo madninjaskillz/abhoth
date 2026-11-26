@@ -87,10 +87,16 @@ pub struct NowState {
 
 /// The most conservative claim: highest `rank` (cooling beats quiet: the higher fan duty, the
 /// higher clock cap). Unknown profiles rank first so nothing unknown can lower cooling.
-pub fn conservative<'a>(claims: &'a [ProfileClaim], rank: impl Fn(&str) -> Option<i64>) -> Option<&'a ProfileClaim> {
-    claims
-        .iter()
-        .max_by_key(|c| (rank(&c.profile).unwrap_or(i64::MAX), std::cmp::Reverse(c.entry.clone())))
+pub fn conservative(
+    claims: &[ProfileClaim],
+    rank: impl Fn(&str) -> Option<i64>,
+) -> Option<&ProfileClaim> {
+    claims.iter().max_by_key(|c| {
+        (
+            rank(&c.profile).unwrap_or(i64::MAX),
+            std::cmp::Reverse(c.entry.clone()),
+        )
+    })
 }
 
 fn hhmm(cal: &Calendar, t: i64) -> String {
@@ -112,7 +118,9 @@ impl Calendar {
         // Card holders first (8.4): priority, then the earlier start, then the id.
         let mut claims: BTreeMap<String, Vec<(&Occurrence, OnReserve, i64)>> = BTreeMap::new();
         for o in &active {
-            let Some(e) = self.entries.get(&o.entry) else { continue };
+            let Some(e) = self.entries.get(&o.entry) else {
+                continue;
+            };
             for eff in &e.effects {
                 if let Effect::ReserveCard {
                     card,
@@ -120,7 +128,10 @@ impl Calendar {
                     preempt_after,
                 } = eff
                 {
-                    claims.entry(card.clone()).or_default().push((o, *on_reserve, *preempt_after));
+                    claims
+                        .entry(card.clone())
+                        .or_default()
+                        .push((o, *on_reserve, *preempt_after));
                 }
             }
         }
@@ -148,7 +159,9 @@ impl Calendar {
             );
         }
         for o in &active {
-            let Some(e) = self.entries.get(&o.entry) else { continue };
+            let Some(e) = self.entries.get(&o.entry) else {
+                continue;
+            };
             let until = o.block_end;
             let why = |what: &str| format!("{what}: {} until ~{}", e.cfg.title, hhmm(self, until));
             let block = |action, target: &Target, reason: String| CalBlock {
@@ -165,24 +178,28 @@ impl Calendar {
             for eff in &e.effects {
                 match eff {
                     Effect::BlockSwitch { target } => {
-                        st.blocks.push(block(BlockAction::Switch, target, why("no switches")))
+                        st.blocks
+                            .push(block(BlockAction::Switch, target, why("no switches")))
                     }
                     Effect::BlockOnDemand { target } => st.blocks.push(block(
                         BlockAction::OnDemand,
                         target,
                         why("no on-demand switches"),
                     )),
-                    Effect::BlockEnsure { target } => st.blocks.push(block(
-                        BlockAction::Ensure,
-                        target,
-                        why("no engine starts"),
-                    )),
+                    Effect::BlockEnsure { target } => {
+                        st.blocks
+                            .push(block(BlockAction::Ensure, target, why("no engine starts")))
+                    }
                     Effect::ReserveCard { card, .. } => {
                         if let Some(h) = st.holders.get(card).filter(|h| h.occurrence == o.id) {
                             let mut b = block(
                                 BlockAction::Use,
                                 &Target::Card(card.clone()),
-                                format!("card {card} reserved by {} until ~{}", o.entry, hhmm(self, until)),
+                                format!(
+                                    "card {card} reserved by {} until ~{}",
+                                    o.entry,
+                                    hhmm(self, until)
+                                ),
                             );
                             b.on_reserve = Some(h.on_reserve);
                             b.preempt_after = preempt.get(card).copied();
@@ -195,7 +212,9 @@ impl Calendar {
                         n: *n,
                         until,
                     }),
-                    Effect::HoldClocks { target } => st.holds.push((target.clone(), o.entry.clone(), until)),
+                    Effect::HoldClocks { target } => {
+                        st.holds.push((target.clone(), o.entry.clone(), until))
+                    }
                     Effect::ClockProfile { profile, target } => st
                         .clock_profiles
                         .entry(target.text())
@@ -214,7 +233,9 @@ impl Calendar {
                             profile: profile.clone(),
                             until,
                         }),
-                    Effect::MuteAlerts { rules } => st.mutes.push((rules.clone(), o.entry.clone(), until)),
+                    Effect::MuteAlerts { rules } => {
+                        st.mutes.push((rules.clone(), o.entry.clone(), until))
+                    }
                     Effect::Info => {}
                 }
             }
@@ -227,7 +248,9 @@ impl Calendar {
     /// with `overrides_lower` the active events of strictly lower priority (9.3).
     pub fn liftable(&self, event: &str, st: &NowState) -> Vec<String> {
         let mut out = vec![event.to_string()];
-        let Some(e) = self.entries.get(event) else { return out };
+        let Some(e) = self.entries.get(event) else {
+            return out;
+        };
         if !e.key.as_ref().is_some_and(|k| k.overrides_lower) {
             return out;
         }
@@ -277,7 +300,10 @@ impl Calendar {
                 continue;
             }
             for b in &occ[i + 1..] {
-                if a.entry == b.entry || b.block_start >= a.block_end || a.block_start >= b.block_end {
+                if a.entry == b.entry
+                    || b.block_start >= a.block_end
+                    || a.block_start >= b.block_end
+                {
                     continue;
                 }
                 for c in cards(b).into_iter().filter(|c| ca.contains(c)) {

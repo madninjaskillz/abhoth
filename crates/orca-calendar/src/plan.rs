@@ -103,10 +103,19 @@ const LOOKBACK: i64 = 2 * 86_400;
 
 impl Calendar {
     /// Every occurrence whose blocked window meets `[from, to)`, sorted by `block_start`.
-    pub fn occurrences(&self, from: i64, to: i64, live: &Live, ov: &Overrides, now: i64) -> Vec<Occurrence> {
+    pub fn occurrences(
+        &self,
+        from: i64,
+        to: i64,
+        live: &Live,
+        ov: &Overrides,
+        now: i64,
+    ) -> Vec<Occurrence> {
         let mut by_entry: BTreeMap<String, Vec<Occurrence>> = BTreeMap::new();
         for id in self.order() {
-            let Some(e) = self.entries.get(id) else { continue };
+            let Some(e) = self.entries.get(id) else {
+                continue;
+            };
             if !e.cfg.enabled || e.frequent_info() {
                 continue;
             }
@@ -119,7 +128,11 @@ impl Calendar {
             .flatten()
             .filter(|o| o.block_end > from && o.block_start < to)
             .collect();
-        out.sort_by(|a, b| a.block_start.cmp(&b.block_start).then(a.entry.cmp(&b.entry)));
+        out.sort_by(|a, b| {
+            a.block_start
+                .cmp(&b.block_start)
+                .then(a.entry.cmp(&b.entry))
+        });
         out
     }
 
@@ -147,7 +160,12 @@ impl Calendar {
                 // The predecessor's occurrence that began in the day before (or at) this one.
                 if let Some(p) = ps
                     .iter()
-                    .filter(|p| !p.skipped && !p.unplanned && p.nominal <= nominal && p.nominal > nominal - 86_400)
+                    .filter(|p| {
+                        !p.skipped
+                            && !p.unplanned
+                            && p.nominal <= nominal
+                            && p.nominal > nominal - 86_400
+                    })
                     .max_by_key(|p| p.nominal)
                 {
                     start = start.max(p.work_end(live, now));
@@ -182,7 +200,9 @@ impl Calendar {
                 let rend = live.run_end(r, now);
                 let hit = planned
                     .iter_mut()
-                    .filter(|o| !o.skipped && r.start < o.block_end && rend + e.grace > o.block_start)
+                    .filter(|o| {
+                        !o.skipped && r.start < o.block_end && rend + e.grace > o.block_start
+                    })
                     .min_by_key(|o| (o.block_start - r.start).abs());
                 match hit {
                     Some(o) => {
@@ -233,7 +253,14 @@ impl Calendar {
     }
 
     /// The next `n` occurrences of one entry from `now` (the edit preview).
-    pub fn next_of(&self, entry: &str, now: i64, n: usize, live: &Live, ov: &Overrides) -> Vec<Occurrence> {
+    pub fn next_of(
+        &self,
+        entry: &str,
+        now: i64,
+        n: usize,
+        live: &Live,
+        ov: &Overrides,
+    ) -> Vec<Occurrence> {
         let mut horizon = 14 * 86_400;
         loop {
             let v: Vec<Occurrence> = self

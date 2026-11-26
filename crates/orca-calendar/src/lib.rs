@@ -102,7 +102,11 @@ pub struct Calendar {
 impl Calendar {
     /// Compile `[calendar]`. `default_tz` is `router.timezone`. Entries with errors are left
     /// out; every problem is returned.
-    pub fn compile(cfg: &CalendarConfig, default_tz: &str, safety: &Safety) -> (Calendar, Vec<Issue>) {
+    pub fn compile(
+        cfg: &CalendarConfig,
+        default_tz: &str,
+        safety: &Safety,
+    ) -> (Calendar, Vec<Issue>) {
         let mut issues = Vec::new();
         let tz_name = cfg.timezone.as_deref().unwrap_or(default_tz);
         let tz = entry::parse_tz(tz_name).unwrap_or_else(|e| {
@@ -188,12 +192,19 @@ impl Calendar {
                 if safety.excluded_cards.contains(&c) {
                     issues.push(Issue::error(
                         &at("effects"),
-                        format!("card {c} is excluded from the control plane; no event may name it"),
+                        format!(
+                            "card {c} is excluded from the control plane; no event may name it"
+                        ),
                     ));
                 }
             }
             for eff in &e.effects {
-                if let Effect::ReserveCard { on_reserve: OnReserve::Preempt, card, .. } = eff {
+                if let Effect::ReserveCard {
+                    on_reserve: OnReserve::Preempt,
+                    card,
+                    ..
+                } = eff
+                {
                     if e.priority() < Priority::High {
                         issues.push(Issue::error(
                             &at("effects"),

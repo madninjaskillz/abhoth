@@ -80,7 +80,9 @@ fn parse_dt(v: &str, params: &[(String, String)]) -> Result<(NaiveDateTime, bool
 /// `PT1H30M`, `P1D`, `-PT5M` (sign ignored), `P1W`.
 pub fn parse_ics_duration(v: &str) -> Result<i64, String> {
     let t = v.trim().trim_start_matches(['+', '-']);
-    let t = t.strip_prefix('P').ok_or_else(|| format!("bad duration '{v}'"))?;
+    let t = t
+        .strip_prefix('P')
+        .ok_or_else(|| format!("bad duration '{v}'"))?;
     let mut total = 0i64;
     let mut num = String::new();
     let mut in_time = false;
@@ -148,7 +150,10 @@ fn event(props: &[String]) -> Result<Option<IcsEvent>, String> {
             "SUMMARY" => summary = unescape(&value),
             "STATUS" if value.eq_ignore_ascii_case("CANCELLED") => return Ok(None),
             "DTSTART" => {
-                let tz = params.iter().find(|(k, _)| k == "TZID").map(|(_, v)| v.clone());
+                let tz = params
+                    .iter()
+                    .find(|(k, _)| k == "TZID")
+                    .map(|(_, v)| v.clone());
                 let (t, all_day, utc) = parse_dt(&value, &params)?;
                 start = Some((t, all_day, if utc { Some("UTC".to_string()) } else { tz }));
             }
@@ -173,7 +178,11 @@ fn event(props: &[String]) -> Result<Option<IcsEvent>, String> {
     };
     Ok(Some(IcsEvent {
         uid,
-        summary: if summary.is_empty() { "(untitled)".into() } else { summary },
+        summary: if summary.is_empty() {
+            "(untitled)".into()
+        } else {
+            summary
+        },
         start,
         tz,
         all_day,
@@ -201,7 +210,11 @@ pub fn entry_id(prefix: &str, e: &IcsEvent) -> String {
         .take(3)
         .map(|b| format!("{b:02x}"))
         .collect();
-    let slug = if slug.is_empty() { "event".into() } else { slug };
+    let slug = if slug.is_empty() {
+        "event".into()
+    } else {
+        slug
+    };
     format!("{prefix}-{}-{h}", &slug[..slug.len().min(40)])
 }
 
@@ -260,7 +273,10 @@ pub fn to_entries(
                     c.start = Some(fmt(&e.start));
                 }
                 Err(m) => {
-                    issues.push(Issue::warning(&format!("ics.{id}"), format!("{m}; imported as a one-off")));
+                    issues.push(Issue::warning(
+                        &format!("ics.{id}"),
+                        format!("{m}; imported as a one-off"),
+                    ));
                     c.at = Some(fmt(&e.start));
                 }
             },

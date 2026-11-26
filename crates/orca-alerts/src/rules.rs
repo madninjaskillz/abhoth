@@ -4,7 +4,9 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     Info,
@@ -135,7 +137,10 @@ pub fn dur(s: &str) -> Result<i64, String> {
             's' => 1,
             _ => return Err(format!("bad duration '{s}'")),
         };
-        total += num.parse::<i64>().map_err(|_| format!("bad duration '{s}'"))? * u;
+        total += num
+            .parse::<i64>()
+            .map_err(|_| format!("bad duration '{s}'"))?
+            * u;
         num.clear();
     }
     if !num.is_empty() || t.is_empty() {
@@ -146,18 +151,78 @@ pub fn dur(s: &str) -> Result<i64, String> {
 
 /// The built-in event rules: (id, severity, dedupe parts, `for`, message).
 pub const BUILTINS: &[(&str, Severity, &str, i64, &str)] = &[
-    ("oom_kill", Severity::Warning, "container,process", 0, "OOM kill: {process} in {container}"),
-    ("engine_crash", Severity::Critical, "engine,card", 0, "Engine {engine} on card {card} crashed: {detail}"),
-    ("switch_failed", Severity::Critical, "server", 0, "Switch to {layout} on {server} failed: {detail}"),
-    ("hot_card", Severity::Warning, "card", 60, "GPU {card} at {value}°C"),
-    ("fan_stale", Severity::Critical, "fan", 0, "Fan data stale on {fan}: {detail}"),
-    ("fan_stalled", Severity::Critical, "fan", 15, "Fan {fan} stalled ({value} RPM)"),
+    (
+        "oom_kill",
+        Severity::Warning,
+        "container,process",
+        0,
+        "OOM kill: {process} in {container}",
+    ),
+    (
+        "engine_crash",
+        Severity::Critical,
+        "engine,card",
+        0,
+        "Engine {engine} on card {card} crashed: {detail}",
+    ),
+    (
+        "switch_failed",
+        Severity::Critical,
+        "server",
+        0,
+        "Switch to {layout} on {server} failed: {detail}",
+    ),
+    (
+        "hot_card",
+        Severity::Warning,
+        "card",
+        60,
+        "GPU {card} at {value}°C",
+    ),
+    (
+        "fan_stale",
+        Severity::Critical,
+        "fan",
+        0,
+        "Fan data stale on {fan}: {detail}",
+    ),
+    (
+        "fan_stalled",
+        Severity::Critical,
+        "fan",
+        15,
+        "Fan {fan} stalled ({value} RPM)",
+    ),
     ("nic_hot", Severity::Warning, "", 0, "10G NIC at {value}°C"),
-    ("clock_mismatch", Severity::Warning, "card", 0, "Card {card} clocks drifted: {detail}"),
-    ("hostd_down", Severity::Critical, "server", 30, "hostd on {server} silent: {detail}"),
+    (
+        "clock_mismatch",
+        Severity::Warning,
+        "card",
+        0,
+        "Card {card} clocks drifted: {detail}",
+    ),
+    (
+        "hostd_down",
+        Severity::Critical,
+        "server",
+        30,
+        "hostd on {server} silent: {detail}",
+    ),
     ("calendar_overlap", Severity::Warning, "card", 0, "{detail}"),
-    ("event_key_outside_window", Severity::Warning, "event", 0, "Event key for {event} used {count} times outside its window in 10 min (leak or clock problem?)"),
-    ("event_key_preempt", Severity::Warning, "event,card", 0, "{event} preempted a request on card {card}"),
+    (
+        "event_key_outside_window",
+        Severity::Warning,
+        "event",
+        0,
+        "Event key for {event} used {count} times outside its window in 10 min (leak or clock problem?)",
+    ),
+    (
+        "event_key_preempt",
+        Severity::Warning,
+        "event,card",
+        0,
+        "{event} preempted a request on card {card}",
+    ),
 ];
 
 fn split_parts(s: &str) -> Vec<String> {
@@ -188,7 +253,11 @@ pub fn compile(cfg: &AlertsConfig) -> (Vec<Rule>, Vec<String>) {
             hold_for: d(&c.hold_for, *hold, id, &mut issues),
             severity: c.severity.unwrap_or(*sev),
             message: c.message.unwrap_or_else(|| msg.to_string()),
-            dedupe: c.dedupe.as_deref().map(split_parts).unwrap_or_else(|| split_parts(parts)),
+            dedupe: c
+                .dedupe
+                .as_deref()
+                .map(split_parts)
+                .unwrap_or_else(|| split_parts(parts)),
             cooldown: d(&c.cooldown, 1800, id, &mut issues),
             repeat: d(&c.repeat, 7200, id, &mut issues),
             resolve: c.resolve.unwrap_or(true),
@@ -201,7 +270,9 @@ pub fn compile(cfg: &AlertsConfig) -> (Vec<Rule>, Vec<String>) {
             continue;
         }
         let Some(when) = c.when.clone() else {
-            issues.push(format!("alerts.rules.{id}: `when` is required for a rule that is not built in"));
+            issues.push(format!(
+                "alerts.rules.{id}: `when` is required for a rule that is not built in"
+            ));
             continue;
         };
         out.push(Rule {
@@ -210,7 +281,10 @@ pub fn compile(cfg: &AlertsConfig) -> (Vec<Rule>, Vec<String>) {
             when: Some(when),
             hold_for: d(&c.hold_for, 0, id, &mut issues),
             severity: c.severity.unwrap_or_default(),
-            message: c.message.clone().unwrap_or_else(|| format!("{id}: {{value}}")),
+            message: c
+                .message
+                .clone()
+                .unwrap_or_else(|| format!("{id}: {{value}}")),
             dedupe: c.dedupe.as_deref().map(split_parts).unwrap_or_default(),
             cooldown: d(&c.cooldown, 1800, id, &mut issues),
             repeat: d(&c.repeat, 7200, id, &mut issues),

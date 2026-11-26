@@ -188,7 +188,7 @@ fn needs(method: &Method, sub: &str) -> Perm {
 
 /// Reads that hold config text or the audit: admins only, even for `read` service keys.
 fn admin_only_read(sub: &str) -> bool {
-    sub == "config" || sub == "audit" || sub == "leases" || sub == "routes"
+    sub == "config" || sub == "audit" || sub == "leases" || sub == "routes" || sub == "calendar"
 }
 
 /// Handle `/admin/api/<sub>[?query]`. `peer`: the TCP peer.
@@ -342,6 +342,14 @@ pub async fn handle(
                 Err(e) => api_err(e),
             }
         }
+        (m, ["calendar", ..]) => match crate::calendar::installed() {
+            Some(svc) => {
+                let (status, v) =
+                    crate::calendar::api::handle(svc, m.as_str(), &parts, &qs, &body, &who);
+                json_resp(status, &v)
+            }
+            None => err(404, "the calendar is off (calendar.enabled = false)"),
+        },
         _ => err(404, "no such admin call"),
     }
 }
@@ -670,9 +678,28 @@ pub fn install_from_toml(
         return Err("access.accounts_token: the secret could not be read".into());
     }
     let access = Access::new(c.access.clone(), token);
+    // The Supervisor's calendar (SUPERVISOR.md 8), with its own flag.
+    let cal_file = l
+        .origin
+        .get("calendar.entries")
+        .or(l.origin.get("calendar.enabled"))
+        .cloned();
+    let calendar = match crate::calendar::CalendarService::from_control(
+        c,
+        main,
+        cal_file.as_deref(),
+        store.clone(),
+    )? {
+        Some(svc) => {
+            let n = svc.entries().len();
+            crate::calendar::install(svc)?;
+            format!(", calendar on ({n} entries)")
+        }
+        None => String::new(),
+    };
     let backend = live::ConfigBackend::new(main, &state_dir, store);
     st.control
         .set(Arc::new(ControlPlane { access, backend }))
         .map_err(|_| "the control plane is already installed".to_string())?;
-    Ok(format!("control plane on (rev {})", l.rev))
+    Ok(format!("control plane on (rev {}){calendar}", l.rev))
 }

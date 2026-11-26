@@ -30,7 +30,11 @@ impl Target {
             Some(("server", n)) => Target::Server(n.into()),
             Some(("card", n)) => Target::Card(n.into()),
             Some(("route", n)) => Target::Route(n.into()),
-            Some((k, _)) => return Err(format!("unknown target kind '{k}' (server:, card:, route:)")),
+            Some((k, _)) => {
+                return Err(format!(
+                    "unknown target kind '{k}' (server:, card:, route:)"
+                ));
+            }
             None => Target::Card(t.into()),
         })
     }
@@ -84,21 +88,40 @@ pub const MIN_PREEMPT_AFTER: i64 = 30;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "effect")]
 pub enum Effect {
-    BlockSwitch { target: Target },
-    BlockOnDemand { target: Target },
-    BlockEnsure { target: Target },
+    BlockSwitch {
+        target: Target,
+    },
+    BlockOnDemand {
+        target: Target,
+    },
+    BlockEnsure {
+        target: Target,
+    },
     ReserveCard {
         card: String,
         on_reserve: OnReserve,
         /// seconds before others' streams are cancelled (`preempt` only)
         preempt_after: i64,
     },
-    ReserveSlots { target: Target, n: u32 },
-    HoldClocks { target: Target },
-    ClockProfile { profile: String, target: Target },
-    FanProfile { profile: String, fan: Option<String> },
+    ReserveSlots {
+        target: Target,
+        n: u32,
+    },
+    HoldClocks {
+        target: Target,
+    },
+    ClockProfile {
+        profile: String,
+        target: Target,
+    },
+    FanProfile {
+        profile: String,
+        fan: Option<String>,
+    },
     /// a rule selector: a rule id, `*`, or `prefix*`
-    MuteAlerts { rules: String },
+    MuteAlerts {
+        rules: String,
+    },
     Info,
 }
 
@@ -113,9 +136,9 @@ impl Effect {
         if v.as_str() == Some("info") {
             return Ok(Effect::Info);
         }
-        let o = v
-            .as_object()
-            .ok_or_else(|| format!("an effect is a table like {{ block_switch = \"all\" }}, got {v}"))?;
+        let o = v.as_object().ok_or_else(|| {
+            format!("an effect is a table like {{ block_switch = \"all\" }}, got {v}")
+        })?;
         const KINDS: [&str; 10] = [
             "block_switch",
             "block_on_demand",
@@ -128,9 +151,16 @@ impl Effect {
             "mute_alerts",
             "info",
         ];
-        let kinds: Vec<&str> = o.keys().map(String::as_str).filter(|k| KINDS.contains(k)).collect();
+        let kinds: Vec<&str> = o
+            .keys()
+            .map(String::as_str)
+            .filter(|k| KINDS.contains(k))
+            .collect();
         let [kind] = kinds.as_slice() else {
-            return Err(format!("an effect names exactly one of {}", KINDS.join(", ")));
+            return Err(format!(
+                "an effect names exactly one of {}",
+                KINDS.join(", ")
+            ));
         };
         let allowed: &[&str] = match *kind {
             "reserve_card" => &["reserve_card", "on_reserve", "preempt_after"],
@@ -239,10 +269,14 @@ impl Effect {
             Effect::BlockOnDemand { target } => format!("block on-demand on {}", target.text()),
             Effect::BlockEnsure { target } => format!("block engine starts on {}", target.text()),
             Effect::HoldClocks { target } => format!("hold clocks on {}", target.text()),
-            Effect::ReserveCard { card, on_reserve, .. } => {
+            Effect::ReserveCard {
+                card, on_reserve, ..
+            } => {
                 format!("reserve card {card} ({})", on_reserve.as_str())
             }
-            Effect::ReserveSlots { target, n } => format!("reserve {n} slot(s) on {}", target.text()),
+            Effect::ReserveSlots { target, n } => {
+                format!("reserve {n} slot(s) on {}", target.text())
+            }
             Effect::ClockProfile { profile, target } => {
                 format!("clock profile {profile} on {}", target.text())
             }
@@ -258,7 +292,7 @@ impl Effect {
 
 /// Does a `mute_alerts` selector match a rule id (`*`, `hot_*`, `oom_kill`)?
 pub fn selector_matches(sel: &str, rule: &str) -> bool {
-    sel.split(',').map(str::trim).any(|s| {
-        s == "*" || s == rule || s.strip_suffix('*').is_some_and(|p| rule.starts_with(p))
-    })
+    sel.split(',')
+        .map(str::trim)
+        .any(|s| s == "*" || s == rule || s.strip_suffix('*').is_some_and(|p| rule.starts_with(p)))
 }

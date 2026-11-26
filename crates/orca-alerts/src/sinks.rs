@@ -195,7 +195,10 @@ impl Sink for Ntfy {
         if let Some(f) = &self.token_file {
             rq = rq.bearer_auth(read_secret(f)?);
         }
-        let r = rq.send().await.map_err(|e| format!("ntfy: {}", e.without_url()))?;
+        let r = rq
+            .send()
+            .await
+            .map_err(|e| format!("ntfy: {}", e.without_url()))?;
         if r.status().is_success() {
             Ok(())
         } else {
@@ -233,7 +236,10 @@ impl Sink for Webhook {
         if let Some((h, f)) = &self.header {
             rq = rq.header(h.as_str(), read_secret(f)?);
         }
-        let r = rq.send().await.map_err(|e| format!("webhook: {}", e.without_url()))?;
+        let r = rq
+            .send()
+            .await
+            .map_err(|e| format!("webhook: {}", e.without_url()))?;
         if r.status().is_success() {
             Ok(())
         } else {
@@ -276,7 +282,10 @@ impl Sink for FakeSink {
 }
 
 /// Send `n` to the sinks it names (unknown names are reported, not fatal).
-pub async fn dispatch(n: &Notification, sinks: &[Arc<dyn Sink>]) -> Vec<(String, Result<(), String>)> {
+pub async fn dispatch(
+    n: &Notification,
+    sinks: &[Arc<dyn Sink>],
+) -> Vec<(String, Result<(), String>)> {
     let mut out = Vec::new();
     for name in &n.sinks {
         match sinks.iter().find(|s| s.name() == name) {
@@ -297,11 +306,17 @@ pub fn from_config(cfg: &indexmap::IndexMap<String, Value>) -> (Vec<Arc<dyn Sink
         let ty = s("type").unwrap_or_else(|| name.clone());
         match ty.as_str() {
             "ha" => match (s("url"), s("service"), s("token_file")) {
-                (Some(u), Some(svc), Some(t)) => out.push(Arc::new(HaNotify::new(name, &u, &svc, &t))),
-                _ => issues.push(format!("alerts.sinks.{name}: ha needs url, service and token_file")),
+                (Some(u), Some(svc), Some(t)) => {
+                    out.push(Arc::new(HaNotify::new(name, &u, &svc, &t)))
+                }
+                _ => issues.push(format!(
+                    "alerts.sinks.{name}: ha needs url, service and token_file"
+                )),
             },
             "ntfy" => match (s("url"), s("topic")) {
-                (Some(u), Some(t)) => out.push(Arc::new(Ntfy::new(&u, &t, s("token_file").as_deref()))),
+                (Some(u), Some(t)) => {
+                    out.push(Arc::new(Ntfy::new(&u, &t, s("token_file").as_deref())))
+                }
                 _ => issues.push(format!("alerts.sinks.{name}: ntfy needs url and topic")),
             },
             "webhook" => match s("url") {

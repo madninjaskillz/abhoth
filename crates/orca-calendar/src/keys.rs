@@ -129,9 +129,18 @@ impl KeyPolicy {
 }
 
 /// Checks on a key policy when the calendar is compiled.
-pub fn validate_policy(id: &str, k: &KeyPolicy, e: &Entry, safety: &Safety, issues: &mut Vec<Issue>) {
+pub fn validate_policy(
+    id: &str,
+    k: &KeyPolicy,
+    e: &Entry,
+    safety: &Safety,
+    issues: &mut Vec<Issue>,
+) {
     let at = format!("calendar.entries.{id}.key");
-    for (f, v) in [("grace_before", &k.grace_before), ("grace_after", &k.grace_after)] {
+    for (f, v) in [
+        ("grace_before", &k.grace_before),
+        ("grace_after", &k.grace_after),
+    ] {
         match crate::dur::parse(v) {
             Ok(x) if x > 6 * 3600 => issues.push(Issue::error(
                 &format!("{at}.{f}"),
@@ -145,7 +154,8 @@ pub fn validate_policy(id: &str, k: &KeyPolicy, e: &Entry, safety: &Safety, issu
         if k.all_layouts {
             issues.push(Issue::warning(
                 &at,
-                "switch to all layouts: this key can change every card's layout during the event".into(),
+                "switch to all layouts: this key can change every card's layout during the event"
+                    .into(),
             ));
         } else if k.layouts.is_empty() {
             issues.push(Issue::warning(
@@ -170,18 +180,28 @@ pub fn validate_policy(id: &str, k: &KeyPolicy, e: &Entry, safety: &Safety, issu
     if k.overrides_lower {
         issues.push(Issue::warning(
             &at,
-            "overrides_lower: this key also lifts blocks and reservations of lower-priority events".into(),
+            "overrides_lower: this key also lifts blocks and reservations of lower-priority events"
+                .into(),
         ));
     }
     let reserved = e.reserved_cards();
-    let needs_cards = [KeyScope::UseReserved, KeyScope::Lease, KeyScope::CardState, KeyScope::HoldClocks];
+    let needs_cards = [
+        KeyScope::UseReserved,
+        KeyScope::Lease,
+        KeyScope::CardState,
+        KeyScope::HoldClocks,
+    ];
     if reserved.is_empty()
         && k.scopes.iter().any(|s| needs_cards.contains(s))
-        && !e.effects.iter().any(|x| matches!(x, Effect::ReserveSlots { .. }))
+        && !e
+            .effects
+            .iter()
+            .any(|x| matches!(x, Effect::ReserveSlots { .. }))
     {
         issues.push(Issue::warning(
             &at,
-            "the key has card scopes but the event reserves no card (they allow nothing yet)".into(),
+            "the key has card scopes but the event reserves no card (they allow nothing yet)"
+                .into(),
         ));
     }
 }
@@ -235,7 +255,9 @@ pub fn hash(secret: &str) -> String {
 }
 
 pub fn looks_like_event_key(s: &str) -> bool {
-    s.starts_with(PREFIX) && s.len() == PREFIX.len() + 32 && s[PREFIX.len()..].bytes().all(|b| b.is_ascii_alphanumeric())
+    s.starts_with(PREFIX)
+        && s.len() == PREFIX.len() + 32
+        && s[PREFIX.len()..].bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
 /// A stored key (from `router.db`).
@@ -283,16 +305,39 @@ pub fn retire_time(cal: &Calendar, event: &str, now: i64, live: &Live, ov: &Over
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyAction {
     /// a chat/images/music request on `route`; `cards` = the route's target cards (if known)
-    Chat { route: String, cards: Vec<String>, model: Option<String> },
+    Chat {
+        route: String,
+        cards: Vec<String>,
+        model: Option<String>,
+    },
     /// placement on `card` (the router asks this per candidate card)
-    UseCard { card: String },
-    Lease { card: String },
+    UseCard {
+        card: String,
+    },
+    Lease {
+        card: String,
+    },
     /// `probe`: the request had no chat body, was a GET, or carried `x-abhoth-no-switch`
-    Switch { layout: String, probe: bool },
-    CardState { card: String, online: bool },
-    HoldClocks { card: String, ttl: i64 },
-    FanProfile { profile: String },
-    OnDemand { route: String, card: String, probe: bool },
+    Switch {
+        layout: String,
+        probe: bool,
+    },
+    CardState {
+        card: String,
+        online: bool,
+    },
+    HoldClocks {
+        card: String,
+        ttl: i64,
+    },
+    FanProfile {
+        profile: String,
+    },
+    OnDemand {
+        route: String,
+        card: String,
+        probe: bool,
+    },
 }
 
 impl KeyAction {
@@ -358,8 +403,16 @@ fn deny(status: u16, reason: impl Into<String>) -> KeyDecision {
 }
 
 /// The occurrence of `event` whose key window holds `now`, else the next window's start.
-pub fn window(cal: &Calendar, event: &str, now: i64, live: &Live, ov: &Overrides) -> Result<Occurrence, Option<i64>> {
-    let Some(e) = cal.entries.get(event) else { return Err(None) };
+pub fn window(
+    cal: &Calendar,
+    event: &str,
+    now: i64,
+    live: &Live,
+    ov: &Overrides,
+) -> Result<Occurrence, Option<i64>> {
+    let Some(e) = cal.entries.get(event) else {
+        return Err(None);
+    };
     let (before, after) = e.key.as_ref().map(KeyPolicy::grace).unwrap_or((300, 900));
     let occ = cal.occurrences(now - after - 1, now + before + 1, live, ov, now);
     if let Some(o) = occ
@@ -413,7 +466,11 @@ pub fn authorize(
         }
         _ => {}
     }
-    if let Some(c) = action.cards().into_iter().find(|c| safety.excluded_cards.iter().any(|x| x == c)) {
+    if let Some(c) = action
+        .cards()
+        .into_iter()
+        .find(|c| safety.excluded_cards.iter().any(|x| x == c))
+    {
         return deny(403, format!("card {c} is excluded from the control plane"));
     }
     if let KeyAction::Chat { model: Some(m), .. } = action
@@ -424,7 +481,10 @@ pub fn authorize(
     if let KeyAction::Switch { layout, .. } = action
         && safety.unsafe_layouts.contains(layout)
     {
-        return deny(403, format!("layout {layout} touches an excluded card or model"));
+        return deny(
+            403,
+            format!("layout {layout} touches an excluded card or model"),
+        );
     }
     // 3. The window.
     let occ = match window(cal, &key.event, now, live, ov) {
@@ -457,7 +517,11 @@ pub fn authorize(
         } else {
             Err(deny(
                 403,
-                format!("the event key for {} does not have the {} scope", key.event, s.as_str()),
+                format!(
+                    "the event key for {} does not have the {} scope",
+                    key.event,
+                    s.as_str()
+                ),
             ))
         }
     };
@@ -479,7 +543,10 @@ pub fn authorize(
         if reserved.iter().any(|c| c == card) {
             held(card)
         } else {
-            Err(deny(403, format!("card {card} is not reserved by {}", key.event)))
+            Err(deny(
+                403,
+                format!("card {card} is not reserved by {}", key.event),
+            ))
         }
     };
     let route_ok = |route: &str, cards: &[String]| {
@@ -496,7 +563,10 @@ pub fn authorize(
         KeyAction::Chat { route, cards, .. } => {
             need(KeyScope::Chat)?;
             if !route_ok(route, cards) {
-                return Err(deny(403, format!("route {route} is not one of the event's routes")));
+                return Err(deny(
+                    403,
+                    format!("route {route} is not one of the event's routes"),
+                ));
             }
             Ok(())
         }
@@ -513,7 +583,10 @@ pub fn authorize(
             if policy.all_layouts || policy.layouts.iter().any(|l| l == layout) {
                 Ok(())
             } else {
-                Err(deny(403, format!("the event key may not switch to layout {layout}")))
+                Err(deny(
+                    403,
+                    format!("the event key may not switch to layout {layout}"),
+                ))
             }
         }
         KeyAction::CardState { card, .. } => {
@@ -535,7 +608,10 @@ pub fn authorize(
         KeyAction::OnDemand { route, card, .. } => {
             need(KeyScope::OnDemand)?;
             if !route_ok(route, std::slice::from_ref(card)) {
-                return Err(deny(403, format!("route {route} is not one of the event's routes")));
+                return Err(deny(
+                    403,
+                    format!("route {route} is not one of the event's routes"),
+                ));
             }
             own_card(card)
         }

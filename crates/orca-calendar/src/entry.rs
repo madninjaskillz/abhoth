@@ -17,7 +17,9 @@ use crate::{Issue, dur};
 /// simply every day at 07:00 and weekly intervals count from a fixed week.
 pub const DEFAULT_ANCHOR: &str = "2024-01-01T00:00";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Priority {
     Low,
@@ -96,7 +98,10 @@ impl DetectConfig {
             return format!(
                 "process:{}:{}",
                 p.argv_any,
-                p.label.as_deref().or(p.label_default.as_deref()).unwrap_or("*")
+                p.label
+                    .as_deref()
+                    .or(p.label_default.as_deref())
+                    .unwrap_or("*")
             );
         }
         if let Some(f) = &self.lock_file {
@@ -279,10 +284,20 @@ impl Entry {
         for e in &self.effects {
             match e {
                 Effect::ReserveCard { card, .. } => out.push(card.clone()),
-                Effect::ReserveSlots { target: Target::Card(c), .. }
-                | Effect::HoldClocks { target: Target::Card(c) }
-                | Effect::BlockEnsure { target: Target::Card(c) }
-                | Effect::ClockProfile { target: Target::Card(c), .. } => out.push(c.clone()),
+                Effect::ReserveSlots {
+                    target: Target::Card(c),
+                    ..
+                }
+                | Effect::HoldClocks {
+                    target: Target::Card(c),
+                }
+                | Effect::BlockEnsure {
+                    target: Target::Card(c),
+                }
+                | Effect::ClockProfile {
+                    target: Target::Card(c),
+                    ..
+                } => out.push(c.clone()),
                 _ => {}
             }
         }
@@ -296,7 +311,10 @@ impl Entry {
             && match &self.when {
                 Recurrence::Cron(c) => c.runs_per_day() > 24,
                 Recurrence::Rrule { rule, .. } => {
-                    matches!(rule.freq, crate::recur::Freq::Minutely | crate::recur::Freq::Hourly)
+                    matches!(
+                        rule.freq,
+                        crate::recur::Freq::Minutely | crate::recur::Freq::Hourly
+                    )
                 }
                 Recurrence::Once(_) => false,
             }
@@ -309,11 +327,17 @@ impl Entry {
 }
 
 pub fn parse_tz(s: &str) -> Result<Tz, String> {
-    s.parse::<Tz>().map_err(|_| format!("unknown time zone '{s}'"))
+    s.parse::<Tz>()
+        .map_err(|_| format!("unknown time zone '{s}'"))
 }
 
 /// Compile one entry; errors make the entry unusable (it is left out), warnings do not.
-pub fn compile(id: &str, c: &EntryConfig, default_tz: Tz, issues: &mut Vec<Issue>) -> Option<Entry> {
+pub fn compile(
+    id: &str,
+    c: &EntryConfig,
+    default_tz: Tz,
+    issues: &mut Vec<Issue>,
+) -> Option<Entry> {
     let at = |field: &str| format!("calendar.entries.{id}.{field}");
     let first = issues.len();
     let err = |f: &str, m: String, issues: &mut Vec<Issue>| {
@@ -394,7 +418,10 @@ pub fn compile(id: &str, c: &EntryConfig, default_tz: Tz, issues: &mut Vec<Issue
         match Effect::parse(v) {
             Ok(e) => effects.push(e),
             Err(e) => {
-                issues.push(Issue::error(&format!("calendar.entries.{id}.effects[{i}]"), e));
+                issues.push(Issue::error(
+                    &format!("calendar.entries.{id}.effects[{i}]"),
+                    e,
+                ));
             }
         }
     }

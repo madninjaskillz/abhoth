@@ -42,7 +42,9 @@ pub fn parse(s: &str) -> Result<i64, String> {
         any = true;
     }
     if !num.is_empty() || !any {
-        return Err(format!("bad duration '{s}' (a unit is missing: d, h, m or s)"));
+        return Err(format!(
+            "bad duration '{s}' (a unit is missing: d, h, m or s)"
+        ));
     }
     Ok(total)
 }

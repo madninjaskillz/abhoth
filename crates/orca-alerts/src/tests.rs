@@ -6,7 +6,9 @@ use crate::rules::{AlertsConfig, RuleConfig, Severity};
 use crate::sinks::{self, FakeSink, HaNotify, Sink};
 
 fn vars(kv: &[(&str, &str)]) -> BTreeMap<String, String> {
-    kv.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    kv.iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 fn no_mute(_: &str, _: bool) -> Option<String> {
@@ -51,7 +53,10 @@ fn one_open_alert_per_identity_and_no_resend_before_repeat() {
     assert_eq!(e.observe(hot("A", true, "86", 60), &no_mute).len(), 1);
     // Still hot: nothing new until `repeat` (2h).
     for t in (120..7000).step_by(60) {
-        assert!(e.observe(hot("A", true, "86", t), &no_mute).is_empty(), "at {t}");
+        assert!(
+            e.observe(hot("A", true, "86", t), &no_mute).is_empty(),
+            "at {t}"
+        );
     }
     assert!(e.tick(7000, &no_mute).is_empty());
     let r = e.tick(60 + 7200, &no_mute);
@@ -80,7 +85,10 @@ fn resolve_is_sent_and_flapping_within_cooldown_is_not_resent() {
     // After the cooldown, a new episode is sent again.
     e.observe(hot("A", false, "80", 600), &no_mute);
     e.observe(hot("A", true, "86", 600 + 1900), &no_mute);
-    assert_eq!(e.observe(hot("A", true, "86", 600 + 1960), &no_mute).len(), 1);
+    assert_eq!(
+        e.observe(hot("A", true, "86", 600 + 1960), &no_mute).len(),
+        1
+    );
 }
 
 #[test]
@@ -96,10 +104,16 @@ fn event_alerts_dedupe_by_their_parts_and_close_after_cooldown() {
     assert_eq!(e.observe(oom("comfyui", 0), &no_mute).len(), 1);
     assert!(e.observe(oom("comfyui", 10), &no_mute).is_empty());
     assert_eq!(e.observe(oom("sa3", 20), &no_mute).len(), 1);
-    let a = e.alerts().find(|a| a.identity == "oom_kill/comfyui/python3").unwrap();
+    let a = e
+        .alerts()
+        .find(|a| a.identity == "oom_kill/comfyui/python3")
+        .unwrap();
     assert_eq!(a.count, 2);
     e.tick(10 + 1800, &no_mute);
-    let a = e.alerts().find(|a| a.identity == "oom_kill/comfyui/python3").unwrap();
+    let a = e
+        .alerts()
+        .find(|a| a.identity == "oom_kill/comfyui/python3")
+        .unwrap();
     assert_eq!(a.state, AlertState::Resolved);
     // A later OOM in the same container is a new episode.
     assert_eq!(e.observe(oom("comfyui", 5000), &no_mute).len(), 1);
@@ -115,8 +129,32 @@ fn alerts_with_one_cause_inside_the_window_go_out_as_one() {
         cause: Some("card:B".into()),
         at,
     };
-    assert!(e.observe(sig("switch_failed", &[("server", "dt"), ("layout", "coder"), ("detail", "health timeout")], 100), &no_mute).is_empty());
-    assert!(e.observe(sig("engine_crash", &[("engine", "llama"), ("card", "B"), ("detail", "exit 137")], 110), &no_mute).is_empty());
+    assert!(
+        e.observe(
+            sig(
+                "switch_failed",
+                &[
+                    ("server", "dt"),
+                    ("layout", "coder"),
+                    ("detail", "health timeout")
+                ],
+                100
+            ),
+            &no_mute
+        )
+        .is_empty()
+    );
+    assert!(
+        e.observe(
+            sig(
+                "engine_crash",
+                &[("engine", "llama"), ("card", "B"), ("detail", "exit 137")],
+                110
+            ),
+            &no_mute
+        )
+        .is_empty()
+    );
     assert!(e.tick(120, &no_mute).is_empty());
     let n = e.tick(130, &no_mute);
     assert_eq!(n.len(), 1, "{n:?}");
@@ -130,7 +168,8 @@ fn alerts_with_one_cause_inside_the_window_go_out_as_one() {
 #[test]
 fn calendar_mutes_silence_sinks_but_never_critical() {
     let mut e = engine();
-    let mute = |rule: &str, critical: bool| (!critical && rule == "hot_card").then(|| "bench".to_string());
+    let mute =
+        |rule: &str, critical: bool| (!critical && rule == "hot_card").then(|| "bench".to_string());
     e.observe(hot("A", true, "86", 0), &mute);
     assert!(e.observe(hot("A", true, "86", 60), &mute).is_empty());
     let a = e.alerts().find(|a| a.identity == "hot_card/A").unwrap();
@@ -164,7 +203,13 @@ fn rules_are_tunable_and_expression_rules_need_when() {
             ..Default::default()
         },
     );
-    cfg.rules.insert("oom_kill".into(), RuleConfig { enabled: Some(false), ..Default::default() });
+    cfg.rules.insert(
+        "oom_kill".into(),
+        RuleConfig {
+            enabled: Some(false),
+            ..Default::default()
+        },
+    );
     cfg.rules.insert(
         "nvme_hot".into(),
         RuleConfig {
@@ -208,14 +253,27 @@ fn rules_are_tunable_and_expression_rules_need_when() {
 #[test]
 fn every_rule_the_brief_names_is_built_in() {
     let e = engine();
-    for r in ["oom_kill", "engine_crash", "hot_card", "switch_failed", "fan_stale", "clock_mismatch"] {
+    for r in [
+        "oom_kill",
+        "engine_crash",
+        "hot_card",
+        "switch_failed",
+        "fan_stale",
+        "clock_mismatch",
+    ] {
         assert!(e.rule(r).is_some_and(|x| x.enabled && x.builtin), "{r}");
     }
 }
 
 #[test]
 fn templates_keep_unknown_names() {
-    assert_eq!(render("GPU {card} at {value}°C ({x})", &vars(&[("card", "A"), ("value", "90")])), "GPU A at 90°C ({x})");
+    assert_eq!(
+        render(
+            "GPU {card} at {value}°C ({x})",
+            &vars(&[("card", "A"), ("value", "90")])
+        ),
+        "GPU A at 90°C ({x})"
+    );
 }
 
 #[test]
@@ -259,7 +317,10 @@ async fn dispatch_reaches_named_sinks_and_reports_missing_ones() {
 fn sinks_from_config_check_their_fields() {
     let mut cfg = indexmap::IndexMap::new();
     cfg.insert("ha".to_string(), serde_json::json!({"url": "http://ha:8123", "service": "mobile_app_x", "token_file": "/run/secrets/ha"}));
-    cfg.insert("ntfy".to_string(), serde_json::json!({"url": "https://ntfy.sh"}));
+    cfg.insert(
+        "ntfy".to_string(),
+        serde_json::json!({"url": "https://ntfy.sh"}),
+    );
     let (s, issues) = sinks::from_config(&cfg);
     assert_eq!(s.len(), 1);
     assert_eq!(issues.len(), 1);

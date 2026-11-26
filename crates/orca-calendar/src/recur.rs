@@ -7,7 +7,9 @@
 //!   with the offset from before the gap, so it lands just after it (01:30 GMT = 02:30 BST);
 //! - in the autumn overlap (01:30 on the last Sunday of October) the first of the two is used.
 
-use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Weekday};
+use chrono::{
+    Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Weekday,
+};
 use chrono_tz::Tz;
 
 /// UTC epoch of a local wall-clock time in `tz` (gap: offset before it; overlap: the first).
@@ -18,7 +20,10 @@ pub fn to_utc(tz: Tz, local: NaiveDateTime) -> i64 {
         chrono::LocalResult::None => {
             // The offset in force just before the gap (gaps are at most a few hours).
             let before = (1..=6)
-                .find_map(|h| tz.from_local_datetime(&(local - Duration::hours(h))).earliest())
+                .find_map(|h| {
+                    tz.from_local_datetime(&(local - Duration::hours(h)))
+                        .earliest()
+                })
                 .map(|d| d.offset().fix().local_minus_utc())
                 .unwrap_or(0);
             local.and_utc().timestamp() - i64::from(before)
@@ -38,7 +43,12 @@ pub fn to_local(tz: Tz, epoch: i64) -> NaiveDateTime {
 /// bare date (midnight).
 pub fn parse_local(s: &str) -> Result<NaiveDateTime, String> {
     let t = s.trim();
-    for f in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"] {
+    for f in [
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+    ] {
         if let Ok(d) = NaiveDateTime::parse_from_str(t, f) {
             return Ok(d);
         }
@@ -128,7 +138,8 @@ fn parse_ics_time(v: &str) -> Result<Until, String> {
             .map(|d| d.and_hms_opt(23, 59, 59).unwrap_or_default())
             .map_err(|_| format!("bad date '{v}'"))?
     } else {
-        NaiveDateTime::parse_from_str(t, "%Y%m%dT%H%M%S").map_err(|_| format!("bad date-time '{v}'"))?
+        NaiveDateTime::parse_from_str(t, "%Y%m%dT%H%M%S")
+            .map_err(|_| format!("bad date-time '{v}'"))?
     };
     Ok(if z {
         Until::Utc(d.and_utc().timestamp())
@@ -245,10 +256,16 @@ impl Rrule {
         }
         let j = |v: Vec<String>| v.join(",");
         if !self.by_month.is_empty() {
-            p.push(format!("BYMONTH={}", j(self.by_month.iter().map(|x| x.to_string()).collect())));
+            p.push(format!(
+                "BYMONTH={}",
+                j(self.by_month.iter().map(|x| x.to_string()).collect())
+            ));
         }
         if !self.by_month_day.is_empty() {
-            p.push(format!("BYMONTHDAY={}", j(self.by_month_day.iter().map(|x| x.to_string()).collect())));
+            p.push(format!(
+                "BYMONTHDAY={}",
+                j(self.by_month_day.iter().map(|x| x.to_string()).collect())
+            ));
         }
         if !self.by_day.is_empty() {
             p.push(format!(
@@ -256,18 +273,31 @@ impl Rrule {
                 j(self
                     .by_day
                     .iter()
-                    .map(|(n, w)| format!("{}{}", n.map(|n| n.to_string()).unwrap_or_default(), weekday_code(*w)))
+                    .map(|(n, w)| format!(
+                        "{}{}",
+                        n.map(|n| n.to_string()).unwrap_or_default(),
+                        weekday_code(*w)
+                    ))
                     .collect())
             ));
         }
         if !self.by_hour.is_empty() {
-            p.push(format!("BYHOUR={}", j(self.by_hour.iter().map(|x| x.to_string()).collect())));
+            p.push(format!(
+                "BYHOUR={}",
+                j(self.by_hour.iter().map(|x| x.to_string()).collect())
+            ));
         }
         if !self.by_minute.is_empty() {
-            p.push(format!("BYMINUTE={}", j(self.by_minute.iter().map(|x| x.to_string()).collect())));
+            p.push(format!(
+                "BYMINUTE={}",
+                j(self.by_minute.iter().map(|x| x.to_string()).collect())
+            ));
         }
         if !self.by_second.is_empty() {
-            p.push(format!("BYSECOND={}", j(self.by_second.iter().map(|x| x.to_string()).collect())));
+            p.push(format!(
+                "BYSECOND={}",
+                j(self.by_second.iter().map(|x| x.to_string()).collect())
+            ));
         }
         if let Some(u) = &self.until {
             p.push(format!(
@@ -285,7 +315,8 @@ impl Rrule {
     }
 
     fn months_between(a: NaiveDate, b: NaiveDate) -> i64 {
-        (i64::from(b.year()) - i64::from(a.year())) * 12 + i64::from(b.month()) - i64::from(a.month())
+        (i64::from(b.year()) - i64::from(a.year())) * 12 + i64::from(b.month())
+            - i64::from(a.month())
     }
 
     fn days_in_month(d: NaiveDate) -> u32 {
@@ -295,7 +326,9 @@ impl Rrule {
         } else {
             NaiveDate::from_ymd_opt(y, m + 1, 1)
         };
-        next.and_then(|n| n.pred_opt()).map(|l| l.day()).unwrap_or(28)
+        next.and_then(|n| n.pred_opt())
+            .map(|l| l.day())
+            .unwrap_or(28)
     }
 
     fn month_day_ok(&self, d: NaiveDate) -> bool {
@@ -334,7 +367,8 @@ impl Rrule {
         let iv = i64::from(self.interval);
         match self.freq {
             Freq::Minutely | Freq::Hourly => {
-                (self.by_day.is_empty() || self.by_day_ok(d)) && (self.by_month_day.is_empty() || self.month_day_ok(d))
+                (self.by_day.is_empty() || self.by_day_ok(d))
+                    && (self.by_month_day.is_empty() || self.month_day_ok(d))
             }
             Freq::Daily => {
                 (d - a).num_days() % iv == 0
@@ -342,7 +376,9 @@ impl Rrule {
                     && (self.by_month_day.is_empty() || self.month_day_ok(d))
             }
             Freq::Weekly => {
-                let wk = |x: NaiveDate| x - Duration::days(i64::from(x.weekday().num_days_from_monday()));
+                let wk = |x: NaiveDate| {
+                    x - Duration::days(i64::from(x.weekday().num_days_from_monday()))
+                };
                 let weeks = (wk(d) - wk(a)).num_days() / 7;
                 let day = if self.by_day.is_empty() {
                     d.weekday() == a.weekday()
@@ -410,7 +446,10 @@ impl Rrule {
                         continue;
                     }
                     let t = d.and_hms_opt(h, 0, 0).unwrap_or_default();
-                    let base = anchor.with_minute(0).and_then(|x| x.with_second(0)).unwrap_or(anchor);
+                    let base = anchor
+                        .with_minute(0)
+                        .and_then(|x| x.with_second(0))
+                        .unwrap_or(anchor);
                     if (t - base).num_hours() % iv != 0 {
                         continue;
                     }
@@ -507,9 +546,13 @@ impl Cron {
         };
         let f: Vec<&str> = expanded.split_whitespace().collect();
         if f.len() != 5 {
-            return Err(format!("cron: '{s}' needs 5 fields (minute hour day month weekday)"));
+            return Err(format!(
+                "cron: '{s}' needs 5 fields (minute hour day month weekday)"
+            ));
         }
-        const MONTHS: [&str; 12] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+        const MONTHS: [&str; 12] = [
+            "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+        ];
         const DAYS: [&str; 7] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
         let mut dow = cron_field(f[4], 0, 7, &DAYS)?;
         for d in dow.iter_mut() {
@@ -538,7 +581,11 @@ impl Cron {
         let dom = self.dom.contains(&d.day());
         let dow = self.dow.contains(&d.weekday().num_days_from_sunday());
         // Vixie cron: when both day fields are restricted, either may match.
-        if self.dom_star || self.dow_star { dom && dow } else { dom || dow }
+        if self.dom_star || self.dow_star {
+            dom && dow
+        } else {
+            dom || dow
+        }
     }
 
     fn times(&self, d: NaiveDate) -> Vec<NaiveDateTime> {
@@ -654,7 +701,11 @@ impl Recurrence {
                         " on {}",
                         rule.by_day
                             .iter()
-                            .map(|(n, w)| format!("{}{}", n.map(|n| n.to_string()).unwrap_or_default(), weekday_code(*w)))
+                            .map(|(n, w)| format!(
+                                "{}{}",
+                                n.map(|n| n.to_string()).unwrap_or_default(),
+                                weekday_code(*w)
+                            ))
                             .collect::<Vec<_>>()
                             .join(",")
                     )

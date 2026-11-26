@@ -57,6 +57,27 @@ impl CallerResolver for Access {
         path: &'a str,
     ) -> ResolveFuture<'a> {
         Box::pin(async move {
+            // An event key (`abe_…`, SUPERVISOR.md 9): only its event's grants, only inside
+            // its window, never a user's permissions.
+            if let Some(k) = bearer(headers).filter(|k| k.starts_with(orca_calendar::keys::PREFIX))
+            {
+                let Some(cal) = crate::calendar::installed() else {
+                    return Err((401, "event keys need the calendar".to_string()));
+                };
+                let Some(rec) = cal.lookup(k) else {
+                    return Err((401, "not a valid event key".to_string()));
+                };
+                let policy_scopes = cal.key_scopes(&rec.event);
+                return match cal.caller(k) {
+                    Some(caller) => Ok(Resolved {
+                        caller,
+                        may_switch: policy_scopes.contains(&orca_calendar::keys::KeyScope::Switch),
+                        may_on_demand: policy_scopes
+                            .contains(&orca_calendar::keys::KeyScope::OnDemand),
+                    }),
+                    None => Err((403, "event key outside its window".to_string())),
+                };
+            }
             match self.authenticate(headers, peer, method, path).await {
                 Ok(p) => {
                     let anonymous = matches!(p, crate::access::Principal::Anonymous { .. });
