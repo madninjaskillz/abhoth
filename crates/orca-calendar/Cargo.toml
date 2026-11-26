@@ -1,6 +1,6 @@
 [package]
 name = "orca-calendar"
-description = "Abhoth Supervisor calendar: entries, RRULE/cron/iCal, occurrences, effects, event-key scopes (SUPERVISOR.md 8-9). Skeleton."
+description = "The Abhoth Supervisor's calendar (SUPERVISOR.md 8-9): entries, RRULE/cron/iCal recurrence in local time, occurrences with live detection, effects, overlap and priority rules, and event-key scopes. Pure: no IO."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,6 +8,14 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+getrandom.workspace = true
+indexmap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

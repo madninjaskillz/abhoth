@@ -62,10 +62,14 @@ orca-router = { path = "crates/orca-router" }
 orca-sensors = { path = "crates/orca-sensors" }
 orca-fans = { path = "crates/orca-fans" }
 orca-gpuctl = { path = "crates/orca-gpuctl" }
+orca-calendar = { path = "crates/orca-calendar" }
+orca-alerts = { path = "crates/orca-alerts" }
 
 anyhow = "=1.0.105"
 async-trait = "=0.1.92"
 chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
+# The Supervisor's calendar (SUPERVISOR.md 8): occurrences in local time across DST, from the IANA database.
+chrono-tz = { version = "=0.10.4", default-features = false, features = ["std"] }
 crossterm = "=0.29.0"
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 base64 = "=0.23.1"
