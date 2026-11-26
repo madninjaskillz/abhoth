@@ -1,6 +1,6 @@
 [package]
 name = "orca-homeassistant"
-description = "Abhoth Supervisor Home Assistant over MQTT discovery (SUPERVISOR.md 11). Skeleton."
+description = "Abhoth Supervisor: Home Assistant over MQTT discovery (sensors, guarded controls, availability), the HA REST client (state reads, mobile notify) and the HA alert sink (SUPERVISOR.md 11)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,6 +8,24 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+orca-sensors.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+indexmap.workspace = true
+reqwest.workspace = true
+rumqttc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+rumqttd.workspace = true
+toml.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

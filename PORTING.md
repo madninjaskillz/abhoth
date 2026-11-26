@@ -861,3 +861,44 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   normalisation and reasoning mapping are adapter chains with a golden corpus; only admins
   (D140) see and edit the config. Supersedes ROUTER.md's WON'T items for switching, cloud
   providers, budgets and the admin UI. About 41 agent-days (cutover set about 32).
+- **D147** (user decision 2026-11-26) "Clone from GitHub" without a GitHub App: each Abhoth user's
+  own GitHub credentials. The shared GitHub App sign-in (admin-only since D140) stays as an
+  option for admins.
+  - **Sources, in order** (`orca_webui::git::github_user`): a token the user pasted for this
+    session (memory only); a token they saved, or got with "Sign in with GitHub"; then, only in
+    the desktop app or a local `--hostui` and only for admins, this machine's own sign-ins:
+    `gh auth token`, then `git credential fill` for github.com (Git Credential Manager or any
+    helper); otherwise anonymous (public repositories). Each candidate is checked with
+    `GET /user`; one GitHub refuses (401) is skipped with a note, one that can't be checked
+    (offline) is used. The UI shows the source ("Using your GitHub CLI sign-in as @login"), lists
+    the token's repositories (`GET /user/repos`, owner, collaborator and organization member),
+    and takes owner/repo by name (the only way in when anonymous).
+  - **Machine credentials** are read only when the web UI is reachable from this machine alone:
+    the desktop window, or a `--hostui` bound to loopback, not `--hostui-login` and with no
+    trusted proxy (`machine_credentials_allowed`). Elsewhere `gh` and git's helpers are never
+    run for it, and an anonymous clone gets `-c credential.helper=` so the server's own
+    sign-ins don't leak to users.
+  - **Storage.** Nothing from the machine is stored. A saved token (opt-in checkbox) or a
+    device-flow token goes to `<state>/github-user-tokens.json`, one entry per user id, mode
+    600, written atomically; on Windows each token is sealed with DPAPI (current user), elsewhere
+    the file permissions are the protection (no keyring on a headless server). The one audited
+    `unsafe` block for DPAPI is `git/secret_box.rs`; orca-webui's `unsafe_code` is `deny` (not
+    `forbid`) for it, as orca-crosscheck does.
+  - **Projects** cloned this way store the link `@github-user:<uid>` in `project-tokens.json`,
+    not a token; fetch, pull and push resolve it at run time to that user's credentials (machine
+    sources only if that user is an admin). Tokens reach git only through the token-file
+    credential helper (`TokenFile`), never the URL, arguments or `.git/config`; git's output is
+    scrubbed.
+  - **Device flow** (`github.oauthClientId` in config.json, or `ABHOTH_GITHUB_OAUTH_CLIENT_ID`;
+    `DEFAULT_OAUTH_CLIENT_ID` ships the Abhoth OAuth app's client ID): `POST
+    /login/device/code` with scope `repo read:org`, polling `/login/oauth/access_token` at
+    GitHub's interval (slow_down respected). A flow belongs to the user who started it. With no
+    client ID the button is hidden and `/device` answers 400.
+  - **API**: `/api/github/user` (status), `/token` (POST `{token, save}`, DELETE forgets),
+    `/recheck`, `/device`, `/device/{flow}`, `/repos`, `/branches`, `/clone`; open to every
+    signed-in user, scoped to the caller.
+  - **Tests**: `tests/github_user_clone.rs` (fake github.com with `git http-backend`, a fake
+    `gh` and a fake credential helper): the source order and fall-through, a private clone and
+    fetch with the gh token, no machine reads on a non-local server, per-user isolation of
+    pasted, saved and device-flow tokens, and no token in responses, the audit log, git URLs,
+    `.git/config` or the project token file.

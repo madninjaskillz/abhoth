@@ -1,0 +1,4045 @@
+[
+  {
+    "topic": "homeassistant/sensor/deepthought_tps/config",
+    "payload": {
+      "name": "Tokens per second",
+      "unique_id": "deepthought_tps",
+      "object_id": "deepthought_tps",
+      "default_entity_id": "sensor.deepthought_tps",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.tok_s_total }}",
+      "unit_of_measurement": "t/s",
+      "state_class": "measurement",
+      "icon": "mdi:speedometer",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_model/config",
+    "payload": {
+      "name": "Model",
+      "unique_id": "deepthought_model",
+      "object_id": "deepthought_model",
+      "default_entity_id": "sensor.deepthought_model",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.models }}",
+      "icon": "mdi:brain",
+      "entity_category": "diagnostic",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_power_total/config",
+    "payload": {
+      "name": "GPU power total",
+      "unique_id": "abhoth_deepthought_power_total",
+      "default_entity_id": "sensor.abhoth_deepthought_power_total",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.power_total }}",
+      "unit_of_measurement": "W",
+      "state_class": "measurement",
+      "device_class": "power",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_cpu/config",
+    "payload": {
+      "name": "Host CPU",
+      "unique_id": "abhoth_deepthought_cpu",
+      "default_entity_id": "sensor.abhoth_deepthought_cpu",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.cpu }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:cpu-64-bit",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_ram_used/config",
+    "payload": {
+      "name": "RAM used",
+      "unique_id": "abhoth_deepthought_ram_used",
+      "default_entity_id": "sensor.abhoth_deepthought_ram_used",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.ram_used }}",
+      "unit_of_measurement": "GB",
+      "state_class": "measurement",
+      "device_class": "data_size",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_ram_arc/config",
+    "payload": {
+      "name": "RAM ARC",
+      "unique_id": "abhoth_deepthought_ram_arc",
+      "default_entity_id": "sensor.abhoth_deepthought_ram_arc",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.ram_arc }}",
+      "unit_of_measurement": "GB",
+      "state_class": "measurement",
+      "device_class": "data_size",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_ram_consumed/config",
+    "payload": {
+      "name": "RAM consumed",
+      "unique_id": "abhoth_deepthought_ram_consumed",
+      "default_entity_id": "sensor.abhoth_deepthought_ram_consumed",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.ram_consumed }}",
+      "unit_of_measurement": "GB",
+      "state_class": "measurement",
+      "device_class": "data_size",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_ram_free/config",
+    "payload": {
+      "name": "RAM free",
+      "unique_id": "abhoth_deepthought_ram_free",
+      "default_entity_id": "sensor.abhoth_deepthought_ram_free",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.ram_free }}",
+      "unit_of_measurement": "GB",
+      "state_class": "measurement",
+      "device_class": "data_size",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_net_in/config",
+    "payload": {
+      "name": "Network in",
+      "unique_id": "abhoth_deepthought_net_in",
+      "default_entity_id": "sensor.abhoth_deepthought_net_in",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.net_in }}",
+      "unit_of_measurement": "Mbit/s",
+      "state_class": "measurement",
+      "device_class": "data_rate",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_net_out/config",
+    "payload": {
+      "name": "Network out",
+      "unique_id": "abhoth_deepthought_net_out",
+      "default_entity_id": "sensor.abhoth_deepthought_net_out",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.net_out }}",
+      "unit_of_measurement": "Mbit/s",
+      "state_class": "measurement",
+      "device_class": "data_rate",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_llm_profile/config",
+    "payload": {
+      "name": "Layout",
+      "unique_id": "deepthought_llm_profile",
+      "object_id": "deepthought_llm_profile",
+      "default_entity_id": "sensor.deepthought_llm_profile",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.layout }}",
+      "icon": "mdi:layers-triple",
+      "json_attributes_topic": "abhoth/deepthought/state",
+      "json_attributes_template": "{{ {'layout_title': value_json.layout_title, 'layouts': value_json.layouts} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_llm_switch/config",
+    "payload": {
+      "name": "Layout switch",
+      "unique_id": "deepthought_llm_switch",
+      "object_id": "deepthought_llm_switch",
+      "default_entity_id": "sensor.deepthought_llm_switch",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.switch_state }}",
+      "icon": "mdi:swap-horizontal",
+      "json_attributes_topic": "abhoth/deepthought/state",
+      "json_attributes_template": "{{ {'last_switch': value_json.last_switch, 'last_command': value_json.last_command, 'layout_target': value_json.layout_target} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_last_switch_at/config",
+    "payload": {
+      "name": "Last switch",
+      "unique_id": "abhoth_deepthought_last_switch_at",
+      "default_entity_id": "sensor.abhoth_deepthought_last_switch_at",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.last_switch_at }}",
+      "device_class": "timestamp",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_on_demand/config",
+    "payload": {
+      "name": "On-demand",
+      "unique_id": "abhoth_deepthought_on_demand",
+      "default_entity_id": "sensor.abhoth_deepthought_on_demand",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.on_demand }}",
+      "icon": "mdi:power-sleep",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_leases/config",
+    "payload": {
+      "name": "Leases held",
+      "unique_id": "abhoth_deepthought_leases",
+      "default_entity_id": "sensor.abhoth_deepthought_leases",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.leases }}",
+      "icon": "mdi:lock",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_slots_busy/config",
+    "payload": {
+      "name": "Slots busy",
+      "unique_id": "abhoth_deepthought_slots_busy",
+      "default_entity_id": "sensor.abhoth_deepthought_slots_busy",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.slots_busy }}",
+      "icon": "mdi:tray-full",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_slots_total/config",
+    "payload": {
+      "name": "Slots total",
+      "unique_id": "abhoth_deepthought_slots_total",
+      "default_entity_id": "sensor.abhoth_deepthought_slots_total",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.slots_total }}",
+      "icon": "mdi:tray",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/deepthought_bench_queue_running/config",
+    "payload": {
+      "name": "Bench running",
+      "unique_id": "deepthought_bench_queue_running",
+      "object_id": "deepthought_bench_queue_running",
+      "default_entity_id": "binary_sensor.deepthought_bench_queue_running",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.bench_running }}",
+      "icon": "mdi:timer-sand",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_calendar_block/config",
+    "payload": {
+      "name": "Calendar block",
+      "unique_id": "abhoth_deepthought_calendar_block",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_calendar_block",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.calendar_block }}",
+      "icon": "mdi:calendar-lock",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_event_active/config",
+    "payload": {
+      "name": "Event active",
+      "unique_id": "abhoth_deepthought_event_active",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_event_active",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.event_active }}",
+      "icon": "mdi:calendar-star",
+      "json_attributes_topic": "abhoth/deepthought/state",
+      "json_attributes_template": "{{ {'event': value_json.event} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_problem/config",
+    "payload": {
+      "name": "Problem",
+      "unique_id": "abhoth_deepthought_problem",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_problem",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.problem }}",
+      "device_class": "problem",
+      "json_attributes_topic": "abhoth/deepthought/state",
+      "json_attributes_template": "{{ {'open_alerts': value_json.open_alerts} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_version/config",
+    "payload": {
+      "name": "Supervisor version",
+      "unique_id": "abhoth_deepthought_version",
+      "default_entity_id": "sensor.abhoth_deepthought_version",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.version }}",
+      "icon": "mdi:tag",
+      "entity_category": "diagnostic",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_config_rev/config",
+    "payload": {
+      "name": "Config revision",
+      "unique_id": "abhoth_deepthought_config_rev",
+      "default_entity_id": "sensor.abhoth_deepthought_config_rev",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.config_rev }}",
+      "icon": "mdi:file-cog",
+      "entity_category": "diagnostic",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_hostd/config",
+    "payload": {
+      "name": "hostd status",
+      "unique_id": "abhoth_deepthought_hostd",
+      "default_entity_id": "sensor.abhoth_deepthought_hostd",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.hostd }}",
+      "icon": "mdi:heart-pulse",
+      "entity_category": "diagnostic",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/event/abhoth_deepthought_alert/config",
+    "payload": {
+      "name": "Abhoth alert",
+      "unique_id": "abhoth_deepthought_alert",
+      "default_entity_id": "event.abhoth_deepthought_alert",
+      "state_topic": "abhoth/deepthought/alert_event",
+      "event_types": [
+        "info",
+        "warning",
+        "critical",
+        "resolved"
+      ],
+      "icon": "mdi:alert",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/select/deepthought_llm_target_profile/config",
+    "payload": {
+      "name": "Layout to apply",
+      "unique_id": "deepthought_llm_target_profile",
+      "object_id": "deepthought_llm_target_profile",
+      "default_entity_id": "select.deepthought_llm_target_profile",
+      "command_topic": "abhoth/deepthought/set/layout_target",
+      "state_topic": "abhoth/deepthought/layout_target",
+      "options": [
+        "flash-x2",
+        "dense-stock-x2",
+        "merged-inkling-x2"
+      ],
+      "icon": "mdi:layers-search",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/button/deepthought_llm_apply_profile/config",
+    "payload": {
+      "name": "Apply layout",
+      "unique_id": "deepthought_llm_apply_profile",
+      "object_id": "deepthought_llm_apply_profile",
+      "default_entity_id": "button.deepthought_llm_apply_profile",
+      "command_topic": "abhoth/deepthought/set/layout_apply",
+      "payload_press": "apply",
+      "icon": "mdi:swap-horizontal-bold",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/select/abhoth_deepthought_fan_mode/config",
+    "payload": {
+      "name": "Fan mode",
+      "unique_id": "abhoth_deepthought_fan_mode",
+      "default_entity_id": "select.abhoth_deepthought_fan_mode",
+      "state_topic": "abhoth/deepthought/state",
+      "value_template": "{{ value_json.fan_mode }}",
+      "command_topic": "abhoth/deepthought/set/fan_mode",
+      "options": [
+        "auto",
+        "quiet",
+        "full"
+      ],
+      "icon": "mdi:fan",
+      "entity_category": "config",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "deepthought",
+          "abhoth_deepthought"
+        ],
+        "name": "DeepThought",
+        "manufacturer": "Abhoth",
+        "model": "4-GPU server",
+        "sw_version": "0.16.6"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_core_temp/config",
+    "payload": {
+      "name": "Core temp",
+      "unique_id": "abhoth_deepthought_card_a_core_temp",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_core_temp",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.core_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_hbm_temp/config",
+    "payload": {
+      "name": "HBM temp",
+      "unique_id": "abhoth_deepthought_card_a_hbm_temp",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_hbm_temp",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.hbm_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_power/config",
+    "payload": {
+      "name": "Power",
+      "unique_id": "abhoth_deepthought_card_a_power",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_power",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.power }}",
+      "unit_of_measurement": "W",
+      "state_class": "measurement",
+      "device_class": "power",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_power_pct/config",
+    "payload": {
+      "name": "Power of limit",
+      "unique_id": "abhoth_deepthought_card_a_power_pct",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_power_pct",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.power_pct }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:flash",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_sm_clock/config",
+    "payload": {
+      "name": "SM clock",
+      "unique_id": "abhoth_deepthought_card_a_sm_clock",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_sm_clock",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.sm_clock }}",
+      "unit_of_measurement": "MHz",
+      "state_class": "measurement",
+      "device_class": "frequency",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_util/config",
+    "payload": {
+      "name": "Utilization",
+      "unique_id": "abhoth_deepthought_card_a_util",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_util",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.util }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:chip",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_vram_used/config",
+    "payload": {
+      "name": "VRAM used",
+      "unique_id": "abhoth_deepthought_card_a_vram_used",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_vram_used",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.vram_used }}",
+      "unit_of_measurement": "GB",
+      "state_class": "measurement",
+      "icon": "mdi:memory",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_llm_card_a/config",
+    "payload": {
+      "name": "Engine",
+      "unique_id": "deepthought_llm_card_a",
+      "object_id": "deepthought_llm_card_a",
+      "default_entity_id": "sensor.deepthought_llm_card_a",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.engine }}",
+      "icon": "mdi:expansion-card",
+      "json_attributes_topic": "abhoth/deepthought/card/a/state",
+      "json_attributes_template": "{{ {'engine_name': value_json.engine_name, 'engine_state': value_json.engine_state, 'model': value_json.model, 'gpu': value_json.gpu} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_engine_state/config",
+    "payload": {
+      "name": "Engine state",
+      "unique_id": "abhoth_deepthought_card_a_engine_state",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_engine_state",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.engine_state }}",
+      "icon": "mdi:state-machine",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_model/config",
+    "payload": {
+      "name": "Model",
+      "unique_id": "abhoth_deepthought_card_a_model",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_model",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.model }}",
+      "icon": "mdi:brain",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_tok_s/config",
+    "payload": {
+      "name": "Tokens per second",
+      "unique_id": "abhoth_deepthought_card_a_tok_s",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_tok_s",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.tok_s }}",
+      "unit_of_measurement": "t/s",
+      "state_class": "measurement",
+      "icon": "mdi:speedometer",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_running/config",
+    "payload": {
+      "name": "Running",
+      "unique_id": "abhoth_deepthought_card_a_running",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_running",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.running }}",
+      "icon": "mdi:play",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_a_queued/config",
+    "payload": {
+      "name": "Queued",
+      "unique_id": "abhoth_deepthought_card_a_queued",
+      "default_entity_id": "sensor.abhoth_deepthought_card_a_queued",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.queued }}",
+      "icon": "mdi:tray-full",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_card_a_clock_locked/config",
+    "payload": {
+      "name": "Clock locked",
+      "unique_id": "abhoth_deepthought_card_a_clock_locked",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_card_a_clock_locked",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.clock_locked }}",
+      "icon": "mdi:lock-clock",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_card_a_throttling/config",
+    "payload": {
+      "name": "Throttling",
+      "unique_id": "abhoth_deepthought_card_a_throttling",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_card_a_throttling",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.throttling }}",
+      "icon": "mdi:speedometer-slow",
+      "json_attributes_topic": "abhoth/deepthought/card/a/state",
+      "json_attributes_template": "{{ {'throttle_reasons': value_json.throttle_reasons} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/switch/abhoth_deepthought_card_a_online/config",
+    "payload": {
+      "name": "Online",
+      "unique_id": "abhoth_deepthought_card_a_online",
+      "default_entity_id": "switch.abhoth_deepthought_card_a_online",
+      "state_topic": "abhoth/deepthought/card/a/state",
+      "value_template": "{{ value_json.online }}",
+      "command_topic": "abhoth/deepthought/set/card_a_online",
+      "icon": "mdi:power",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/a/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_a"
+        ],
+        "name": "DeepThought card A",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM3-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_gpu_temp/config",
+    "payload": {
+      "name": "Core temp",
+      "unique_id": "deepthought_gpu_temp",
+      "object_id": "deepthought_gpu_temp",
+      "default_entity_id": "sensor.deepthought_gpu_temp",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.core_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_hbm_temp/config",
+    "payload": {
+      "name": "HBM temp",
+      "unique_id": "deepthought_hbm_temp",
+      "object_id": "deepthought_hbm_temp",
+      "default_entity_id": "sensor.deepthought_hbm_temp",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.hbm_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_power/config",
+    "payload": {
+      "name": "Power",
+      "unique_id": "deepthought_power",
+      "object_id": "deepthought_power",
+      "default_entity_id": "sensor.deepthought_power",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.power }}",
+      "unit_of_measurement": "W",
+      "state_class": "measurement",
+      "device_class": "power",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_b_power_pct/config",
+    "payload": {
+      "name": "Power of limit",
+      "unique_id": "abhoth_deepthought_card_b_power_pct",
+      "default_entity_id": "sensor.abhoth_deepthought_card_b_power_pct",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.power_pct }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:flash",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_sm_clock/config",
+    "payload": {
+      "name": "SM clock",
+      "unique_id": "deepthought_sm_clock",
+      "object_id": "deepthought_sm_clock",
+      "default_entity_id": "sensor.deepthought_sm_clock",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.sm_clock }}",
+      "unit_of_measurement": "MHz",
+      "state_class": "measurement",
+      "device_class": "frequency",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_gpu_util/config",
+    "payload": {
+      "name": "Utilization",
+      "unique_id": "deepthought_gpu_util",
+      "object_id": "deepthought_gpu_util",
+      "default_entity_id": "sensor.deepthought_gpu_util",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.util }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:chip",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_vram_gb/config",
+    "payload": {
+      "name": "VRAM used",
+      "unique_id": "deepthought_vram_gb",
+      "object_id": "deepthought_vram_gb",
+      "default_entity_id": "sensor.deepthought_vram_gb",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.vram_used }}",
+      "unit_of_measurement": "GB",
+      "state_class": "measurement",
+      "icon": "mdi:memory",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/deepthought_llm_card_b/config",
+    "payload": {
+      "name": "Engine",
+      "unique_id": "deepthought_llm_card_b",
+      "object_id": "deepthought_llm_card_b",
+      "default_entity_id": "sensor.deepthought_llm_card_b",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.engine }}",
+      "icon": "mdi:expansion-card",
+      "json_attributes_topic": "abhoth/deepthought/card/b/state",
+      "json_attributes_template": "{{ {'engine_name': value_json.engine_name, 'engine_state': value_json.engine_state, 'model': value_json.model, 'gpu': value_json.gpu} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_b_engine_state/config",
+    "payload": {
+      "name": "Engine state",
+      "unique_id": "abhoth_deepthought_card_b_engine_state",
+      "default_entity_id": "sensor.abhoth_deepthought_card_b_engine_state",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.engine_state }}",
+      "icon": "mdi:state-machine",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_b_model/config",
+    "payload": {
+      "name": "Model",
+      "unique_id": "abhoth_deepthought_card_b_model",
+      "default_entity_id": "sensor.abhoth_deepthought_card_b_model",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.model }}",
+      "icon": "mdi:brain",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_b_tok_s/config",
+    "payload": {
+      "name": "Tokens per second",
+      "unique_id": "abhoth_deepthought_card_b_tok_s",
+      "default_entity_id": "sensor.abhoth_deepthought_card_b_tok_s",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.tok_s }}",
+      "unit_of_measurement": "t/s",
+      "state_class": "measurement",
+      "icon": "mdi:speedometer",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_b_running/config",
+    "payload": {
+      "name": "Running",
+      "unique_id": "abhoth_deepthought_card_b_running",
+      "default_entity_id": "sensor.abhoth_deepthought_card_b_running",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.running }}",
+      "icon": "mdi:play",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_b_queued/config",
+    "payload": {
+      "name": "Queued",
+      "unique_id": "abhoth_deepthought_card_b_queued",
+      "default_entity_id": "sensor.abhoth_deepthought_card_b_queued",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.queued }}",
+      "icon": "mdi:tray-full",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_card_b_clock_locked/config",
+    "payload": {
+      "name": "Clock locked",
+      "unique_id": "abhoth_deepthought_card_b_clock_locked",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_card_b_clock_locked",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.clock_locked }}",
+      "icon": "mdi:lock-clock",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_card_b_throttling/config",
+    "payload": {
+      "name": "Throttling",
+      "unique_id": "abhoth_deepthought_card_b_throttling",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_card_b_throttling",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.throttling }}",
+      "icon": "mdi:speedometer-slow",
+      "json_attributes_topic": "abhoth/deepthought/card/b/state",
+      "json_attributes_template": "{{ {'throttle_reasons': value_json.throttle_reasons} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/switch/abhoth_deepthought_card_b_online/config",
+    "payload": {
+      "name": "Online",
+      "unique_id": "abhoth_deepthought_card_b_online",
+      "default_entity_id": "switch.abhoth_deepthought_card_b_online",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.online }}",
+      "command_topic": "abhoth/deepthought/set/card_b_online",
+      "icon": "mdi:power",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/select/abhoth_deepthought_card_b_clock_cap/config",
+    "payload": {
+      "name": "Clock cap",
+      "unique_id": "abhoth_deepthought_card_b_clock_cap",
+      "default_entity_id": "select.abhoth_deepthought_card_b_clock_cap",
+      "state_topic": "abhoth/deepthought/card/b/state",
+      "value_template": "{{ value_json.clock_cap }}",
+      "command_topic": "abhoth/deepthought/set/card_b_clock_cap",
+      "options": [
+        "none",
+        "1200",
+        "1300",
+        "1400",
+        "1500"
+      ],
+      "entity_category": "config",
+      "icon": "mdi:speedometer-medium",
+      "json_attributes_topic": "abhoth/deepthought/card/b/state",
+      "json_attributes_template": "{{ {'clock_cap_ttl_seconds': value_json.clock_cap_ttl_seconds} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/b/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_b"
+        ],
+        "name": "DeepThought card B",
+        "manufacturer": "NVIDIA",
+        "model": "V100-PCIe-32GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_core_temp/config",
+    "payload": {
+      "name": "Core temp",
+      "unique_id": "abhoth_deepthought_card_c_core_temp",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_core_temp",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.core_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_hbm_temp/config",
+    "payload": {
+      "name": "HBM temp",
+      "unique_id": "abhoth_deepthought_card_c_hbm_temp",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_hbm_temp",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.hbm_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_power/config",
+    "payload": {
+      "name": "Power",
+      "unique_id": "abhoth_deepthought_card_c_power",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_power",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.power }}",
+      "unit_of_measurement": "W",
+      "state_class": "measurement",
+      "device_class": "power",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_power_pct/config",
+    "payload": {
+      "name": "Power of limit",
+      "unique_id": "abhoth_deepthought_card_c_power_pct",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_power_pct",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.power_pct }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:flash",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_sm_clock/config",
+    "payload": {
+      "name": "SM clock",
+      "unique_id": "abhoth_deepthought_card_c_sm_clock",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_sm_clock",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.sm_clock }}",
+      "unit_of_measurement": "MHz",
+      "state_class": "measurement",
+      "device_class": "frequency",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_util/config",
+    "payload": {
+      "name": "Utilization",
+      "unique_id": "abhoth_deepthought_card_c_util",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_util",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.util }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:chip",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_vram_used/config",
+    "payload": {
+      "name": "VRAM used",
+      "unique_id": "abhoth_deepthought_card_c_vram_used",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_vram_used",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.vram_used }}",
+      "unit_of_measurement": "GB",
+      "state_class": "measurement",
+      "icon": "mdi:memory",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_engine/config",
+    "payload": {
+      "name": "Engine",
+      "unique_id": "abhoth_deepthought_card_c_engine",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_engine",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.engine }}",
+      "icon": "mdi:expansion-card",
+      "json_attributes_topic": "abhoth/deepthought/card/c/state",
+      "json_attributes_template": "{{ {'engine_name': value_json.engine_name, 'engine_state': value_json.engine_state, 'model': value_json.model, 'gpu': value_json.gpu} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_engine_state/config",
+    "payload": {
+      "name": "Engine state",
+      "unique_id": "abhoth_deepthought_card_c_engine_state",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_engine_state",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.engine_state }}",
+      "icon": "mdi:state-machine",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_model/config",
+    "payload": {
+      "name": "Model",
+      "unique_id": "abhoth_deepthought_card_c_model",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_model",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.model }}",
+      "icon": "mdi:brain",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_tok_s/config",
+    "payload": {
+      "name": "Tokens per second",
+      "unique_id": "abhoth_deepthought_card_c_tok_s",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_tok_s",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.tok_s }}",
+      "unit_of_measurement": "t/s",
+      "state_class": "measurement",
+      "icon": "mdi:speedometer",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_running/config",
+    "payload": {
+      "name": "Running",
+      "unique_id": "abhoth_deepthought_card_c_running",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_running",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.running }}",
+      "icon": "mdi:play",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_c_queued/config",
+    "payload": {
+      "name": "Queued",
+      "unique_id": "abhoth_deepthought_card_c_queued",
+      "default_entity_id": "sensor.abhoth_deepthought_card_c_queued",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.queued }}",
+      "icon": "mdi:tray-full",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_card_c_clock_locked/config",
+    "payload": {
+      "name": "Clock locked",
+      "unique_id": "abhoth_deepthought_card_c_clock_locked",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_card_c_clock_locked",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.clock_locked }}",
+      "icon": "mdi:lock-clock",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_card_c_throttling/config",
+    "payload": {
+      "name": "Throttling",
+      "unique_id": "abhoth_deepthought_card_c_throttling",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_card_c_throttling",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.throttling }}",
+      "icon": "mdi:speedometer-slow",
+      "json_attributes_topic": "abhoth/deepthought/card/c/state",
+      "json_attributes_template": "{{ {'throttle_reasons': value_json.throttle_reasons} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/switch/abhoth_deepthought_card_c_online/config",
+    "payload": {
+      "name": "Online",
+      "unique_id": "abhoth_deepthought_card_c_online",
+      "default_entity_id": "switch.abhoth_deepthought_card_c_online",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.online }}",
+      "command_topic": "abhoth/deepthought/set/card_c_online",
+      "icon": "mdi:power",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/select/abhoth_deepthought_card_c_clock_cap/config",
+    "payload": {
+      "name": "Clock cap",
+      "unique_id": "abhoth_deepthought_card_c_clock_cap",
+      "default_entity_id": "select.abhoth_deepthought_card_c_clock_cap",
+      "state_topic": "abhoth/deepthought/card/c/state",
+      "value_template": "{{ value_json.clock_cap }}",
+      "command_topic": "abhoth/deepthought/set/card_c_clock_cap",
+      "options": [
+        "none",
+        "1200",
+        "1300",
+        "1400",
+        "1500"
+      ],
+      "entity_category": "config",
+      "icon": "mdi:speedometer-medium",
+      "json_attributes_topic": "abhoth/deepthought/card/c/state",
+      "json_attributes_template": "{{ {'clock_cap_ttl_seconds': value_json.clock_cap_ttl_seconds} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/c/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_c"
+        ],
+        "name": "DeepThought card C",
+        "manufacturer": "NVIDIA",
+        "model": "V100-SXM2-16GB",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_core_temp/config",
+    "payload": {
+      "name": "Core temp",
+      "unique_id": "abhoth_deepthought_card_d_core_temp",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_core_temp",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.core_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_hbm_temp/config",
+    "payload": {
+      "name": "HBM temp",
+      "unique_id": "abhoth_deepthought_card_d_hbm_temp",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_hbm_temp",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.hbm_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_power/config",
+    "payload": {
+      "name": "Power",
+      "unique_id": "abhoth_deepthought_card_d_power",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_power",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.power }}",
+      "unit_of_measurement": "W",
+      "state_class": "measurement",
+      "device_class": "power",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_power_pct/config",
+    "payload": {
+      "name": "Power of limit",
+      "unique_id": "abhoth_deepthought_card_d_power_pct",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_power_pct",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.power_pct }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:flash",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_sm_clock/config",
+    "payload": {
+      "name": "SM clock",
+      "unique_id": "abhoth_deepthought_card_d_sm_clock",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_sm_clock",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.sm_clock }}",
+      "unit_of_measurement": "MHz",
+      "state_class": "measurement",
+      "device_class": "frequency",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_util/config",
+    "payload": {
+      "name": "Utilization",
+      "unique_id": "abhoth_deepthought_card_d_util",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_util",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.util }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:chip",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_vram_used/config",
+    "payload": {
+      "name": "VRAM used",
+      "unique_id": "abhoth_deepthought_card_d_vram_used",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_vram_used",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.vram_used }}",
+      "unit_of_measurement": "GB",
+      "state_class": "measurement",
+      "icon": "mdi:memory",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_engine/config",
+    "payload": {
+      "name": "Engine",
+      "unique_id": "abhoth_deepthought_card_d_engine",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_engine",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.engine }}",
+      "icon": "mdi:expansion-card",
+      "json_attributes_topic": "abhoth/deepthought/card/d/state",
+      "json_attributes_template": "{{ {'engine_name': value_json.engine_name, 'engine_state': value_json.engine_state, 'model': value_json.model, 'gpu': value_json.gpu} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_engine_state/config",
+    "payload": {
+      "name": "Engine state",
+      "unique_id": "abhoth_deepthought_card_d_engine_state",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_engine_state",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.engine_state }}",
+      "icon": "mdi:state-machine",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_model/config",
+    "payload": {
+      "name": "Model",
+      "unique_id": "abhoth_deepthought_card_d_model",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_model",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.model }}",
+      "icon": "mdi:brain",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_tok_s/config",
+    "payload": {
+      "name": "Tokens per second",
+      "unique_id": "abhoth_deepthought_card_d_tok_s",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_tok_s",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.tok_s }}",
+      "unit_of_measurement": "t/s",
+      "state_class": "measurement",
+      "icon": "mdi:speedometer",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_running/config",
+    "payload": {
+      "name": "Running",
+      "unique_id": "abhoth_deepthought_card_d_running",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_running",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.running }}",
+      "icon": "mdi:play",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_card_d_queued/config",
+    "payload": {
+      "name": "Queued",
+      "unique_id": "abhoth_deepthought_card_d_queued",
+      "default_entity_id": "sensor.abhoth_deepthought_card_d_queued",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.queued }}",
+      "icon": "mdi:tray-full",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_card_d_clock_locked/config",
+    "payload": {
+      "name": "Clock locked",
+      "unique_id": "abhoth_deepthought_card_d_clock_locked",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_card_d_clock_locked",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.clock_locked }}",
+      "icon": "mdi:lock-clock",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_card_d_throttling/config",
+    "payload": {
+      "name": "Throttling",
+      "unique_id": "abhoth_deepthought_card_d_throttling",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_card_d_throttling",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.throttling }}",
+      "icon": "mdi:speedometer-slow",
+      "json_attributes_topic": "abhoth/deepthought/card/d/state",
+      "json_attributes_template": "{{ {'throttle_reasons': value_json.throttle_reasons} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/switch/abhoth_deepthought_card_d_online/config",
+    "payload": {
+      "name": "Online",
+      "unique_id": "abhoth_deepthought_card_d_online",
+      "default_entity_id": "switch.abhoth_deepthought_card_d_online",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.online }}",
+      "command_topic": "abhoth/deepthought/set/card_d_online",
+      "icon": "mdi:power",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/select/abhoth_deepthought_card_d_clock_cap/config",
+    "payload": {
+      "name": "Clock cap",
+      "unique_id": "abhoth_deepthought_card_d_clock_cap",
+      "default_entity_id": "select.abhoth_deepthought_card_d_clock_cap",
+      "state_topic": "abhoth/deepthought/card/d/state",
+      "value_template": "{{ value_json.clock_cap }}",
+      "command_topic": "abhoth/deepthought/set/card_d_clock_cap",
+      "options": [
+        "none",
+        "1200",
+        "1300",
+        "1400",
+        "1500"
+      ],
+      "entity_category": "config",
+      "icon": "mdi:speedometer-medium",
+      "json_attributes_topic": "abhoth/deepthought/card/d/state",
+      "json_attributes_template": "{{ {'clock_cap_ttl_seconds': value_json.clock_cap_ttl_seconds} | tojson }}",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        },
+        {
+          "topic": "abhoth/deepthought/card/d/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_card_d"
+        ],
+        "name": "DeepThought card D",
+        "manufacturer": "NVIDIA",
+        "model": "Quadro M4000",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_0_duty/config",
+    "payload": {
+      "name": "Duty",
+      "unique_id": "abhoth_deepthought_fan_0_duty",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_0_duty",
+      "state_topic": "abhoth/deepthought/fan/0/state",
+      "value_template": "{{ value_json.duty }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:fan",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_0"
+        ],
+        "name": "DeepThought fan 0 (card B)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_0_rpm/config",
+    "payload": {
+      "name": "Speed",
+      "unique_id": "abhoth_deepthought_fan_0_rpm",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_0_rpm",
+      "state_topic": "abhoth/deepthought/fan/0/state",
+      "value_template": "{{ value_json.rpm }}",
+      "unit_of_measurement": "rpm",
+      "state_class": "measurement",
+      "icon": "mdi:fan",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_0"
+        ],
+        "name": "DeepThought fan 0 (card B)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_0_control_temp/config",
+    "payload": {
+      "name": "Control temp",
+      "unique_id": "abhoth_deepthought_fan_0_control_temp",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_0_control_temp",
+      "state_topic": "abhoth/deepthought/fan/0/state",
+      "value_template": "{{ value_json.control_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_0"
+        ],
+        "name": "DeepThought fan 0 (card B)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_0_source/config",
+    "payload": {
+      "name": "Control source",
+      "unique_id": "abhoth_deepthought_fan_0_source",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_0_source",
+      "state_topic": "abhoth/deepthought/fan/0/state",
+      "value_template": "{{ value_json.source }}",
+      "icon": "mdi:thermometer-lines",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_0"
+        ],
+        "name": "DeepThought fan 0 (card B)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_0_push_age/config",
+    "payload": {
+      "name": "Push age",
+      "unique_id": "abhoth_deepthought_fan_0_push_age",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_0_push_age",
+      "state_topic": "abhoth/deepthought/fan/0/state",
+      "value_template": "{{ value_json.push_age }}",
+      "unit_of_measurement": "s",
+      "state_class": "measurement",
+      "device_class": "duration",
+      "entity_category": "diagnostic",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_0"
+        ],
+        "name": "DeepThought fan 0 (card B)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_fan_0_failsafe/config",
+    "payload": {
+      "name": "Failsafe",
+      "unique_id": "abhoth_deepthought_fan_0_failsafe",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_fan_0_failsafe",
+      "state_topic": "abhoth/deepthought/fan/0/state",
+      "value_template": "{{ value_json.failsafe }}",
+      "device_class": "problem",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_0"
+        ],
+        "name": "DeepThought fan 0 (card B)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_1_duty/config",
+    "payload": {
+      "name": "Duty",
+      "unique_id": "abhoth_deepthought_fan_1_duty",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_1_duty",
+      "state_topic": "abhoth/deepthought/fan/1/state",
+      "value_template": "{{ value_json.duty }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:fan",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_1"
+        ],
+        "name": "DeepThought fan 1 (card A)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_1_rpm/config",
+    "payload": {
+      "name": "Speed",
+      "unique_id": "abhoth_deepthought_fan_1_rpm",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_1_rpm",
+      "state_topic": "abhoth/deepthought/fan/1/state",
+      "value_template": "{{ value_json.rpm }}",
+      "unit_of_measurement": "rpm",
+      "state_class": "measurement",
+      "icon": "mdi:fan",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_1"
+        ],
+        "name": "DeepThought fan 1 (card A)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_1_control_temp/config",
+    "payload": {
+      "name": "Control temp",
+      "unique_id": "abhoth_deepthought_fan_1_control_temp",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_1_control_temp",
+      "state_topic": "abhoth/deepthought/fan/1/state",
+      "value_template": "{{ value_json.control_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_1"
+        ],
+        "name": "DeepThought fan 1 (card A)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_1_source/config",
+    "payload": {
+      "name": "Control source",
+      "unique_id": "abhoth_deepthought_fan_1_source",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_1_source",
+      "state_topic": "abhoth/deepthought/fan/1/state",
+      "value_template": "{{ value_json.source }}",
+      "icon": "mdi:thermometer-lines",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_1"
+        ],
+        "name": "DeepThought fan 1 (card A)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_1_push_age/config",
+    "payload": {
+      "name": "Push age",
+      "unique_id": "abhoth_deepthought_fan_1_push_age",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_1_push_age",
+      "state_topic": "abhoth/deepthought/fan/1/state",
+      "value_template": "{{ value_json.push_age }}",
+      "unit_of_measurement": "s",
+      "state_class": "measurement",
+      "device_class": "duration",
+      "entity_category": "diagnostic",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_1"
+        ],
+        "name": "DeepThought fan 1 (card A)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_fan_1_failsafe/config",
+    "payload": {
+      "name": "Failsafe",
+      "unique_id": "abhoth_deepthought_fan_1_failsafe",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_fan_1_failsafe",
+      "state_topic": "abhoth/deepthought/fan/1/state",
+      "value_template": "{{ value_json.failsafe }}",
+      "device_class": "problem",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_1"
+        ],
+        "name": "DeepThought fan 1 (card A)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_2_duty/config",
+    "payload": {
+      "name": "Duty",
+      "unique_id": "abhoth_deepthought_fan_2_duty",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_2_duty",
+      "state_topic": "abhoth/deepthought/fan/2/state",
+      "value_template": "{{ value_json.duty }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "icon": "mdi:fan",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_2"
+        ],
+        "name": "DeepThought fan 2 (card C)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_2_rpm/config",
+    "payload": {
+      "name": "Speed",
+      "unique_id": "abhoth_deepthought_fan_2_rpm",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_2_rpm",
+      "state_topic": "abhoth/deepthought/fan/2/state",
+      "value_template": "{{ value_json.rpm }}",
+      "unit_of_measurement": "rpm",
+      "state_class": "measurement",
+      "icon": "mdi:fan",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_2"
+        ],
+        "name": "DeepThought fan 2 (card C)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_2_control_temp/config",
+    "payload": {
+      "name": "Control temp",
+      "unique_id": "abhoth_deepthought_fan_2_control_temp",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_2_control_temp",
+      "state_topic": "abhoth/deepthought/fan/2/state",
+      "value_template": "{{ value_json.control_temp }}",
+      "unit_of_measurement": "°C",
+      "state_class": "measurement",
+      "device_class": "temperature",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_2"
+        ],
+        "name": "DeepThought fan 2 (card C)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_2_source/config",
+    "payload": {
+      "name": "Control source",
+      "unique_id": "abhoth_deepthought_fan_2_source",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_2_source",
+      "state_topic": "abhoth/deepthought/fan/2/state",
+      "value_template": "{{ value_json.source }}",
+      "icon": "mdi:thermometer-lines",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_2"
+        ],
+        "name": "DeepThought fan 2 (card C)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_fan_2_push_age/config",
+    "payload": {
+      "name": "Push age",
+      "unique_id": "abhoth_deepthought_fan_2_push_age",
+      "default_entity_id": "sensor.abhoth_deepthought_fan_2_push_age",
+      "state_topic": "abhoth/deepthought/fan/2/state",
+      "value_template": "{{ value_json.push_age }}",
+      "unit_of_measurement": "s",
+      "state_class": "measurement",
+      "device_class": "duration",
+      "entity_category": "diagnostic",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_2"
+        ],
+        "name": "DeepThought fan 2 (card C)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_fan_2_failsafe/config",
+    "payload": {
+      "name": "Failsafe",
+      "unique_id": "abhoth_deepthought_fan_2_failsafe",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_fan_2_failsafe",
+      "state_topic": "abhoth/deepthought/fan/2/state",
+      "value_template": "{{ value_json.failsafe }}",
+      "device_class": "problem",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_fan_2"
+        ],
+        "name": "DeepThought fan 2 (card C)",
+        "model": "Fan (supervisor-derived)",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_engine_strata_a_state/config",
+    "payload": {
+      "name": "State",
+      "unique_id": "abhoth_deepthought_engine_strata_a_state",
+      "default_entity_id": "sensor.abhoth_deepthought_engine_strata_a_state",
+      "state_topic": "abhoth/deepthought/engine/strata_a/state",
+      "value_template": "{{ value_json.state }}",
+      "icon": "mdi:state-machine",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_engine_strata_a"
+        ],
+        "name": "DeepThought engine Strata (card A)",
+        "model": "llm engine",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_engine_strata_a_model/config",
+    "payload": {
+      "name": "Model",
+      "unique_id": "abhoth_deepthought_engine_strata_a_model",
+      "default_entity_id": "sensor.abhoth_deepthought_engine_strata_a_model",
+      "state_topic": "abhoth/deepthought/engine/strata_a/state",
+      "value_template": "{{ value_json.model }}",
+      "icon": "mdi:brain",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_engine_strata_a"
+        ],
+        "name": "DeepThought engine Strata (card A)",
+        "model": "llm engine",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_engine_strata_a_tok_s/config",
+    "payload": {
+      "name": "Tokens per second",
+      "unique_id": "abhoth_deepthought_engine_strata_a_tok_s",
+      "default_entity_id": "sensor.abhoth_deepthought_engine_strata_a_tok_s",
+      "state_topic": "abhoth/deepthought/engine/strata_a/state",
+      "value_template": "{{ value_json.tok_s }}",
+      "unit_of_measurement": "t/s",
+      "state_class": "measurement",
+      "icon": "mdi:speedometer",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_engine_strata_a"
+        ],
+        "name": "DeepThought engine Strata (card A)",
+        "model": "llm engine",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_engine_strata_a_healthy/config",
+    "payload": {
+      "name": "Healthy",
+      "unique_id": "abhoth_deepthought_engine_strata_a_healthy",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_engine_strata_a_healthy",
+      "state_topic": "abhoth/deepthought/engine/strata_a/state",
+      "value_template": "{{ value_json.healthy }}",
+      "device_class": "running",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_engine_strata_a"
+        ],
+        "name": "DeepThought engine Strata (card A)",
+        "model": "llm engine",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_engine_comfyui_state/config",
+    "payload": {
+      "name": "State",
+      "unique_id": "abhoth_deepthought_engine_comfyui_state",
+      "default_entity_id": "sensor.abhoth_deepthought_engine_comfyui_state",
+      "state_topic": "abhoth/deepthought/engine/comfyui/state",
+      "value_template": "{{ value_json.state }}",
+      "icon": "mdi:state-machine",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_engine_comfyui"
+        ],
+        "name": "DeepThought engine ComfyUI",
+        "model": "image engine",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_engine_comfyui_model/config",
+    "payload": {
+      "name": "Model",
+      "unique_id": "abhoth_deepthought_engine_comfyui_model",
+      "default_entity_id": "sensor.abhoth_deepthought_engine_comfyui_model",
+      "state_topic": "abhoth/deepthought/engine/comfyui/state",
+      "value_template": "{{ value_json.model }}",
+      "icon": "mdi:brain",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_engine_comfyui"
+        ],
+        "name": "DeepThought engine ComfyUI",
+        "model": "image engine",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/abhoth_deepthought_engine_comfyui_tok_s/config",
+    "payload": {
+      "name": "Tokens per second",
+      "unique_id": "abhoth_deepthought_engine_comfyui_tok_s",
+      "default_entity_id": "sensor.abhoth_deepthought_engine_comfyui_tok_s",
+      "state_topic": "abhoth/deepthought/engine/comfyui/state",
+      "value_template": "{{ value_json.tok_s }}",
+      "unit_of_measurement": "t/s",
+      "state_class": "measurement",
+      "icon": "mdi:speedometer",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_engine_comfyui"
+        ],
+        "name": "DeepThought engine ComfyUI",
+        "model": "image engine",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/binary_sensor/abhoth_deepthought_engine_comfyui_healthy/config",
+    "payload": {
+      "name": "Healthy",
+      "unique_id": "abhoth_deepthought_engine_comfyui_healthy",
+      "default_entity_id": "binary_sensor.abhoth_deepthought_engine_comfyui_healthy",
+      "state_topic": "abhoth/deepthought/engine/comfyui/state",
+      "value_template": "{{ value_json.healthy }}",
+      "device_class": "running",
+      "availability": [
+        {
+          "topic": "abhoth/deepthought/availability"
+        }
+      ],
+      "availability_mode": "all",
+      "device": {
+        "identifiers": [
+          "abhoth_deepthought_engine_comfyui"
+        ],
+        "name": "DeepThought engine ComfyUI",
+        "model": "image engine",
+        "via_device": "deepthought"
+      },
+      "origin": {
+        "name": "Abhoth Supervisor",
+        "sw_version": "0.16.6"
+      }
+    }
+  }
+]

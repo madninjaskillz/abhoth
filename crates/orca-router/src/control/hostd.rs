@@ -2,9 +2,15 @@
 //! the clock and power controller (`orca-gpuctl`):
 //!
 //! - **engine ready**: when an engine enters `Ready`, hostd re-asserts the card's clocks,
-//!   power limit and persistence (`assert {card, reason: "engine_ready"}`);
+//!   power limit and persistence (`{"type":"assert","card":"A"}`, answered `assert.result`);
 //! - **wake**: before the router proxies a request to a card, hostd ends any idle clock-down
-//!   on it (`wake {card, source: "router"}`).
+//!   on it (`{"type":"wake","card":"A"}`);
+//! - **hold** / **release**: no idle clock-down while a job needs the card.
+//!
+//! The messages are 🟪D's `orca-hostd::protocol::ToHostd` (NDJSON envelopes): [`Op::Hostd`]
+//! carries the message `type` as `method` and its other fields as `params`; `hostctl serve`
+//! frames them (`hello`, then the message) and returns hostd's reply frame, so an `error` or
+//! an `assert.result` with `ok: false` comes back as a failure ([`reply_ok`]).
 //!
 //! Both go through the same channel as every other host call ([`Op::Hostd`] over the
 //! executor: in-process for a local server, SSH plus `hostctl serve` relaying to hostd's
@@ -28,6 +34,46 @@ pub trait HostdClient: Send + Sync {
     async fn engine_ready(&self, server: &str, card: &str) -> Result<(), String>;
     /// A request is about to go to `card`. Returns at once.
     fn wake(&self, server: &str, card: &str);
+    /// No idle clock-down on `card` (`None`: every card) for `ttl_s` seconds or until released.
+    async fn hold(
+        &self,
+        _server: &str,
+        _card: Option<&str>,
+        _ttl_s: u64,
+        _reason: &str,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+    async fn release(&self, _server: &str, _card: Option<&str>) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// The protocol's `Target`: a card label or every card.
+fn target(card: Option<&str>) -> serde_json::Value {
+    match card {
+        Some(c) => json!({"card": c}),
+        None => json!("all"),
+    }
+}
+
+/// hostd's reply frame (the relay's stdout) as a result.
+pub fn reply_ok(what: &str, stdout: &str) -> Result<(), String> {
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("{what}: hostd answered something unreadable: {e}"))?;
+    match v["type"].as_str() {
+        Some("error") => Err(format!(
+            "{what}: {} ({})",
+            v["message"].as_str().unwrap_or(""),
+            v["code"].as_str().unwrap_or("error")
+        )),
+        Some("assert.result") if v["ok"] == false => Err(format!(
+            "{what}: {}",
+            v["summary"].as_str().unwrap_or("not ok")
+        )),
+        Some(_) => Ok(()),
+        None => Err(format!("{what}: hostd answered without a type")),
+    }
 }
 
 /// No host daemon (remote servers without hostd, tests).
@@ -73,6 +119,14 @@ impl ExecHostd {
         }
     }
 
+    async fn call(&self, req: ExecRequest, what: &str) -> Result<(), String> {
+        match self.exec.run(req, &Cancel::new()).await {
+            Ok(o) if o.ok() => reply_ok(what, &o.stdout),
+            Ok(o) => Err(format!("{what}: {}", o.summary())),
+            Err(e) => Err(format!("{what}: {e}")),
+        }
+    }
+
     /// Whether a wake for `card` is due (and mark it sent).
     fn wake_due(&self, server: &str, card: &str) -> bool {
         let mut g = self.last_wake.lock().unwrap_or_else(|e| e.into_inner());
@@ -88,23 +142,35 @@ impl ExecHostd {
 #[async_trait]
 impl HostdClient for ExecHostd {
     async fn engine_ready(&self, server: &str, card: &str) -> Result<(), String> {
+        let req = self.request(server, "assert", json!({"card": card}));
+        self.call(req, &format!("hostd assert on {card}")).await
+    }
+
+    async fn hold(
+        &self,
+        server: &str,
+        card: Option<&str>,
+        ttl_s: u64,
+        reason: &str,
+    ) -> Result<(), String> {
         let req = self.request(
             server,
-            "assert",
-            json!({"card": card, "reason": "engine_ready"}),
+            "hold",
+            json!({"target": target(card), "ttl_s": ttl_s.min(3600), "reason": reason}),
         );
-        match self.exec.run(req, &Cancel::new()).await {
-            Ok(o) if o.ok() => Ok(()),
-            Ok(o) => Err(format!("hostd assert on {card}: {}", o.summary())),
-            Err(e) => Err(format!("hostd assert on {card}: {e}")),
-        }
+        self.call(req, "hostd hold").await
+    }
+
+    async fn release(&self, server: &str, card: Option<&str>) -> Result<(), String> {
+        let req = self.request(server, "release", json!({"target": target(card)}));
+        self.call(req, "hostd release").await
     }
 
     fn wake(&self, server: &str, card: &str) {
         if !self.wake_due(server, card) {
             return;
         }
-        let req = self.request(server, "wake", json!({"card": card, "source": "router"}));
+        let req = self.request(server, "wake", json!({"card": card}));
         let exec = self.exec.clone();
         let card = card.to_string();
         if let Ok(rt) = tokio::runtime::Handle::try_current() {
@@ -144,6 +210,12 @@ mod tests {
     #[tokio::test]
     async fn ready_asserts_and_wakes_are_debounced() {
         let fake = Arc::new(FakeExecutor::default());
+        fake.on(
+            "assert",
+            vec![Ok(crate::control::exec::ExecOutput::ok_with(
+                r#"{"id":1,"type":"assert.result","card":"A","ok":true,"summary":"A ok"}"#,
+            ))],
+        );
         let h = ExecHostd::new(fake.clone());
         h.engine_ready("gpu", "A").await.unwrap();
         let w = WakeByCard {
@@ -162,8 +234,49 @@ mod tests {
             "{labels:?}"
         );
         let reqs = fake.requests();
-        assert!(
-            matches!(&reqs[0].op, Op::Hostd { params, .. } if params["reason"] == "engine_ready")
+        assert!(matches!(&reqs[0].op, Op::Hostd { params, .. } if params["card"] == "A"));
+    }
+
+    /// What the relay sends is 🟪D's `orca-hostd::protocol::ToHostd` exactly, and its replies
+    /// are read back as results.
+    #[test]
+    fn frames_match_the_hostd_protocol() {
+        use crate::control::hostctl::{hostd_frames, hostd_reply};
+        use orca_hostd::protocol::{Envelope, ToHostd};
+        let msg = |method: &str, params: serde_json::Value| {
+            let [hello, m] = hostd_frames(method, &params);
+            let h: Envelope<ToHostd> = serde_json::from_value(hello).unwrap();
+            assert!(matches!(h.msg, ToHostd::Hello { proto: 1, .. }));
+            let e: Envelope<ToHostd> = serde_json::from_value(m).unwrap();
+            assert_eq!(e.id, Some(1));
+            e.msg
+        };
+        assert_eq!(
+            msg("assert", json!({"card": "A"})),
+            ToHostd::Assert { card: "A".into() }
         );
+        assert_eq!(
+            msg("wake", json!({"card": "B"})),
+            ToHostd::Wake { card: "B".into() }
+        );
+        assert!(matches!(
+            msg(
+                "hold",
+                json!({"target": target(Some("A")), "ttl_s": 60, "reason": "job"})
+            ),
+            ToHostd::Hold { ttl_s: 60, .. }
+        ));
+        assert!(matches!(
+            msg("release", json!({"target": target(None)})),
+            ToHostd::Release { .. }
+        ));
+        assert_eq!(hostd_reply(r#"{"type":"telemetry","ts":1}"#), None);
+        assert_eq!(hostd_reply(r#"{"id":0,"type":"hello","proto":1}"#), None);
+        let ack = hostd_reply(r#"{"id":1,"type":"ack"}"#).unwrap();
+        assert!(reply_ok("x", &ack).is_ok());
+        let refused = hostd_reply(r#"{"id":0,"type":"error","code":"version","message":"old"}"#);
+        assert!(reply_ok("x", &refused.unwrap()).is_err());
+        let bad = r#"{"id":1,"type":"assert.result","card":"A","ok":false,"summary":"PL"}"#;
+        assert!(reply_ok("x", bad).is_err());
     }
 }

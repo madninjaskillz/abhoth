@@ -1,0 +1,249 @@
+[
+  {
+    "topic": "abhoth/deepthought/state",
+    "payload": {
+      "tok_s_total": 37.3,
+      "models": "A: Inkling 2 Mini (strata, 4 slots) | B: Inkling 2 Mini (strata, 4 slots) | C: off | D: off",
+      "power_total": 85.5,
+      "cpu": 3.3,
+      "ram_used": 310.0,
+      "ram_arc": 180.0,
+      "ram_consumed": 130.0,
+      "ram_free": 193.0,
+      "net_in": 1.5,
+      "net_out": 0.4,
+      "layout": "merged-inkling-x2",
+      "layout_title": "Inkling 2 Mini ('merged') on both cards",
+      "layouts": [
+        "flash-x2",
+        "dense-stock-x2",
+        "merged-inkling-x2"
+      ],
+      "layout_target": "merged-inkling-x2",
+      "switch_state": "idle",
+      "last_switch": {
+        "at": "2026-11-26T08:00:00Z",
+        "from": "flash-x2",
+        "to": "merged-inkling-x2"
+      },
+      "last_switch_at": "2026-11-26T08:00:00Z",
+      "last_command": null,
+      "on_demand": "off",
+      "leases": 0,
+      "slots_busy": 0,
+      "slots_total": 8,
+      "bench_running": "OFF",
+      "calendar_block": "OFF",
+      "event_active": "OFF",
+      "event": null,
+      "problem": "OFF",
+      "open_alerts": [],
+      "fan_mode": "auto",
+      "version": "0.16.6",
+      "config_rev": "r42",
+      "hostd": "ok"
+    }
+  },
+  {
+    "topic": "abhoth/deepthought/layout_target",
+    "payload": "merged-inkling-x2"
+  },
+  {
+    "topic": "abhoth/deepthought/card/a/availability",
+    "payload": "online"
+  },
+  {
+    "topic": "abhoth/deepthought/card/a/state",
+    "payload": {
+      "gpu": "V100-SXM3-32GB",
+      "core_temp": 41.0,
+      "hbm_temp": 44.0,
+      "power": 61.2,
+      "power_pct": 17.5,
+      "sm_clock": 1597.0,
+      "util": 0.0,
+      "vram_used": 28.4,
+      "vram_total": 32.0,
+      "engine": "Inkling 2 Mini (strata, 4 slots)",
+      "engine_name": "strata",
+      "engine_state": "ready",
+      "model": "inkling-2-mini",
+      "tok_s": 0.0,
+      "running": 0,
+      "queued": 0,
+      "clock_locked": "ON",
+      "throttling": "OFF",
+      "throttle_reasons": [],
+      "online": "ON",
+      "cap_offered": false,
+      "clock_cap": "none",
+      "clock_cap_ttl_seconds": 3600
+    }
+  },
+  {
+    "topic": "abhoth/deepthought/card/b/availability",
+    "payload": "online"
+  },
+  {
+    "topic": "abhoth/deepthought/card/b/state",
+    "payload": {
+      "gpu": "V100-PCIe-32GB",
+      "core_temp": 26.0,
+      "hbm_temp": 24.0,
+      "power": 24.3,
+      "power_pct": 9.7,
+      "sm_clock": 135.0,
+      "util": 0.0,
+      "vram_used": 28.4,
+      "vram_total": 32.0,
+      "engine": "Inkling 2 Mini (strata, 4 slots)",
+      "engine_name": "strata",
+      "engine_state": "ready",
+      "model": "inkling-2-mini",
+      "tok_s": 37.3,
+      "running": 0,
+      "queued": 0,
+      "clock_locked": "ON",
+      "throttling": "OFF",
+      "throttle_reasons": [],
+      "online": "ON",
+      "cap_offered": true,
+      "clock_cap": "1300",
+      "clock_cap_ttl_seconds": 3600
+    }
+  },
+  {
+    "topic": "abhoth/deepthought/card/c/availability",
+    "payload": "online"
+  },
+  {
+    "topic": "abhoth/deepthought/card/c/state",
+    "payload": {
+      "gpu": "V100-SXM2-16GB",
+      "core_temp": 33.0,
+      "hbm_temp": 35.0,
+      "power": null,
+      "power_pct": null,
+      "sm_clock": null,
+      "util": null,
+      "vram_used": null,
+      "vram_total": null,
+      "engine": "comfyui",
+      "engine_name": "comfyui",
+      "engine_state": "idle",
+      "model": null,
+      "tok_s": null,
+      "running": null,
+      "queued": null,
+      "clock_locked": null,
+      "throttling": "ON",
+      "throttle_reasons": [
+        "sw_power_cap"
+      ],
+      "online": "ON",
+      "cap_offered": true,
+      "clock_cap": "none",
+      "clock_cap_ttl_seconds": 3600
+    }
+  },
+  {
+    "topic": "abhoth/deepthought/card/d/availability",
+    "payload": "online"
+  },
+  {
+    "topic": "abhoth/deepthought/card/d/state",
+    "payload": {
+      "gpu": "Quadro M4000",
+      "core_temp": 38.0,
+      "hbm_temp": null,
+      "power": null,
+      "power_pct": null,
+      "sm_clock": null,
+      "util": null,
+      "vram_used": null,
+      "vram_total": null,
+      "engine": "off",
+      "engine_name": null,
+      "engine_state": null,
+      "model": null,
+      "tok_s": null,
+      "running": null,
+      "queued": null,
+      "clock_locked": null,
+      "throttling": "OFF",
+      "throttle_reasons": [],
+      "online": "OFF",
+      "cap_offered": true,
+      "clock_cap": "none",
+      "clock_cap_ttl_seconds": 3600
+    }
+  },
+  {
+    "topic": "abhoth/deepthought/fan/0/state",
+    "payload": {
+      "duty": 30.0,
+      "rpm": 1234.0,
+      "control_temp": 44.0,
+      "source": "gpu.B.hbm",
+      "push_age": 1.2,
+      "failsafe": "OFF",
+      "cools": [
+        "B"
+      ]
+    }
+  },
+  {
+    "topic": "abhoth/deepthought/fan/1/state",
+    "payload": {
+      "duty": 34.0,
+      "rpm": 1234.0,
+      "control_temp": 44.0,
+      "source": "gpu.A.hbm",
+      "push_age": 1.2,
+      "failsafe": "OFF",
+      "cools": [
+        "A"
+      ]
+    }
+  },
+  {
+    "topic": "abhoth/deepthought/fan/2/state",
+    "payload": {
+      "duty": 30.0,
+      "rpm": 1234.0,
+      "control_temp": 44.0,
+      "source": "gpu.C.hbm",
+      "push_age": 1.2,
+      "failsafe": "OFF",
+      "cools": [
+        "C"
+      ]
+    }
+  },
+  {
+    "topic": "abhoth/deepthought/engine/strata_a/state",
+    "payload": {
+      "state": "ready",
+      "model": "inkling-2-mini",
+      "tok_s": 0.0,
+      "healthy": "ON",
+      "cards": [
+        "A"
+      ],
+      "kind": "llm"
+    }
+  },
+  {
+    "topic": "abhoth/deepthought/engine/comfyui/state",
+    "payload": {
+      "state": "idle",
+      "model": null,
+      "tok_s": null,
+      "healthy": "ON",
+      "cards": [
+        "C"
+      ],
+      "kind": "image"
+    }
+  }
+]

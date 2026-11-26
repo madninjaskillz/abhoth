@@ -30,8 +30,11 @@ struct Job {
     token: Option<String>,
     /// The user who started it (D140): the project is theirs, and only they see the job.
     owner: Option<i64>,
-    /// Cloned with the GitHub sign-in: the project is linked to it, not given a token copy.
-    github_app: bool,
+    /// What the new project's token entry becomes instead of a copy of the token: the GitHub
+    /// sign-in (`@github-app`) or its owner's GitHub credentials (`@github-user:<id>`).
+    link: Option<String>,
+    /// Without a token, git gets none of the server's own credential helpers either.
+    isolate: bool,
     status: Mutex<CloneStatus>,
     cancel: tokio::sync::Notify,
 }
@@ -74,6 +77,16 @@ impl Job {
         s.state = "failed".into();
         s.error = Some(scrub_text(error, self.token.as_deref()));
     }
+}
+
+/// How [`CloneService::start_opts`] gives git credentials.
+#[derive(Debug, Clone, Default)]
+pub struct CloneOptions {
+    pub token: Option<String>,
+    /// Saved for the new project instead of the token (see `Job::link`).
+    pub link: Option<String>,
+    /// No credential helper of the server's (`credential.helper=`) when there is no token.
+    pub isolate: bool,
 }
 
 pub struct CloneService {
@@ -143,6 +156,29 @@ impl CloneService {
         branch: Option<&str>,
         github_app: bool,
     ) -> Result<CloneStatus, String> {
+        self.start_opts(
+            url,
+            parent_folder,
+            name,
+            branch,
+            CloneOptions {
+                token: token.map(str::to_string),
+                link: github_app.then(|| tokens::APP_LINK.to_string()),
+                isolate: false,
+            },
+        )
+    }
+
+    /// Check the request and start cloning with these credentials.
+    pub fn start_opts(
+        &self,
+        url: &str,
+        parent_folder: &str,
+        name: Option<&str>,
+        branch: Option<&str>,
+        options: CloneOptions,
+    ) -> Result<CloneStatus, String> {
+        let token = options.token.as_deref();
         static CRED: OnceLock<regex::Regex> = OnceLock::new();
         static BRANCH: OnceLock<regex::Regex> = OnceLock::new();
         let url = expand_url(url);
@@ -222,7 +258,8 @@ impl CloneService {
         let job = Arc::new(Job {
             token,
             owner: crate::audit::request_caller().and_then(|c| c.uid),
-            github_app,
+            link: options.link,
+            isolate: options.isolate,
             status: Mutex::new(status.clone()),
             cancel: tokio::sync::Notify::new(),
         });
@@ -268,6 +305,10 @@ async fn run(
         Ok(a) => a,
         Err(e) => return job.fail(&e.to_string()),
     };
+    if job.isolate && !_auth.is_active() {
+        // Reset the helper list: none of the server's own sign-ins are offered to GitHub.
+        cmd.args(["-c", "credential.helper="]);
+    }
     cmd.args(["clone", "--progress"]);
     if let Some(b) = &branch {
         cmd.args(["--branch", b]);
@@ -306,8 +347,8 @@ async fn run(
     }
     match projects.add(&dest.to_string_lossy(), None, job.owner) {
         Ok(rt) => {
-            if job.github_app {
-                projects.tokens.link_app(rt.id());
+            if let Some(link) = &job.link {
+                projects.tokens.link(rt.id(), link);
             } else if let Some(t) = &job.token {
                 let _ = projects.tokens.set(rt.id(), t);
             }

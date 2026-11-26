@@ -21,6 +21,7 @@ use crate::guards::Caller;
 
 /// What the shim needs from the control plane. Methods that start work (switch, card
 /// offline/online) only queue it and answer at once, as the old API did (202 + job id).
+#[async_trait::async_trait]
 pub trait ShimBackend: Send + Sync {
     /// The catalog in profiles.json's shape with summaries (None: not available yet).
     fn profiles(&self) -> Option<Value>;
@@ -33,7 +34,7 @@ pub trait ShimBackend: Send + Sync {
     fn plan(&self, layout: Option<&str>, profile: Option<&str>) -> (u16, Value);
     fn ondemand(&self) -> Value;
     /// `POST /switch`: 200 already live, 202 queued, 409 refused.
-    fn switch(
+    async fn switch(
         &self,
         layout: Option<&str>,
         profile: Option<&str>,
@@ -42,7 +43,7 @@ pub trait ShimBackend: Send + Sync {
         caller: &Caller,
     ) -> (u16, Value);
     /// `POST /cards/<X>/offline|online`.
-    fn card_action(
+    async fn card_action(
         &self,
         card: &str,
         online: bool,
@@ -52,8 +53,12 @@ pub trait ShimBackend: Send + Sync {
         caller: &Caller,
     ) -> (u16, Value);
     /// `POST /compose`, `/profiles/save`, `/profiles/delete`: config writes.
-    fn catalog_write(&self, what: &str, body: &Map<String, Value>, caller: &Caller)
-    -> (u16, Value);
+    async fn catalog_write(
+        &self,
+        what: &str,
+        body: &Map<String, Value>,
+        caller: &Caller,
+    ) -> (u16, Value);
 }
 
 fn query(q: &str) -> Vec<(String, String)> {
@@ -169,14 +174,16 @@ pub async fn handle(
             && card.chars().all(|c| c.is_ascii_alphabetic())
         {
             let dry = body.get("dryRun").and_then(Value::as_bool).unwrap_or(false);
-            return b.card_action(
-                &card.to_ascii_uppercase(),
-                action == "online",
-                &by,
-                &reason,
-                dry,
-                &caller,
-            );
+            return b
+                .card_action(
+                    &card.to_ascii_uppercase(),
+                    action == "online",
+                    &by,
+                    &reason,
+                    dry,
+                    &caller,
+                )
+                .await;
         }
         return (404, json!({"error": "not found"}));
     }
@@ -194,9 +201,10 @@ pub async fn handle(
                 &reason,
                 &caller,
             )
+            .await
         }
         "/compose" | "/profiles/save" | "/profiles/delete" => {
-            b.catalog_write(&path[1..], &body, &caller)
+            b.catalog_write(&path[1..], &body, &caller).await
         }
         _ => (404, json!({"error": "not found"})),
     }
@@ -213,6 +221,7 @@ mod shim_tests {
         calls: Mutex<Vec<String>>,
     }
 
+    #[async_trait::async_trait]
     impl ShimBackend for B {
         fn profiles(&self) -> Option<Value> {
             None
@@ -235,7 +244,7 @@ mod shim_tests {
         fn ondemand(&self) -> Value {
             json!({"enabled": false})
         }
-        fn switch(
+        async fn switch(
             &self,
             layout: Option<&str>,
             profile: Option<&str>,
@@ -249,7 +258,7 @@ mod shim_tests {
             ));
             (202, json!({"id": "j2", "state": "queued"}))
         }
-        fn card_action(
+        async fn card_action(
             &self,
             card: &str,
             online: bool,
@@ -264,7 +273,12 @@ mod shim_tests {
                 .push(format!("card {card} {online} {dry}"));
             (202, json!({"id": "j3"}))
         }
-        fn catalog_write(&self, what: &str, _b: &Map<String, Value>, _c: &Caller) -> (u16, Value) {
+        async fn catalog_write(
+            &self,
+            what: &str,
+            _b: &Map<String, Value>,
+            _c: &Caller,
+        ) -> (u16, Value) {
             self.calls.lock().unwrap().push(what.to_string());
             (200, json!({}))
         }

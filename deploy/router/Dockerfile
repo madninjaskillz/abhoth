@@ -1,6 +1,7 @@
 # abhoth router (LiteLLM + qfn-lb replacement) as a small image. Build from rust/:
 #   docker build -f deploy/router/Dockerfile -t local/abhoth-router:1 .
 # One static-ish binary (rustls, no OpenSSL) on debian slim; runs as uid 568 (TrueNAS "apps").
+# openssh-client: the control plane reaches the GPU host over SSH (hostctl, ROUTER-CONFIG.md 6).
 ARG RUST_VERSION=1.100.0
 FROM rust:${RUST_VERSION}-bookworm AS build
 WORKDIR /src
@@ -13,7 +14,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 FROM debian:bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
+ && apt-get install -y --no-install-recommends ca-certificates curl tzdata openssh-client \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/abhoth-router /app/abhoth-router
 RUN /app/abhoth-router --help >/dev/null
