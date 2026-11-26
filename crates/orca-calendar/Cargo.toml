@@ -1,0 +1,13 @@
+[package]
+name = "orca-calendar"
+description = "Abhoth Supervisor calendar: entries, RRULE/cron/iCal, occurrences, effects, event-key scopes (SUPERVISOR.md 8-9). Skeleton."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
