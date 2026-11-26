@@ -281,7 +281,13 @@ mod tests {
             if self.down.load(Ordering::SeqCst) {
                 return Err("down".into());
             }
-            Ok(self.keys.lock().unwrap().get(d).cloned().unwrap_or_default())
+            Ok(self
+                .keys
+                .lock()
+                .unwrap()
+                .get(d)
+                .cloned()
+                .unwrap_or_default())
         }
     }
 
@@ -316,7 +322,10 @@ mod tests {
     async fn a_good_key_is_asked_once_a_minute() {
         let (fake, cache, t) = setup();
         let id = cache.check(KEY).await.unwrap();
-        assert_eq!((id.user_id, id.role, id.key_name.as_str()), (2, Role::User, "laptop"));
+        assert_eq!(
+            (id.user_id, id.role, id.key_name.as_str()),
+            (2, Role::User, "laptop")
+        );
         t.store(59_000, Ordering::SeqCst);
         cache.check(KEY).await.unwrap();
         assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
@@ -371,7 +380,10 @@ mod tests {
         assert!(cache.check(KEY).await.is_ok(), "stale but known");
         assert_eq!(cache.stats.stale_served.load(Ordering::SeqCst), 1);
         t.store(15 * 60_000, Ordering::SeqCst);
-        assert!(matches!(cache.check(KEY).await, Err(KeyError::Unavailable(_))));
+        assert!(matches!(
+            cache.check(KEY).await,
+            Err(KeyError::Unavailable(_))
+        ));
         // an uncached key while down: 503, not allowed
         assert!(matches!(
             cache.check("abk_eeeeeeeeeeeeeeeeeeeeeeeeeeee").await,

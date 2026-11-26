@@ -113,8 +113,7 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
 
 /// The admin API over [`crate::control_api::demo::DemoControl`]: no engines, no commands.
 async fn admin_demo(args: &[String]) -> Result<i32> {
-    let (mut listen, mut token_file, mut accounts) =
-        ("127.0.0.1:8010".to_string(), None, None);
+    let (mut listen, mut token_file, mut accounts) = ("127.0.0.1:8010".to_string(), None, None);
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -134,7 +133,9 @@ async fn admin_demo(args: &[String]) -> Result<i32> {
     let demo = crate::control_api::demo::DemoControl::new();
     demo.spawn_ticker();
     let settings = crate::access::AccessSettings {
-        accounts_token: accounts.as_ref().map(|_| "secret:accounts_token".to_string()),
+        accounts_token: accounts
+            .as_ref()
+            .map(|_| "secret:accounts_token".to_string()),
         accounts_url: accounts,
         loopback_admin: false,
         ..Default::default()
@@ -412,16 +413,20 @@ fn control_import_cmd(args: &[String]) -> Result<i32> {
     let out = out.ok_or_else(|| anyhow!("--out is required"))?;
     // Default: llama-server reads --api-key-file; ninfer has no such flag yet, so its key is
     // read inside the container by a wrapper.
-    opt.keys.insert("ninfer".into(), key.unwrap_or(KeyChoice::Wrapper));
-    opt.keys.insert("llamacpp".into(), key.unwrap_or(KeyChoice::FileFlag));
+    opt.keys
+        .insert("ninfer".into(), key.unwrap_or(KeyChoice::Wrapper));
+    opt.keys
+        .insert("llamacpp".into(), key.unwrap_or(KeyChoice::FileFlag));
     let src = Sources::from_dir(&from).map_err(|e| anyhow!(e))?;
     let im = ci::import(&src, &opt).map_err(|e| anyhow!(e))?;
     std::fs::write(&out, &im.toml).with_context(|| format!("writing {}", out.display()))?;
     if let Some(r) = &report {
-        std::fs::write(r, ci::report_markdown(&im)).with_context(|| format!("writing {}", r.display()))?;
+        std::fs::write(r, ci::report_markdown(&im))
+            .with_context(|| format!("writing {}", r.display()))?;
     }
     if let Some(s) = &seed {
-        std::fs::write(s, serde_json::to_string_pretty(&im.seed)?).with_context(|| format!("writing {}", s.display()))?;
+        std::fs::write(s, serde_json::to_string_pretty(&im.seed)?)
+            .with_context(|| format!("writing {}", s.display()))?;
     }
     let todo = im.report.iter().filter(|r| r.kind == "todo").count();
     println!(
@@ -480,7 +485,8 @@ async fn hostctl_cmd(args: &[String]) -> Result<i32> {
         "export" => {
             let config = config.ok_or_else(|| anyhow!("--config is required"))?;
             let server = server.ok_or_else(|| anyhow!("--server is required"))?;
-            let text = hostctl::export_cli(&config, &server, out.as_ref()).map_err(|e| anyhow!(e))?;
+            let text =
+                hostctl::export_cli(&config, &server, out.as_ref()).map_err(|e| anyhow!(e))?;
             if out.is_none() {
                 print!("{text}");
             }

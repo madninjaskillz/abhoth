@@ -136,7 +136,12 @@ async fn service_keys_work_at_the_router_only_and_revoke_within_the_cache() {
     )
     .await;
     assert_eq!(s, 200, "{plan}");
-    assert_eq!(at_router(&p, Method::GET, "/admin/api/config", &key).await.0, 403);
+    assert_eq!(
+        at_router(&p, Method::GET, "/admin/api/config", &key)
+            .await
+            .0,
+        403
+    );
     let (_, who) = at_router(&p, Method::GET, "/admin/api/whoami", &key).await;
     assert_eq!(who["principal"], format!("service:ha#{}", k["id"]));
     // ... and the web UI refuses the key outright
@@ -161,9 +166,13 @@ async fn service_keys_work_at_the_router_only_and_revoke_within_the_cache() {
         .await
         .unwrap();
     assert_eq!(del.status(), 200);
-    assert_eq!(at_router(&p, Method::GET, "/admin/api/whoami", &key).await.0, 200);
-    p.st
-        .control
+    assert_eq!(
+        at_router(&p, Method::GET, "/admin/api/whoami", &key)
+            .await
+            .0,
+        200
+    );
+    p.st.control
         .get()
         .unwrap()
         .access
@@ -214,7 +223,12 @@ async fn user_keys_are_users_at_the_router() {
     let bob_key = "abk_bobs_key_0123456789abcdef";
     db.create_api_key(bob_id, "laptop", bob_key, "abk_bo", 0)
         .unwrap();
-    assert_eq!(at_router(&p, Method::GET, "/admin/api/state", bob_key).await.0, 403);
+    assert_eq!(
+        at_router(&p, Method::GET, "/admin/api/state", bob_key)
+            .await
+            .0,
+        403
+    );
     let (s, v) = at_router(&p, Method::GET, "/v1/abhoth/view", bob_key).await;
     assert_eq!(s, 200);
     assert_eq!(v["actions"]["switch"], false);
@@ -312,4 +326,39 @@ async fn introspection_needs_the_link_token() {
     assert_eq!(r.json::<Value>().await.unwrap()["active"], false);
     // a GET goes through the sign-in check like any other call
     assert_eq!(c.get(&url).send().await.unwrap().status(), 401);
+}
+
+/// Behind a proxy (here: loopback marked as a trusted proxy), the link token is only taken over
+/// HTTPS; plain HTTP is refused before the token is even checked.
+#[tokio::test]
+async fn behind_a_proxy_the_link_needs_https() {
+    let work = tempfile::tempdir().unwrap();
+    let web = Host::start_with(FakeSession::new(work.path()), |o| {
+        o.router =
+            Some(orca_webui::router_admin::RouterLink::new("http://127.0.0.1:9", LINK).unwrap());
+        o.login.trusted_proxies = vec!["127.0.0.1".parse().unwrap()];
+    })
+    .await;
+    let url = web.url(orca_core::router_link::INTROSPECT_PATH);
+    let body = json!({"key_sha256": orca_core::router_link::key_digest("abk_x")});
+    let c = web.http();
+    let plain = c
+        .post(&url)
+        .bearer_auth(LINK)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(plain.status(), 403);
+    let tls = c
+        .post(&url)
+        .bearer_auth(LINK)
+        .header("x-forwarded-proto", "https")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(tls.status(), 200);
+    // and a LAN router URL in plain http is refused at start
+    assert!(orca_webui::router_admin::RouterLink::new("http://192.168.1.5:8010", LINK).is_err());
 }

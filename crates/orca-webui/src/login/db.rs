@@ -238,6 +238,22 @@ fn session_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
     })
 }
 
+/// `abhoth.db.schema<v>-<utc time>.bak` next to the database (never overwrites).
+fn backup_path(db: &Path, version: i64) -> PathBuf {
+    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let name = db
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "abhoth.db".into());
+    let mut p = db.with_file_name(format!("{name}.schema{version}-{stamp}.bak"));
+    let mut n = 1;
+    while p.exists() {
+        n += 1;
+        p = db.with_file_name(format!("{name}.schema{version}-{stamp}-{n}.bak"));
+    }
+    p
+}
+
 impl UserDb {
     /// Open (creating it and its folder) and migrate. The file is private to this OS user on
     /// Unix.
@@ -297,6 +313,23 @@ impl UserDb {
                 self.path.display(),
                 orca_core::brand::PRODUCT_NAME
             ));
+        }
+        // An existing file that is about to change schema is copied first: an older build
+        // cannot open the new schema, so rolling back means restoring this copy.
+        if version > 0 && (version as usize) < MIGRATIONS.len() && self.path.is_file() {
+            let backup = backup_path(&self.path, version);
+            conn.execute("VACUUM INTO ?1", [backup.to_string_lossy()])
+                .map_err(|e| {
+                    format!(
+                        "Could not back up {} before upgrading its schema (nothing was changed): {e}",
+                        self.path.display()
+                    )
+                })?;
+            tracing::info!(
+                "{} upgraded from schema {version}; the old file is kept as {}",
+                self.path.display(),
+                backup.display()
+            );
         }
         for (i, sql) in MIGRATIONS.iter().enumerate().skip(version as usize) {
             let tx = conn.transaction().map_err(db_err)?;
@@ -774,9 +807,9 @@ impl UserDb {
 
     fn keys_where(&self, cond: &str, args: impl rusqlite::Params) -> Vec<ApiKey> {
         let conn = self.conn.lock().unwrap();
-        let Ok(mut st) =
-            conn.prepare(&format!("SELECT {KEY_COLS} FROM api_keys WHERE {cond} ORDER BY id"))
-        else {
+        let Ok(mut st) = conn.prepare(&format!(
+            "SELECT {KEY_COLS} FROM api_keys WHERE {cond} ORDER BY id"
+        )) else {
             return vec![];
         };
         st.query_map(args, key_row)
@@ -891,6 +924,60 @@ impl UserDb {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 0.16.x database (schema 1, with a user and an API key) upgrades in place, keeps its
+    /// rows, and leaves a schema-1 copy that an older build can open.
+    #[test]
+    fn a_schema_1_database_is_backed_up_then_upgraded() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("abhoth.db");
+        {
+            let c = Connection::open(&p).unwrap();
+            c.execute_batch(MIGRATIONS[0]).unwrap();
+            c.execute_batch(
+                "PRAGMA user_version=1;
+                 INSERT INTO users(id, username, username_key, password_hash, is_admin, created)
+                   VALUES (1, 'Ann', 'ann', 'h', 1, 1);
+                 INSERT INTO api_keys(user_id, name, prefix, key_hash, created)
+                   VALUES (1, 'laptop', 'abk_x', x'01', 1);",
+            )
+            .unwrap();
+        }
+        let db = UserDb::open(&p).unwrap();
+        assert_eq!(db.schema_version(), MIGRATIONS.len() as i64);
+        let keys = db.api_keys_of(1);
+        assert_eq!(keys.len(), 1);
+        assert_eq!((keys[0].kind.as_str(), keys[0].scopes.len()), (KEY_USER, 0));
+        drop(db);
+        let backups: Vec<PathBuf> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.to_string_lossy().ends_with(".bak"))
+            .collect();
+        assert_eq!(backups.len(), 1, "{backups:?}");
+        assert!(backups[0].to_string_lossy().contains("abhoth.db.schema1-"));
+        let old = Connection::open(&backups[0]).unwrap();
+        let v: i64 = old
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        let n: i64 = old
+            .query_row("SELECT count(*) FROM api_keys", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((v, n), (1, 1));
+        // opened again: already current, no second copy
+        drop(UserDb::open(&p).unwrap());
+        let count = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .to_string_lossy()
+                    .ends_with(".bak")
+            })
+            .count();
+        assert_eq!(count, 1);
+    }
 
     #[test]
     fn migrations_apply_once_and_a_newer_schema_is_refused() {

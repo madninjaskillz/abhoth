@@ -21,7 +21,14 @@ const USER_KEY: &str = "abk_user_bbbbbbbbbbbbbbbbbbbbbb";
 const JARVIS_KEY: &str = "abk_svc_cccccccccccccccccccccc";
 const DASH_KEY: &str = "abk_svc_dddddddddddddddddddddd";
 
-fn intro(uid: i64, name: &str, role: Role, kid: i64, kname: &str, scopes: &[&str]) -> Introspection {
+fn intro(
+    uid: i64,
+    name: &str,
+    role: Role,
+    kid: i64,
+    kname: &str,
+    scopes: &[&str],
+) -> Introspection {
     Introspection {
         active: true,
         user_id: Some(uid),
@@ -36,13 +43,29 @@ fn intro(uid: i64, name: &str, role: Role, kid: i64, kname: &str, scopes: &[&str
 
 fn access() -> Access {
     let mut t = HashMap::new();
-    t.insert(key_digest(ADMIN_KEY), intro(1, "admin", Role::Admin, 1, "cli", &[]));
-    t.insert(key_digest(USER_KEY), intro(2, "bob", Role::User, 2, "laptop", &[]));
+    t.insert(
+        key_digest(ADMIN_KEY),
+        intro(1, "admin", Role::Admin, 1, "cli", &[]),
+    );
+    t.insert(
+        key_digest(USER_KEY),
+        intro(2, "bob", Role::User, 2, "laptop", &[]),
+    );
     t.insert(
         key_digest(JARVIS_KEY),
-        intro(1, "admin", Role::Service, 3, "jarvis", &["chat", "switch", "group:switchers"]),
+        intro(
+            1,
+            "admin",
+            Role::Service,
+            3,
+            "jarvis",
+            &["chat", "switch", "group:switchers"],
+        ),
     );
-    t.insert(key_digest(DASH_KEY), intro(1, "admin", Role::Service, 4, "dash", &["read"]));
+    t.insert(
+        key_digest(DASH_KEY),
+        intro(1, "admin", Role::Service, 4, "dash", &["read"]),
+    );
     let cache = KeyCache::new(
         std::sync::Arc::new(Table(Mutex::new(t))),
         CacheTimes::default(),
@@ -63,39 +86,87 @@ fn access() -> Access {
 
 fn with_key(k: &str) -> HeaderMap {
     let mut h = HeaderMap::new();
-    h.insert("authorization", HeaderValue::from_str(&format!("Bearer {k}")).unwrap());
+    h.insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {k}")).unwrap(),
+    );
     h
 }
 
 async fn who(a: &Access, h: &HeaderMap, ip: &str) -> Result<Principal, AuthError> {
-    a.authenticate(h, Some(ip.parse().unwrap()), "GET", "/admin/api/state").await
+    a.authenticate(h, Some(ip.parse().unwrap()), "GET", "/admin/api/state")
+        .await
 }
 
 #[tokio::test]
 async fn principals_from_keys_peers_and_signatures() {
     let a = access();
     let lan = "10.1.2.3";
-    assert!(matches!(who(&a, &with_key(ADMIN_KEY), lan).await, Ok(Principal::Key(i)) if i.role == Role::Admin));
+    assert!(
+        matches!(who(&a, &with_key(ADMIN_KEY), lan).await, Ok(Principal::Key(i)) if i.role == Role::Admin)
+    );
     assert_eq!(
         who(&a, &with_key("abk_nope_eeeeeeeeeeeeeeeeeeeeee"), lan).await,
         Err(AuthError::Unauthorized("not a valid API key"))
     );
-    assert_eq!(who(&a, &HeaderMap::new(), lan).await, Ok(Principal::Anonymous { lan: true }));
-    assert_eq!(who(&a, &HeaderMap::new(), "192.0.2.9").await, Ok(Principal::Anonymous { lan: false }));
-    assert_eq!(who(&a, &HeaderMap::new(), "127.0.0.1").await, Ok(Principal::Loopback));
+    assert_eq!(
+        who(&a, &HeaderMap::new(), lan).await,
+        Ok(Principal::Anonymous { lan: true })
+    );
+    assert_eq!(
+        who(&a, &HeaderMap::new(), "192.0.2.9").await,
+        Ok(Principal::Anonymous { lan: false })
+    );
+    assert_eq!(
+        who(&a, &HeaderMap::new(), "127.0.0.1").await,
+        Ok(Principal::Loopback)
+    );
     // a forwarded-for header does not make a caller local
     let mut h = HeaderMap::new();
     h.insert("x-forwarded-for", HeaderValue::from_static("127.0.0.1"));
-    assert_eq!(who(&a, &h, "192.0.2.9").await, Ok(Principal::Anonymous { lan: false }));
+    assert_eq!(
+        who(&a, &h, "192.0.2.9").await,
+        Ok(Principal::Anonymous { lan: false })
+    );
 
     // the web server's signed acting user (token compared trimmed, as read from a file)
-    let u = ActingUser { user_id: 1, name: "admin".into(), admin: true };
+    let u = ActingUser {
+        user_id: 1,
+        name: "admin".into(),
+        admin: true,
+    };
     let mut h = HeaderMap::new();
-    h.insert(ACTING_USER_HEADER, HeaderValue::from_str(&sign_acting_user(b"tok", &u, 990, "GET", "/admin/api/state")).unwrap());
-    assert_eq!(who(&a, &h, "192.0.2.9").await, Ok(Principal::Acting(u.clone())));
+    h.insert(
+        ACTING_USER_HEADER,
+        HeaderValue::from_str(&sign_acting_user(
+            b"tok",
+            &u,
+            990,
+            "GET",
+            "/admin/api/state",
+        ))
+        .unwrap(),
+    );
+    assert_eq!(
+        who(&a, &h, "192.0.2.9").await,
+        Ok(Principal::Acting(u.clone()))
+    );
     let mut h = HeaderMap::new();
-    h.insert(ACTING_USER_HEADER, HeaderValue::from_str(&sign_acting_user(b"tok", &u, 990, "GET", "/admin/api/config")).unwrap());
-    assert!(matches!(who(&a, &h, "192.0.2.9").await, Err(AuthError::Unauthorized(_))));
+    h.insert(
+        ACTING_USER_HEADER,
+        HeaderValue::from_str(&sign_acting_user(
+            b"tok",
+            &u,
+            990,
+            "GET",
+            "/admin/api/config",
+        ))
+        .unwrap(),
+    );
+    assert!(matches!(
+        who(&a, &h, "192.0.2.9").await,
+        Err(AuthError::Unauthorized(_))
+    ));
 }
 
 #[tokio::test]
@@ -113,14 +184,35 @@ async fn the_permission_table() {
     let dash = p(DASH_KEY).await;
     let lan = Principal::Anonymous { lan: true };
     let wan = Principal::Anonymous { lan: false };
-    let all = [Models, Chat, OnDemand, Leases, ModelInfo, ReadControl, EditControl, Switch];
+    let all = [
+        Models,
+        Chat,
+        OnDemand,
+        Leases,
+        ModelInfo,
+        ReadControl,
+        EditControl,
+        Switch,
+    ];
     assert!(all.iter().all(|&x| a.allows(&admin, x)));
     let row = |p: &Principal| all.iter().map(|&x| a.allows(p, x)).collect::<Vec<_>>();
     //                          Models Chat  OnDem  Lease  MInfo  Read   Edit   Switch
-    assert_eq!(row(&user), [true, true, false, true, false, false, false, false]);
-    assert_eq!(row(&jarvis), [true, true, true, false, false, false, false, true]);
-    assert_eq!(row(&dash), [false, false, false, false, true, true, false, false]);
-    assert_eq!(row(&lan), [true, true, false, true, true, false, false, false]);
+    assert_eq!(
+        row(&user),
+        [true, true, false, true, false, false, false, false]
+    );
+    assert_eq!(
+        row(&jarvis),
+        [true, true, true, false, false, false, false, true]
+    );
+    assert_eq!(
+        row(&dash),
+        [false, false, false, false, true, true, false, false]
+    );
+    assert_eq!(
+        row(&lan),
+        [true, true, false, true, true, false, false, false]
+    );
     assert_eq!(row(&wan), [false; 8]);
     // anonymous callers never switch, whatever the network
     assert!(!a.allows(&lan, Switch) && !a.allows(&lan, OnDemand));
@@ -147,10 +239,25 @@ fn cidrs_and_settings() {
     let c = Cidr::parse("192.168.0.0/16").unwrap();
     assert!(c.contains("192.168.4.5".parse().unwrap()));
     assert!(!c.contains("192.169.0.1".parse().unwrap()));
-    assert!(c.contains("::ffff:192.168.1.1".parse().unwrap()), "v4-mapped v6");
-    assert!(Cidr::parse("fd00::/8").unwrap().contains("fd12::1".parse().unwrap()));
-    assert!(Cidr::parse("0.0.0.0/0").unwrap().contains("8.8.8.8".parse().unwrap()));
-    assert!(Cidr::parse("10.0.0.1").unwrap().contains("10.0.0.1".parse().unwrap()));
+    assert!(
+        c.contains("::ffff:192.168.1.1".parse().unwrap()),
+        "v4-mapped v6"
+    );
+    assert!(
+        Cidr::parse("fd00::/8")
+            .unwrap()
+            .contains("fd12::1".parse().unwrap())
+    );
+    assert!(
+        Cidr::parse("0.0.0.0/0")
+            .unwrap()
+            .contains("8.8.8.8".parse().unwrap())
+    );
+    assert!(
+        Cidr::parse("10.0.0.1")
+            .unwrap()
+            .contains("10.0.0.1".parse().unwrap())
+    );
     assert!(Cidr::parse("10.0.0.0/33").is_none());
     let bad = AccessSettings {
         accounts_token: Some("abk_inline".into()),

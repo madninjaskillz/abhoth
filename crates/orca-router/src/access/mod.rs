@@ -76,6 +76,11 @@ impl AccessSettings {
                 "must be a secret reference (secret:<id>), never the token".into(),
             ));
         }
+        if let Some(u) = &self.accounts_url
+            && let Err(e) = orca_core::router_link::link_url_ok(u)
+        {
+            out.push(("access.accounts_url".into(), e));
+        }
         if self.accounts_url.is_some() != self.accounts_token.is_some() {
             out.push((
                 "access".into(),
@@ -283,6 +288,13 @@ impl Access {
     /// the acting-user header (every key is then refused).
     pub fn new(settings: AccessSettings, token: Option<Vec<u8>>) -> Self {
         let keys = match (&settings.accounts_url, &token) {
+            // Never send the link token in plain HTTP across a LAN (validation reports it too).
+            (Some(url), Some(_)) if orca_core::router_link::link_url_ok(url).is_err() => {
+                tracing::warn!(
+                    "access.accounts_url refused: plain http off this machine; keys are refused"
+                );
+                None
+            }
             (Some(url), Some(t)) => Some(KeyCache::new(
                 Arc::new(keys::HttpIntrospector::new(
                     url,
@@ -297,7 +309,12 @@ impl Access {
             )),
             _ => None,
         };
-        Self::with_parts(settings, token, keys, Arc::new(|| chrono::Utc::now().timestamp()))
+        Self::with_parts(
+            settings,
+            token,
+            keys,
+            Arc::new(|| chrono::Utc::now().timestamp()),
+        )
     }
 
     /// Tests: a given key cache and clock.

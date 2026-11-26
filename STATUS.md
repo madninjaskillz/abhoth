@@ -180,6 +180,22 @@ Updated 2026-11-25. Plan and decisions: [`PORTING.md`](PORTING.md).
 - Phase 4 files: `deploy/router/` (image `local/abhoth-router:1`, shadow compose on `:8020`).
   Not deployed; client switch-over needs the user's OK.
 
+### Router control plane (`feature/router-control`, merged 2026-11-26, D145)
+
+- Behind `control.enabled` (off): config (`router.toml`), `router.db`, executors, drivers,
+  switches with rollback, guards, leases, on-demand gate (C1-C7), and the admin side:
+  `/admin/api/*` with SSE, key introspection against the web server (60 s cache), service keys,
+  the admin settings tabs in the web UI, Prometheus metrics.
+- Web server DB schema 2 (service keys): 0.16.x builds cannot open it. The upgrade first copies
+  the old file to `abhoth.db.schema1-<time>.bak` (rollback = stop, restore that copy).
+- Link token: the router refuses a plain-`http://` `access.accounts_url` off loopback, the
+  container network or a container service name; the web server takes introspection only over
+  HTTPS (trusted proxy), loopback or 172.16.0.0/12. Before cutover: put the router and web
+  container on one docker network (or HTTPS), and check the network ranges on the real host.
+- Not yet wired: the orchestrator and telemetry into the admin API's `Actions` hook (plan,
+  switch, card offline/online and leases answer 501 there); `serve` builds the plane only with
+  `--control router.toml`.
+
 ## Next
 
 1. Bench parity run: done 2026-11-25, 49/50 passes each, wall clock and tokens level

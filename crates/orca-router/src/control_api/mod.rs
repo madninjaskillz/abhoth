@@ -209,7 +209,10 @@ pub async fn handle(
         Ok(p) => p,
         Err(AuthError::Unauthorized(m)) => return err(401, m),
         Err(AuthError::Unavailable) => {
-            return err(503, "the accounts server can't vouch for this key right now");
+            return err(
+                503,
+                "the accounts server can't vouch for this key right now",
+            );
         }
     };
     let sub = path
@@ -302,12 +305,17 @@ pub async fn handle(
             Ok(j) => ok(&j),
             Err(e) => api_err(e),
         },
-        (Method::POST, ["cards", card, action @ ("offline" | "online" | "exclude" | "include")]) => {
-            match b.set_card(card, action, &s(&body, "reason"), &who).await {
-                Ok(j) => json_resp(202, &serde_json::to_value(j).unwrap_or_default()),
-                Err(e) => api_err(e),
-            }
-        }
+        (
+            Method::POST,
+            [
+                "cards",
+                card,
+                action @ ("offline" | "online" | "exclude" | "include"),
+            ],
+        ) => match b.set_card(card, action, &s(&body, "reason"), &who).await {
+            Ok(j) => json_resp(202, &serde_json::to_value(j).unwrap_or_default()),
+            Err(e) => api_err(e),
+        },
         (Method::GET, ["audit"]) => {
             let limit = q(&qs, "limit")
                 .and_then(|l| l.parse().ok())
@@ -324,7 +332,10 @@ pub async fn handle(
         (Method::GET, ["routes"]) => ok(&b.routes()),
         (Method::PATCH, ["routes", name]) => {
             let Ok(edit) = serde_json::from_value::<RouteEdit>(body) else {
-                return err(400, "expected {cold, fallback, access, hidden, allowUserSwitch}");
+                return err(
+                    400,
+                    "expected {cold, fallback, access, hidden, allowUserSwitch}",
+                );
             };
             match b.edit_route(&pct_decode(name), &edit, &who).await {
                 Ok(r) => ok(&r),
@@ -343,9 +354,8 @@ fn events(b: Arc<dyn ControlBackend>) -> Response {
         kind: "state",
         data: serde_json::to_value(b.state()).unwrap_or_default(),
     };
-    let stream = futures_util::stream::unfold(
-        (rx, Some(first), b),
-        |(mut rx, first, b)| async move {
+    let stream =
+        futures_util::stream::unfold((rx, Some(first), b), |(mut rx, first, b)| async move {
             if let Some(e) = first {
                 return Some((Ok::<_, Infallible>(sse(&e)), (rx, None, b)));
             }
@@ -360,8 +370,7 @@ fn events(b: Arc<dyn ControlBackend>) -> Response {
                 Ok(Err(broadcast::error::RecvError::Closed)) => return None,
             };
             Some((Ok(chunk), (rx, None, b)))
-        },
-    );
+        });
     Response::builder()
         .status(200)
         .header(header::CONTENT_TYPE, "text/event-stream")
@@ -406,17 +415,37 @@ pub fn metrics_text(cp: &ControlPlane) -> String {
             .filter_map(|c| {
                 c.telemetry.as_ref().map(|t| {
                     (
-                        lbl(&[("server", &c.server), ("card", &c.id), ("uuid", &c.gpu_uuid)]),
+                        lbl(&[
+                            ("server", &c.server),
+                            ("card", &c.id),
+                            ("uuid", &c.gpu_uuid),
+                        ]),
                         f(t),
                     )
                 })
             })
             .collect()
     };
-    gauge("abhoth_gpu_memory_used_mib", "GPU memory used (MiB).", tel(&|t| t.mem_used_mib as f64));
-    gauge("abhoth_gpu_memory_total_mib", "GPU memory (MiB).", tel(&|t| t.mem_total_mib as f64));
-    gauge("abhoth_gpu_utilization_ratio", "GPU utilisation (0-1).", tel(&|t| t.util_pct as f64 / 100.0));
-    gauge("abhoth_gpu_temperature_celsius", "GPU temperature.", tel(&|t| t.temp_c as f64));
+    gauge(
+        "abhoth_gpu_memory_used_mib",
+        "GPU memory used (MiB).",
+        tel(&|t| t.mem_used_mib as f64),
+    );
+    gauge(
+        "abhoth_gpu_memory_total_mib",
+        "GPU memory (MiB).",
+        tel(&|t| t.mem_total_mib as f64),
+    );
+    gauge(
+        "abhoth_gpu_utilization_ratio",
+        "GPU utilisation (0-1).",
+        tel(&|t| t.util_pct as f64 / 100.0),
+    );
+    gauge(
+        "abhoth_gpu_temperature_celsius",
+        "GPU temperature.",
+        tel(&|t| t.temp_c as f64),
+    );
     gauge(
         "abhoth_gpu_memory_temperature_celsius",
         "GPU memory temperature.",
@@ -425,16 +454,36 @@ pub fn metrics_text(cp: &ControlPlane) -> String {
             .filter_map(|c| {
                 let t = c.telemetry.as_ref()?;
                 Some((
-                    lbl(&[("server", &c.server), ("card", &c.id), ("uuid", &c.gpu_uuid)]),
+                    lbl(&[
+                        ("server", &c.server),
+                        ("card", &c.id),
+                        ("uuid", &c.gpu_uuid),
+                    ]),
                     t.mem_temp_c? as f64,
                 ))
             })
             .collect(),
     );
-    gauge("abhoth_gpu_power_watts", "GPU power draw.", tel(&|t| t.power_w));
-    gauge("abhoth_gpu_sm_clock_mhz", "SM clock.", tel(&|t| t.sm_mhz as f64));
-    gauge("abhoth_gpu_sm_clock_max_mhz", "Maximum SM clock.", tel(&|t| t.sm_max_mhz as f64));
-    gauge("abhoth_gpu_telemetry_age_seconds", "Age of the last sample.", tel(&|t| t.age_ms as f64 / 1000.0));
+    gauge(
+        "abhoth_gpu_power_watts",
+        "GPU power draw.",
+        tel(&|t| t.power_w),
+    );
+    gauge(
+        "abhoth_gpu_sm_clock_mhz",
+        "SM clock.",
+        tel(&|t| t.sm_mhz as f64),
+    );
+    gauge(
+        "abhoth_gpu_sm_clock_max_mhz",
+        "Maximum SM clock.",
+        tel(&|t| t.sm_max_mhz as f64),
+    );
+    gauge(
+        "abhoth_gpu_telemetry_age_seconds",
+        "Age of the last sample.",
+        tel(&|t| t.age_ms as f64 / 1000.0),
+    );
     gauge(
         "abhoth_gpu_clock_ok",
         "1 when the card's clocks meet its expectation (6.6).",
@@ -464,7 +513,12 @@ pub fn metrics_text(cp: &ControlPlane) -> String {
         "Lanes of the engine on the card.",
         cards
             .iter()
-            .map(|c| (lbl(&[("server", &c.server), ("card", &c.id)]), c.lanes as f64))
+            .map(|c| {
+                (
+                    lbl(&[("server", &c.server), ("card", &c.id)]),
+                    c.lanes as f64,
+                )
+            })
             .collect(),
     );
     gauge(
@@ -486,7 +540,12 @@ pub fn metrics_text(cp: &ControlPlane) -> String {
         "1 when the server is reachable for commands (SSH).",
         st.servers
             .iter()
-            .map(|s| (lbl(&[("server", &s.id)]), if s.reachability == "ok" { 1.0 } else { 0.0 }))
+            .map(|s| {
+                (
+                    lbl(&[("server", &s.id)]),
+                    if s.reachability == "ok" { 1.0 } else { 0.0 },
+                )
+            })
             .collect(),
     );
     gauge(
@@ -542,7 +601,10 @@ pub fn metrics_text(cp: &ControlPlane) -> String {
     gauge(
         "abhoth_config_error",
         "1 while the config on disk does not load.",
-        vec![(String::new(), if st.config_error.is_some() { 1.0 } else { 0.0 })],
+        vec![(
+            String::new(),
+            if st.config_error.is_some() { 1.0 } else { 0.0 },
+        )],
     );
     if let Some(k) = &cp.access.keys {
         use std::sync::atomic::Ordering::Relaxed;
@@ -596,7 +658,9 @@ pub fn install_from_toml(
     }
     let state_dir = std::path::PathBuf::from(&c.router.state_dir);
     std::fs::create_dir_all(&state_dir).map_err(|e| format!("{}: {e}", state_dir.display()))?;
-    let store = Arc::new(crate::control::store::Store::open(&state_dir.join("router.db"))?);
+    let store = Arc::new(crate::control::store::Store::open(
+        &state_dir.join("router.db"),
+    )?);
     let token = c
         .access
         .accounts_token

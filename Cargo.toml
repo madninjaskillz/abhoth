@@ -21,6 +21,7 @@ members = [
     "crates/orca-testkit",
     "crates/orca-crosscheck",
     "crates/orca-router",
+    "crates/orca-gpuctl",
 ]
 
 [workspace.package]

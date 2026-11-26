@@ -2789,6 +2789,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "orca-gpuctl"
+version = "0.16.6"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml 1.2.3+spec-1.1.0",
+]
+
+[[package]]
 name = "orca-router"
 version = "0.16.6"
 dependencies = [

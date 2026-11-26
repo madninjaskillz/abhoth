@@ -217,6 +217,57 @@ pub fn fixed_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// Where the link (key introspection with the link token, signed admin calls) may run in plain
+/// HTTP: this machine or a container network (Docker's default pools, 172.16.0.0/12). Anything
+/// else must use HTTPS, so the token never crosses a LAN in the clear.
+pub fn link_peer_ok(ip: std::net::IpAddr) -> bool {
+    let ip = match ip {
+        std::net::IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => std::net::IpAddr::V4(v4),
+            None => return v6.is_loopback(),
+        },
+        v4 => v4,
+    };
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback() || (v4.octets()[0] == 172 && (16..32).contains(&v4.octets()[1]))
+        }
+        std::net::IpAddr::V6(_) => false,
+    }
+}
+
+/// A link URL (`access.accounts_url`, `ABHOTH_ROUTER_URL`): `https://` anywhere; `http://` only
+/// to loopback, `localhost`, a container network address, or a container service name (a host
+/// name without dots, as Docker's DNS gives).
+pub fn link_url_ok(url: &str) -> Result<(), String> {
+    let url = url.trim();
+    if url.starts_with("https://") {
+        return Ok(());
+    }
+    let Some(rest) = url.strip_prefix("http://") else {
+        return Err(format!("{url}: not an http(s) URL"));
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = if let Some(v6) = authority.strip_prefix('[') {
+        v6.split(']').next().unwrap_or("")
+    } else {
+        authority.rsplit_once(':').map_or(authority, |(h, _)| h)
+    };
+    let ok = match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => link_peer_ok(ip),
+        Err(_) => {
+            host.eq_ignore_ascii_case("localhost") || (!host.is_empty() && !host.contains('.'))
+        }
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "plain http to {host} would carry the link token across the network: use https, or reach it over loopback or the container network"
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,7 +302,13 @@ mod tests {
             Err(ActingError::BadSignature)
         );
         assert_eq!(
-            verify_acting_user(t, &h, 1000 + ACTING_MAX_SKEW_SECS + 1, "POST", "/admin/api/config"),
+            verify_acting_user(
+                t,
+                &h,
+                1000 + ACTING_MAX_SKEW_SECS + 1,
+                "POST",
+                "/admin/api/config"
+            ),
             Err(ActingError::Expired)
         );
     }
@@ -297,7 +354,10 @@ mod tests {
     #[test]
     fn introspection_round_trips_and_inactive_is_minimal() {
         let inactive = serde_json::to_value(Introspection::default()).unwrap();
-        assert_eq!(inactive, serde_json::json!({"active": false, "disabled": false}));
+        assert_eq!(
+            inactive,
+            serde_json::json!({"active": false, "disabled": false})
+        );
         let svc = Introspection {
             active: true,
             user_id: Some(1),
@@ -311,5 +371,29 @@ mod tests {
         let back: Introspection =
             serde_json::from_value(serde_json::to_value(&svc).unwrap()).unwrap();
         assert_eq!(back, svc);
+    }
+
+    #[test]
+    fn the_link_stays_off_the_lan_unless_it_is_https() {
+        for ok in [
+            "https://accounts.example.org",
+            "http://127.0.0.1:8192",
+            "http://localhost:8192/x",
+            "http://abhoth-web:8192",
+            "http://172.18.0.5:8192",
+            "http://[::1]:8192",
+        ] {
+            assert!(link_url_ok(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "http://10.1.2.3:8192",
+            "http://192.168.1.20",
+            "http://web.lan:8192",
+            "ftp://x",
+        ] {
+            assert!(link_url_ok(bad).is_err(), "{bad}");
+        }
+        assert!(link_peer_ok("::ffff:172.17.0.1".parse().unwrap()));
+        assert!(!link_peer_ok("172.32.0.1".parse().unwrap()));
     }
 }

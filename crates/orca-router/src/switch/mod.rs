@@ -23,7 +23,7 @@ pub mod shim_backend;
 pub mod wiring;
 
 #[cfg(test)]
-mod fake;
+pub(crate) mod fake;
 #[cfg(test)]
 mod tests;
 

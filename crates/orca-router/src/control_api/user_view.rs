@@ -131,7 +131,11 @@ pub fn view_for(cp: &ControlPlane, b: &dyn ControlBackend, p: &Principal) -> Use
     UserView {
         principal: p.label(),
         admin: p.is_admin(),
-        layouts: if acts.switch { st.layouts.clone() } else { vec![] },
+        layouts: if acts.switch {
+            st.layouts.clone()
+        } else {
+            vec![]
+        },
         job: if acts.switch || acts.read_control {
             st.job.clone()
         } else {
@@ -226,7 +230,10 @@ pub async fn handle(
         Ok(p) => p,
         Err(AuthError::Unauthorized(m)) => return super::err(401, m),
         Err(AuthError::Unavailable) => {
-            return super::err(503, "the accounts server can't vouch for this key right now");
+            return super::err(
+                503,
+                "the accounts server can't vouch for this key right now",
+            );
         }
     };
     if p == (Principal::Anonymous { lan: false }) {
