@@ -3201,7 +3201,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orca-abstractions"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "serde_json",
@@ -3209,7 +3209,7 @@ dependencies = [
 
 [[package]]
 name = "orca-alerts"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "indexmap",
@@ -3221,7 +3221,7 @@ dependencies = [
 
 [[package]]
 name = "orca-calendar"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -3235,7 +3235,7 @@ dependencies = [
 
 [[package]]
 name = "orca-cli"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3282,7 +3282,7 @@ dependencies = [
 
 [[package]]
 name = "orca-core"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -3310,7 +3310,7 @@ dependencies = [
 
 [[package]]
 name = "orca-crosscheck"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -3330,7 +3330,7 @@ dependencies = [
 
 [[package]]
 name = "orca-fans"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -3347,7 +3347,7 @@ dependencies = [
 
 [[package]]
 name = "orca-gpuctl"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "serde",
  "serde_json",
@@ -3356,7 +3356,7 @@ dependencies = [
 
 [[package]]
 name = "orca-homeassistant"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3378,7 +3378,7 @@ dependencies = [
 
 [[package]]
 name = "orca-hostd"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "orca-fans",
@@ -3396,7 +3396,7 @@ dependencies = [
 
 [[package]]
 name = "orca-router"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3425,7 +3425,7 @@ dependencies = [
 
 [[package]]
 name = "orca-sensors"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "serde",
  "serde_json",
@@ -3435,7 +3435,7 @@ dependencies = [
 
 [[package]]
 name = "orca-supervisor"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -3457,7 +3457,7 @@ dependencies = [
 
 [[package]]
 name = "orca-testkit"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "axum 0.8.9",
  "futures-util",
@@ -3467,7 +3467,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-agent"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "orca-abstractions",
@@ -3479,7 +3479,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-archive"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "orca-abstractions",
@@ -3493,7 +3493,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-common"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "orca-abstractions",
  "reqwest",
@@ -3504,7 +3504,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-fs"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "fancy-regex",
@@ -3520,7 +3520,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-git"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "orca-abstractions",
@@ -3532,7 +3532,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-image"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -3549,7 +3549,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-lsp"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "orca-abstractions",
@@ -3564,7 +3564,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-mcp"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -3581,7 +3581,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-network"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -3594,7 +3594,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-pi"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "orca-abstractions",
@@ -3607,7 +3607,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-shell"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "orca-abstractions",
@@ -3619,7 +3619,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-utility"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "orca-abstractions",
@@ -3630,7 +3630,7 @@ dependencies = [
 
 [[package]]
 name = "orca-tools-web"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "async-trait",
  "hyper 1.13.0",
@@ -3645,7 +3645,7 @@ dependencies = [
 
 [[package]]
 name = "orca-webui"
-version = "0.16.10"
+version = "0.16.11"
 dependencies = [
  "anyhow",
  "argon2",
