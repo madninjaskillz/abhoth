@@ -958,3 +958,8 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     mode" when the configured URL is a router, the default model picker, the router's models
     and capabilities); the rows the router owns are left out (schema `routerMode`). Admin
     endpoints `/api/settings/connection[/identify|/discover|/models|/use]`.
+  - **On the real network** (2026-11-26): the router in the single Docker container with host
+    networking on TrueNAS SCALE advertises fine beside the host's own mDNS responder (both bind
+    5353 with address reuse); a Windows PC on the same LAN finds it within the 2.5 s browse, on
+    its LAN address (the Docker bridge addresses are ranked last), verified by its
+    identification document. No fallback was needed; a pasted URL works where multicast does not.
