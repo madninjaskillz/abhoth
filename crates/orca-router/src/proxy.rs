@@ -23,6 +23,8 @@ pub struct RequestCtx {
     pub id: u64,
     pub client: String,
     pub started: Option<Instant>,
+    /// The TCP peer (never a forwarded header): access rules use this.
+    pub peer: Option<std::net::IpAddr>,
 }
 
 /// LiteLLM's error shape: `{"error": {"message", "type", "param", "code"}}`, code = the status.
@@ -198,9 +200,10 @@ pub async fn chat(st: Arc<AppState>, ctx: RequestCtx, headers: HeaderMap, raw: B
         if snap.config.on_demand.enabled {
             // the only place a ChatAdmission is made: a parsed chat body for a resolved route
             // (ROUTER-CONFIG.md 7.4); probes and other endpoints never get here
-            let caller = crate::guards::Caller {
-                principal: crate::switch::gate::principal_of(&headers),
-                grants: Vec::new(),
+            let caller = if snap.config.on_demand.control_gate {
+                crate::switch::gate::chat_caller(&st, &headers, ctx.peer).await
+            } else {
+                crate::guards::Caller::default()
             };
             let adm = crate::switch::gate::ChatAdmission::from_chat(&dep.name, &headers, caller);
             return crate::ondemand::handle(

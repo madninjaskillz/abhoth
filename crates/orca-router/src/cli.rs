@@ -5,6 +5,9 @@
 //! abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
 //!               [--key-file /run/secrets/ninfer-key] [--base router.json] --out router.json [--watch SECONDS]
 //! abhoth router check --config router.json
+//! abhoth router import --from DIR --out router.toml [--report report.md] [--seed seed.json]
+//!               [--key-delivery file_flag|wrapper|argv] [--enable-on-demand] [--server ID]
+//! abhoth router config-check --config router.toml
 //! ```
 
 use std::path::PathBuf;
@@ -22,10 +25,20 @@ pub const HELP: &str = "abhoth router: the OpenAI-compatible gateway (replaces L
 
 USAGE:
   abhoth router --config router.json [--port P | --listen ADDR] [--host H] [--lb-port P] [--slots-port P]
+                [--control router.toml]   (the admin API, when its control.enabled is on)
   abhoth router observe-summary --dir DIR [--date YYYY-MM-DD]   (the decision-only shadow's day)
   abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
                 [--key-file PATH] [--base router.json] --out router.json [--watch SECONDS]
   abhoth router check --config router.json
+  abhoth router admin-demo --listen 127.0.0.1:8010 --link-token-file FILE [--accounts-url URL]
+                (the admin API on an in-memory demo host, for the web UI's admin pages)
+  abhoth router import --from DIR --out router.toml [--report report.md] [--seed seed.json]
+                [--key-delivery file_flag|wrapper|argv] [--enable-on-demand] [--server ID]
+                (router.toml for the control plane from a copy of the GPU host's layout files)
+  abhoth router config-check --config router.toml
+  abhoth router hostctl serve --allowlist FILE        (the SSH forced command on a GPU host)
+  abhoth router hostctl exec-root --allowlist FILE    (its single sudo entry)
+  abhoth router hostctl export --config router.toml --server ID [--out FILE]
 ";
 
 fn take(args: &[String], i: &mut usize, flag: &str) -> Result<String> {
@@ -43,6 +56,21 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
             Ok(0)
         }
         Some("import-litellm") => import_cmd(&args[1..]).await,
+        Some("import") => control_import_cmd(&args[1..]),
+        Some("hostctl") => hostctl_cmd(&args[1..]).await,
+        Some("config-check") => {
+            let mut config = None;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--config" => config = Some(take(&args, &mut i, "--config")?),
+                    a => bail!("unknown argument {a}"),
+                }
+                i += 1;
+            }
+            let path = PathBuf::from(config.ok_or_else(|| anyhow!("--config is required"))?);
+            control_check(&path)
+        }
         Some("observe-summary") => {
             let (mut dir, mut date) = (None, None);
             let mut i = 1;
@@ -78,8 +106,50 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
             );
             Ok(0)
         }
+        Some("admin-demo") => admin_demo(&args[1..]).await,
         _ => serve_cmd(&args).await,
     }
+}
+
+/// The admin API over [`crate::control_api::demo::DemoControl`]: no engines, no commands.
+async fn admin_demo(args: &[String]) -> Result<i32> {
+    let (mut listen, mut token_file, mut accounts) = ("127.0.0.1:8010".to_string(), None, None);
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--listen" => listen = take(args, &mut i, "--listen")?,
+            "--link-token-file" => token_file = Some(take(args, &mut i, "--link-token-file")?),
+            "--accounts-url" => accounts = Some(take(args, &mut i, "--accounts-url")?),
+            a => bail!("unknown argument {a}"),
+        }
+        i += 1;
+    }
+    let token = match &token_file {
+        Some(f) => Some(std::fs::read(f).with_context(|| format!("reading {f}"))?),
+        None => None,
+    };
+    let snap = Snapshot::build(RouterConfig::default(), None).map_err(|e| anyhow!(e))?;
+    let st = AppState::new(snap, None);
+    let demo = crate::control_api::demo::DemoControl::new();
+    demo.spawn_ticker();
+    let settings = crate::access::AccessSettings {
+        accounts_token: accounts
+            .as_ref()
+            .map(|_| "secret:accounts_token".to_string()),
+        accounts_url: accounts,
+        loopback_admin: false,
+        ..Default::default()
+    };
+    let _ = st.control.set(Arc::new(crate::control_api::ControlPlane {
+        access: crate::access::Access::new(settings, token),
+        backend: demo,
+    }));
+    let l = tokio::net::TcpListener::bind(&listen)
+        .await
+        .with_context(|| format!("binding {listen}"))?;
+    eprintln!("abhoth router admin-demo on {listen}");
+    server::serve(l, st, Mode::Gateway, shutdown_signal()).await?;
+    Ok(0)
 }
 
 async fn serve_cmd(args: &[String]) -> Result<i32> {
@@ -89,12 +159,14 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     let mut port: Option<u16> = None;
     let mut lb_port: Option<u16> = None;
     let mut slots_port: Option<u16> = None;
+    let mut control: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--config" => config = Some(take(args, &mut i, "--config")?),
             "--port" => port = Some(take(args, &mut i, "--port")?.parse().context("--port")?),
             "--host" => host = take(args, &mut i, "--host")?,
+            "--control" => control = Some(take(args, &mut i, "--control")?),
             "--listen" => listen = Some(take(args, &mut i, "--listen")?),
             "--lb-port" => {
                 lb_port = Some(
@@ -120,6 +192,11 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     let snap = Snapshot::load(&path).map_err(|e| anyhow!(e))?;
     let addr = listen.unwrap_or_else(|| format!("{host}:{}", port.unwrap_or(8010)));
     let st = AppState::new(snap, Some(path));
+    if let Some(c) = &control {
+        let msg = crate::control_api::install_from_toml(&st, std::path::Path::new(c))
+            .map_err(|e| anyhow!("--control {c}: {e}"))?;
+        eprintln!("abhoth router: {msg}");
+    }
     let mut tasks = Vec::new();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let mut bind = |addr: String, mode: Mode| -> Result<()> {
@@ -304,4 +381,117 @@ async fn import_cmd(args: &[String]) -> Result<i32> {
 /// For callers that hold an `Arc<AppState>` already (tests).
 pub fn state_from(cfg: RouterConfig) -> Result<Arc<AppState>, String> {
     Ok(AppState::new(Snapshot::build(cfg, None)?, None))
+}
+
+fn control_import_cmd(args: &[String]) -> Result<i32> {
+    use crate::control::import::{self as ci, KeyChoice, Options, Sources};
+    let (mut from, mut out, mut report, mut seed) = (None, None, None, None);
+    let mut opt = Options::default();
+    let mut key: Option<KeyChoice> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--from" => from = Some(PathBuf::from(take(args, &mut i, "--from")?)),
+            "--out" => out = Some(PathBuf::from(take(args, &mut i, "--out")?)),
+            "--report" => report = Some(PathBuf::from(take(args, &mut i, "--report")?)),
+            "--seed" => seed = Some(PathBuf::from(take(args, &mut i, "--seed")?)),
+            "--server" => opt.server = take(args, &mut i, "--server")?,
+            "--enable-on-demand" => opt.enable_on_demand = true,
+            "--key-delivery" => {
+                key = Some(match take(args, &mut i, "--key-delivery")?.as_str() {
+                    "file_flag" => KeyChoice::FileFlag,
+                    "wrapper" => KeyChoice::Wrapper,
+                    "argv" => KeyChoice::Argv,
+                    k => bail!("--key-delivery {k}: file_flag, wrapper or argv"),
+                })
+            }
+            a => bail!("unknown argument {a}"),
+        }
+        i += 1;
+    }
+    let from = from.ok_or_else(|| anyhow!("--from is required"))?;
+    let out = out.ok_or_else(|| anyhow!("--out is required"))?;
+    // Default: llama-server reads --api-key-file; ninfer has no such flag yet, so its key is
+    // read inside the container by a wrapper.
+    opt.keys
+        .insert("ninfer".into(), key.unwrap_or(KeyChoice::Wrapper));
+    opt.keys
+        .insert("llamacpp".into(), key.unwrap_or(KeyChoice::FileFlag));
+    let src = Sources::from_dir(&from).map_err(|e| anyhow!(e))?;
+    let im = ci::import(&src, &opt).map_err(|e| anyhow!(e))?;
+    std::fs::write(&out, &im.toml).with_context(|| format!("writing {}", out.display()))?;
+    if let Some(r) = &report {
+        std::fs::write(r, ci::report_markdown(&im))
+            .with_context(|| format!("writing {}", r.display()))?;
+    }
+    if let Some(s) = &seed {
+        std::fs::write(s, serde_json::to_string_pretty(&im.seed)?)
+            .with_context(|| format!("writing {}", s.display()))?;
+    }
+    let todo = im.report.iter().filter(|r| r.kind == "todo").count();
+    println!(
+        "wrote {}: {} layouts, {} engines, {} routes; {todo} TODOs in the report",
+        out.display(),
+        im.config.layouts.len(),
+        im.config.engines.len(),
+        im.config.routes.len()
+    );
+    control_check(&out)
+}
+
+/// Load and validate a control-plane `router.toml`; exit 1 on errors.
+fn control_check(path: &std::path::Path) -> Result<i32> {
+    use crate::control::{load, validate};
+    let loaded = match load::load(path) {
+        Ok(l) => l,
+        Err(issues) => {
+            for i in issues {
+                eprintln!("{i}");
+            }
+            return Ok(1);
+        }
+    };
+    let issues = validate::validate_loaded(&loaded);
+    for i in &issues {
+        eprintln!("{i}");
+    }
+    if validate::has_errors(&issues) {
+        return Ok(1);
+    }
+    println!("ok: rev {}, {} warnings", loaded.rev, issues.len());
+    Ok(0)
+}
+
+async fn hostctl_cmd(args: &[String]) -> Result<i32> {
+    use crate::control::hostctl;
+    let sub = args.first().map(String::as_str).unwrap_or("");
+    let (mut allowlist, mut config, mut server, mut out) = (None, None, None, None);
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--allowlist" => allowlist = Some(PathBuf::from(take(args, &mut i, "--allowlist")?)),
+            "--config" => config = Some(PathBuf::from(take(args, &mut i, "--config")?)),
+            "--server" => server = Some(take(args, &mut i, "--server")?),
+            "--out" => out = Some(PathBuf::from(take(args, &mut i, "--out")?)),
+            a => bail!("unknown argument {a}"),
+        }
+        i += 1;
+    }
+    match sub {
+        "serve" | "exec-root" => {
+            let al = allowlist.ok_or_else(|| anyhow!("--allowlist is required"))?;
+            Ok(hostctl::serve_stdio(&al, sub == "exec-root").await)
+        }
+        "export" => {
+            let config = config.ok_or_else(|| anyhow!("--config is required"))?;
+            let server = server.ok_or_else(|| anyhow!("--server is required"))?;
+            let text =
+                hostctl::export_cli(&config, &server, out.as_ref()).map_err(|e| anyhow!(e))?;
+            if out.is_none() {
+                print!("{text}");
+            }
+            Ok(0)
+        }
+        other => bail!("hostctl {other}: serve, exec-root or export"),
+    }
 }

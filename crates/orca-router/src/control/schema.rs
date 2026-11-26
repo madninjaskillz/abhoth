@@ -29,6 +29,10 @@ pub struct ControlConfig {
     pub control: ControlSection,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub secrets: IndexMap<String, SecretRef>,
+    /// Who may do what (11.1): the accounts link, anonymous LAN, loopback (owned by
+    /// [`crate::access`]).
+    #[serde(default)]
+    pub access: crate::access::AccessSettings,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub servers: IndexMap<String, Server>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
@@ -250,7 +254,8 @@ pub enum ExecKind {
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum HostctlMode {
-    /// The router sends template ids and typed values; the host renders from its allowlist.
+    /// The host runs only commands whose id and exact text are in its root-owned allowlist
+    /// (`hostctl export`), builtins by name with path rules, and allowed hostd methods.
     #[default]
     Strict,
     /// The router sends rendered command text (development hosts only; flagged loudly).
@@ -794,6 +799,10 @@ pub struct EngineProfile {
     pub mems: Option<String>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub options: IndexMap<String, Value>,
+    /// Options set to "nothing" (left off the command line, and `null` in the spec label:
+    /// TOML has no null). They override a default the way `false` does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset: Vec<String>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub env: IndexMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -896,6 +905,8 @@ pub struct Model {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Artifact {
+    /// Empty for engines that load no file of their own (Strata).
+    #[serde(default)]
     pub file: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub served_id: Option<String>,
@@ -908,6 +919,9 @@ pub struct Artifact {
     pub restore: Option<Restore>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub options: IndexMap<String, Value>,
+    /// As [`EngineProfile::unset`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<RequestParams>,
     /// Engine profile used when a pick names none.

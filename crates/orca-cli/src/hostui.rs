@@ -376,6 +376,14 @@ pub async fn run_with(
     options.port = args.endpoint.port;
     options.session_factory = Some(factory);
     options.profiles_url = orca_core::profiles::resolve_server_url(&config);
+    // The router's control plane (ROUTER-CONFIG.md 11): ABHOTH_ROUTER_URL + ABHOTH_ROUTER_TOKEN_FILE.
+    options.router = match orca_webui::router_admin::RouterLink::from_env() {
+        Ok(link) => link,
+        Err(e) => {
+            tracing::warn!("router link off: {e}");
+            None
+        }
+    };
     options.profiles_cache_file =
         Some(orca_core::config::default_config_dir().join("profiles-cache.json"));
     options.config_home = Some(orca_core::config::default_config_dir());

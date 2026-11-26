@@ -50,6 +50,9 @@ pub struct WebUiOptions {
     pub login: crate::login::LoginOptions,
     /// The inference server's profiles API; `None` = off.
     pub profiles_url: Option<String>,
+    /// `abhoth router`'s control plane: key introspection and the admin pages' proxy
+    /// (ROUTER-CONFIG.md 11.1-11.2); `None` = not linked.
+    pub router: Option<crate::router_admin::RouterLink>,
     pub profiles_cache_file: Option<PathBuf>,
     pub image_directory: Option<ImageDirFn>,
     /// `ConfigSchema` for the settings page (`None`: the page reports it unavailable).
@@ -101,6 +104,7 @@ impl WebUiOptions {
             audit_file: None,
             login: crate::login::LoginOptions::default(),
             profiles_url: None,
+            router: None,
             profiles_cache_file: None,
             image_directory: None,
             settings: None,
@@ -409,6 +413,7 @@ fn router(state: Arc<AppState>) -> Router {
         api = api.merge(crate::bench::endpoints::routes());
     }
     api.merge(crate::login::routes())
+        .merge(crate::router_admin::routes())
         .fallback(static_or_index)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -457,6 +462,7 @@ async fn info(
         "admin": admin,
         "bench": state.bench.is_some(),
         "profiles": state.options.profiles_url.is_some(),
+        "router": admin && state.options.router.is_some(),
         // The React client picks its hub transport from this (absent: the C# SignalR hub).
         "hub": "ws",
     });
