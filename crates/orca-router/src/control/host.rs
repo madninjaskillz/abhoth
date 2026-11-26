@@ -712,12 +712,14 @@ pub struct ServerControl {
 }
 
 /// Build [`ServerControl`] for `server`. Secrets come from `[secrets]` (files or env) and
-/// feed the scrubber; `with_hostd` = the host runs `abhoth hostd`.
+/// feed the scrubber; `with_hostd` = the host runs `abhoth hostd`; `active` = the layout
+/// `router.db` says is active (to adopt unlabelled instances by it).
 pub fn for_server(
     c: Arc<ControlConfig>,
     server: &str,
     state_dir: &std::path::Path,
     with_hostd: bool,
+    active: Arc<dyn Fn() -> Option<String> + Send + Sync>,
 ) -> Result<ServerControl, String> {
     use crate::control_api::resolve_secret;
     let values: Vec<String> = c
@@ -753,14 +755,16 @@ pub fn for_server(
         .filter(|(_, x)| x.server == server)
         .map(|(id, _)| (id.clone(), server.to_string()))
         .collect();
-    let host = Arc::new(ExecHost::new(
+    let mut host = ExecHost::new(
         c.clone(),
         server,
         exec.clone(),
         hostd.clone(),
         engine_key,
         scrubber,
-    ));
+    );
+    host.active = active;
+    let host = Arc::new(host);
     let wake = Arc::new(super::hostd::WakeByCard {
         hostd: hostd.clone(),
         server_of,
@@ -781,3 +785,53 @@ impl From<ExecError> for HostError {
 
 #[cfg(test)]
 mod tests;
+
+/// The orchestrator owns its host by value; the reconcile loop and the admin actions share
+/// the same one through the `Arc`.
+impl HostOps for Arc<ExecHost> {
+    async fn observe(&self) -> HostResult<Observed> {
+        (**self).observe().await
+    }
+    async fn preconditions(&self, target: &Spec) -> Result<(), String> {
+        (**self).preconditions(target).await
+    }
+    async fn restore_models(&self, card: &str, spec: &CardSpec) -> HostResult<Vec<String>> {
+        (**self).restore_models(card, spec).await
+    }
+    async fn lock(&self) -> HostResult<()> {
+        (**self).lock().await
+    }
+    async fn unlock(&self) {
+        (**self).unlock().await
+    }
+    async fn stop_once(&self, card: &str, spec: &CardSpec) -> HostResult<bool> {
+        (**self).stop_once(card, spec).await
+    }
+    async fn gpu_used_mib(&self, card: &str) -> HostResult<u64> {
+        (**self).gpu_used_mib(card).await
+    }
+    async fn before_start(&self, card: &str, spec: &CardSpec) -> HostResult<Vec<String>> {
+        (**self).before_start(card, spec).await
+    }
+    async fn start(&self, card: &str, spec: &CardSpec) -> HostResult<()> {
+        (**self).start(card, spec).await
+    }
+    async fn health(&self, card: &str, spec: &CardSpec) -> Health {
+        (**self).health(card, spec).await
+    }
+    async fn verify_chat(&self, card: &str, spec: &CardSpec) -> Result<(), String> {
+        (**self).verify_chat(card, spec).await
+    }
+    async fn clocks(&self, card: &str) -> HostResult<Clocks> {
+        (**self).clocks(card).await
+    }
+    async fn oom_kills(&self) -> HostResult<Vec<String>> {
+        (**self).oom_kills().await
+    }
+    async fn gpu_power_hold(&self, secs: u64) -> HostResult<()> {
+        (**self).gpu_power_hold(secs).await
+    }
+    async fn gpu_power_release(&self) {
+        (**self).gpu_power_release().await
+    }
+}

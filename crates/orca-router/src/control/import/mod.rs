@@ -85,6 +85,9 @@ pub struct Options {
     /// Make catalog-model routes `cold = "on_demand"` (the cutover decision) even while
     /// gateway.json has on-demand off.
     pub enable_on_demand: bool,
+    /// Builds that read `--api-key-file`, per engine (`key_delivery.file_flag_builds`): their
+    /// instances get the flag, the others keep the wrapper.
+    pub key_file_builds: BTreeMap<String, Vec<String>>,
 }
 
 /// What the importer produced.
@@ -489,7 +492,11 @@ pub fn import(src: &Sources, opt: &Options) -> Result<Imported, String> {
         expect_body: health_ok.get(eng).and_then(Value::as_str).map(String::from),
         ..Default::default()
     };
-    let key_for = |eng: &str| key_delivery(opt.keys.get(eng).copied().unwrap_or_default());
+    let key_for = |eng: &str| {
+        let mut k = key_delivery(opt.keys.get(eng).copied().unwrap_or_default());
+        k.file_flag_builds = opt.key_file_builds.get(eng).cloned().unwrap_or_default();
+        k
+    };
     let est_card = |eng: &str| -> Option<PerCard<u64>> {
         let all = est[eng].as_u64();
         let each: IndexMap<String, u64> = card_ids
@@ -641,7 +648,14 @@ pub fn import(src: &Sources, opt: &Options) -> Result<Imported, String> {
             ..Default::default()
         };
         if opt.keys.get("ninfer").copied().unwrap_or_default() == KeyChoice::FileFlag {
-            rep.add("todo", "engines.ninfer.key_delivery", "file_flag needs `--api-key-file` in ninfer, which it does not have yet: use wrapper until it does");
+            rep.add("todo", "engines.ninfer.key_delivery", "file_flag needs a ninfer build with `--api-key-file` (our fork, 2026-11-26) on every profile: prefer wrapper plus `--key-file-build ninfer=<build>` for the builds that have it");
+        }
+        if let Some(b) = opt.key_file_builds.get("ninfer") {
+            rep.add(
+                "mapped",
+                "--key-file-build",
+                format!("ninfer builds with --api-key-file: {}", b.join(", ")),
+            );
         }
         c.engines.insert("ninfer".into(), e);
         rep.add(

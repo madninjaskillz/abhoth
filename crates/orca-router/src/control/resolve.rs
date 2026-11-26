@@ -528,7 +528,8 @@ pub fn resolve(c: &ControlConfig, card_id: &str, spec: &CardSpec) -> Result<Reso
                 .collect(),
         ),
     );
-    let (key_args, key_mount) = key_words(e);
+    let key_mode = e.key_delivery.mode_for(build_name(e, prof));
+    let (key_args, key_mount) = key_words(e, build_name(e, prof));
     v.insert("key_args".into(), TplValue::List(key_args));
     v.insert("key_mount_args".into(), TplValue::List(key_mount));
 
@@ -573,18 +574,19 @@ pub fn resolve(c: &ControlConfig, card_id: &str, spec: &CardSpec) -> Result<Reso
         } else {
             Some(model_path)
         },
+        key_mode: Some(key_mode),
     })
 }
 
 /// `{key_args}` and `{key_mount_args}` for the engine's key delivery.
-fn key_words(e: &Engine) -> (Vec<String>, Vec<String>) {
+fn key_words(e: &Engine, build: Option<&str>) -> (Vec<String>, Vec<String>) {
     let Some(id) = e.key.as_deref().and_then(ControlConfig::secret_id) else {
         return (Vec::new(), Vec::new());
     };
     let kd = &e.key_delivery;
     let host = secret_host_path(e, id);
-    let flag = kd.flag_or_default().to_string();
-    match kd.mode {
+    let flag = kd.flag_for(build).to_string();
+    match kd.mode_for(build) {
         KeyMode::None => (Vec::new(), Vec::new()),
         KeyMode::FileFlag => (
             vec![flag, kd.path.clone()],

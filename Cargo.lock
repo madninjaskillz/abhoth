@@ -3340,6 +3340,7 @@ dependencies = [
  "futures-util",
  "indexmap",
  "orca-core",
+ "orca-hostd",
  "reqwest",
  "rusqlite",
  "serde",
