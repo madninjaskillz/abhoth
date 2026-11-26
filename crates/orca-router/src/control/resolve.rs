@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use super::driver::{Cmd, EngineDriver, InstanceRef, Resolved};
+use super::driver::{Cmd, InstanceRef, Resolved};
 use super::drivers;
 use super::schema::*;
 use super::template::{self, TplValue, Vars, raw};
@@ -117,8 +117,14 @@ pub fn instance_ref(
 pub fn card_options(c: &ControlConfig, spec: &CardSpec) -> Result<IndexMap<String, Value>, String> {
     let (e, prof, model, art) = parts(c, spec)?;
     let mut opts: IndexMap<String, Value> = art.options.clone();
+    for k in &art.unset {
+        opts.insert(k.clone(), Value::Null);
+    }
     for (k, v) in &prof.options {
         opts.insert(k.clone(), v.clone());
+    }
+    for k in &prof.unset {
+        opts.insert(k.clone(), Value::Null);
     }
     if let Some(sid) = &art.served_id
         && *sid != e.served_id
