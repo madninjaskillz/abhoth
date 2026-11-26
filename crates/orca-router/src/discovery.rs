@@ -11,9 +11,14 @@
 //!   the cards.
 //! - mDNS / DNS-SD advertising ([`mdns`]) of `_abhoth-router._tcp`.
 //!
-//! All of it is read-only: no path here sends anything to an engine, so none can start a switch
-//! (GETs never do; see `switch::gate`).
+//! Image input and the context window also come from the engines themselves ([`caps`]: each
+//! online card's `GET /v1/models` / `GET /props`, cached) and, for cold catalog models, from the
+//! control plane's catalog (`models.<id>.vision` and the on-demand pick's engine profile).
+//!
+//! All of it is read-only: the only requests to engines are those cached GETs to cards that are
+//! online, and nothing can start a switch (GETs never do; see `switch::gate`).
 
+pub mod caps;
 pub mod mdns;
 
 use std::collections::HashMap;
@@ -36,7 +41,7 @@ use crate::state::AppState;
 /// `--name`, `--key-url` and whether mDNS is advertised (set once by `abhoth router`).
 #[derive(Debug, Clone, Default)]
 pub struct Discovery {
-    /// The display name; blank = "Abhoth router on <host>".
+    /// The display name; blank = [`display_name`]'s default.
     pub name: String,
     /// Where users make API keys (the public web UI), shown to clients.
     pub key_url: Option<String>,
@@ -68,19 +73,40 @@ pub fn host_name_or(fallback: &str) -> String {
     }
 }
 
-/// The name a router shows: `--name`, else "Abhoth router on <host>".
+/// The name a router shows: `--name`, else `ABHOTH_ROUTER_NAME`, else "Abhoth router on
+/// <Host>" (the host's short name, capitalised when it is all lower case; plain "Abhoth router"
+/// when the host name is a container id).
 pub fn display_name(d: Option<&Discovery>) -> String {
-    match d.map(|d| d.name.trim()).filter(|n| !n.is_empty()) {
-        Some(n) => n.to_string(),
-        None => {
-            let h = host_name();
-            if h.is_empty() {
-                "Abhoth router".into()
-            } else {
-                format!("Abhoth router on {h}")
-            }
-        }
+    if let Some(n) = d.map(|d| d.name.trim()).filter(|n| !n.is_empty()) {
+        return n.to_string();
     }
+    if let Ok(n) = std::env::var("ABHOTH_ROUTER_NAME")
+        && !n.trim().is_empty()
+    {
+        return n.trim().to_string();
+    }
+    default_name(&host_name())
+}
+
+/// "Abhoth router on <Host>" for host name `host` (see [`display_name`]).
+pub fn default_name(host: &str) -> String {
+    let short = host.trim().split('.').next().unwrap_or_default().trim();
+    let container_id = matches!(short.len(), 12 | 64)
+        && short
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
+    if short.is_empty() || container_id || short.eq_ignore_ascii_case("localhost") {
+        return "Abhoth router".into();
+    }
+    let pretty = if short.chars().any(|c| c.is_uppercase()) {
+        short.to_string()
+    } else {
+        let mut c = short.chars();
+        c.next()
+            .map(|f| f.to_uppercase().chain(c).collect())
+            .unwrap_or_default()
+    };
+    format!("Abhoth router on {pretty}")
 }
 
 fn is_claude(engine: Option<&str>) -> bool {
@@ -202,19 +228,35 @@ const SAMPLING_KEYS: &[&str] = &[
     "repeat_penalty",
 ];
 
-/// One deployment as a [`RouterModel`] (no live state yet).
-pub fn model_of(snap: &Snapshot, d: &Deployment) -> RouterModel {
+const VISION_KEYS: &[&str] = &["supports_vision", "vision"];
+
+/// One deployment as a [`RouterModel`] (no route state yet). `caps`: what the online cards'
+/// engines say ([`caps::CapsCache::current`]).
+pub fn model_of(
+    snap: &Snapshot,
+    d: &Deployment,
+    caps: &HashMap<String, caps::EngineCaps>,
+) -> RouterModel {
     let mi = &d.model_info;
     let engine = engine_of(snap, d);
     let claude = is_claude(engine.as_deref());
     let efforts = d.effort_levels().unwrap_or_default();
     let int = |k: &str| mi.get(k).and_then(Value::as_i64).filter(|n| *n > 0);
+    // The engines on its online cards (not the relay's, not Claude's).
+    let said = if d.relay || claude {
+        caps::EngineCaps::default()
+    } else {
+        caps::merged(caps, &d.cards)
+    };
+    let context = d.max_input_tokens().filter(|n| *n > 0).or(said.context);
     RouterModel {
         id: d.name.clone(),
-        context_window: d.max_input_tokens().filter(|n| *n > 0),
-        max_output_tokens: int("max_output_tokens")
-            .or_else(|| if d.relay { None } else { d.max_input_tokens() }),
-        vision: flag(mi, &["supports_vision", "vision"]).or(claude.then_some(true)),
+        context_window: context,
+        max_output_tokens: int("max_output_tokens").or(if d.relay { None } else { context }),
+        // The config's own key wins (an override), then the engine, then Claude's.
+        vision: flag(mi, VISION_KEYS)
+            .or(said.vision)
+            .or(claude.then_some(true)),
         tools: flag(
             mi,
             &["supports_function_calling", "supports_tool_choice", "tools"],
@@ -265,13 +307,14 @@ pub fn model_of(snap: &Snapshot, d: &Deployment) -> RouterModel {
 pub fn models_for(st: &AppState, p: Option<&Principal>) -> RouterModels {
     let snap = st.snapshot();
     let cp = st.control.get();
+    let caps = st.engine_caps.current(&snap);
     // Public names in order: the deployments', then routes that have none (catalog names).
     let mut by_name: Vec<RouterModel> = Vec::new();
     for d in &snap.config.deployments {
         if by_name.iter().any(|m| m.id == d.name) {
             continue;
         }
-        by_name.push(model_of(&snap, d));
+        by_name.push(model_of(&snap, d, &caps));
     }
     let mut cards_visible = p.is_none();
     if let (Some(cp), Some(p)) = (cp, p) {
@@ -317,7 +360,29 @@ pub fn models_for(st: &AppState, p: Option<&Principal>) -> RouterModels {
                 return false;
             }
             if m.kind != "cloud" {
-                let live = !r.serving_now.is_empty();
+                let serving = serving_cards(&snap, r);
+                let explicit = snap
+                    .config
+                    .deployments
+                    .iter()
+                    .find(|d| d.name == m.id)
+                    .is_some_and(|d| flag(&d.model_info, VISION_KEYS).is_some());
+                if !explicit {
+                    if !serving.is_empty() {
+                        // What runs it now says.
+                        let said = caps::merged(&caps, &serving);
+                        m.vision = said.vision.or(m.vision).or(r.vision);
+                        if m.context_window.is_none() {
+                            m.context_window = said.context;
+                        }
+                    } else if r.model.is_some() {
+                        // Cold catalog model: the catalog (what runs on the cards is another).
+                        m.vision = r.vision;
+                    } else {
+                        m.vision = m.vision.or(r.vision);
+                    }
+                }
+                let live = !r.serving_now.is_empty() || !serving.is_empty();
                 m.status = Some(
                     if live {
                         "live"
@@ -363,9 +428,69 @@ pub fn models_for(st: &AppState, p: Option<&Principal>) -> RouterModels {
     }
 }
 
+/// The online cards that serve route `r` now: its first targets that have any, else its
+/// fallback targets' (`pool:live [(engine)]`, `card:X`, `model:<catalog id>` by what each card
+/// runs; another upstream's names are not counted).
+fn serving_cards(snap: &Snapshot, r: &crate::control_api::model::RouteView) -> Vec<String> {
+    let online: Vec<(&String, &crate::config::Upstream)> = snap
+        .config
+        .upstreams
+        .iter()
+        .filter(|(_, u)| u.online && !u.is_virtual())
+        .collect();
+    let hit = |t: &str| -> Vec<String> {
+        let pick = |f: &dyn Fn(&String, &crate::config::Upstream) -> bool| {
+            online
+                .iter()
+                .filter(|(id, u)| f(id, u))
+                .map(|(id, _)| (*id).clone())
+                .collect::<Vec<_>>()
+        };
+        if let Some(rest) = t.strip_prefix("pool:") {
+            let engine = rest
+                .split_once(" (")
+                .map(|(_, e)| e.trim_end_matches(')').to_string());
+            pick(&|_, u| engine.as_deref().is_none_or(|e| u.engine == e))
+        } else if let Some(c) = t.strip_prefix("card:") {
+            pick(&|id, _| id == c)
+        } else if let Some(m) = t.strip_prefix("model:") {
+            pick(&|_, u| u.catalog_model.as_deref() == Some(m))
+        } else {
+            Vec::new()
+        }
+    };
+    let mut out: Vec<String> = Vec::new();
+    for fallback in [false, true] {
+        for t in &r.targets {
+            let (t, fb) = match t.strip_suffix(" (fallback)") {
+                Some(t) => (t, true),
+                None => (t.as_str(), false),
+            };
+            if fb == fallback {
+                for c in hit(t) {
+                    if !out.contains(&c) {
+                        out.push(c);
+                    }
+                }
+            }
+        }
+        if !out.is_empty() {
+            break;
+        }
+    }
+    out
+}
+
 /// `GET /v1/abhoth/models`.
 pub async fn models(st: &Arc<AppState>, headers: &HeaderMap, peer: Option<IpAddr>) -> Response {
+    // What the online cards' engines say (cached; cold cards are never asked), once the caller
+    // may list models.
+    let refresh = || async {
+        let snap = st.snapshot();
+        caps::refresh(&st.engine_caps, &st.http, &snap).await
+    };
     let Some(cp) = st.control.get() else {
+        refresh().await;
         return json_response(
             200,
             &serde_json::to_value(models_for(st, None)).unwrap_or_default(),
@@ -395,6 +520,7 @@ pub async fn models(st: &Arc<AppState>, headers: &HeaderMap, peer: Option<IpAddr
             "this caller may not list models (an Abhoth API key is needed)",
         );
     }
+    refresh().await;
     json_response(
         200,
         &serde_json::to_value(models_for(st, Some(&p))).unwrap_or_default(),
@@ -406,4 +532,28 @@ fn err(status: u16, message: &str) -> Response {
         status,
         &serde_json::json!({"error": {"message": message, "type": "auth_error"}}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_names_read_well() {
+        assert_eq!(default_name("gpu-host"), "Abhoth router on Gpu-host");
+        assert_eq!(default_name("gpu-host.lan"), "Abhoth router on Gpu-host");
+        assert_eq!(default_name("MyServer"), "Abhoth router on MyServer");
+        assert_eq!(
+            default_name("3f2a9c1b7d4e"),
+            "Abhoth router",
+            "a container id"
+        );
+        assert_eq!(default_name(""), "Abhoth router");
+        assert_eq!(default_name("localhost"), "Abhoth router");
+        let d = Discovery {
+            name: "  Lab box ".into(),
+            ..Default::default()
+        };
+        assert_eq!(display_name(Some(&d)), "Lab box");
+    }
 }

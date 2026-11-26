@@ -69,12 +69,16 @@ pub struct ConnectionStatus {
     pub error: Option<String>,
     /// Server mode on a URL that is a router: offer router mode (never forced).
     pub suggest_router: bool,
+    /// The configured key's kind (`router_mode::key_kind`: none, placeholder, abhoth, other),
+    /// never the key.
+    pub api_key: String,
 }
 
 /// [`ConnectionStatus`] for a config and what identifying its URL gave.
 pub fn status_of(
     connection_router: bool,
     base_url: &str,
+    api_key: &str,
     identified: Result<Option<RouterInfo>, String>,
 ) -> ConnectionStatus {
     let (router, error) = match identified {
@@ -90,6 +94,7 @@ pub fn status_of(
         .into(),
         base_url: base_url.to_string(),
         suggest_router: !connection_router && router.is_some(),
+        api_key: router_mode::key_kind(api_key).into(),
         router,
         error,
     }
@@ -99,7 +104,13 @@ async fn status(State(state): State<Arc<AppState>>) -> Response {
     let m = load(&state);
     let lm = &m.config.lm_studio;
     let identified = router_mode::identify(&lm.base_url, &router_mode::probe_client()).await;
-    axum::Json(status_of(lm.is_router(), &lm.base_url, identified)).into_response()
+    axum::Json(status_of(
+        lm.is_router(),
+        &lm.base_url,
+        &lm.resolve_api_key(),
+        identified,
+    ))
+    .into_response()
 }
 
 #[derive(Deserialize)]
@@ -236,14 +247,24 @@ mod tests {
             name: "R".into(),
             ..Default::default()
         };
-        let s = status_of(false, "http://r:8010/v1", Ok(Some(info.clone())));
+        let s = status_of(
+            false,
+            "http://r:8010/v1",
+            "lm-studio",
+            Ok(Some(info.clone())),
+        );
         assert!(s.suggest_router);
         assert_eq!(s.connection, "server");
-        let s = status_of(true, "http://r:8010/v1", Ok(Some(info)));
+        let s = status_of(true, "http://r:8010/v1", "", Ok(Some(info)));
         assert!(!s.suggest_router, "already router mode");
-        let s = status_of(false, "http://lmstudio:1234/v1", Ok(None));
+        let s = status_of(false, "http://lmstudio:1234/v1", "lm-studio", Ok(None));
         assert!(!s.suggest_router);
-        let s = status_of(false, "http://dead:1/v1", Err("could not connect".into()));
+        let s = status_of(
+            false,
+            "http://dead:1/v1",
+            "abk_x",
+            Err("could not connect".into()),
+        );
         assert!(!s.suggest_router);
         assert_eq!(s.error.as_deref(), Some("could not connect"));
     }

@@ -209,6 +209,8 @@ export interface ConnectionStatus {
   router: RouterInfo | null;
   error: string | null;
   suggestRouter: boolean;
+  /** The configured key's kind (never the key): none, placeholder (lm-studio), abhoth, other. */
+  apiKey?: "none" | "placeholder" | "abhoth" | "other";
 }
 
 export interface DiscoveredRouter {

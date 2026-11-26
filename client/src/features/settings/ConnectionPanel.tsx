@@ -4,7 +4,7 @@ import { CheckCircle2, KeyRound, Network, Radar, Router as RouterIcon, Server } 
 import { connectionApi, settingsApi, type DiscoveredRouter, type RouterInfo, type RouterModel, type Setting } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, normalizeUrl, pickerOrder, statusLine, type ConnectionMode } from "./connection";
+import { CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, keyHint, normalizeUrl, pickerOrder, statusLine, type ConnectionMode, type KeyKind } from "./connection";
 
 const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
 
@@ -72,7 +72,7 @@ export function ConnectionPanel({ mode, sections }: { mode: ConnectionMode; sect
       {(finding || mode === "server") && <FindRouter busy={adopt.isPending} onUse={(url) => adopt.mutate({ url })} />}
       {mode === "router" && (
         <>
-          {status.data?.router && <RouterSummary info={status.data.router} baseUrl={status.data.baseUrl} />}
+          {status.data?.router && <RouterSummary info={status.data.router} baseUrl={status.data.baseUrl} keyKind={status.data.apiKey} />}
           <RouterModels />
           {hidden.length > 0 && (
             <p className="text-xs text-muted-foreground" data-testid="connection-hidden">
@@ -175,25 +175,22 @@ function Found({ r, busy, onUse }: { r: DiscoveredRouter; busy: boolean; onUse: 
   );
 }
 
-function RouterSummary({ info, baseUrl }: { info: RouterInfo; baseUrl: string }) {
+function RouterSummary({ info, baseUrl, keyKind }: { info: RouterInfo; baseUrl: string; keyKind?: KeyKind }) {
+  const hint = keyHint(keyKind, info.auth, info.capabilities.includes("claude"));
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground" data-testid="connection-router-info">
       <span>
         <b className="text-foreground">{info.name}</b> v{info.version}
       </span>
       <span className="font-mono">{baseUrl}</span>
-      {info.auth.required ? (
-        <span className="inline-flex items-center gap-1">
-          <KeyRound className="size-3" /> needs an API key ({info.auth.keyPrefix ?? "abk_"}…) in API Key below
-          {info.auth.keyUrl && (
-            <a className="text-primary hover:underline" href={info.auth.keyUrl} target="_blank" rel="noreferrer">
-              make one
-            </a>
-          )}
-        </span>
-      ) : (
-        <span>no key needed from here</span>
-      )}
+      <span className={cn("inline-flex items-center gap-1", hint.tone === "warn" && "text-warning")} data-testid="connection-key-hint">
+        {hint.tone !== "ok" && <KeyRound className="size-3" />} {hint.text}
+        {hint.tone !== "ok" && info.auth.keyUrl && (
+          <a className="text-primary hover:underline" href={info.auth.keyUrl} target="_blank" rel="noreferrer">
+            make one
+          </a>
+        )}
+      </span>
     </div>
   );
 }

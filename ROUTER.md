@@ -924,9 +924,15 @@ Design and the per-setting table: [`docs/design/ROUTER-MODE.md`](docs/design/ROU
   deployments' `model_info` and `params`; LiteLLM's `supports_vision`,
   `supports_function_calling` and `supports_reasoning` keys win), whether Claude is among them
   and, for callers that may see them, the cards. Authenticated like `/v1/abhoth/view`.
+  Image input (and a missing context window) comes from the engines themselves: each online
+  card's `GET /v1/models` (`architecture.input_modalities`, llama.cpp `capabilities`) or
+  `GET /props` (`modalities.vision`), cached 5 min (1 min when it did not answer), 2 s timeout;
+  offline cards are never asked. Cold catalog models use the catalog: `models.<id>.vision` and,
+  on engines that need an option for images (`vision`, llama.cpp `mmproj`), whether the
+  on-demand pick's profile sets it. `supports_vision` in a deployment's `model_info` overrides.
 - mDNS / DNS-SD `_abhoth-router._tcp` (TXT `v`, `api`, `path`, `name`): `--mdns auto|on|off`
-  (auto: on unless the gateway is loopback-only), `--name NAME` (default "Abhoth router on
-  <host>"), `--key-url URL` (where users make API keys).
+  (auto: on unless the gateway is loopback-only), `--name NAME` (else `ABHOTH_ROUTER_NAME`, else "Abhoth router on
+  <Host>": the short host name, capitalised; plain "Abhoth router" for a container id), `--key-url URL` (where users make API keys).
 
 The app's settings (Models → Connection) use them for "router mode": the router then supplies
 everything model-specific, and the client's failover, slots and inference profiles are off.

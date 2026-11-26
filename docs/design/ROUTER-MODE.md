@@ -89,7 +89,8 @@ Unauthenticated, no secrets, CORS `*`, read-only (a GET never switches: `switch:
 ```
 
 `auth.required` is for a caller from where this request came from (anonymous LAN callers may
-be allowed; `access.anonymous_lan`). `name`: `--name`, else "Abhoth router on <host>";
+be allowed; `access.anonymous_lan`). `name`: `--name`, else `ABHOTH_ROUTER_NAME`, else "Abhoth router on <Host>" (short host
+name, capitalised; "Abhoth router" for a container id);
 `keyUrl`: `--key-url` (where users make keys, the public web UI). The client never probes
 anything else on an unknown URL: LiteLLM's `/health` sends a real request to every model.
 
@@ -105,9 +106,18 @@ may read control state) and `rev`.
 
 Capabilities come from the deployments' `model_info`: LiteLLM's own keys
 (`supports_vision`, `supports_function_calling` / `supports_tool_choice`, `supports_reasoning`)
-win; otherwise tools are implied by the engine (ninfer, Strata, vLLM, SGLang, llama.cpp, the
-Claude CLI), reasoning by `effort_levels`, vision only for Claude (a local model's vision is
-unknown unless configured, and the client then keeps its own `vision`).
+win (the override); otherwise tools are implied by the engine (ninfer, Strata, vLLM, SGLang,
+llama.cpp, the Claude CLI), reasoning by `effort_levels`, and **vision by the engines**: each
+online card's own `GET /v1/models` (ninfer / OpenRouter `architecture.input_modalities`,
+llama.cpp `capabilities: ["multimodal"]`), else `GET /props` (`modalities.vision`), with the
+engine's key and `x-abhoth-no-switch: 1`, cached 5 minutes (`discovery::caps`). A name over
+several cards takes images when any of them does. Offline cards are never asked; for a cold
+catalog model the control plane's catalog answers (`models.<id>.vision`, and on an engine that
+needs an option for images, ninfer `vision` / llama.cpp `mmproj`, whether the on-demand
+pick's profile sets it; `resolve::route_vision`). A route is `live` while an online card serves
+it (`pool:live`, `card:X`, or a card whose catalog model is the route's). When nothing knows,
+`vision` is left out and the client keeps its own setting. The engines' context window fills a
+missing `max_input_tokens`.
 
 ### 2.3 mDNS / DNS-SD
 
@@ -122,6 +132,11 @@ link-local last).
 
 ## 3. The client
 
+- **The API key in router mode:** the panel says what the configured key is (never the key:
+  `none`, `placeholder`, `abhoth`, `other`). LM Studio's placeholder `lm-studio` is never sent to
+  a router and reads "not sent to the router. No key needed on your LAN" (plus "add an Abhoth key
+  (`abk_…`) to use Claude" when the router has Claude); a non-`abk_` key on a router with keys
+  is flagged as one it will refuse.
 - **Settings → Models → Connection** (`client/src/features/settings/ConnectionPanel.tsx`): the
   two modes; in server mode, routers found on the LAN (each checked with its identification
   document before "Use it" is offered) and a URL box with "Check"; when the configured URL

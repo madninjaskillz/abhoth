@@ -85,3 +85,27 @@ export function statusLine(s: StatusLike | undefined): { text: string; offer: bo
   if (s.suggestRouter && s.router) return { text: `The Base URL is ${s.router.name}, an Abhoth router.`, offer: true };
   return { text: "", offer: false };
 }
+
+/** The configured key's kind, as the web server reports it (never the key). */
+export type KeyKind = "none" | "placeholder" | "abhoth" | "other";
+
+/**
+ * What the panel says about the API key for a router: `tone` "ok" (nothing to do), "info" (a hint)
+ * or "warn" (the router will refuse it / needs one). LM Studio's placeholder (`lm-studio`) is never
+ * sent to a router, so it reads as "no key", not as a problem.
+ */
+export function keyHint(
+  kind: KeyKind | undefined,
+  auth: { required: boolean; keys: boolean; keyPrefix?: string | null },
+  hasClaude: boolean,
+): { tone: "ok" | "info" | "warn"; text: string } {
+  const prefix = auth.keyPrefix ?? "abk_";
+  const placeholder = kind === "placeholder" ? "LM Studio's placeholder key (lm-studio) isn't sent to the router. " : "";
+  if (kind === "abhoth") return { tone: "ok", text: `Using your Abhoth key (${prefix}…).` };
+  if (kind === "other" && auth.keys) {
+    return { tone: "warn", text: `The API Key isn't an Abhoth key (${prefix}…): the router will refuse it. Clear it, or paste an Abhoth key.` };
+  }
+  if (auth.required) return { tone: "warn", text: `${placeholder}This router needs an Abhoth key (${prefix}…) in API Key below.` };
+  const claude = hasClaude && auth.keys ? ` Add an Abhoth key (${prefix}…) to use Claude.` : "";
+  return { tone: claude || placeholder ? "info" : "ok", text: `${placeholder}No key needed on your LAN.${claude}` };
+}

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, modeOf, normalizeUrl, pickerOrder, statusLine, visibleInMode,
+  CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, modeOf, normalizeUrl, pickerOrder, statusLine, visibleInMode, keyHint,
 } from "../src/features/settings/connection.ts";
 
 const s = (key: string, routerMode?: "shown" | "hidden" | "router") => ({ key, routerMode });
@@ -82,4 +82,25 @@ test("router mode is offered when server mode points at a router, never forced",
   assert.equal(statusLine({ connection: "server", suggestRouter: false, router: null }).offer, false);
   assert.deepEqual(statusLine({ connection: "router", suggestRouter: false, router: { name: "DT" } }), { text: "Connected to DT.", offer: false });
   assert.match(statusLine({ connection: "router", suggestRouter: false, router: null }).text, /does not answer/);
+});
+
+const lan = { required: false, keys: true, keyPrefix: "abk_" };
+
+test("keyHint: LM Studio's placeholder reads as no key, not a problem", () => {
+  const h = keyHint("placeholder", lan, false);
+  assert.equal(h.tone, "info");
+  assert.match(h.text, /isn't sent to the router/);
+  assert.match(h.text, /No key needed on your LAN/);
+});
+
+test("keyHint: an Abhoth key is suggested for Claude", () => {
+  assert.match(keyHint("none", lan, true).text, /Add an Abhoth key \(abk_…\) to use Claude/);
+  assert.equal(keyHint("none", lan, false).tone, "ok");
+});
+
+test("keyHint: warns when a key is needed or would be refused", () => {
+  assert.equal(keyHint("placeholder", { ...lan, required: true }, false).tone, "warn");
+  assert.equal(keyHint("other", lan, false).tone, "warn");
+  assert.equal(keyHint("other", { ...lan, keys: false }, false).tone, "ok");
+  assert.equal(keyHint("abhoth", { ...lan, required: true }, true).tone, "ok");
 });

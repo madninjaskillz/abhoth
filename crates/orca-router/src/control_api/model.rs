@@ -329,6 +329,13 @@ pub struct RouteView {
     /// What would serve it now ("card A (ninfer)", "cold").
     pub serving_now: Vec<String>,
     pub allow_user_switch: bool,
+    /// The catalog model its first `model` target names (D149 model metadata).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Image input from the config (catalog `vision` and the engine profile's options);
+    /// `None` = can't be told without asking the engine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision: Option<bool>,
 }
 
 /// `PATCH /admin/api/routes/{name}`: only what the Routes page edits.

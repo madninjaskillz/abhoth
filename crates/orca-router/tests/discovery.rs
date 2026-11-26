@@ -267,7 +267,150 @@ async fn with_access_rules_a_key_is_needed_and_routes_are_filtered() {
     assert!(!m.claude);
     assert!(m.cards.is_empty());
     assert!(!m.models.is_empty());
-    assert!(a.seen().is_empty() && b.seen().is_empty() && relay.seen().is_empty());
+    // The cards were only asked what they run (read-only GETs), the relay nothing.
+    only_described(&a);
+    only_described(&b);
+    assert!(relay.seen().is_empty());
+}
+
+/// Everything `f` saw was a read-only GET of `/v1/models` or `/props`, with the engine's key.
+fn only_described(f: &Fake) {
+    for s in f.seen() {
+        assert_eq!(s.method, "GET", "{}", s.path);
+        assert!(s.path == "/v1/models" || s.path == "/props", "{}", s.path);
+        assert_eq!(
+            s.headers["authorization"].to_str().unwrap(),
+            "Bearer test-engine-key"
+        );
+        assert_eq!(s.headers["x-abhoth-no-switch"].to_str().unwrap(), "1");
+    }
+}
+
+/// An engine that describes itself like ninfer (`image`: a vision projector is loaded).
+async fn engine(image: bool, ctx: i64) -> Fake {
+    Fake::start(move |s| match (s.method.as_str(), s.path.as_str()) {
+        ("GET", "/v1/models") => {
+            let mods = if image {
+                json!(["text", "image"])
+            } else {
+                json!(["text"])
+            };
+            Reply::Json(
+                200,
+                json!({"object": "list", "data": [{"id": "inkling-2-mini", "object": "model",
+                    "architecture": {"input_modalities": mods, "output_modalities": ["text"]},
+                    "context_length": ctx}]}),
+            )
+        }
+        _ => Reply::Json(404, json!({"error": "?"})),
+    })
+    .await
+}
+
+/// A llama.cpp-style engine: `/v1/models` says nothing about images, `/props` does.
+async fn llamacpp(image: bool) -> Fake {
+    Fake::start(move |s| match s.path.as_str() {
+        "/v1/models" => Reply::Json(200, json!({"data": [{"id": "inkling-2-mini"}]})),
+        "/props" => Reply::Json(
+            200,
+            json!({"modalities": {"vision": image}, "default_generation_settings": {"n_ctx": 32768}}),
+        ),
+        _ => Reply::Json(404, json!({})),
+    })
+    .await
+}
+
+async fn models_of(url: &str) -> RouterModels {
+    http()
+        .get(format!("{url}{MODELS_PATH}"))
+        .header("x-abhoth-no-switch", "1")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn vision_comes_from_the_engines_the_names_run_on() {
+    // A takes images (ninfer with its projector), B is text only (llama.cpp without mmproj).
+    let (a, b, relay) = (
+        engine(true, 65536).await,
+        llamacpp(false).await,
+        Fake::ok("relay").await,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let r = start_router(
+        cfg(&a.url(), &b.url(), &relay.url(), dir.path()),
+        None,
+        Mode::Gateway,
+    )
+    .await;
+    let m = models_of(&r.url).await;
+    let v = |id: &str| m.find(id).unwrap().vision;
+    assert_eq!(v("qwen3.8-flash-next-a"), Some(true), "card A's engine");
+    assert_eq!(v("qwen3.8-flash-next-b"), Some(false), "card B's /props");
+    assert_eq!(
+        v("jarvis-brain"),
+        Some(true),
+        "A or B: either may take the images"
+    );
+    assert_eq!(v("qwen3.8-27b"), Some(true), "its supports_vision");
+    assert_eq!(v("flash-next"), None, "the relay is never asked");
+    assert_eq!(v("claude-sonnet"), Some(true));
+    only_described(&a);
+    only_described(&b);
+    assert!(relay.seen().is_empty());
+    // Cached: a second listing asks nobody.
+    let (na, nb) = (a.seen().len(), b.seen().len());
+    let _ = models_of(&r.url).await;
+    assert_eq!((a.seen().len(), b.seen().len()), (na, nb));
+}
+
+#[tokio::test]
+async fn an_override_wins_and_cold_cards_are_never_asked() {
+    let (a, b, relay) = (
+        engine(true, 65536).await,
+        engine(true, 65536).await,
+        Fake::ok("relay").await,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = cfg(&a.url(), &b.url(), &relay.url(), dir.path());
+    c.upstreams.get_mut("B").unwrap().online = false;
+    // An admin says jarvis-brain takes no images, whatever the engine says.
+    c.deployments
+        .iter_mut()
+        .find(|d| d.name == "jarvis-brain")
+        .unwrap()
+        .model_info
+        .insert("supports_vision".into(), json!(false));
+    let r = start_router(c, None, Mode::Gateway).await;
+    let m = models_of(&r.url).await;
+    assert_eq!(m.find("jarvis-brain").unwrap().vision, Some(false));
+    assert_eq!(m.find("qwen3.8-flash-next-a").unwrap().vision, Some(true));
+    assert_eq!(
+        m.find("qwen3.8-flash-next-b").unwrap().vision,
+        None,
+        "B is offline: unknown, not asked"
+    );
+    assert!(b.seen().is_empty(), "an offline card was asked");
+    assert!(!a.seen().is_empty());
+}
+
+#[tokio::test]
+async fn the_engines_context_fills_a_missing_window() {
+    let (a, b) = (engine(false, 40960).await, engine(false, 40960).await);
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = two_cards(&a.url(), &b.url(), None, dir.path());
+    for d in &mut c.deployments {
+        d.model_info.remove("max_input_tokens");
+    }
+    let r = start_router(c, None, Mode::Gateway).await;
+    let m = models_of(&r.url).await;
+    let j = m.find("jarvis-brain").unwrap();
+    assert_eq!(j.context_window, Some(40960));
+    assert_eq!(j.vision, Some(false));
 }
 
 /// The advert is seen by a browser on this machine (multicast loopback). Skipped, with a line
@@ -307,4 +450,43 @@ fn the_mdns_advert_is_found_by_a_browser() {
     assert_eq!(s.get_property_val_str("name"), Some(name.as_str()));
     assert_eq!(s.get_property_val_str("api"), Some("1"));
     assert!(!s.get_addresses().is_empty());
+}
+
+#[tokio::test]
+async fn cold_catalog_models_use_the_catalog_and_live_ones_their_engine() {
+    let (a, b, relay) = (
+        engine(true, 65536).await,
+        engine(true, 65536).await,
+        Fake::ok("relay").await,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let listing = |c: orca_router::config::RouterConfig| async {
+        let r = start_router(c, None, Mode::Gateway).await;
+        let _ = r.st.control.set(control_plane());
+        let m: RouterModels = http()
+            .get(format!("{}{MODELS_PATH}", r.url))
+            .bearer_auth(USER_KEY)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        m
+    };
+    // dense-stock is cold: the catalog says text only; the engines (running another model)
+    // are not taken for it.
+    let m = listing(cfg(&a.url(), &b.url(), &relay.url(), dir.path())).await;
+    let d = m.find("dense-stock").unwrap();
+    assert_eq!((d.status.as_deref(), d.vision), (Some("cold"), Some(false)));
+    // A pool route is live while a card is online, and its engine says.
+    let q = m.find("qwen3.8-27b").unwrap();
+    assert_eq!(q.status.as_deref(), Some("live"));
+    // Card A runs it now (what the control plane put there): live, and A's engine says.
+    let mut c = cfg(&a.url(), &b.url(), &relay.url(), dir.path());
+    c.upstreams.get_mut("A").unwrap().catalog_model = Some("dense-stock".into());
+    let m = listing(c).await;
+    let d = m.find("dense-stock").unwrap();
+    assert_eq!((d.status.as_deref(), d.vision), (Some("live"), Some(true)));
+    assert!(relay.seen().is_empty());
 }

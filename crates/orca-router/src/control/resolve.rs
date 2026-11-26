@@ -139,6 +139,85 @@ pub fn card_options(c: &ControlConfig, spec: &CardSpec) -> Result<IndexMap<Strin
     Ok(opts)
 }
 
+/// Whether `options` turn image input on: a truthy `vision` (ninfer `--vision`) or a projector
+/// (`mmproj`, llama.cpp).
+fn vision_on(opts: &IndexMap<String, Value>) -> bool {
+    opts.get("vision").is_some_and(truthy) || opts.get("mmproj").is_some_and(truthy)
+}
+
+/// An engine that needs an option for image input (some profile or artifact sets `vision` or
+/// `mmproj`); others (Strata) take images whenever the model does.
+fn vision_gated(c: &ControlConfig, engine: &str) -> bool {
+    let has = |o: &IndexMap<String, Value>| o.contains_key("vision") || o.contains_key("mmproj");
+    c.engines
+        .get(engine)
+        .is_some_and(|e| e.profiles.values().any(|p| has(&p.options)))
+        || c.models
+            .values()
+            .filter_map(|m| m.artifacts.get(engine))
+            .any(|a| has(&a.options))
+}
+
+/// Whether catalog model `model` takes images when run by `engine` with `profile` (the
+/// artifact's default when `None`), from the config alone: the model's `vision`, and on an
+/// engine that needs an option for it, that option in the card's options. `None` when it can't
+/// be told (no engine named and the model's engines need an option).
+pub fn model_vision(
+    c: &ControlConfig,
+    model: &str,
+    engine: Option<&str>,
+    profile: Option<&str>,
+) -> Option<bool> {
+    let m = c.models.get(model)?;
+    if !m.vision {
+        return Some(false);
+    }
+    let Some(engine) = engine else {
+        // No engine chosen: known only when none of the model's engines needs an option.
+        return (!m.artifacts.keys().any(|e| vision_gated(c, e))).then_some(true);
+    };
+    if !vision_gated(c, engine) {
+        return Some(true);
+    }
+    let art = m.artifacts.get(engine)?;
+    let profile = profile
+        .map(str::to_string)
+        .or_else(|| art.default_profile.clone())
+        .or_else(|| art.profiles.first().cloned())?;
+    let spec = CardSpec {
+        engine: engine.into(),
+        profile,
+        model: model.into(),
+    };
+    card_options(c, &spec).ok().map(|o| vision_on(&o))
+}
+
+/// A route's image input from the config: its first catalog-model target, run as its on-demand
+/// pick says (cold models: nothing is asked of an engine).
+pub fn route_vision(c: &ControlConfig, r: &Route) -> Option<bool> {
+    let base = r
+        .same_as
+        .as_ref()
+        .and_then(|s| c.routes.get(s))
+        .unwrap_or(r);
+    let model = base
+        .targets
+        .iter()
+        .find(|t| t.upstream.is_none() && t.pool.is_none() && t.card.is_none())
+        .and_then(|t| t.model.as_deref())?;
+    let pick = r
+        .on_demand
+        .as_ref()
+        .or(base.on_demand.as_ref())
+        .and_then(|o| o.pick.as_ref());
+    model_vision(
+        c,
+        model,
+        pick.map(|p| p.engine.as_str()),
+        pick.and_then(|p| p.profile.as_deref()),
+    )
+}
+
 fn truthy(v: &Value) -> bool {
     match v {
         Value::Null => false,
@@ -678,6 +757,47 @@ mod tests {
             profile: p.into(),
             model: m.into(),
         }
+    }
+
+    #[test]
+    fn vision_from_the_catalog_and_the_engine_profile() {
+        let mut c = sample();
+        // Text-only model: never.
+        assert_eq!(
+            model_vision(&c, "small", Some("ninfer"), Some("4lane")),
+            Some(false)
+        );
+        // ninfer needs its `vision` option: the 4-lane profile has it, the 2-lane one not.
+        assert_eq!(
+            model_vision(&c, "dense", Some("ninfer"), Some("4lane")),
+            Some(true)
+        );
+        assert_eq!(
+            model_vision(&c, "dense", Some("ninfer"), Some("2lane")),
+            Some(false)
+        );
+        // No engine chosen and its engine needs an option: unknown.
+        assert_eq!(model_vision(&c, "dense", None, None), None);
+        // An engine that needs no option (Strata) takes images whenever the model does.
+        c.models.get_mut("flash").unwrap().vision = true;
+        assert_eq!(model_vision(&c, "flash", Some("strata"), None), Some(true));
+        assert_eq!(model_vision(&c, "flash", None, None), Some(true));
+        assert_eq!(model_vision(&c, "nope", None, None), None);
+        // Routes: a cold catalog model by its on-demand pick; pool routes are not the catalog's.
+        assert_eq!(route_vision(&c, &c.routes["small-model"]), Some(false));
+        assert_eq!(route_vision(&c, &c.routes["dense-27b"]), None);
+        let mut r = c.routes["small-model"].clone();
+        r.targets[0].model = Some("dense".into());
+        assert_eq!(route_vision(&c, &r), Some(false), "2lane: text only");
+        r.on_demand.as_mut().unwrap().pick.as_mut().unwrap().profile = Some("4lane".into());
+        assert_eq!(route_vision(&c, &r), Some(true));
+        // llama.cpp's projector counts as the option.
+        let mut o = IndexMap::new();
+        o.insert(
+            "mmproj".to_string(),
+            Value::String("mmproj-F16.gguf".into()),
+        );
+        assert!(vision_on(&o));
     }
 
     #[test]

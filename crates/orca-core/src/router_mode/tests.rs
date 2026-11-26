@@ -381,3 +381,12 @@ async fn the_placeholder_key_is_not_sent_for_metadata() {
             .any(|(k, _)| k == "authorization")
     );
 }
+
+#[test]
+fn key_kinds_never_show_the_key() {
+    assert_eq!(key_kind(""), "none");
+    assert_eq!(key_kind(" lm-studio "), "placeholder");
+    assert_eq!(key_kind("LM-Studio"), "placeholder");
+    assert_eq!(key_kind("abk_user_secretsecret"), "abhoth");
+    assert_eq!(key_kind("sk-something"), "other");
+}

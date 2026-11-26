@@ -422,9 +422,14 @@ impl DemoControl {
                     same_as: None,
                     serving_now: now.iter().map(|s| s.to_string()).collect(),
                     allow_user_switch: false,
+                    model: targets
+                        .first()
+                        .and_then(|t| t.strip_prefix("model:"))
+                        .map(str::to_string),
+                    vision: None,
                 }
             };
-        let routes = vec![
+        let mut routes = vec![
             route(
                 "qwen3.8-27b",
                 &["pool:live"],
@@ -466,6 +471,10 @@ impl DemoControl {
                 &["anthropic"],
             ),
         ];
+        // The stock weights take no images (catalog `vision` unset).
+        if let Some(r) = routes.iter_mut().find(|r| r.name == "dense-stock") {
+            r.vision = Some(false);
+        }
         let (tx, _) = broadcast::channel(256);
         Arc::new(Self {
             inner: Arc::new(Mutex::new(Inner {

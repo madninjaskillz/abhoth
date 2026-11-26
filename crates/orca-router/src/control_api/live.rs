@@ -519,6 +519,12 @@ impl ControlBackend for ConfigBackend {
                     same_as: r.same_as.clone(),
                     serving_now: vec![],
                     allow_user_switch: r.allow_user_switch,
+                    model: base
+                        .targets
+                        .iter()
+                        .find(|t| t.upstream.is_none() && t.pool.is_none() && t.card.is_none())
+                        .and_then(|t| t.model.clone()),
+                    vision: crate::control::resolve::route_vision(&c, r),
                 }
             })
             .collect()

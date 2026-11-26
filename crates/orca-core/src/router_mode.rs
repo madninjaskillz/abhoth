@@ -275,6 +275,21 @@ pub fn is_placeholder_key(key: &str) -> bool {
     key.trim().eq_ignore_ascii_case("lm-studio")
 }
 
+/// What kind of key `key` (the resolved API key) is, for the connection panel (never the key):
+/// `none`, `placeholder` (LM Studio's, not sent), `abhoth` (`abk_…`) or `other`.
+pub fn key_kind(key: &str) -> &'static str {
+    let k = key.trim();
+    if k.is_empty() {
+        "none"
+    } else if is_placeholder_key(k) {
+        "placeholder"
+    } else if k.starts_with(crate::router_link::API_KEY_PREFIX) {
+        "abhoth"
+    } else {
+        "other"
+    }
+}
+
 type CacheKey = (String, String);
 static CACHE: LazyLock<Mutex<HashMap<CacheKey, (Instant, RouterModels)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
