@@ -257,6 +257,8 @@ impl Validation {
 }
 
 const MAX_DEPTH: usize = 64;
+/// `ema` restarts from its input after a gap longer than this between input samples.
+pub const EMA_RESTART_MS: i64 = 10_000;
 const MAX_LEN: usize = 4096;
 
 /// A parsed expression. Serialises as its source text.
@@ -848,24 +850,30 @@ fn call(
             let x = eval(&args[0], src, now, st);
             let cell = &mut st.ema[slot];
             match x {
-                Err(m) => {
-                    // A gap restarts the average: no stale history leaks into later values.
-                    *cell = None;
-                    Err(m)
-                }
+                // Missing input: the result is missing too, but the history is kept, so a
+                // short gap (a card's sample late or a sensor briefly stale) continues the
+                // average when the input comes back, as the fan pusher does.
+                Err(m) => Err(m),
                 Ok(x) => {
-                    let v = match *cell {
-                        None => x.v,
+                    // Time is the input's sample time, not the evaluation time: each sample is
+                    // weighted over the interval since the previous sample, however often the
+                    // expression is evaluated in between (pusher parity, SUPERVISOR.md 5.4).
+                    let at = x.ts.unwrap_or(now);
+                    let (v, at) = match *cell {
+                        None => (x.v, at),
+                        // A gap longer than EMA_RESTART_MS restarts the average (the pusher's
+                        // STREAM_HANG): no old history leaks into later values.
+                        Some((_, last)) if at - last > EMA_RESTART_MS => (x.v, at),
                         Some((prev, last)) => {
-                            let dt = (now - last) as f64 / 1000.0;
+                            let dt = (at - last) as f64 / 1000.0;
                             if dt <= 0.0 {
-                                prev
+                                (prev, last)
                             } else {
-                                prev + (1.0 - (-dt / tau).exp()) * (x.v - prev)
+                                (prev + (1.0 - (-dt / tau).exp()) * (x.v - prev), at)
                             }
                         }
                     };
-                    *cell = Some((v, now));
+                    *cell = Some((v, at));
                     finite(Value { v, ..x })
                 }
             }
