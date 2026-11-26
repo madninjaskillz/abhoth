@@ -189,12 +189,17 @@ impl Executor for SshExecutor {
         })
         .map_err(|e| ExecError::Io(e.to_string()))?;
         if let Some(mut si) = child.stdin.take() {
-            si.write_all(frame.as_bytes())
-                .await
-                .map_err(|e| ExecError::Io(e.to_string()))?;
-            si.write_all(b"\n")
-                .await
-                .map_err(|e| ExecError::Io(e.to_string()))?;
+            // ssh that fails early (auth, host key) can exit without reading its stdin: a broken
+            // pipe here is not the error; its exit status and stderr below are.
+            let mut wrote = si.write_all(frame.as_bytes()).await;
+            if wrote.is_ok() {
+                wrote = si.write_all(b"\n").await;
+            }
+            if let Err(e) = wrote
+                && e.kind() != std::io::ErrorKind::BrokenPipe
+            {
+                return Err(ExecError::Io(e.to_string()));
+            }
         }
         // The host enforces the request's own timeout; this one also covers connect and reply.
         let limit = req.timeout + Duration::from_secs(self.target.connect_timeout + 15);
