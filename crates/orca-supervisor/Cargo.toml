@@ -12,6 +12,7 @@ name = "abhoth-supervisor"
 path = "src/bin/abhoth_supervisor.rs"
 
 [dependencies]
+orca-calendar.workspace = true
 orca-sensors.workspace = true
 orca-hostd.workspace = true
 orca-gpuctl.workspace = true

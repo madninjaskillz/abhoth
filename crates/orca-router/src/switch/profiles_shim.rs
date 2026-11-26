@@ -31,7 +31,7 @@ pub trait ShimBackend: Send + Sync {
     fn history(&self, limit: usize) -> Vec<Value>;
     fn job(&self, id: &str) -> Option<Value>;
     /// `(status, body)` for `GET /plan`.
-    fn plan(&self, layout: Option<&str>, profile: Option<&str>) -> (u16, Value);
+    async fn plan(&self, layout: Option<&str>, profile: Option<&str>) -> (u16, Value);
     fn ondemand(&self) -> Value;
     /// `POST /switch`: 200 already live, 202 queued, 409 refused.
     async fn switch(
@@ -105,14 +105,17 @@ pub async fn handle(
             "/live" => (200, b.live()),
             "/cards" => (200, b.cards()),
             "/ondemand" => (200, b.ondemand()),
-            "/plan" => b.plan(
-                if get("profile").is_some() {
-                    None
-                } else {
-                    get("layout")
-                },
-                get("profile"),
-            ),
+            "/plan" => {
+                b.plan(
+                    if get("profile").is_some() {
+                        None
+                    } else {
+                        get("layout")
+                    },
+                    get("profile"),
+                )
+                .await
+            }
             "/jobs" => {
                 let n = get("limit").and_then(|l| l.parse().ok()).unwrap_or(20);
                 (200, json!({"jobs": b.history(n)}))
@@ -238,7 +241,7 @@ mod shim_tests {
         fn job(&self, id: &str) -> Option<Value> {
             (id == "j1").then(|| json!({"id": "j1", "state": "done", "steps": []}))
         }
-        fn plan(&self, layout: Option<&str>, profile: Option<&str>) -> (u16, Value) {
+        async fn plan(&self, layout: Option<&str>, profile: Option<&str>) -> (u16, Value) {
             (200, json!({"layout": layout, "profile": profile}))
         }
         fn ondemand(&self) -> Value {

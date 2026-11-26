@@ -1,7 +1,8 @@
 //! Alerts (orca-alerts) over the hub: every 5 s the built-in conditions and the expression
 //! rules are evaluated from the feed state, hub events become event signals, open alerts go
 //! to the `alerts` section and notifications to the sinks (`[alerts.sinks.*]`, plus `mqtt`
-//! through the HA connection when it runs). Calendar mutes are not wired yet (nothing muted).
+//! through the HA connection when it runs). Calendar mutes come from the `calendar` section
+//! (the router's `calendar/now`); critical alerts are never muted.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -231,8 +232,8 @@ pub fn spawn(
         }
     }
     tokio::spawn(async move {
-        let mute = |_: &str, _: bool| None;
         let feed: Arc<dyn TelemetryFeed> = hub.clone();
+        let mut mutes = calendar_mutes(&feed.snapshot().state);
         let mut sub = feed.subscribe(None).rx;
         let mut tick = tokio::time::interval(Duration::from_secs(5));
         loop {
@@ -241,6 +242,9 @@ pub fn spawn(
                 _ = tick.tick() => {
                     let now = orca_sensors::now_ms();
                     let state = feed.snapshot().state;
+                    mutes = calendar_mutes(&state);
+                    let m = mutes.clone();
+                    let mute = move |rule: &str, critical: bool| muted_by(&m, rule, critical, now / 1000);
                     for s in conditions(&state, &server, &rules, now) {
                         notes.extend(engine.observe(s, &mute));
                     }
@@ -249,7 +253,10 @@ pub fn spawn(
                 }
                 m = sub.recv() => match m {
                     Ok(FeedMessage::Event { event, .. }) => {
-                        if let Some(s) = event_signal(&event.kind, &event.text, &event.data, orca_sensors::now_ms()) {
+                        let now = orca_sensors::now_ms();
+                        let m = mutes.clone();
+                        let mute = move |rule: &str, critical: bool| muted_by(&m, rule, critical, now / 1000);
+                        if let Some(s) = event_signal(&event.kind, &event.text, &event.data, now) {
                             notes.extend(engine.observe(s, &mute));
                             hub.set_section(sections::ALERTS, alerts_section(&engine));
                         }
@@ -269,6 +276,42 @@ pub fn spawn(
         }
     });
     issues
+}
+
+/// `(selector, entry, until_s)` from the `calendar` section's `mutes`.
+pub fn calendar_mutes(state: &Value) -> Vec<(String, String, i64)> {
+    state["calendar"]["mutes"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|m| {
+                    Some((
+                        m["rules"].as_str()?.to_string(),
+                        m["entry"].as_str().unwrap_or("").to_string(),
+                        m["until"].as_i64()?,
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The calendar entry muting `rule` now, if any. Critical alerts are never muted.
+pub fn muted_by(
+    mutes: &[(String, String, i64)],
+    rule: &str,
+    critical: bool,
+    now_s: i64,
+) -> Option<String> {
+    if critical {
+        return None;
+    }
+    mutes
+        .iter()
+        .find(|(sel, _, until)| {
+            *until > now_s && orca_calendar::effects::selector_matches(sel, rule)
+        })
+        .map(|(_, e, _)| e.clone())
 }
 
 #[cfg(test)]
@@ -329,5 +372,20 @@ mod tests {
         }
         let a = alerts_section(&e);
         assert_eq!(a[0]["identity"], "hot_card/A", "{a}");
+    }
+
+    #[test]
+    fn calendar_mutes_never_critical_and_expire() {
+        let st =
+            json!({"calendar": {"mutes": [{"rules": "hot_*", "entry": "video", "until": 900}]}});
+        let m = calendar_mutes(&st);
+        assert_eq!(
+            muted_by(&m, "hot_card", false, 100).as_deref(),
+            Some("video")
+        );
+        assert_eq!(muted_by(&m, "hot_card", true, 100), None);
+        assert_eq!(muted_by(&m, "fan_stalled", false, 100), None);
+        assert_eq!(muted_by(&m, "hot_card", false, 900), None);
+        assert!(calendar_mutes(&json!({})).is_empty());
     }
 }

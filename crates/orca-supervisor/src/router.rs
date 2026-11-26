@@ -88,6 +88,10 @@ impl Router {
             };
             sink.set_section(sections::LEASES, strip_nulls(arr));
         }
+        // The router's calendar (absent or off: no section, nothing muted).
+        if let Ok(n) = self.get("calendar/now").await {
+            sink.set_section(sections::CALENDAR, calendar_section(&n));
+        }
         Ok(())
     }
 
@@ -275,6 +279,39 @@ pub fn engines_section(st: &Value, server: &str) -> (Value, BTreeMap<String, Str
     (strip_nulls(Value::Object(out)), ids)
 }
 
+/// The router's `calendar/now` (orca-calendar `NowState`) → the `calendar` section:
+/// `{ active_event, active: [{entry, title, end}], block, blocks: [...], mutes: [{rules, entry,
+/// until}] }` (times in epoch seconds). The alerts engine reads `mutes`.
+pub fn calendar_section(n: &Value) -> Value {
+    let arr = |k: &str| n[k].as_array().cloned().unwrap_or_default();
+    let active: Vec<Value> = arr("active")
+        .iter()
+        .map(|o| json!({"entry": o["entry"], "title": o["title"], "end": o["end"]}))
+        .collect();
+    let blocks: Vec<Value> = arr("blocks")
+        .iter()
+        .map(|b| json!({"entry": b["entry"], "action": b["action"], "until": b["until"], "reason": b["reason"]}))
+        .collect();
+    // NowState.mutes is `[(selector, entry, until)]`, serialised as arrays.
+    let mutes: Vec<Value> = arr("mutes")
+        .iter()
+        .filter_map(|m| {
+            let m = m.as_array()?;
+            Some(json!({"rules": m.first()?, "entry": m.get(1)?, "until": m.get(2)?}))
+        })
+        .collect();
+    let mut out = json!({
+        "block": !blocks.is_empty(),
+        "active": active,
+        "blocks": blocks,
+        "mutes": mutes,
+    });
+    if let Some(e) = out["active"][0]["entry"].as_str().map(String::from) {
+        out["active_event"] = json!(e);
+    }
+    strip_nulls(out)
+}
+
 /// The supervisor's controls (HA, later the UI): layout and card state through the router,
 /// clock caps through hostd. Fan modes wait for the calendar (`fan_profile`).
 pub struct Controls {
@@ -427,6 +464,24 @@ mod tests {
         );
         assert_eq!(snap.control.layout.as_deref(), Some("flash-x2"));
         assert_eq!(snap.card("B").unwrap().engine.as_deref(), Some("strata"));
+    }
+
+    #[test]
+    fn calendar_now_to_section() {
+        let n = json!({"at": 100, "active": [{"entry": "video", "id": "video@1", "title": "Video", "end": 900}],
+            "blocks": [{"entry": "video", "occurrence": "video@1", "action": "block_switch", "target": "*", "until": 900, "priority": "high", "reason": "r"}],
+            "holders": {}, "slot_reserves": [], "holds": [], "clock_profiles": {}, "fan_profiles": {},
+            "mutes": [["hot_*", "video", 900]]});
+        let c = calendar_section(&n);
+        assert_eq!(c["active_event"], "video");
+        assert_eq!(c["block"], true);
+        assert_eq!(
+            c["mutes"],
+            json!([{"rules": "hot_*", "entry": "video", "until": 900}])
+        );
+        let empty = calendar_section(&json!({"active": [], "blocks": [], "mutes": []}));
+        assert_eq!(empty["block"], false);
+        assert!(empty.get("active_event").is_none());
     }
 
     #[test]
