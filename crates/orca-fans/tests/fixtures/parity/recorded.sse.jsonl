@@ -1,0 +1,2904 @@
+{"t":0.21,"name":"Failsafe Active","value":false}
+{"t":0.306,"name":"Fan 0 Stalled","value":false}
+{"t":0.349,"name":"Fan 1 Stalled","value":false}
+{"t":0.349,"name":"Fan 2 Stalled","value":false}
+{"t":0.349,"name":"Fan 0 RPM","value":9804}
+{"t":0.349,"name":"Fan 1 RPM","value":9534}
+{"t":0.418,"name":"Fan 2 RPM","value":9744}
+{"t":0.418,"name":"Fan 0 Duty","value":30}
+{"t":0.432,"name":"Fan 1 Duty","value":30}
+{"t":0.432,"name":"Fan 2 Duty","value":30}
+{"t":0.432,"name":"Fan 0 FF Duty","value":30}
+{"t":0.432,"name":"Fan 1 FF Duty","value":30}
+{"t":0.505,"name":"Fan 2 FF Duty","value":30}
+{"t":0.549,"name":"GPU 0 Temp","value":"24.2"}
+{"t":0.556,"name":"GPU 1 Temp","value":"22.2"}
+{"t":0.669,"name":"GPU 2 Temp","value":"24.0"}
+{"t":0.724,"name":"GPU 0 Power","value":"0.0"}
+{"t":0.724,"name":"GPU 1 Power","value":"0.0"}
+{"t":0.725,"name":"GPU 2 Power","value":"0.0"}
+{"t":0.725,"name":"Curve Low Temp","value":"60"}
+{"t":0.725,"name":"Curve High Temp","value":"82"}
+{"t":0.725,"name":"Min Duty","value":"30"}
+{"t":0.777,"name":"FF Low Load","value":"50"}
+{"t":0.777,"name":"FF High Load","value":"100"}
+{"t":0.777,"name":"FF Max Duty","value":"60"}
+{"t":0.816,"name":"Critical Temp","value":"85"}
+{"t":1.898,"name":"GPU 1 Power","value":"0.0"}
+{"t":2.003,"name":"GPU 1 Temp","value":"22.1"}
+{"t":2.683,"name":"Fan 2 RPM","value":9744}
+{"t":2.915,"name":"Fan 1 FF Duty","value":30}
+{"t":3.121,"name":"Fan 0 RPM","value":9792}
+{"t":3.293,"name":"Fan 0 FF Duty","value":30}
+{"t":3.471,"name":"Fan 2 FF Duty","value":30}
+{"t":3.775,"name":"Fan 0 Duty","value":30}
+{"t":4.133,"name":"Fan 1 RPM","value":9534}
+{"t":4.39,"name":"Fan 2 Duty","value":30}
+{"t":4.606,"name":"Fan 1 Duty","value":30}
+{"t":4.628,"name":"GPU 2 Power","value":"0.0"}
+{"t":4.749,"name":"GPU 2 Temp","value":"24.0"}
+{"t":7.677,"name":"Fan 2 RPM","value":9750}
+{"t":7.915,"name":"Fan 1 FF Duty","value":30}
+{"t":8.132,"name":"Fan 0 RPM","value":9798}
+{"t":8.287,"name":"Fan 0 FF Duty","value":30}
+{"t":8.498,"name":"Fan 2 FF Duty","value":30}
+{"t":8.794,"name":"Fan 0 Duty","value":30}
+{"t":8.825,"name":"GPU 0 Power","value":"0.0"}
+{"t":8.925,"name":"GPU 0 Temp","value":"24.0"}
+{"t":9.134,"name":"Fan 1 RPM","value":9540}
+{"t":9.358,"name":"Fan 2 Duty","value":30}
+{"t":9.609,"name":"Fan 1 Duty","value":30}
+{"t":12.137,"name":"GPU 1 Power","value":"0.0"}
+{"t":12.24,"name":"GPU 1 Temp","value":"22.0"}
+{"t":12.684,"name":"Fan 2 RPM","value":9744}
+{"t":12.915,"name":"Fan 1 FF Duty","value":30}
+{"t":13.126,"name":"Fan 0 RPM","value":9792}
+{"t":13.292,"name":"Fan 0 FF Duty","value":30}
+{"t":13.468,"name":"Fan 2 FF Duty","value":30}
+{"t":13.772,"name":"Fan 0 Duty","value":30}
+{"t":14.128,"name":"Fan 1 RPM","value":9540}
+{"t":14.356,"name":"Fan 2 Duty","value":30}
+{"t":14.623,"name":"GPU 2 Power","value":"0.0"}
+{"t":14.63,"name":"Fan 1 Duty","value":30}
+{"t":14.696,"name":"GPU 2 Temp","value":"24.0"}
+{"t":17.691,"name":"Fan 2 RPM","value":9738}
+{"t":17.924,"name":"Fan 1 FF Duty","value":30}
+{"t":18.127,"name":"Fan 0 RPM","value":9786}
+{"t":18.286,"name":"Fan 0 FF Duty","value":30}
+{"t":18.47,"name":"Fan 2 FF Duty","value":30}
+{"t":18.773,"name":"Fan 0 Duty","value":30}
+{"t":19.084,"name":"GPU 0 Power","value":"0.0"}
+{"t":19.143,"name":"Fan 1 RPM","value":9540}
+{"t":19.199,"name":"GPU 0 Temp","value":"24.1"}
+{"t":19.356,"name":"Fan 2 Duty","value":30}
+{"t":19.615,"name":"Fan 1 Duty","value":30}
+{"t":22.157,"name":"GPU 1 Power","value":"0.0"}
+{"t":22.233,"name":"GPU 1 Temp","value":"22.2"}
+{"t":22.676,"name":"Fan 2 RPM","value":9744}
+{"t":22.919,"name":"Fan 1 FF Duty","value":30}
+{"t":23.124,"name":"Fan 0 RPM","value":9792}
+{"t":23.326,"name":"Fan 0 FF Duty","value":30}
+{"t":23.469,"name":"Fan 2 FF Duty","value":30}
+{"t":23.772,"name":"Fan 0 Duty","value":30}
+{"t":24.15,"name":"Fan 1 RPM","value":9540}
+{"t":24.37,"name":"Fan 2 Duty","value":30}
+{"t":24.612,"name":"Fan 1 Duty","value":30}
+{"t":24.819,"name":"GPU 2 Power","value":"0.0"}
+{"t":24.989,"name":"GPU 2 Temp","value":"24.0"}
+{"t":27.676,"name":"Fan 2 RPM","value":9744}
+{"t":27.927,"name":"Fan 1 FF Duty","value":30}
+{"t":28.135,"name":"Fan 0 RPM","value":9786}
+{"t":28.292,"name":"Fan 0 FF Duty","value":30}
+{"t":28.495,"name":"Fan 2 FF Duty","value":30}
+{"t":28.774,"name":"Fan 0 Duty","value":30}
+{"t":29.075,"name":"GPU 0 Power","value":"0.0"}
+{"t":29.136,"name":"Fan 1 RPM","value":9544.091}
+{"t":29.214,"name":"GPU 0 Temp","value":"24.0"}
+{"t":29.36,"name":"Fan 2 Duty","value":30}
+{"t":29.612,"name":"Fan 1 Duty","value":30}
+{"t":32.196,"name":"GPU 1 Power","value":"0.0"}
+{"t":32.34,"name":"GPU 1 Temp","value":"22.3"}
+{"t":32.681,"name":"Fan 2 RPM","value":9744}
+{"t":32.915,"name":"Fan 1 FF Duty","value":30}
+{"t":33.122,"name":"Fan 0 RPM","value":9786}
+{"t":33.286,"name":"Fan 0 FF Duty","value":30}
+{"t":33.468,"name":"Fan 2 FF Duty","value":30}
+{"t":33.776,"name":"Fan 0 Duty","value":30}
+{"t":34.132,"name":"Fan 1 RPM","value":9534}
+{"t":34.376,"name":"Fan 2 Duty","value":30}
+{"t":34.612,"name":"Fan 1 Duty","value":30}
+{"t":34.941,"name":"GPU 2 Power","value":"0.0"}
+{"t":35.016,"name":"GPU 2 Temp","value":"24.0"}
+{"t":37.677,"name":"Fan 2 RPM","value":9750}
+{"t":37.915,"name":"Fan 1 FF Duty","value":30}
+{"t":38.121,"name":"Fan 0 RPM","value":9786}
+{"t":38.286,"name":"Fan 0 FF Duty","value":30}
+{"t":38.498,"name":"Fan 2 FF Duty","value":30}
+{"t":38.777,"name":"Fan 0 Duty","value":30}
+{"t":39.142,"name":"Fan 1 RPM","value":9540.275}
+{"t":39.155,"name":"GPU 0 Power","value":"0.0"}
+{"t":39.361,"name":"Fan 2 Duty","value":30}
+{"t":39.41,"name":"GPU 0 Temp","value":"24.0"}
+{"t":39.612,"name":"Fan 1 Duty","value":30}
+{"t":42.32,"name":"GPU 1 Power","value":"0.0"}
+{"t":42.423,"name":"GPU 1 Temp","value":"22.2"}
+{"t":42.692,"name":"Fan 2 RPM","value":9750}
+{"t":42.916,"name":"Fan 1 FF Duty","value":30}
+{"t":43.127,"name":"Fan 0 RPM","value":9780}
+{"t":43.285,"name":"Fan 0 FF Duty","value":30}
+{"t":43.482,"name":"Fan 2 FF Duty","value":30}
+{"t":43.789,"name":"Fan 0 Duty","value":30}
+{"t":44.133,"name":"Fan 1 RPM","value":9540}
+{"t":44.356,"name":"Fan 2 Duty","value":30}
+{"t":44.612,"name":"Fan 1 Duty","value":30}
+{"t":45.085,"name":"GPU 2 Power","value":"0.0"}
+{"t":45.23,"name":"GPU 2 Temp","value":"24.0"}
+{"t":47.68,"name":"Fan 2 RPM","value":9744}
+{"t":47.915,"name":"Fan 1 FF Duty","value":30}
+{"t":48.12,"name":"Fan 0 RPM","value":9786}
+{"t":48.293,"name":"Fan 0 FF Duty","value":30}
+{"t":48.469,"name":"Fan 2 FF Duty","value":30}
+{"t":48.771,"name":"Fan 0 Duty","value":30}
+{"t":49.132,"name":"Fan 1 RPM","value":9540}
+{"t":49.316,"name":"GPU 0 Power","value":"0.0"}
+{"t":49.361,"name":"Fan 2 Duty","value":30}
+{"t":49.493,"name":"GPU 0 Temp","value":"24.1"}
+{"t":49.627,"name":"Fan 1 Duty","value":30}
+{"t":52.459,"name":"GPU 1 Power","value":"0.0"}
+{"t":52.702,"name":"Fan 2 RPM","value":9744}
+{"t":52.702,"name":"GPU 1 Temp","value":"22.0"}
+{"t":52.915,"name":"Fan 1 FF Duty","value":30}
+{"t":53.158,"name":"Fan 0 RPM","value":9780}
+{"t":53.285,"name":"Fan 0 FF Duty","value":30}
+{"t":53.469,"name":"Fan 2 FF Duty","value":30}
+{"t":53.775,"name":"Fan 0 Duty","value":30}
+{"t":54.132,"name":"Fan 1 RPM","value":9540}
+{"t":54.355,"name":"Fan 2 Duty","value":30}
+{"t":54.617,"name":"Fan 1 Duty","value":30}
+{"t":55.179,"name":"GPU 2 Power","value":"0.0"}
+{"t":55.286,"name":"GPU 2 Temp","value":"24.0"}
+{"t":57.677,"name":"Fan 2 RPM","value":9750}
+{"t":57.926,"name":"Fan 1 FF Duty","value":30}
+{"t":58.125,"name":"Fan 0 RPM","value":9780}
+{"t":58.285,"name":"Fan 0 FF Duty","value":30}
+{"t":58.471,"name":"Fan 2 FF Duty","value":30}
+{"t":58.771,"name":"Fan 0 Duty","value":30}
+{"t":59.147,"name":"Fan 1 RPM","value":9540}
+{"t":59.365,"name":"Fan 2 Duty","value":30}
+{"t":59.41,"name":"GPU 0 Power","value":"0.0"}
+{"t":59.516,"name":"GPU 0 Temp","value":"24.2"}
+{"t":59.613,"name":"Fan 1 Duty","value":30}
+{"t":62.696,"name":"Fan 2 RPM","value":9748.051}
+{"t":62.738,"name":"GPU 1 Power","value":"0.0"}
+{"t":62.866,"name":"GPU 1 Temp","value":"22.1"}
+{"t":62.923,"name":"Fan 1 FF Duty","value":30}
+{"t":63.148,"name":"Fan 0 RPM","value":9780}
+{"t":63.284,"name":"Fan 0 FF Duty","value":30}
+{"t":63.469,"name":"Fan 2 FF Duty","value":30}
+{"t":63.771,"name":"Fan 0 Duty","value":30}
+{"t":64.131,"name":"Fan 1 RPM","value":9540}
+{"t":64.359,"name":"Fan 2 Duty","value":30}
+{"t":64.614,"name":"Fan 1 Duty","value":30}
+{"t":65.325,"name":"GPU 2 Power","value":"0.0"}
+{"t":65.51,"name":"GPU 2 Temp","value":"24.0"}
+{"t":67.675,"name":"Fan 2 RPM","value":9744}
+{"t":67.914,"name":"Fan 1 FF Duty","value":30}
+{"t":68.121,"name":"Fan 0 RPM","value":9786}
+{"t":68.286,"name":"Fan 0 FF Duty","value":30}
+{"t":68.487,"name":"Fan 2 FF Duty","value":30}
+{"t":68.771,"name":"Fan 0 Duty","value":30}
+{"t":69.132,"name":"Fan 1 RPM","value":9540}
+{"t":69.372,"name":"Fan 2 Duty","value":30}
+{"t":69.605,"name":"GPU 0 Power","value":"0.0"}
+{"t":69.614,"name":"Fan 1 Duty","value":30}
+{"t":69.699,"name":"GPU 0 Temp","value":"24.2"}
+{"t":72.706,"name":"Fan 2 RPM","value":9744}
+{"t":72.809,"name":"GPU 1 Power","value":"0.0"}
+{"t":72.903,"name":"GPU 1 Temp","value":"22.0"}
+{"t":72.922,"name":"Fan 1 FF Duty","value":30}
+{"t":73.119,"name":"Fan 0 RPM","value":9780}
+{"t":73.284,"name":"Fan 0 FF Duty","value":30}
+{"t":73.468,"name":"Fan 2 FF Duty","value":30}
+{"t":73.775,"name":"Fan 0 Duty","value":30}
+{"t":74.132,"name":"Fan 1 RPM","value":9546}
+{"t":74.356,"name":"Fan 2 Duty","value":30}
+{"t":74.626,"name":"Fan 1 Duty","value":30}
+{"t":75.367,"name":"GPU 2 Power","value":"0.0"}
+{"t":75.548,"name":"GPU 2 Temp","value":"24.0"}
+{"t":77.676,"name":"Fan 2 RPM","value":9744}
+{"t":77.918,"name":"Fan 1 FF Duty","value":30}
+{"t":78.121,"name":"Fan 0 RPM","value":9780}
+{"t":78.285,"name":"Fan 0 FF Duty","value":30}
+{"t":78.484,"name":"Fan 2 FF Duty","value":30}
+{"t":78.787,"name":"Fan 0 Duty","value":30}
+{"t":79.154,"name":"Fan 1 RPM","value":9540}
+{"t":79.354,"name":"Fan 2 Duty","value":30}
+{"t":79.679,"name":"Fan 1 Duty","value":30}
+{"t":79.769,"name":"GPU 0 Power","value":"0.0"}
+{"t":79.839,"name":"GPU 0 Temp","value":"24.3"}
+{"t":82.708,"name":"Fan 2 RPM","value":9744}
+{"t":82.917,"name":"Fan 1 FF Duty","value":30}
+{"t":82.987,"name":"GPU 1 Power","value":"0.0"}
+{"t":83.159,"name":"Fan 0 RPM","value":9782.087}
+{"t":83.159,"name":"GPU 1 Temp","value":"22.1"}
+{"t":83.291,"name":"Fan 0 FF Duty","value":30}
+{"t":83.471,"name":"Fan 2 FF Duty","value":30}
+{"t":83.771,"name":"Fan 0 Duty","value":30}
+{"t":84.131,"name":"Fan 1 RPM","value":9534}
+{"t":84.358,"name":"Fan 2 Duty","value":30}
+{"t":84.622,"name":"Fan 1 Duty","value":30}
+{"t":85.65,"name":"GPU 2 Power","value":"0.0"}
+{"t":85.777,"name":"GPU 2 Temp","value":"24.0"}
+{"t":87.691,"name":"Fan 2 RPM","value":9744}
+{"t":87.914,"name":"Fan 1 FF Duty","value":30}
+{"t":88.123,"name":"Fan 0 RPM","value":9781.956}
+{"t":88.304,"name":"Fan 0 FF Duty","value":30}
+{"t":88.466,"name":"Fan 2 FF Duty","value":30}
+{"t":88.771,"name":"Fan 0 Duty","value":30}
+{"t":89.131,"name":"Fan 1 RPM","value":9540}
+{"t":89.357,"name":"Fan 2 Duty","value":30}
+{"t":89.611,"name":"Fan 1 Duty","value":30}
+{"t":89.862,"name":"GPU 0 Power","value":"0.0"}
+{"t":89.964,"name":"GPU 0 Temp","value":"24.0"}
+{"t":92.728,"name":"Fan 2 RPM","value":9744}
+{"t":92.914,"name":"Fan 1 FF Duty","value":30}
+{"t":93.071,"name":"GPU 1 Power","value":"0.0"}
+{"t":93.131,"name":"Fan 0 RPM","value":9780}
+{"t":93.214,"name":"GPU 1 Temp","value":"22.1"}
+{"t":93.283,"name":"Fan 0 FF Duty","value":30}
+{"t":93.473,"name":"Fan 2 FF Duty","value":30}
+{"t":93.772,"name":"Fan 0 Duty","value":30}
+{"t":94.145,"name":"Fan 1 RPM","value":9540}
+{"t":94.354,"name":"Fan 2 Duty","value":30}
+{"t":94.61,"name":"Fan 1 Duty","value":30}
+{"t":95.642,"name":"GPU 2 Power","value":"0.0"}
+{"t":95.735,"name":"GPU 2 Temp","value":"24.0"}
+{"t":97.676,"name":"Fan 2 RPM","value":9744}
+{"t":97.933,"name":"Fan 1 FF Duty","value":30}
+{"t":98.14,"name":"Fan 0 RPM","value":9786}
+{"t":98.284,"name":"Fan 0 FF Duty","value":30}
+{"t":98.466,"name":"Fan 2 FF Duty","value":30}
+{"t":98.77,"name":"Fan 0 Duty","value":30}
+{"t":99.152,"name":"Fan 1 RPM","value":9540}
+{"t":99.355,"name":"Fan 2 Duty","value":30}
+{"t":99.61,"name":"Fan 1 Duty","value":30}
+{"t":99.87,"name":"GPU 0 Power","value":"0.0"}
+{"t":99.949,"name":"GPU 0 Temp","value":"24.0"}
+{"t":102.693,"name":"Fan 2 RPM","value":9744}
+{"t":102.914,"name":"Fan 1 FF Duty","value":30}
+{"t":103.093,"name":"GPU 1 Power","value":"0.0"}
+{"t":103.144,"name":"Fan 0 RPM","value":9786}
+{"t":103.247,"name":"GPU 1 Temp","value":"22.2"}
+{"t":103.283,"name":"Fan 0 FF Duty","value":30}
+{"t":103.466,"name":"Fan 2 FF Duty","value":30}
+{"t":103.77,"name":"Fan 0 Duty","value":30}
+{"t":104.132,"name":"Fan 1 RPM","value":9540}
+{"t":104.375,"name":"Fan 2 Duty","value":30}
+{"t":104.624,"name":"Fan 1 Duty","value":30}
+{"t":105.658,"name":"GPU 2 Power","value":"0.0"}
+{"t":105.849,"name":"GPU 2 Temp","value":"24.0"}
+{"t":107.676,"name":"Fan 2 RPM","value":9750}
+{"t":107.914,"name":"Fan 1 FF Duty","value":30}
+{"t":108.121,"name":"Fan 0 RPM","value":9786}
+{"t":108.284,"name":"Fan 0 FF Duty","value":30}
+{"t":108.466,"name":"Fan 2 FF Duty","value":30}
+{"t":108.771,"name":"Fan 0 Duty","value":30}
+{"t":109.131,"name":"Fan 1 RPM","value":9528}
+{"t":109.354,"name":"Fan 2 Duty","value":30}
+{"t":109.61,"name":"Fan 1 Duty","value":30}
+{"t":109.951,"name":"GPU 0 Power","value":"0.0"}
+{"t":110.031,"name":"GPU 0 Temp","value":"24.1"}
+{"t":112.79,"name":"Fan 2 RPM","value":9744}
+{"t":112.914,"name":"Fan 1 FF Duty","value":30}
+{"t":113.13,"name":"Fan 0 RPM","value":9780}
+{"t":113.141,"name":"GPU 1 Power","value":"0.0"}
+{"t":113.278,"name":"GPU 1 Temp","value":"22.0"}
+{"t":113.292,"name":"Fan 0 FF Duty","value":30}
+{"t":113.588,"name":"Fan 2 FF Duty","value":30}
+{"t":113.784,"name":"Fan 0 Duty","value":30}
+{"t":114.132,"name":"Fan 1 RPM","value":9540}
+{"t":114.354,"name":"Fan 2 Duty","value":30}
+{"t":114.61,"name":"Fan 1 Duty","value":30}
+{"t":115.691,"name":"GPU 2 Power","value":"0.0"}
+{"t":115.811,"name":"GPU 2 Temp","value":"24.0"}
+{"t":117.687,"name":"Fan 2 RPM","value":9744}
+{"t":117.918,"name":"Fan 1 FF Duty","value":30}
+{"t":118.12,"name":"Fan 0 RPM","value":9786}
+{"t":118.295,"name":"Fan 0 FF Duty","value":30}
+{"t":118.466,"name":"Fan 2 FF Duty","value":30}
+{"t":118.841,"name":"Fan 0 Duty","value":30}
+{"t":119.13,"name":"Fan 1 RPM","value":9534}
+{"t":119.357,"name":"Fan 2 Duty","value":30}
+{"t":119.629,"name":"Fan 1 Duty","value":30}
+{"t":120.196,"name":"GPU 0 Power","value":"0.0"}
+{"t":120.305,"name":"GPU 0 Temp","value":"24.0"}
+{"t":122.733,"name":"Fan 2 RPM","value":9750}
+{"t":122.913,"name":"Fan 1 FF Duty","value":30}
+{"t":123.127,"name":"Fan 0 RPM","value":9778.044}
+{"t":123.242,"name":"GPU 1 Power","value":"0.0"}
+{"t":123.316,"name":"Fan 0 FF Duty","value":30}
+{"t":123.426,"name":"GPU 1 Temp","value":"22.5"}
+{"t":123.545,"name":"Fan 2 FF Duty","value":30}
+{"t":123.769,"name":"Fan 0 Duty","value":30}
+{"t":124.131,"name":"Fan 1 RPM","value":9534}
+{"t":124.357,"name":"Fan 2 Duty","value":30}
+{"t":124.633,"name":"Fan 1 Duty","value":30}
+{"t":125.817,"name":"GPU 2 Power","value":"0.0"}
+{"t":125.886,"name":"GPU 2 Temp","value":"24.0"}
+{"t":127.675,"name":"Fan 2 RPM","value":9744}
+{"t":127.917,"name":"Fan 1 FF Duty","value":30}
+{"t":128.125,"name":"Fan 0 RPM","value":9781.956}
+{"t":128.289,"name":"Fan 0 FF Duty","value":30}
+{"t":128.466,"name":"Fan 2 FF Duty","value":30}
+{"t":128.775,"name":"Fan 0 Duty","value":30}
+{"t":129.151,"name":"Fan 1 RPM","value":9546}
+{"t":129.354,"name":"Fan 2 Duty","value":30}
+{"t":129.61,"name":"Fan 1 Duty","value":30}
+{"t":130.383,"name":"GPU 0 Power","value":"0.0"}
+{"t":130.583,"name":"GPU 0 Temp","value":"24.0"}
+{"t":132.675,"name":"Fan 2 RPM","value":9744}
+{"t":132.921,"name":"Fan 1 FF Duty","value":30}
+{"t":133.137,"name":"Fan 0 RPM","value":9786}
+{"t":133.261,"name":"GPU 1 Power","value":"0.0"}
+{"t":133.288,"name":"Fan 0 FF Duty","value":30}
+{"t":133.393,"name":"GPU 1 Temp","value":"22.1"}
+{"t":133.477,"name":"Fan 2 FF Duty","value":30}
+{"t":133.769,"name":"Fan 0 Duty","value":30}
+{"t":134.172,"name":"Fan 1 RPM","value":9538.093}
+{"t":134.354,"name":"Fan 2 Duty","value":30}
+{"t":134.609,"name":"Fan 1 Duty","value":30}
+{"t":136.066,"name":"GPU 2 Power","value":"0.0"}
+{"t":136.144,"name":"GPU 2 Temp","value":"24.0"}
+{"t":137.682,"name":"Fan 2 RPM","value":9744}
+{"t":137.916,"name":"Fan 1 FF Duty","value":30}
+{"t":138.138,"name":"Fan 0 RPM","value":9786}
+{"t":138.326,"name":"Fan 0 FF Duty","value":30}
+{"t":138.465,"name":"Fan 2 FF Duty","value":30}
+{"t":138.787,"name":"Fan 0 Duty","value":30}
+{"t":139.134,"name":"Fan 1 RPM","value":9540}
+{"t":139.367,"name":"Fan 2 Duty","value":30}
+{"t":139.614,"name":"Fan 1 Duty","value":30}
+{"t":140.35,"name":"GPU 0 Power","value":"0.0"}
+{"t":140.457,"name":"GPU 0 Temp","value":"24.0"}
+{"t":142.672,"name":"Fan 2 RPM","value":9744}
+{"t":142.913,"name":"Fan 1 FF Duty","value":30}
+{"t":143.12,"name":"Fan 0 RPM","value":9798}
+{"t":143.288,"name":"GPU 1 Power","value":"0.0"}
+{"t":143.303,"name":"Fan 0 FF Duty","value":30}
+{"t":143.394,"name":"GPU 1 Temp","value":"22.0"}
+{"t":143.481,"name":"Fan 2 FF Duty","value":30}
+{"t":143.769,"name":"Fan 0 Duty","value":30}
+{"t":144.132,"name":"Fan 1 RPM","value":9540}
+{"t":144.354,"name":"Fan 2 Duty","value":30}
+{"t":144.617,"name":"Fan 1 Duty","value":30}
+{"t":146.289,"name":"GPU 2 Power","value":"0.0"}
+{"t":146.401,"name":"GPU 2 Temp","value":"24.0"}
+{"t":147.68,"name":"Fan 2 RPM","value":9750}
+{"t":147.914,"name":"Fan 1 FF Duty","value":30}
+{"t":148.119,"name":"Fan 0 RPM","value":9786}
+{"t":148.295,"name":"Fan 0 FF Duty","value":30}
+{"t":148.478,"name":"Fan 2 FF Duty","value":30}
+{"t":148.783,"name":"Fan 0 Duty","value":30}
+{"t":149.131,"name":"Fan 1 RPM","value":9540}
+{"t":149.362,"name":"Fan 2 Duty","value":30}
+{"t":149.61,"name":"Fan 1 Duty","value":30}
+{"t":150.384,"name":"GPU 0 Power","value":"0.0"}
+{"t":150.525,"name":"GPU 0 Temp","value":"24.0"}
+{"t":152.674,"name":"Fan 2 RPM","value":9744}
+{"t":152.925,"name":"Fan 1 FF Duty","value":30}
+{"t":153.121,"name":"Fan 0 RPM","value":9792}
+{"t":153.292,"name":"Fan 0 FF Duty","value":30}
+{"t":153.349,"name":"GPU 1 Power","value":"0.0"}
+{"t":153.456,"name":"GPU 1 Temp","value":"22.1"}
+{"t":153.49,"name":"Fan 2 FF Duty","value":30}
+{"t":153.777,"name":"Fan 0 Duty","value":30}
+{"t":154.139,"name":"Fan 1 RPM","value":9534}
+{"t":154.361,"name":"Fan 2 Duty","value":30}
+{"t":154.614,"name":"Fan 1 Duty","value":30}
+{"t":156.458,"name":"GPU 2 Power","value":"0.0"}
+{"t":156.558,"name":"GPU 2 Temp","value":"24.0"}
+{"t":157.715,"name":"Fan 2 RPM","value":9744}
+{"t":157.923,"name":"Fan 1 FF Duty","value":30}
+{"t":158.125,"name":"Fan 0 RPM","value":9786}
+{"t":158.297,"name":"Fan 0 FF Duty","value":30}
+{"t":158.469,"name":"Fan 2 FF Duty","value":30}
+{"t":158.769,"name":"Fan 0 Duty","value":30}
+{"t":159.131,"name":"Fan 1 RPM","value":9540}
+{"t":159.354,"name":"Fan 2 Duty","value":30}
+{"t":159.609,"name":"Fan 1 Duty","value":30}
+{"t":160.407,"name":"GPU 0 Power","value":"0.0"}
+{"t":160.5,"name":"GPU 0 Temp","value":"24.0"}
+{"t":162.681,"name":"Fan 2 RPM","value":9744}
+{"t":162.926,"name":"Fan 1 FF Duty","value":30}
+{"t":163.12,"name":"Fan 0 RPM","value":9786}
+{"t":163.291,"name":"Fan 0 FF Duty","value":30}
+{"t":163.494,"name":"Fan 2 FF Duty","value":30}
+{"t":163.572,"name":"GPU 1 Power","value":"0.0"}
+{"t":163.729,"name":"GPU 1 Temp","value":"22.1"}
+{"t":163.828,"name":"Fan 0 Duty","value":30}
+{"t":164.174,"name":"Fan 1 RPM","value":9540}
+{"t":164.377,"name":"Fan 2 Duty","value":30}
+{"t":164.645,"name":"Fan 1 Duty","value":30}
+{"t":166.657,"name":"GPU 2 Power","value":"0.0"}
+{"t":166.796,"name":"GPU 2 Temp","value":"24.0"}
+{"t":167.673,"name":"Fan 2 RPM","value":9738}
+{"t":167.92,"name":"Fan 1 FF Duty","value":30}
+{"t":168.126,"name":"Fan 0 RPM","value":9780}
+{"t":168.291,"name":"Fan 0 FF Duty","value":30}
+{"t":168.468,"name":"Fan 2 FF Duty","value":30}
+{"t":168.772,"name":"Fan 0 Duty","value":30}
+{"t":169.146,"name":"Fan 1 RPM","value":9540}
+{"t":169.355,"name":"Fan 2 Duty","value":30}
+{"t":169.609,"name":"Fan 1 Duty","value":30}
+{"t":170.642,"name":"GPU 0 Power","value":"0.0"}
+{"t":170.709,"name":"GPU 0 Temp","value":"24.0"}
+{"t":172.673,"name":"Fan 2 RPM","value":9750}
+{"t":172.936,"name":"Fan 1 FF Duty","value":30}
+{"t":173.188,"name":"Fan 0 RPM","value":9792}
+{"t":173.295,"name":"Fan 0 FF Duty","value":30}
+{"t":173.486,"name":"Fan 2 FF Duty","value":30}
+{"t":173.773,"name":"Fan 0 Duty","value":30}
+{"t":173.826,"name":"GPU 1 Power","value":"0.0"}
+{"t":173.954,"name":"GPU 1 Temp","value":"22.1"}
+{"t":174.13,"name":"Fan 1 RPM","value":9540}
+{"t":174.364,"name":"Fan 2 Duty","value":30}
+{"t":174.608,"name":"Fan 1 Duty","value":30}
+{"t":176.926,"name":"GPU 2 Power","value":"0.0"}
+{"t":177.173,"name":"GPU 2 Temp","value":"24.0"}
+{"t":177.675,"name":"Fan 2 RPM","value":9744}
+{"t":177.916,"name":"Fan 1 FF Duty","value":30}
+{"t":178.118,"name":"Fan 0 RPM","value":9786}
+{"t":178.291,"name":"Fan 0 FF Duty","value":30}
+{"t":178.472,"name":"Fan 2 FF Duty","value":30}
+{"t":178.768,"name":"Fan 0 Duty","value":30}
+{"t":179.186,"name":"Fan 1 RPM","value":9540}
+{"t":179.353,"name":"Fan 2 Duty","value":30}
+{"t":179.608,"name":"Fan 1 Duty","value":30}
+{"t":180.77,"name":"GPU 0 Power","value":"0.0"}
+{"t":180.843,"name":"GPU 0 Temp","value":"24.0"}
+{"t":182.676,"name":"Fan 2 RPM","value":9750}
+{"t":182.912,"name":"Fan 1 FF Duty","value":30}
+{"t":183.118,"name":"Fan 0 RPM","value":9786}
+{"t":183.291,"name":"Fan 0 FF Duty","value":30}
+{"t":183.521,"name":"Fan 2 FF Duty","value":30}
+{"t":183.778,"name":"Fan 0 Duty","value":30}
+{"t":183.946,"name":"GPU 1 Power","value":"0.0"}
+{"t":184.039,"name":"GPU 1 Temp","value":"22.0"}
+{"t":184.133,"name":"Fan 1 RPM","value":9552}
+{"t":184.354,"name":"Fan 2 Duty","value":30}
+{"t":184.608,"name":"Fan 1 Duty","value":30}
+{"t":186.921,"name":"GPU 2 Power","value":"0.0"}
+{"t":187.115,"name":"GPU 2 Temp","value":"24.0"}
+{"t":187.683,"name":"Fan 2 RPM","value":9744}
+{"t":187.922,"name":"Fan 1 FF Duty","value":30}
+{"t":188.12,"name":"Fan 0 RPM","value":9786}
+{"t":188.291,"name":"Fan 0 FF Duty","value":30}
+{"t":188.49,"name":"Fan 2 FF Duty","value":30}
+{"t":188.769,"name":"Fan 0 Duty","value":30}
+{"t":189.13,"name":"Fan 1 RPM","value":9546}
+{"t":189.353,"name":"Fan 2 Duty","value":30}
+{"t":189.616,"name":"Fan 1 Duty","value":30}
+{"t":190.843,"name":"GPU 0 Power","value":"0.0"}
+{"t":190.948,"name":"GPU 0 Temp","value":"24.0"}
+{"t":192.691,"name":"Fan 2 RPM","value":9750}
+{"t":192.915,"name":"Fan 1 FF Duty","value":30}
+{"t":193.137,"name":"Fan 0 RPM","value":9780}
+{"t":193.297,"name":"Fan 0 FF Duty","value":30}
+{"t":193.501,"name":"Fan 2 FF Duty","value":30}
+{"t":193.769,"name":"Fan 0 Duty","value":30}
+{"t":194.088,"name":"GPU 1 Power","value":"0.0"}
+{"t":194.134,"name":"Fan 1 RPM","value":9540}
+{"t":194.198,"name":"GPU 1 Temp","value":"22.1"}
+{"t":194.352,"name":"Fan 2 Duty","value":30}
+{"t":194.608,"name":"Fan 1 Duty","value":30}
+{"t":197.16,"name":"GPU 2 Power","value":"0.0"}
+{"t":197.258,"name":"GPU 2 Temp","value":"24.0"}
+{"t":197.675,"name":"Fan 2 RPM","value":9750}
+{"t":197.94,"name":"Fan 1 FF Duty","value":30}
+{"t":198.122,"name":"Fan 0 RPM","value":9786}
+{"t":198.29,"name":"Fan 0 FF Duty","value":30}
+{"t":198.471,"name":"Fan 2 FF Duty","value":30}
+{"t":198.777,"name":"Fan 0 Duty","value":30}
+{"t":199.172,"name":"Fan 1 RPM","value":9540}
+{"t":199.353,"name":"Fan 2 Duty","value":30}
+{"t":199.608,"name":"Fan 1 Duty","value":30}
+{"t":200.931,"name":"GPU 0 Power","value":"0.0"}
+{"t":201.118,"name":"GPU 0 Temp","value":"24.0"}
+{"t":202.677,"name":"Fan 2 RPM","value":9750}
+{"t":202.917,"name":"Fan 1 FF Duty","value":30}
+{"t":203.143,"name":"Fan 0 RPM","value":9786}
+{"t":203.291,"name":"Fan 0 FF Duty","value":30}
+{"t":203.485,"name":"Fan 2 FF Duty","value":30}
+{"t":203.769,"name":"Fan 0 Duty","value":30}
+{"t":204.162,"name":"Fan 1 RPM","value":9546}
+{"t":204.255,"name":"GPU 1 Power","value":"0.0"}
+{"t":204.355,"name":"Fan 2 Duty","value":30}
+{"t":204.392,"name":"GPU 1 Temp","value":"22.2"}
+{"t":204.608,"name":"Fan 1 Duty","value":30}
+{"t":207.296,"name":"GPU 2 Power","value":"0.0"}
+{"t":207.481,"name":"GPU 2 Temp","value":"24.0"}
+{"t":207.672,"name":"Fan 2 RPM","value":9744}
+{"t":207.912,"name":"Fan 1 FF Duty","value":30}
+{"t":208.136,"name":"Fan 0 RPM","value":9786}
+{"t":208.291,"name":"Fan 0 FF Duty","value":30}
+{"t":208.469,"name":"Fan 2 FF Duty","value":30}
+{"t":208.769,"name":"Fan 0 Duty","value":30}
+{"t":209.177,"name":"Fan 1 RPM","value":9546}
+{"t":209.37,"name":"Fan 2 Duty","value":30}
+{"t":209.607,"name":"Fan 1 Duty","value":30}
+{"t":211.259,"name":"GPU 0 Power","value":"0.0"}
+{"t":211.451,"name":"GPU 0 Temp","value":"24.0"}
+{"t":212.681,"name":"Fan 2 RPM","value":9750}
+{"t":212.911,"name":"Fan 1 FF Duty","value":30}
+{"t":213.151,"name":"Fan 0 RPM","value":9792}
+{"t":213.29,"name":"Fan 0 FF Duty","value":30}
+{"t":213.48,"name":"Fan 2 FF Duty","value":30}
+{"t":213.768,"name":"Fan 0 Duty","value":30}
+{"t":214.13,"name":"Fan 1 RPM","value":9540}
+{"t":214.309,"name":"GPU 1 Power","value":"0.0"}
+{"t":214.382,"name":"Fan 2 Duty","value":30}
+{"t":214.406,"name":"GPU 1 Temp","value":"22.0"}
+{"t":214.608,"name":"Fan 1 Duty","value":30}
+{"t":217.31,"name":"GPU 2 Power","value":"0.0"}
+{"t":217.399,"name":"GPU 2 Temp","value":"24.0"}
+{"t":217.68,"name":"Fan 2 RPM","value":9750}
+{"t":217.916,"name":"Fan 1 FF Duty","value":30}
+{"t":218.119,"name":"Fan 0 RPM","value":9786}
+{"t":218.29,"name":"Fan 0 FF Duty","value":30}
+{"t":218.488,"name":"Fan 2 FF Duty","value":30}
+{"t":218.776,"name":"Fan 0 Duty","value":30}
+{"t":219.162,"name":"Fan 1 RPM","value":9540}
+{"t":219.356,"name":"Fan 2 Duty","value":30}
+{"t":219.607,"name":"Fan 1 Duty","value":30}
+{"t":221.305,"name":"GPU 0 Power","value":"0.0"}
+{"t":221.367,"name":"GPU 0 Temp","value":"24.0"}
+{"t":222.683,"name":"Fan 2 RPM","value":9744}
+{"t":222.912,"name":"Fan 1 FF Duty","value":30}
+{"t":223.221,"name":"Fan 0 RPM","value":9784.043}
+{"t":223.294,"name":"Fan 0 FF Duty","value":30}
+{"t":223.488,"name":"Fan 2 FF Duty","value":30}
+{"t":223.77,"name":"Fan 0 Duty","value":30}
+{"t":224.128,"name":"Fan 1 RPM","value":9546}
+{"t":224.353,"name":"Fan 2 Duty","value":30}
+{"t":224.433,"name":"GPU 1 Power","value":"0.0"}
+{"t":224.542,"name":"GPU 1 Temp","value":"22.0"}
+{"t":224.615,"name":"Fan 1 Duty","value":30}
+{"t":227.448,"name":"GPU 2 Power","value":"0.0"}
+{"t":227.551,"name":"GPU 2 Temp","value":"24.0"}
+{"t":227.695,"name":"Fan 2 RPM","value":9750}
+{"t":227.911,"name":"Fan 1 FF Duty","value":30}
+{"t":228.121,"name":"Fan 0 RPM","value":9792}
+{"t":228.306,"name":"Fan 0 FF Duty","value":30}
+{"t":228.467,"name":"Fan 2 FF Duty","value":30}
+{"t":228.829,"name":"Fan 0 Duty","value":30}
+{"t":229.175,"name":"Fan 1 RPM","value":9540}
+{"t":229.353,"name":"Fan 2 Duty","value":30}
+{"t":229.607,"name":"Fan 1 Duty","value":30}
+{"t":231.624,"name":"GPU 0 Power","value":"0.0"}
+{"t":231.703,"name":"GPU 0 Temp","value":"24.1"}
+{"t":232.672,"name":"Fan 2 RPM","value":9744}
+{"t":232.911,"name":"Fan 1 FF Duty","value":30}
+{"t":233.134,"name":"Fan 0 RPM","value":9786}
+{"t":233.29,"name":"Fan 0 FF Duty","value":30}
+{"t":233.466,"name":"Fan 2 FF Duty","value":30}
+{"t":233.768,"name":"Fan 0 Duty","value":30}
+{"t":234.137,"name":"Fan 1 RPM","value":9546}
+{"t":234.353,"name":"Fan 2 Duty","value":30}
+{"t":234.563,"name":"GPU 1 Power","value":"0.0"}
+{"t":234.62,"name":"Fan 1 Duty","value":30}
+{"t":234.668,"name":"GPU 1 Temp","value":"22.0"}
+{"t":237.568,"name":"GPU 2 Power","value":"0.0"}
+{"t":237.638,"name":"GPU 2 Temp","value":"24.0"}
+{"t":237.77,"name":"Fan 2 RPM","value":9748.051}
+{"t":237.926,"name":"Fan 1 FF Duty","value":30}
+{"t":238.136,"name":"Fan 0 RPM","value":9792}
+{"t":238.29,"name":"Fan 0 FF Duty","value":30}
+{"t":238.467,"name":"Fan 2 FF Duty","value":30}
+{"t":238.768,"name":"Fan 0 Duty","value":30}
+{"t":239.2,"name":"Fan 1 RPM","value":9540}
+{"t":239.353,"name":"Fan 2 Duty","value":30}
+{"t":239.607,"name":"Fan 1 Duty","value":30}
+{"t":241.559,"name":"GPU 0 Power","value":"0.0"}
+{"t":241.673,"name":"GPU 0 Temp","value":"24.1"}
+{"t":242.671,"name":"Fan 2 RPM","value":9750}
+{"t":242.911,"name":"Fan 1 FF Duty","value":30}
+{"t":243.216,"name":"Fan 0 RPM","value":9786}
+{"t":243.301,"name":"Fan 0 FF Duty","value":30}
+{"t":243.467,"name":"Fan 2 FF Duty","value":30}
+{"t":243.768,"name":"Fan 0 Duty","value":30}
+{"t":244.129,"name":"Fan 1 RPM","value":9540}
+{"t":244.366,"name":"Fan 2 Duty","value":30}
+{"t":244.607,"name":"Fan 1 Duty","value":30}
+{"t":244.741,"name":"GPU 1 Power","value":"0.0"}
+{"t":244.878,"name":"GPU 1 Temp","value":"22.0"}
+{"t":247.677,"name":"Fan 2 RPM","value":9750}
+{"t":247.746,"name":"GPU 2 Power","value":"0.0"}
+{"t":247.839,"name":"GPU 2 Temp","value":"24.0"}
+{"t":247.921,"name":"Fan 1 FF Duty","value":30}
+{"t":248.119,"name":"Fan 0 RPM","value":9786}
+{"t":248.289,"name":"Fan 0 FF Duty","value":30}
+{"t":248.472,"name":"Fan 2 FF Duty","value":30}
+{"t":248.769,"name":"Fan 0 Duty","value":30}
+{"t":249.128,"name":"Fan 1 RPM","value":9546}
+{"t":249.353,"name":"Fan 2 Duty","value":30}
+{"t":249.607,"name":"Fan 1 Duty","value":30}
+{"t":251.69,"name":"GPU 0 Power","value":"0.0"}
+{"t":251.767,"name":"GPU 0 Temp","value":"24.0"}
+{"t":252.673,"name":"Fan 2 RPM","value":9744}
+{"t":252.91,"name":"Fan 1 FF Duty","value":30}
+{"t":253.196,"name":"Fan 0 RPM","value":9786}
+{"t":253.297,"name":"Fan 0 FF Duty","value":30}
+{"t":253.477,"name":"Fan 2 FF Duty","value":30}
+{"t":253.791,"name":"Fan 0 Duty","value":30}
+{"t":254.128,"name":"Fan 1 RPM","value":9546}
+{"t":254.352,"name":"Fan 2 Duty","value":30}
+{"t":254.606,"name":"Fan 1 Duty","value":30}
+{"t":254.977,"name":"GPU 1 Power","value":"0.0"}
+{"t":255.105,"name":"GPU 1 Temp","value":"22.4"}
+{"t":257.674,"name":"Fan 2 RPM","value":9750}
+{"t":257.916,"name":"Fan 1 FF Duty","value":30}
+{"t":257.997,"name":"GPU 2 Power","value":"0.0"}
+{"t":258.117,"name":"GPU 2 Temp","value":"24.0"}
+{"t":258.14,"name":"Fan 0 RPM","value":9784.561}
+{"t":258.302,"name":"Fan 0 FF Duty","value":30}
+{"t":258.496,"name":"Fan 2 FF Duty","value":30}
+{"t":258.767,"name":"Fan 0 Duty","value":30}
+{"t":259.146,"name":"Fan 1 RPM","value":9540}
+{"t":259.351,"name":"Fan 2 Duty","value":30}
+{"t":259.61,"name":"Fan 1 Duty","value":30}
+{"t":261.839,"name":"GPU 0 Power","value":"0.0"}
+{"t":261.928,"name":"GPU 0 Temp","value":"24.0"}
+{"t":262.7,"name":"Fan 2 RPM","value":9750}
+{"t":262.91,"name":"Fan 1 FF Duty","value":30}
+{"t":263.129,"name":"Fan 0 RPM","value":9781.956}
+{"t":263.294,"name":"Fan 0 FF Duty","value":30}
+{"t":263.47,"name":"Fan 2 FF Duty","value":30}
+{"t":263.767,"name":"Fan 0 Duty","value":30}
+{"t":264.127,"name":"Fan 1 RPM","value":9540}
+{"t":264.352,"name":"Fan 2 Duty","value":30}
+{"t":264.632,"name":"Fan 1 Duty","value":30}
+{"t":265.093,"name":"GPU 1 Power","value":"0.0"}
+{"t":265.218,"name":"GPU 1 Temp","value":"22.0"}
+{"t":267.672,"name":"Fan 2 RPM","value":9744}
+{"t":267.913,"name":"Fan 1 FF Duty","value":30}
+{"t":268.13,"name":"GPU 2 Power","value":"0.0"}
+{"t":268.152,"name":"Fan 0 RPM","value":9792.498}
+{"t":268.242,"name":"GPU 2 Temp","value":"24.0"}
+{"t":268.289,"name":"Fan 0 FF Duty","value":30}
+{"t":268.467,"name":"Fan 2 FF Duty","value":30}
+{"t":268.767,"name":"Fan 0 Duty","value":30}
+{"t":269.134,"name":"Fan 1 RPM","value":9546}
+{"t":269.398,"name":"Fan 2 Duty","value":30}
+{"t":269.606,"name":"Fan 1 Duty","value":30}
+{"t":271.855,"name":"GPU 0 Power","value":"0.0"}
+{"t":271.992,"name":"GPU 0 Temp","value":"24.0"}
+{"t":272.672,"name":"Fan 2 RPM","value":9744}
+{"t":272.917,"name":"Fan 1 FF Duty","value":30}
+{"t":273.143,"name":"Fan 0 RPM","value":9786}
+{"t":273.291,"name":"Fan 0 FF Duty","value":30}
+{"t":273.468,"name":"Fan 2 FF Duty","value":30}
+{"t":273.767,"name":"Fan 0 Duty","value":30}
+{"t":274.141,"name":"Fan 1 RPM","value":9540}
+{"t":274.352,"name":"Fan 2 Duty","value":30}
+{"t":274.606,"name":"Fan 1 Duty","value":30}
+{"t":275.138,"name":"GPU 1 Power","value":"0.0"}
+{"t":275.415,"name":"GPU 1 Temp","value":"22.1"}
+{"t":277.672,"name":"Fan 2 RPM","value":9750}
+{"t":277.935,"name":"Fan 1 FF Duty","value":30}
+{"t":278.143,"name":"Fan 0 RPM","value":9780}
+{"t":278.288,"name":"GPU 2 Power","value":"0.0"}
+{"t":278.3,"name":"Fan 0 FF Duty","value":30}
+{"t":278.454,"name":"GPU 2 Temp","value":"24.0"}
+{"t":278.47,"name":"Fan 2 FF Duty","value":30}
+{"t":278.772,"name":"Fan 0 Duty","value":30}
+{"t":279.127,"name":"Fan 1 RPM","value":9540}
+{"t":279.367,"name":"Fan 2 Duty","value":30}
+{"t":279.605,"name":"Fan 1 Duty","value":30}
+{"t":282.093,"name":"GPU 0 Power","value":"0.0"}
+{"t":282.192,"name":"GPU 0 Temp","value":"24.0"}
+{"t":282.678,"name":"Fan 2 RPM","value":9750}
+{"t":282.943,"name":"Fan 1 FF Duty","value":30}
+{"t":283.208,"name":"Fan 0 RPM","value":9786}
+{"t":283.304,"name":"Fan 0 FF Duty","value":30}
+{"t":283.474,"name":"Fan 2 FF Duty","value":30}
+{"t":283.767,"name":"Fan 0 Duty","value":30}
+{"t":284.13,"name":"Fan 1 RPM","value":9546}
+{"t":284.352,"name":"Fan 2 Duty","value":30}
+{"t":284.609,"name":"Fan 1 Duty","value":30}
+{"t":285.45,"name":"GPU 1 Power","value":"0.0"}
+{"t":285.762,"name":"GPU 1 Temp","value":"22.0"}
+{"t":287.671,"name":"Fan 2 RPM","value":9744}
+{"t":287.912,"name":"Fan 1 FF Duty","value":30}
+{"t":288.166,"name":"Fan 0 RPM","value":9786}
+{"t":288.304,"name":"Fan 0 FF Duty","value":30}
+{"t":288.336,"name":"GPU 2 Power","value":"0.0"}
+{"t":288.47,"name":"GPU 2 Temp","value":"24.0"}
+{"t":288.475,"name":"Fan 2 FF Duty","value":30}
+{"t":288.775,"name":"Fan 0 Duty","value":30}
+{"t":289.128,"name":"Fan 1 RPM","value":9546}
+{"t":289.359,"name":"Fan 2 Duty","value":30}
+{"t":289.608,"name":"Fan 1 Duty","value":30}
+{"t":292.107,"name":"GPU 0 Power","value":"0.0"}
+{"t":292.269,"name":"GPU 0 Temp","value":"24.0"}
+{"t":292.672,"name":"Fan 2 RPM","value":9750}
+{"t":292.984,"name":"Fan 1 FF Duty","value":30}
+{"t":293.142,"name":"Fan 0 RPM","value":9792}
+{"t":293.296,"name":"Fan 0 FF Duty","value":30}
+{"t":293.497,"name":"Fan 2 FF Duty","value":30}
+{"t":293.768,"name":"Fan 0 Duty","value":30}
+{"t":294.152,"name":"Fan 1 RPM","value":9540}
+{"t":294.351,"name":"Fan 2 Duty","value":30}
+{"t":294.607,"name":"Fan 1 Duty","value":30}
+{"t":295.542,"name":"GPU 1 Power","value":"0.0"}
+{"t":295.74,"name":"GPU 1 Temp","value":"22.0"}
+{"t":297.683,"name":"Fan 2 RPM","value":9750}
+{"t":297.909,"name":"Fan 1 FF Duty","value":30}
+{"t":298.141,"name":"Fan 0 RPM","value":9780}
+{"t":298.298,"name":"Fan 0 FF Duty","value":30}
+{"t":298.466,"name":"Fan 2 FF Duty","value":30}
+{"t":298.558,"name":"GPU 2 Power","value":"0.0"}
+{"t":298.661,"name":"GPU 2 Temp","value":"24.0"}
+{"t":298.767,"name":"Fan 0 Duty","value":30}
+{"t":299.13,"name":"Fan 1 RPM","value":9546}
+{"t":299.371,"name":"Fan 2 Duty","value":30}
+{"t":299.622,"name":"Fan 1 Duty","value":30}
+{"t":302.351,"name":"GPU 0 Power","value":"0.0"}
+{"t":302.441,"name":"GPU 0 Temp","value":"24.0"}
+{"t":302.671,"name":"Fan 2 RPM","value":9744}
+{"t":302.909,"name":"Fan 1 FF Duty","value":30}
+{"t":303.142,"name":"Fan 0 RPM","value":9780}
+{"t":303.318,"name":"Fan 0 FF Duty","value":30}
+{"t":303.467,"name":"Fan 2 FF Duty","value":30}
+{"t":303.767,"name":"Fan 0 Duty","value":30}
+{"t":304.128,"name":"Fan 1 RPM","value":9540}
+{"t":304.361,"name":"Fan 2 Duty","value":30}
+{"t":304.606,"name":"Fan 1 Duty","value":30}
+{"t":305.615,"name":"GPU 1 Power","value":"0.0"}
+{"t":305.687,"name":"GPU 1 Temp","value":"22.1"}
+{"t":307.669,"name":"Fan 2 RPM","value":9744}
+{"t":307.911,"name":"Fan 1 FF Duty","value":30}
+{"t":308.141,"name":"Fan 0 RPM","value":9786}
+{"t":308.295,"name":"Fan 0 FF Duty","value":30}
+{"t":308.468,"name":"Fan 2 FF Duty","value":30}
+{"t":308.77,"name":"Fan 0 Duty","value":30}
+{"t":308.813,"name":"GPU 2 Power","value":"0.0"}
+{"t":308.964,"name":"GPU 2 Temp","value":"24.0"}
+{"t":309.246,"name":"Fan 1 RPM","value":9552}
+{"t":309.369,"name":"Fan 2 Duty","value":30}
+{"t":309.604,"name":"Fan 1 Duty","value":30}
+{"t":312.372,"name":"GPU 0 Power","value":"0.0"}
+{"t":312.44,"name":"GPU 0 Temp","value":"24.0"}
+{"t":312.675,"name":"Fan 2 RPM","value":9750}
+{"t":312.926,"name":"Fan 1 FF Duty","value":30}
+{"t":313.142,"name":"Fan 0 RPM","value":9792}
+{"t":313.294,"name":"Fan 0 FF Duty","value":30}
+{"t":313.482,"name":"Fan 2 FF Duty","value":30}
+{"t":313.767,"name":"Fan 0 Duty","value":30}
+{"t":314.128,"name":"Fan 1 RPM","value":9540}
+{"t":314.357,"name":"Fan 2 Duty","value":30}
+{"t":314.607,"name":"Fan 1 Duty","value":30}
+{"t":315.933,"name":"GPU 1 Power","value":"0.0"}
+{"t":316.035,"name":"GPU 1 Temp","value":"22.1"}
+{"t":317.671,"name":"Fan 2 RPM","value":9744}
+{"t":317.909,"name":"Fan 1 FF Duty","value":30}
+{"t":318.15,"name":"Fan 0 RPM","value":9792}
+{"t":318.295,"name":"Fan 0 FF Duty","value":30}
+{"t":318.467,"name":"Fan 2 FF Duty","value":30}
+{"t":318.767,"name":"Fan 0 Duty","value":30}
+{"t":318.882,"name":"GPU 2 Power","value":"0.0"}
+{"t":318.991,"name":"GPU 2 Temp","value":"24.0"}
+{"t":319.128,"name":"Fan 1 RPM","value":9546}
+{"t":319.37,"name":"Fan 2 Duty","value":30}
+{"t":319.608,"name":"Fan 1 Duty","value":30}
+{"t":322.405,"name":"GPU 0 Power","value":"0.0"}
+{"t":322.507,"name":"GPU 0 Temp","value":"24.0"}
+{"t":322.675,"name":"Fan 2 RPM","value":9744}
+{"t":322.909,"name":"Fan 1 FF Duty","value":30}
+{"t":323.159,"name":"Fan 0 RPM","value":9786}
+{"t":323.294,"name":"Fan 0 FF Duty","value":30}
+{"t":323.472,"name":"Fan 2 FF Duty","value":30}
+{"t":323.774,"name":"Fan 0 Duty","value":30}
+{"t":324.13,"name":"Fan 1 RPM","value":9546}
+{"t":324.35,"name":"Fan 2 Duty","value":30}
+{"t":324.605,"name":"Fan 1 Duty","value":30}
+{"t":325.983,"name":"GPU 1 Power","value":"0.0"}
+{"t":326.108,"name":"GPU 1 Temp","value":"22.0"}
+{"t":327.67,"name":"Fan 2 RPM","value":9744}
+{"t":327.91,"name":"Fan 1 FF Duty","value":30}
+{"t":328.14,"name":"Fan 0 RPM","value":9786}
+{"t":328.295,"name":"Fan 0 FF Duty","value":30}
+{"t":328.479,"name":"Fan 2 FF Duty","value":30}
+{"t":328.767,"name":"Fan 0 Duty","value":30}
+{"t":328.951,"name":"GPU 2 Power","value":"0.0"}
+{"t":329.075,"name":"GPU 2 Temp","value":"24.0"}
+{"t":329.135,"name":"Fan 1 RPM","value":9540.275}
+{"t":329.403,"name":"Fan 2 Duty","value":30}
+{"t":329.612,"name":"Fan 1 Duty","value":30}
+{"t":332.537,"name":"GPU 0 Power","value":"0.0"}
+{"t":332.606,"name":"GPU 0 Temp","value":"24.0"}
+{"t":332.682,"name":"Fan 2 RPM","value":9750}
+{"t":332.914,"name":"Fan 1 FF Duty","value":30}
+{"t":333.141,"name":"Fan 0 RPM","value":9786}
+{"t":333.296,"name":"Fan 0 FF Duty","value":30}
+{"t":333.466,"name":"Fan 2 FF Duty","value":30}
+{"t":333.766,"name":"Fan 0 Duty","value":30}
+{"t":334.133,"name":"Fan 1 RPM","value":9546}
+{"t":334.35,"name":"Fan 2 Duty","value":30}
+{"t":334.621,"name":"Fan 1 Duty","value":30}
+{"t":336.005,"name":"GPU 1 Power","value":"0.0"}
+{"t":336.085,"name":"GPU 1 Temp","value":"22.1"}
+{"t":337.671,"name":"Fan 2 RPM","value":9744}
+{"t":337.908,"name":"Fan 1 FF Duty","value":30}
+{"t":338.143,"name":"Fan 0 RPM","value":9786}
+{"t":338.302,"name":"Fan 0 FF Duty","value":30}
+{"t":338.467,"name":"Fan 2 FF Duty","value":30}
+{"t":338.766,"name":"Fan 0 Duty","value":30}
+{"t":339.133,"name":"Fan 1 RPM","value":9538.093}
+{"t":339.19,"name":"GPU 2 Power","value":"0.0"}
+{"t":339.293,"name":"GPU 2 Temp","value":"24.0"}
+{"t":339.35,"name":"Fan 2 Duty","value":30}
+{"t":339.607,"name":"Fan 1 Duty","value":30}
+{"t":342.678,"name":"Fan 2 RPM","value":9750}
+{"t":342.738,"name":"GPU 0 Power","value":"0.0"}
+{"t":342.833,"name":"GPU 0 Temp","value":"24.0"}
+{"t":342.91,"name":"Fan 1 FF Duty","value":30}
+{"t":343.142,"name":"Fan 0 RPM","value":9780}
+{"t":343.294,"name":"Fan 0 FF Duty","value":30}
+{"t":343.468,"name":"Fan 2 FF Duty","value":30}
+{"t":343.766,"name":"Fan 0 Duty","value":30}
+{"t":344.174,"name":"Fan 1 RPM","value":9546}
+{"t":344.353,"name":"Fan 2 Duty","value":30}
+{"t":344.605,"name":"Fan 1 Duty","value":30}
+{"t":346.257,"name":"GPU 1 Power","value":"0.0"}
+{"t":346.391,"name":"GPU 1 Temp","value":"22.1"}
+{"t":347.67,"name":"Fan 2 RPM","value":9744}
+{"t":347.93,"name":"Fan 1 FF Duty","value":30}
+{"t":348.138,"name":"Fan 0 RPM","value":9786}
+{"t":348.294,"name":"Fan 0 FF Duty","value":30}
+{"t":348.466,"name":"Fan 2 FF Duty","value":30}
+{"t":348.766,"name":"Fan 0 Duty","value":30}
+{"t":349.131,"name":"Fan 1 RPM","value":9540}
+{"t":349.258,"name":"GPU 2 Power","value":"0.0"}
+{"t":349.328,"name":"GPU 2 Temp","value":"24.0"}
+{"t":349.36,"name":"Fan 2 Duty","value":30}
+{"t":349.604,"name":"Fan 1 Duty","value":30}
+{"t":352.678,"name":"Fan 2 RPM","value":9748.051}
+{"t":352.705,"name":"GPU 0 Power","value":"0.0"}
+{"t":352.809,"name":"GPU 0 Temp","value":"24.0"}
+{"t":352.911,"name":"Fan 1 FF Duty","value":30}
+{"t":353.157,"name":"Fan 0 RPM","value":9786}
+{"t":353.298,"name":"Fan 0 FF Duty","value":30}
+{"t":353.467,"name":"Fan 2 FF Duty","value":30}
+{"t":353.766,"name":"Fan 0 Duty","value":30}
+{"t":354.13,"name":"Fan 1 RPM","value":9540}
+{"t":354.375,"name":"Fan 2 Duty","value":30}
+{"t":354.604,"name":"Fan 1 Duty","value":30}
+{"t":356.497,"name":"GPU 1 Power","value":"0.0"}
+{"t":356.601,"name":"GPU 1 Temp","value":"22.0"}
+{"t":357.678,"name":"Fan 2 RPM","value":9744}
+{"t":357.909,"name":"Fan 1 FF Duty","value":30}
+{"t":358.154,"name":"Fan 0 RPM","value":9780}
+{"t":358.294,"name":"Fan 0 FF Duty","value":30}
+{"t":358.467,"name":"Fan 2 FF Duty","value":30}
+{"t":358.772,"name":"Fan 0 Duty","value":30}
+{"t":359.182,"name":"Fan 1 RPM","value":9534}
+{"t":359.351,"name":"Fan 2 Duty","value":30}
+{"t":359.447,"name":"GPU 2 Power","value":"0.0"}
+{"t":359.555,"name":"GPU 2 Temp","value":"24.0"}
+{"t":359.606,"name":"Fan 1 Duty","value":30}
+{"t":362.676,"name":"Fan 2 RPM","value":9744}
+{"t":362.896,"name":"GPU 0 Power","value":"0.0"}
+{"t":362.912,"name":"Fan 1 FF Duty","value":30}
+{"t":363.009,"name":"GPU 0 Temp","value":"24.0"}
+{"t":363.142,"name":"Fan 0 RPM","value":9786}
+{"t":363.294,"name":"Fan 0 FF Duty","value":30}
+{"t":363.49,"name":"Fan 2 FF Duty","value":30}
+{"t":363.766,"name":"Fan 0 Duty","value":30}
+{"t":364.128,"name":"Fan 1 RPM","value":9540}
+{"t":364.354,"name":"Fan 2 Duty","value":30}
+{"t":364.612,"name":"Fan 1 Duty","value":30}
+{"t":366.712,"name":"GPU 1 Power","value":"0.0"}
+{"t":366.782,"name":"GPU 1 Temp","value":"22.0"}
+{"t":367.685,"name":"Fan 2 RPM","value":9750}
+{"t":367.91,"name":"Fan 1 FF Duty","value":30}
+{"t":368.139,"name":"Fan 0 RPM","value":9786}
+{"t":368.293,"name":"Fan 0 FF Duty","value":30}
+{"t":368.465,"name":"Fan 2 FF Duty","value":30}
+{"t":368.766,"name":"Fan 0 Duty","value":30}
+{"t":369.13,"name":"Fan 1 RPM","value":9540}
+{"t":369.352,"name":"Fan 2 Duty","value":30}
+{"t":369.642,"name":"Fan 1 Duty","value":30}
+{"t":369.728,"name":"GPU 2 Power","value":"0.0"}
+{"t":369.823,"name":"GPU 2 Temp","value":"24.0"}
+{"t":372.687,"name":"Fan 2 RPM","value":9744}
+{"t":372.911,"name":"GPU 0 Power","value":"0.0"}
+{"t":372.921,"name":"Fan 1 FF Duty","value":30}
+{"t":373.063,"name":"GPU 0 Temp","value":"24.0"}
+{"t":373.147,"name":"Fan 0 RPM","value":9784.043}
+{"t":373.306,"name":"Fan 0 FF Duty","value":30}
+{"t":373.469,"name":"Fan 2 FF Duty","value":30}
+{"t":373.766,"name":"Fan 0 Duty","value":30}
+{"t":374.136,"name":"Fan 1 RPM","value":9540}
+{"t":374.351,"name":"Fan 2 Duty","value":30}
+{"t":374.605,"name":"Fan 1 Duty","value":30}
+{"t":376.749,"name":"GPU 1 Power","value":"0.0"}
+{"t":376.857,"name":"GPU 1 Temp","value":"22.1"}
+{"t":377.671,"name":"Fan 2 RPM","value":9750}
+{"t":377.917,"name":"Fan 1 FF Duty","value":30}
+{"t":378.148,"name":"Fan 0 RPM","value":9793.959}
+{"t":378.293,"name":"Fan 0 FF Duty","value":30}
+{"t":378.466,"name":"Fan 2 FF Duty","value":30}
+{"t":378.77,"name":"Fan 0 Duty","value":30}
+{"t":379.159,"name":"Fan 1 RPM","value":9534}
+{"t":379.351,"name":"Fan 2 Duty","value":30}
+{"t":379.605,"name":"Fan 1 Duty","value":30}
+{"t":379.704,"name":"GPU 2 Power","value":"0.0"}
+{"t":379.778,"name":"GPU 2 Temp","value":"24.0"}
+{"t":382.673,"name":"Fan 2 RPM","value":9744}
+{"t":382.922,"name":"Fan 1 FF Duty","value":30}
+{"t":383.126,"name":"GPU 0 Power","value":"0.0"}
+{"t":383.152,"name":"Fan 0 RPM","value":9780}
+{"t":383.237,"name":"GPU 0 Temp","value":"24.0"}
+{"t":383.293,"name":"Fan 0 FF Duty","value":30}
+{"t":383.474,"name":"Fan 2 FF Duty","value":30}
+{"t":383.765,"name":"Fan 0 Duty","value":30}
+{"t":384.13,"name":"Fan 1 RPM","value":9540}
+{"t":384.357,"name":"Fan 2 Duty","value":30}
+{"t":384.607,"name":"Fan 1 Duty","value":30}
+{"t":386.87,"name":"GPU 1 Power","value":"0.0"}
+{"t":386.975,"name":"GPU 1 Temp","value":"22.0"}
+{"t":387.671,"name":"Fan 2 RPM","value":9744}
+{"t":387.916,"name":"Fan 1 FF Duty","value":30}
+{"t":388.146,"name":"Fan 0 RPM","value":9780}
+{"t":388.293,"name":"Fan 0 FF Duty","value":30}
+{"t":388.466,"name":"Fan 2 FF Duty","value":30}
+{"t":388.766,"name":"Fan 0 Duty","value":30}
+{"t":389.199,"name":"Fan 1 RPM","value":9540}
+{"t":389.381,"name":"Fan 2 Duty","value":30}
+{"t":389.603,"name":"Fan 1 Duty","value":30}
+{"t":389.802,"name":"GPU 2 Power","value":"0.0"}
+{"t":389.882,"name":"GPU 2 Temp","value":"24.0"}
+{"t":392.673,"name":"Fan 2 RPM","value":9744}
+{"t":392.916,"name":"Fan 1 FF Duty","value":30}
+{"t":393.154,"name":"Fan 0 RPM","value":9786}
+{"t":393.215,"name":"GPU 0 Power","value":"0.0"}
+{"t":393.295,"name":"Fan 0 FF Duty","value":30}
+{"t":393.311,"name":"GPU 0 Temp","value":"24.0"}
+{"t":393.468,"name":"Fan 2 FF Duty","value":30}
+{"t":393.811,"name":"Fan 0 Duty","value":30}
+{"t":394.129,"name":"Fan 1 RPM","value":9540}
+{"t":394.388,"name":"Fan 2 Duty","value":30}
+{"t":394.617,"name":"Fan 1 Duty","value":30}
+{"t":397.004,"name":"GPU 1 Power","value":"0.0"}
+{"t":397.1,"name":"GPU 1 Temp","value":"22.0"}
+{"t":397.67,"name":"Fan 2 RPM","value":9744}
+{"t":397.916,"name":"Fan 1 FF Duty","value":30}
+{"t":398.139,"name":"Fan 0 RPM","value":9786}
+{"t":398.294,"name":"Fan 0 FF Duty","value":30}
+{"t":398.479,"name":"Fan 2 FF Duty","value":30}
+{"t":398.786,"name":"Fan 0 Duty","value":30}
+{"t":399.129,"name":"Fan 1 RPM","value":9534}
+{"t":399.351,"name":"Fan 2 Duty","value":30}
+{"t":399.604,"name":"Fan 1 Duty","value":30}
+{"t":400.072,"name":"GPU 2 Power","value":"0.0"}
+{"t":400.193,"name":"GPU 2 Temp","value":"24.0"}
+{"t":402.679,"name":"Fan 2 RPM","value":9744}
+{"t":402.916,"name":"Fan 1 FF Duty","value":30}
+{"t":403.138,"name":"Fan 0 RPM","value":9786}
+{"t":403.295,"name":"Fan 0 FF Duty","value":30}
+{"t":403.317,"name":"GPU 0 Power","value":"0.0"}
+{"t":403.431,"name":"GPU 0 Temp","value":"24.0"}
+{"t":403.501,"name":"Fan 2 FF Duty","value":30}
+{"t":403.765,"name":"Fan 0 Duty","value":30}
+{"t":404.128,"name":"Fan 1 RPM","value":9546}
+{"t":404.351,"name":"Fan 2 Duty","value":30}
+{"t":404.625,"name":"Fan 1 Duty","value":30}
+{"t":407.133,"name":"GPU 1 Power","value":"0.0"}
+{"t":407.292,"name":"GPU 1 Temp","value":"22.0"}
+{"t":407.698,"name":"Fan 2 RPM","value":9744}
+{"t":407.918,"name":"Fan 1 FF Duty","value":30}
+{"t":408.138,"name":"Fan 0 RPM","value":9786}
+{"t":408.302,"name":"Fan 0 FF Duty","value":30}
+{"t":408.467,"name":"Fan 2 FF Duty","value":30}
+{"t":408.765,"name":"Fan 0 Duty","value":30}
+{"t":409.128,"name":"Fan 1 RPM","value":9540}
+{"t":409.351,"name":"Fan 2 Duty","value":30}
+{"t":409.604,"name":"Fan 1 Duty","value":30}
+{"t":410.205,"name":"GPU 2 Power","value":"0.0"}
+{"t":410.346,"name":"GPU 2 Temp","value":"24.0"}
+{"t":412.67,"name":"Fan 2 RPM","value":9750}
+{"t":412.915,"name":"Fan 1 FF Duty","value":30}
+{"t":413.138,"name":"Fan 0 RPM","value":9786}
+{"t":413.293,"name":"Fan 0 FF Duty","value":30}
+{"t":413.467,"name":"Fan 2 FF Duty","value":30}
+{"t":413.494,"name":"GPU 0 Power","value":"0.0"}
+{"t":413.622,"name":"GPU 0 Temp","value":"24.0"}
+{"t":413.764,"name":"Fan 0 Duty","value":30}
+{"t":414.143,"name":"Fan 1 RPM","value":9540}
+{"t":414.35,"name":"Fan 2 Duty","value":30}
+{"t":414.603,"name":"Fan 1 Duty","value":30}
+{"t":417.279,"name":"GPU 1 Power","value":"0.0"}
+{"t":417.441,"name":"GPU 1 Temp","value":"22.0"}
+{"t":417.673,"name":"Fan 2 RPM","value":9742.052}
+{"t":417.92,"name":"Fan 1 FF Duty","value":30}
+{"t":418.138,"name":"Fan 0 RPM","value":9786}
+{"t":418.293,"name":"Fan 0 FF Duty","value":30}
+{"t":418.466,"name":"Fan 2 FF Duty","value":30}
+{"t":418.765,"name":"Fan 0 Duty","value":30}
+{"t":419.129,"name":"Fan 1 RPM","value":9540}
+{"t":419.353,"name":"Fan 2 Duty","value":30}
+{"t":419.603,"name":"Fan 1 Duty","value":30}
+{"t":420.331,"name":"GPU 2 Power","value":"0.0"}
+{"t":420.411,"name":"GPU 2 Temp","value":"24.0"}
+{"t":422.673,"name":"Fan 2 RPM","value":9751.95}
+{"t":422.933,"name":"Fan 1 FF Duty","value":30}
+{"t":423.154,"name":"Fan 0 RPM","value":9786}
+{"t":423.3,"name":"Fan 0 FF Duty","value":30}
+{"t":423.478,"name":"Fan 2 FF Duty","value":30}
+{"t":423.506,"name":"GPU 0 Power","value":"0.0"}
+{"t":423.615,"name":"GPU 0 Temp","value":"24.0"}
+{"t":423.765,"name":"Fan 0 Duty","value":30}
+{"t":424.127,"name":"Fan 1 RPM","value":9546}
+{"t":424.37,"name":"Fan 2 Duty","value":30}
+{"t":424.617,"name":"Fan 1 Duty","value":30}
+{"t":427.303,"name":"GPU 1 Power","value":"0.0"}
+{"t":427.462,"name":"GPU 1 Temp","value":"22.0"}
+{"t":427.67,"name":"Fan 2 RPM","value":9744}
+{"t":427.915,"name":"Fan 1 FF Duty","value":30}
+{"t":428.169,"name":"Fan 0 RPM","value":9786}
+{"t":428.297,"name":"Fan 0 FF Duty","value":30}
+{"t":428.477,"name":"Fan 2 FF Duty","value":30}
+{"t":428.788,"name":"Fan 0 Duty","value":30}
+{"t":429.139,"name":"Fan 1 RPM","value":9546}
+{"t":429.35,"name":"Fan 2 Duty","value":30}
+{"t":429.603,"name":"Fan 1 Duty","value":30}
+{"t":430.362,"name":"GPU 2 Power","value":"0.0"}
+{"t":430.437,"name":"GPU 2 Temp","value":"24.0"}
+{"t":432.669,"name":"Fan 2 RPM","value":9744}
+{"t":432.916,"name":"Fan 1 FF Duty","value":30}
+{"t":433.138,"name":"Fan 0 RPM","value":9792}
+{"t":433.293,"name":"Fan 0 FF Duty","value":30}
+{"t":433.477,"name":"Fan 2 FF Duty","value":30}
+{"t":433.533,"name":"GPU 0 Power","value":"0.0"}
+{"t":433.656,"name":"GPU 0 Temp","value":"24.0"}
+{"t":433.791,"name":"Fan 0 Duty","value":30}
+{"t":434.129,"name":"Fan 1 RPM","value":9546}
+{"t":434.35,"name":"Fan 2 Duty","value":30}
+{"t":434.615,"name":"Fan 1 Duty","value":30}
+{"t":437.417,"name":"GPU 1 Power","value":"0.0"}
+{"t":437.567,"name":"GPU 1 Temp","value":"22.0"}
+{"t":437.685,"name":"Fan 2 RPM","value":9744}
+{"t":437.915,"name":"Fan 1 FF Duty","value":30}
+{"t":438.138,"name":"Fan 0 RPM","value":9792}
+{"t":438.293,"name":"Fan 0 FF Duty","value":30}
+{"t":438.465,"name":"Fan 2 FF Duty","value":30}
+{"t":438.764,"name":"Fan 0 Duty","value":30}
+{"t":439.134,"name":"Fan 1 RPM","value":9546}
+{"t":439.362,"name":"Fan 2 Duty","value":30}
+{"t":439.642,"name":"Fan 1 Duty","value":30}
+{"t":440.493,"name":"GPU 2 Power","value":"0.0"}
+{"t":440.619,"name":"GPU 2 Temp","value":"24.0"}
+{"t":442.695,"name":"Fan 2 RPM","value":9744}
+{"t":442.915,"name":"Fan 1 FF Duty","value":30}
+{"t":443.138,"name":"Fan 0 RPM","value":9786}
+{"t":443.296,"name":"Fan 0 FF Duty","value":30}
+{"t":443.468,"name":"Fan 2 FF Duty","value":30}
+{"t":443.765,"name":"GPU 0 Power","value":"0.0"}
+{"t":443.78,"name":"Fan 0 Duty","value":30}
+{"t":443.887,"name":"GPU 0 Temp","value":"24.1"}
+{"t":444.129,"name":"Fan 1 RPM","value":9546}
+{"t":444.35,"name":"Fan 2 Duty","value":30}
+{"t":444.607,"name":"Fan 1 Duty","value":30}
+{"t":447.562,"name":"GPU 1 Power","value":"0.0"}
+{"t":447.667,"name":"GPU 1 Temp","value":"22.0"}
+{"t":447.703,"name":"Fan 2 RPM","value":9746.405}
+{"t":447.918,"name":"Fan 1 FF Duty","value":30}
+{"t":448.138,"name":"Fan 0 RPM","value":9792}
+{"t":448.31,"name":"Fan 0 FF Duty","value":30}
+{"t":448.466,"name":"Fan 2 FF Duty","value":30}
+{"t":448.777,"name":"Fan 0 Duty","value":30}
+{"t":449.134,"name":"Fan 1 RPM","value":9546}
+{"t":449.358,"name":"Fan 2 Duty","value":30}
+{"t":449.604,"name":"Fan 1 Duty","value":30}
+{"t":450.644,"name":"GPU 2 Power","value":"0.0"}
+{"t":450.77,"name":"GPU 2 Temp","value":"24.0"}
+{"t":452.676,"name":"Fan 2 RPM","value":9745.949}
+{"t":452.917,"name":"Fan 1 FF Duty","value":30}
+{"t":453.139,"name":"Fan 0 RPM","value":9786}
+{"t":453.292,"name":"Fan 0 FF Duty","value":30}
+{"t":453.49,"name":"Fan 2 FF Duty","value":30}
+{"t":453.778,"name":"Fan 0 Duty","value":30}
+{"t":453.856,"name":"GPU 0 Power","value":"0.0"}
+{"t":453.941,"name":"GPU 0 Temp","value":"24.0"}
+{"t":454.143,"name":"Fan 1 RPM","value":9540}
+{"t":454.39,"name":"Fan 2 Duty","value":30}
+{"t":454.603,"name":"Fan 1 Duty","value":30}
+{"t":457.578,"name":"GPU 1 Power","value":"0.0"}
+{"t":457.678,"name":"Fan 2 RPM","value":9750}
+{"t":457.696,"name":"GPU 1 Temp","value":"22.0"}
+{"t":457.935,"name":"Fan 1 FF Duty","value":30}
+{"t":458.146,"name":"Fan 0 RPM","value":9792}
+{"t":458.294,"name":"Fan 0 FF Duty","value":30}
+{"t":458.467,"name":"Fan 2 FF Duty","value":30}
+{"t":458.772,"name":"Fan 0 Duty","value":30}
+{"t":459.128,"name":"Fan 1 RPM","value":9546}
+{"t":459.365,"name":"Fan 2 Duty","value":30}
+{"t":459.602,"name":"Fan 1 Duty","value":30}
+{"t":460.852,"name":"GPU 2 Power","value":"0.0"}
+{"t":460.924,"name":"GPU 2 Temp","value":"24.0"}
+{"t":462.678,"name":"Fan 2 RPM","value":9744}
+{"t":462.914,"name":"Fan 1 FF Duty","value":30}
+{"t":463.152,"name":"Fan 0 RPM","value":9786}
+{"t":463.292,"name":"Fan 0 FF Duty","value":30}
+{"t":463.477,"name":"Fan 2 FF Duty","value":30}
+{"t":463.773,"name":"Fan 0 Duty","value":30}
+{"t":463.991,"name":"GPU 0 Power","value":"0.0"}
+{"t":464.113,"name":"GPU 0 Temp","value":"24.0"}
+{"t":464.141,"name":"Fan 1 RPM","value":9540.275}
+{"t":464.354,"name":"Fan 2 Duty","value":30}
+{"t":464.604,"name":"Fan 1 Duty","value":30}
+{"t":467.677,"name":"Fan 2 RPM","value":9744}
+{"t":467.732,"name":"GPU 1 Power","value":"0.0"}
+{"t":467.887,"name":"GPU 1 Temp","value":"22.1"}
+{"t":467.914,"name":"Fan 1 FF Duty","value":30}
+{"t":468.138,"name":"Fan 0 RPM","value":9780}
+{"t":468.292,"name":"Fan 0 FF Duty","value":30}
+{"t":468.473,"name":"Fan 2 FF Duty","value":30}
+{"t":468.786,"name":"Fan 0 Duty","value":30}
+{"t":469.129,"name":"Fan 1 RPM","value":9547.909}
+{"t":469.349,"name":"Fan 2 Duty","value":30}
+{"t":469.601,"name":"Fan 1 Duty","value":30}
+{"t":470.988,"name":"GPU 2 Power","value":"0.0"}
+{"t":471.157,"name":"GPU 2 Temp","value":"24.0"}
+{"t":472.677,"name":"Fan 2 RPM","value":9750}
+{"t":472.915,"name":"Fan 1 FF Duty","value":30}
+{"t":473.138,"name":"Fan 0 RPM","value":9780}
+{"t":473.292,"name":"Fan 0 FF Duty","value":30}
+{"t":473.492,"name":"Fan 2 FF Duty","value":30}
+{"t":473.775,"name":"Fan 0 Duty","value":30}
+{"t":473.998,"name":"GPU 0 Power","value":"0.0"}
+{"t":474.063,"name":"GPU 0 Temp","value":"24.0"}
+{"t":474.129,"name":"Fan 1 RPM","value":9546}
+{"t":474.351,"name":"Fan 2 Duty","value":30}
+{"t":474.611,"name":"Fan 1 Duty","value":30}
+{"t":477.689,"name":"Fan 2 RPM","value":9744}
+{"t":477.904,"name":"GPU 1 Power","value":"0.0"}
+{"t":477.921,"name":"Fan 1 FF Duty","value":30}
+{"t":478.008,"name":"GPU 1 Temp","value":"22.0"}
+{"t":478.136,"name":"Fan 0 RPM","value":9786}
+{"t":478.298,"name":"Fan 0 FF Duty","value":30}
+{"t":478.465,"name":"Fan 2 FF Duty","value":30}
+{"t":478.775,"name":"Fan 0 Duty","value":30}
+{"t":479.183,"name":"Fan 1 RPM","value":9540}
+{"t":479.357,"name":"Fan 2 Duty","value":30}
+{"t":479.606,"name":"Fan 1 Duty","value":30}
+{"t":481.116,"name":"GPU 2 Power","value":"0.0"}
+{"t":481.235,"name":"GPU 2 Temp","value":"24.0"}
+{"t":482.675,"name":"Fan 2 RPM","value":9750}
+{"t":482.914,"name":"Fan 1 FF Duty","value":30}
+{"t":483.137,"name":"Fan 0 RPM","value":9792}
+{"t":483.292,"name":"Fan 0 FF Duty","value":30}
+{"t":483.476,"name":"Fan 2 FF Duty","value":30}
+{"t":483.774,"name":"Fan 0 Duty","value":30}
+{"t":484.134,"name":"Fan 1 RPM","value":9546}
+{"t":484.197,"name":"GPU 0 Power","value":"0.0"}
+{"t":484.288,"name":"GPU 0 Temp","value":"24.0"}
+{"t":484.348,"name":"Fan 2 Duty","value":30}
+{"t":484.602,"name":"Fan 1 Duty","value":30}
+{"t":487.681,"name":"Fan 2 RPM","value":9744}
+{"t":487.915,"name":"Fan 1 FF Duty","value":30}
+{"t":488.122,"name":"GPU 1 Power","value":"0.0"}
+{"t":488.142,"name":"Fan 0 RPM","value":9790.168}
+{"t":488.223,"name":"GPU 1 Temp","value":"22.0"}
+{"t":488.293,"name":"Fan 0 FF Duty","value":30}
+{"t":488.465,"name":"Fan 2 FF Duty","value":30}
+{"t":488.771,"name":"Fan 0 Duty","value":30}
+{"t":489.144,"name":"Fan 1 RPM","value":9546}
+{"t":489.35,"name":"Fan 2 Duty","value":30}
+{"t":489.602,"name":"Fan 1 Duty","value":30}
+{"t":491.35,"name":"GPU 2 Power","value":"0.0"}
+{"t":491.501,"name":"GPU 2 Temp","value":"24.0"}
+{"t":492.673,"name":"Fan 2 RPM","value":9750}
+{"t":492.929,"name":"Fan 1 FF Duty","value":30}
+{"t":493.14,"name":"Fan 0 RPM","value":9787.958}
+{"t":493.291,"name":"Fan 0 FF Duty","value":30}
+{"t":493.466,"name":"Fan 2 FF Duty","value":30}
+{"t":493.772,"name":"Fan 0 Duty","value":30}
+{"t":494.13,"name":"Fan 1 RPM","value":9540}
+{"t":494.324,"name":"GPU 0 Power","value":"0.0"}
+{"t":494.363,"name":"Fan 2 Duty","value":30}
+{"t":494.446,"name":"GPU 0 Temp","value":"24.0"}
+{"t":494.601,"name":"Fan 1 Duty","value":30}
+{"t":497.674,"name":"Fan 2 RPM","value":9750}
+{"t":497.942,"name":"Fan 1 FF Duty","value":30}
+{"t":498.154,"name":"Fan 0 RPM","value":9780}
+{"t":498.299,"name":"Fan 0 FF Duty","value":30}
+{"t":498.328,"name":"GPU 1 Power","value":"0.0"}
+{"t":498.431,"name":"GPU 1 Temp","value":"22.0"}
+{"t":498.465,"name":"Fan 2 FF Duty","value":30}
+{"t":498.772,"name":"Fan 0 Duty","value":30}
+{"t":499.128,"name":"Fan 1 RPM","value":9540}
+{"t":499.349,"name":"Fan 2 Duty","value":30}
+{"t":499.601,"name":"Fan 1 Duty","value":30}
+{"t":501.602,"name":"GPU 2 Power","value":"0.0"}
+{"t":501.699,"name":"GPU 2 Temp","value":"24.0"}
+{"t":502.674,"name":"Fan 2 RPM","value":9744}
+{"t":502.913,"name":"Fan 1 FF Duty","value":30}
+{"t":503.14,"name":"Fan 0 RPM","value":9786}
+{"t":503.291,"name":"Fan 0 FF Duty","value":30}
+{"t":503.469,"name":"Fan 2 FF Duty","value":30}
+{"t":503.778,"name":"Fan 0 Duty","value":30}
+{"t":504.128,"name":"Fan 1 RPM","value":9540}
+{"t":504.349,"name":"Fan 2 Duty","value":30}
+{"t":504.603,"name":"Fan 1 Duty","value":30}
+{"t":504.627,"name":"GPU 0 Power","value":"0.0"}
+{"t":504.731,"name":"GPU 0 Temp","value":"24.0"}
+{"t":507.674,"name":"Fan 2 RPM","value":9750}
+{"t":507.914,"name":"Fan 1 FF Duty","value":30}
+{"t":508.139,"name":"Fan 0 RPM","value":9786}
+{"t":508.298,"name":"Fan 0 FF Duty","value":30}
+{"t":508.314,"name":"GPU 1 Power","value":"0.0"}
+{"t":508.412,"name":"GPU 1 Temp","value":"22.0"}
+{"t":508.466,"name":"Fan 2 FF Duty","value":30}
+{"t":508.771,"name":"Fan 0 Duty","value":30}
+{"t":509.2,"name":"Fan 1 RPM","value":9540}
+{"t":509.375,"name":"Fan 2 Duty","value":30}
+{"t":509.611,"name":"Fan 1 Duty","value":30}
+{"t":511.878,"name":"GPU 2 Power","value":"0.0"}
+{"t":512.099,"name":"GPU 2 Temp","value":"24.0"}
+{"t":512.686,"name":"Fan 2 RPM","value":9744}
+{"t":512.913,"name":"Fan 1 FF Duty","value":30}
+{"t":513.139,"name":"Fan 0 RPM","value":9786}
+{"t":513.297,"name":"Fan 0 FF Duty","value":30}
+{"t":513.522,"name":"Fan 2 FF Duty","value":30}
+{"t":513.771,"name":"Fan 0 Duty","value":30}
+{"t":514.128,"name":"Fan 1 RPM","value":9540}
+{"t":514.349,"name":"Fan 2 Duty","value":30}
+{"t":514.601,"name":"Fan 1 Duty","value":30}
+{"t":514.683,"name":"GPU 0 Power","value":"0.0"}
+{"t":514.794,"name":"GPU 0 Temp","value":"24.0"}
+{"t":517.715,"name":"Fan 2 RPM","value":9750}
+{"t":517.917,"name":"Fan 1 FF Duty","value":30}
+{"t":518.139,"name":"Fan 0 RPM","value":9786}
+{"t":518.31,"name":"Fan 0 FF Duty","value":30}
+{"t":518.366,"name":"GPU 1 Power","value":"0.0"}
+{"t":518.467,"name":"GPU 1 Temp","value":"22.0"}
+{"t":518.488,"name":"Fan 2 FF Duty","value":30}
+{"t":518.771,"name":"Fan 0 Duty","value":30}
+{"t":519.136,"name":"Fan 1 RPM","value":9540}
+{"t":519.349,"name":"Fan 2 Duty","value":30}
+{"t":519.615,"name":"Fan 1 Duty","value":30}
+{"t":521.85,"name":"GPU 2 Power","value":"0.0"}
+{"t":521.99,"name":"GPU 2 Temp","value":"24.0"}
+{"t":522.674,"name":"Fan 2 RPM","value":9744}
+{"t":522.914,"name":"Fan 1 FF Duty","value":30}
+{"t":523.139,"name":"Fan 0 RPM","value":9780}
+{"t":523.292,"name":"Fan 0 FF Duty","value":30}
+{"t":523.473,"name":"Fan 2 FF Duty","value":30}
+{"t":523.771,"name":"Fan 0 Duty","value":30}
+{"t":524.141,"name":"Fan 1 RPM","value":9546}
+{"t":524.351,"name":"Fan 2 Duty","value":30}
+{"t":524.601,"name":"Fan 1 Duty","value":30}
+{"t":524.812,"name":"GPU 0 Power","value":"0.0"}
+{"t":524.881,"name":"GPU 0 Temp","value":"24.0"}
+{"t":527.689,"name":"Fan 2 RPM","value":9744}
+{"t":527.93,"name":"Fan 1 FF Duty","value":30}
+{"t":528.139,"name":"Fan 0 RPM","value":9786}
+{"t":528.292,"name":"Fan 0 FF Duty","value":30}
+{"t":528.463,"name":"GPU 1 Power","value":"0.0"}
+{"t":528.482,"name":"Fan 2 FF Duty","value":30}
+{"t":528.561,"name":"GPU 1 Temp","value":"22.1"}
+{"t":528.771,"name":"Fan 0 Duty","value":30}
+{"t":529.129,"name":"Fan 1 RPM","value":9534}
+{"t":529.359,"name":"Fan 2 Duty","value":30}
+{"t":529.606,"name":"Fan 1 Duty","value":30}
+{"t":531.993,"name":"GPU 2 Power","value":"0.0"}
+{"t":532.124,"name":"GPU 2 Temp","value":"24.0"}
+{"t":532.675,"name":"Fan 2 RPM","value":9744}
+{"t":532.913,"name":"Fan 1 FF Duty","value":30}
+{"t":533.15,"name":"Fan 0 RPM","value":9780}
+{"t":533.291,"name":"Fan 0 FF Duty","value":30}
+{"t":533.477,"name":"Fan 2 FF Duty","value":30}
+{"t":533.776,"name":"Fan 0 Duty","value":30}
+{"t":534.127,"name":"Fan 1 RPM","value":9540}
+{"t":534.348,"name":"Fan 2 Duty","value":30}
+{"t":534.601,"name":"Fan 1 Duty","value":30}
+{"t":535.106,"name":"GPU 0 Power","value":"0.0"}
+{"t":535.224,"name":"GPU 0 Temp","value":"24.0"}
+{"t":537.687,"name":"Fan 2 RPM","value":9744}
+{"t":537.913,"name":"Fan 1 FF Duty","value":30}
+{"t":538.139,"name":"Fan 0 RPM","value":9786}
+{"t":538.292,"name":"Fan 0 FF Duty","value":30}
+{"t":538.477,"name":"Fan 2 FF Duty","value":30}
+{"t":538.545,"name":"GPU 1 Power","value":"0.0"}
+{"t":538.644,"name":"GPU 1 Temp","value":"22.2"}
+{"t":538.774,"name":"Fan 0 Duty","value":30}
+{"t":539.197,"name":"Fan 1 RPM","value":9540}
+{"t":539.354,"name":"Fan 2 Duty","value":30}
+{"t":539.601,"name":"Fan 1 Duty","value":30}
+{"t":542.108,"name":"GPU 2 Power","value":"0.0"}
+{"t":542.22,"name":"GPU 2 Temp","value":"24.0"}
+{"t":542.674,"name":"Fan 2 RPM","value":9744}
+{"t":542.912,"name":"Fan 1 FF Duty","value":30}
+{"t":543.141,"name":"Fan 0 RPM","value":9780}
+{"t":543.291,"name":"Fan 0 FF Duty","value":30}
+{"t":543.492,"name":"Fan 2 FF Duty","value":30}
+{"t":543.77,"name":"Fan 0 Duty","value":30}
+{"t":544.128,"name":"Fan 1 RPM","value":9540}
+{"t":544.348,"name":"Fan 2 Duty","value":30}
+{"t":544.61,"name":"Fan 1 Duty","value":30}
+{"t":545.173,"name":"GPU 0 Power","value":"0.0"}
+{"t":545.383,"name":"GPU 0 Temp","value":"24.0"}
+{"t":547.705,"name":"Fan 2 RPM","value":9744}
+{"t":547.913,"name":"Fan 1 FF Duty","value":30}
+{"t":548.137,"name":"Fan 0 RPM","value":9792}
+{"t":548.298,"name":"Fan 0 FF Duty","value":30}
+{"t":548.478,"name":"Fan 2 FF Duty","value":30}
+{"t":548.731,"name":"GPU 1 Power","value":"0.0"}
+{"t":548.773,"name":"Fan 0 Duty","value":30}
+{"t":548.836,"name":"GPU 1 Temp","value":"22.0"}
+{"t":549.128,"name":"Fan 1 RPM","value":9540}
+{"t":549.348,"name":"Fan 2 Duty","value":30}
+{"t":549.6,"name":"Fan 1 Duty","value":30}
+{"t":552.256,"name":"GPU 2 Power","value":"0.0"}
+{"t":552.352,"name":"GPU 2 Temp","value":"24.0"}
+{"t":552.7,"name":"Fan 2 RPM","value":9744}
+{"t":552.912,"name":"Fan 1 FF Duty","value":30}
+{"t":553.138,"name":"Fan 0 RPM","value":9786}
+{"t":553.306,"name":"Fan 0 FF Duty","value":30}
+{"t":553.476,"name":"Fan 2 FF Duty","value":30}
+{"t":553.77,"name":"Fan 0 Duty","value":30}
+{"t":554.134,"name":"Fan 1 RPM","value":9534}
+{"t":554.348,"name":"Fan 2 Duty","value":30}
+{"t":554.6,"name":"Fan 1 Duty","value":30}
+{"t":555.314,"name":"GPU 0 Power","value":"0.0"}
+{"t":555.407,"name":"GPU 0 Temp","value":"24.0"}
+{"t":557.686,"name":"Fan 2 RPM","value":9744}
+{"t":557.917,"name":"Fan 1 FF Duty","value":30}
+{"t":558.137,"name":"Fan 0 RPM","value":9786}
+{"t":558.29,"name":"Fan 0 FF Duty","value":30}
+{"t":558.478,"name":"Fan 2 FF Duty","value":30}
+{"t":558.777,"name":"Fan 0 Duty","value":30}
+{"t":558.805,"name":"GPU 1 Power","value":"0.0"}
+{"t":558.908,"name":"GPU 1 Temp","value":"22.0"}
+{"t":559.152,"name":"Fan 1 RPM","value":9540}
+{"t":559.348,"name":"Fan 2 Duty","value":30}
+{"t":559.6,"name":"Fan 1 Duty","value":30}
+{"t":562.367,"name":"GPU 2 Power","value":"0.0"}
+{"t":562.443,"name":"GPU 2 Temp","value":"24.0"}
+{"t":562.673,"name":"Fan 2 RPM","value":9750}
+{"t":562.964,"name":"Fan 1 FF Duty","value":30}
+{"t":563.139,"name":"Fan 0 RPM","value":9792}
+{"t":563.29,"name":"Fan 0 FF Duty","value":30}
+{"t":563.485,"name":"Fan 2 FF Duty","value":30}
+{"t":563.773,"name":"Fan 0 Duty","value":30}
+{"t":564.127,"name":"Fan 1 RPM","value":9540}
+{"t":564.356,"name":"Fan 2 Duty","value":30}
+{"t":564.6,"name":"Fan 1 Duty","value":30}
+{"t":565.343,"name":"GPU 0 Power","value":"0.0"}
+{"t":565.418,"name":"GPU 0 Temp","value":"24.0"}
+{"t":567.69,"name":"Fan 2 RPM","value":9744}
+{"t":567.912,"name":"Fan 1 FF Duty","value":30}
+{"t":568.152,"name":"Fan 0 RPM","value":9786}
+{"t":568.29,"name":"Fan 0 FF Duty","value":30}
+{"t":568.475,"name":"Fan 2 FF Duty","value":30}
+{"t":568.773,"name":"Fan 0 Duty","value":30}
+{"t":568.995,"name":"GPU 1 Power","value":"0.0"}
+{"t":569.137,"name":"Fan 1 RPM","value":9538.093}
+{"t":569.172,"name":"GPU 1 Temp","value":"22.0"}
+{"t":569.35,"name":"Fan 2 Duty","value":30}
+{"t":569.6,"name":"Fan 1 Duty","value":30}
+{"t":572.602,"name":"GPU 2 Power","value":"0.0"}
+{"t":572.701,"name":"Fan 2 RPM","value":9742.052}
+{"t":572.718,"name":"GPU 2 Temp","value":"24.0"}
+{"t":572.912,"name":"Fan 1 FF Duty","value":30}
+{"t":573.139,"name":"Fan 0 RPM","value":9780}
+{"t":573.29,"name":"Fan 0 FF Duty","value":30}
+{"t":573.486,"name":"Fan 2 FF Duty","value":30}
+{"t":573.783,"name":"Fan 0 Duty","value":30}
+{"t":574.127,"name":"Fan 1 RPM","value":9540}
+{"t":574.347,"name":"Fan 2 Duty","value":30}
+{"t":574.601,"name":"Fan 1 Duty","value":30}
+{"t":575.379,"name":"GPU 0 Power","value":"0.0"}
+{"t":575.465,"name":"GPU 0 Temp","value":"24.0"}
+{"t":577.691,"name":"Fan 2 RPM","value":9744}
+{"t":577.912,"name":"Fan 1 FF Duty","value":30}
+{"t":578.142,"name":"Fan 0 RPM","value":9778.044}
+{"t":578.291,"name":"Fan 0 FF Duty","value":30}
+{"t":578.481,"name":"Fan 2 FF Duty","value":30}
+{"t":578.788,"name":"Fan 0 Duty","value":30}
+{"t":579.144,"name":"Fan 1 RPM","value":9540}
+{"t":579.174,"name":"GPU 1 Power","value":"0.0"}
+{"t":579.327,"name":"GPU 1 Temp","value":"22.0"}
+{"t":579.352,"name":"Fan 2 Duty","value":30}
+{"t":579.635,"name":"Fan 1 Duty","value":30}
+{"t":582.683,"name":"Fan 2 RPM","value":9750}
+{"t":582.741,"name":"GPU 2 Power","value":"0.0"}
+{"t":582.849,"name":"GPU 2 Temp","value":"24.0"}
+{"t":582.911,"name":"Fan 1 FF Duty","value":30}
+{"t":583.19,"name":"Fan 0 RPM","value":9786}
+{"t":583.295,"name":"Fan 0 FF Duty","value":30}
+{"t":583.499,"name":"Fan 2 FF Duty","value":30}
+{"t":583.774,"name":"Fan 0 Duty","value":30}
+{"t":584.128,"name":"Fan 1 RPM","value":9540}
+{"t":584.348,"name":"Fan 2 Duty","value":30}
+{"t":584.599,"name":"Fan 1 Duty","value":30}
+{"t":585.609,"name":"GPU 0 Power","value":"0.0"}
+{"t":585.762,"name":"GPU 0 Temp","value":"24.0"}
+{"t":587.703,"name":"Fan 2 RPM","value":9744}
+{"t":587.916,"name":"Fan 1 FF Duty","value":30}
+{"t":588.139,"name":"Fan 0 RPM","value":9780}
+{"t":588.304,"name":"Fan 0 FF Duty","value":30}
+{"t":588.475,"name":"Fan 2 FF Duty","value":30}
+{"t":588.778,"name":"Fan 0 Duty","value":30}
+{"t":589.144,"name":"Fan 1 RPM","value":9540}
+{"t":589.365,"name":"GPU 1 Power","value":"0.0"}
+{"t":589.382,"name":"Fan 2 Duty","value":30}
+{"t":589.607,"name":"Fan 1 Duty","value":30}
+{"t":589.656,"name":"GPU 1 Temp","value":"22.0"}
+{"t":592.678,"name":"Fan 2 RPM","value":9744}
+{"t":592.733,"name":"GPU 2 Power","value":"0.0"}
+{"t":592.832,"name":"GPU 2 Temp","value":"24.0"}
+{"t":592.915,"name":"Fan 1 FF Duty","value":30}
+{"t":593.145,"name":"Fan 0 RPM","value":9786}
+{"t":593.291,"name":"Fan 0 FF Duty","value":30}
+{"t":593.482,"name":"Fan 2 FF Duty","value":30}
+{"t":593.775,"name":"Fan 0 Duty","value":30}
+{"t":594.151,"name":"Fan 1 RPM","value":9534}
+{"t":594.35,"name":"Fan 2 Duty","value":30}
+{"t":594.602,"name":"Fan 1 Duty","value":30}
+{"t":595.721,"name":"GPU 0 Power","value":"0.0"}
+{"t":595.825,"name":"GPU 0 Temp","value":"24.9"}
+{"t":597.679,"name":"Fan 2 RPM","value":9750}
+{"t":597.934,"name":"Fan 1 FF Duty","value":30}
+{"t":598.143,"name":"Fan 0 RPM","value":9780}
+{"t":598.292,"name":"Fan 0 FF Duty","value":30}
+{"t":598.476,"name":"Fan 2 FF Duty","value":30}
+{"t":598.773,"name":"Fan 0 Duty","value":30}
+{"t":599.151,"name":"Fan 1 RPM","value":9540}
+{"t":599.281,"name":"GPU 1 Power","value":"0.0"}
+{"t":599.366,"name":"Fan 2 Duty","value":30}
+{"t":599.5,"name":"GPU 1 Temp","value":"22.0"}
+{"t":599.602,"name":"Fan 1 Duty","value":30}
+{"t":602.68,"name":"Fan 2 RPM","value":9744}
+{"t":602.856,"name":"GPU 2 Power","value":"0.0"}
+{"t":602.915,"name":"Fan 1 FF Duty","value":30}
+{"t":603.007,"name":"GPU 2 Temp","value":"24.0"}
+{"t":603.152,"name":"Fan 0 RPM","value":9786}
+{"t":603.292,"name":"Fan 0 FF Duty","value":30}
+{"t":603.484,"name":"Fan 2 FF Duty","value":30}
+{"t":603.774,"name":"Fan 0 Duty","value":30}
+{"t":604.127,"name":"Fan 1 RPM","value":9534}
+{"t":604.348,"name":"Fan 2 Duty","value":30}
+{"t":604.599,"name":"Fan 1 Duty","value":30}
+{"t":605.862,"name":"GPU 0 Power","value":"0.0"}
+{"t":605.969,"name":"GPU 0 Temp","value":"25.0"}
+{"t":607.71,"name":"Fan 2 RPM","value":9750}
+{"t":607.915,"name":"Fan 1 FF Duty","value":30}
+{"t":608.138,"name":"Fan 0 RPM","value":9786}
+{"t":608.291,"name":"Fan 0 FF Duty","value":30}
+{"t":608.475,"name":"Fan 2 FF Duty","value":30}
+{"t":608.774,"name":"Fan 0 Duty","value":30}
+{"t":609.146,"name":"Fan 1 RPM","value":9540}
+{"t":609.366,"name":"Fan 2 Duty","value":30}
+{"t":609.405,"name":"GPU 1 Power","value":"0.0"}
+{"t":609.525,"name":"GPU 1 Temp","value":"22.0"}
+{"t":609.598,"name":"Fan 1 Duty","value":30}
+{"t":612.675,"name":"Fan 2 RPM","value":9744}
+{"t":612.84,"name":"GPU 2 Power","value":"0.0"}
+{"t":612.979,"name":"Fan 1 FF Duty","value":30}
+{"t":612.999,"name":"GPU 2 Temp","value":"24.0"}
+{"t":613.191,"name":"Fan 0 RPM","value":9786}
+{"t":613.296,"name":"Fan 0 FF Duty","value":30}
+{"t":613.476,"name":"Fan 2 FF Duty","value":30}
+{"t":613.794,"name":"Fan 0 Duty","value":30}
+{"t":614.127,"name":"Fan 1 RPM","value":9540}
+{"t":614.351,"name":"Fan 2 Duty","value":30}
+{"t":614.61,"name":"Fan 1 Duty","value":30}
+{"t":616.095,"name":"GPU 0 Power","value":"0.0"}
+{"t":616.261,"name":"GPU 0 Temp","value":"25.0"}
+{"t":617.68,"name":"Fan 2 RPM","value":9750}
+{"t":617.914,"name":"Fan 1 FF Duty","value":30}
+{"t":618.137,"name":"Fan 0 RPM","value":9780}
+{"t":618.292,"name":"Fan 0 FF Duty","value":30}
+{"t":618.49,"name":"Fan 2 FF Duty","value":30}
+{"t":618.771,"name":"Fan 0 Duty","value":30}
+{"t":619.13,"name":"Fan 1 RPM","value":9546}
+{"t":619.352,"name":"Fan 2 Duty","value":30}
+{"t":619.419,"name":"GPU 1 Power","value":"0.0"}
+{"t":619.62,"name":"Fan 1 Duty","value":30}
+{"t":619.64,"name":"GPU 1 Temp","value":"22.0"}
+{"t":622.702,"name":"Fan 2 RPM","value":9744}
+{"t":622.913,"name":"Fan 1 FF Duty","value":30}
+{"t":623.016,"name":"GPU 2 Power","value":"0.0"}
+{"t":623.137,"name":"Fan 0 RPM","value":9780}
+{"t":623.153,"name":"GPU 2 Temp","value":"24.0"}
+{"t":623.307,"name":"Fan 0 FF Duty","value":30}
+{"t":623.484,"name":"Fan 2 FF Duty","value":30}
+{"t":623.771,"name":"Fan 0 Duty","value":30}
+{"t":624.126,"name":"Fan 1 RPM","value":9540}
+{"t":624.347,"name":"Fan 2 Duty","value":30}
+{"t":624.603,"name":"Fan 1 Duty","value":30}
+{"t":626.334,"name":"GPU 0 Power","value":"0.0"}
+{"t":626.442,"name":"GPU 0 Temp","value":"25.8"}
+{"t":627.675,"name":"Fan 2 RPM","value":9750}
+{"t":627.914,"name":"Fan 1 FF Duty","value":30}
+{"t":628.139,"name":"Fan 0 RPM","value":9786}
+{"t":628.292,"name":"Fan 0 FF Duty","value":30}
+{"t":628.474,"name":"Fan 2 FF Duty","value":30}
+{"t":628.771,"name":"Fan 0 Duty","value":30}
+{"t":629.21,"name":"Fan 1 RPM","value":9540}
+{"t":629.375,"name":"Fan 2 Duty","value":30}
+{"t":629.602,"name":"GPU 1 Power","value":"0.0"}
+{"t":629.7,"name":"Fan 1 Duty","value":30}
+{"t":629.817,"name":"GPU 1 Temp","value":"22.0"}
+{"t":632.673,"name":"Fan 2 RPM","value":9744}
+{"t":632.921,"name":"Fan 1 FF Duty","value":30}
+{"t":633.142,"name":"Fan 0 RPM","value":9782.087}
+{"t":633.209,"name":"GPU 2 Power","value":"0.0"}
+{"t":633.301,"name":"Fan 0 FF Duty","value":30}
+{"t":633.309,"name":"GPU 2 Temp","value":"24.0"}
+{"t":633.485,"name":"Fan 2 FF Duty","value":30}
+{"t":633.776,"name":"Fan 0 Duty","value":30}
+{"t":634.126,"name":"Fan 1 RPM","value":9540}
+{"t":634.354,"name":"Fan 2 Duty","value":30}
+{"t":634.598,"name":"Fan 1 Duty","value":30}
+{"t":636.46,"name":"GPU 0 Power","value":"0.0"}
+{"t":636.536,"name":"GPU 0 Temp","value":"26.0"}
+{"t":637.672,"name":"Fan 2 RPM","value":9750}
+{"t":637.915,"name":"Fan 1 FF Duty","value":30}
+{"t":638.199,"name":"Fan 0 RPM","value":9781.956}
+{"t":638.294,"name":"Fan 0 FF Duty","value":30}
+{"t":638.474,"name":"Fan 2 FF Duty","value":30}
+{"t":638.771,"name":"Fan 0 Duty","value":30}
+{"t":639.126,"name":"Fan 1 RPM","value":9540}
+{"t":639.347,"name":"Fan 2 Duty","value":30}
+{"t":639.605,"name":"Fan 1 Duty","value":30}
+{"t":639.656,"name":"GPU 1 Power","value":"0.0"}
+{"t":639.778,"name":"GPU 1 Temp","value":"22.0"}
+{"t":642.673,"name":"Fan 2 RPM","value":9750}
+{"t":642.911,"name":"Fan 1 FF Duty","value":30}
+{"t":643.154,"name":"Fan 0 RPM","value":9786}
+{"t":643.293,"name":"Fan 0 FF Duty","value":30}
+{"t":643.378,"name":"GPU 2 Power","value":"0.0"}
+{"t":643.479,"name":"Fan 2 FF Duty","value":30}
+{"t":643.505,"name":"GPU 2 Temp","value":"24.0"}
+{"t":643.771,"name":"Fan 0 Duty","value":30}
+{"t":644.131,"name":"Fan 1 RPM","value":9546}
+{"t":644.349,"name":"Fan 2 Duty","value":30}
+{"t":644.6,"name":"Fan 1 Duty","value":30}
+{"t":646.697,"name":"GPU 0 Power","value":"0.0"}
+{"t":646.818,"name":"GPU 0 Temp","value":"26.0"}
+{"t":647.708,"name":"Fan 2 RPM","value":9750}
+{"t":647.927,"name":"Fan 1 FF Duty","value":30}
+{"t":648.138,"name":"Fan 0 RPM","value":9780}
+{"t":648.293,"name":"Fan 0 FF Duty","value":30}
+{"t":648.478,"name":"Fan 2 FF Duty","value":30}
+{"t":648.783,"name":"Fan 0 Duty","value":30}
+{"t":649.126,"name":"Fan 1 RPM","value":9546}
+{"t":649.347,"name":"Fan 2 Duty","value":30}
+{"t":649.6,"name":"Fan 1 Duty","value":30}
+{"t":649.663,"name":"GPU 1 Power","value":"0.0"}
+{"t":649.759,"name":"GPU 1 Temp","value":"22.0"}
+{"t":652.679,"name":"Fan 2 RPM","value":9744}
+{"t":652.911,"name":"Fan 1 FF Duty","value":30}
+{"t":653.137,"name":"Fan 0 RPM","value":9786}
+{"t":653.295,"name":"Fan 0 FF Duty","value":30}
+{"t":653.492,"name":"Fan 2 FF Duty","value":30}
+{"t":653.643,"name":"GPU 2 Power","value":"0.0"}
+{"t":653.747,"name":"GPU 2 Temp","value":"24.0"}
+{"t":653.801,"name":"Fan 0 Duty","value":30}
+{"t":654.129,"name":"Fan 1 RPM","value":9540}
+{"t":654.35,"name":"Fan 2 Duty","value":30}
+{"t":654.642,"name":"Fan 1 Duty","value":30}
+{"t":656.923,"name":"GPU 0 Power","value":"0.0"}
+{"t":656.999,"name":"GPU 0 Temp","value":"26.0"}
+{"t":657.688,"name":"Fan 2 RPM","value":9744}
+{"t":657.918,"name":"Fan 1 FF Duty","value":30}
+{"t":658.197,"name":"Fan 0 RPM","value":9792}
+{"t":658.299,"name":"Fan 0 FF Duty","value":30}
+{"t":658.474,"name":"Fan 2 FF Duty","value":30}
+{"t":658.775,"name":"Fan 0 Duty","value":30}
+{"t":659.227,"name":"Fan 1 RPM","value":9540}
+{"t":659.353,"name":"Fan 2 Duty","value":30}
+{"t":659.598,"name":"Fan 1 Duty","value":30}
+{"t":659.889,"name":"GPU 1 Power","value":"0.0"}
+{"t":659.966,"name":"GPU 1 Temp","value":"22.0"}
+{"t":662.67,"name":"Fan 2 RPM","value":9750}
+{"t":662.91,"name":"Fan 1 FF Duty","value":30}
+{"t":663.138,"name":"Fan 0 RPM","value":9786}
+{"t":663.292,"name":"Fan 0 FF Duty","value":30}
+{"t":663.474,"name":"Fan 2 FF Duty","value":30}
+{"t":663.772,"name":"Fan 0 Duty","value":30}
+{"t":663.901,"name":"GPU 2 Power","value":"0.0"}
+{"t":664.002,"name":"GPU 2 Temp","value":"24.0"}
+{"t":664.183,"name":"Fan 1 RPM","value":9540}
+{"t":664.354,"name":"Fan 2 Duty","value":30}
+{"t":664.597,"name":"Fan 1 Duty","value":30}
+{"t":666.955,"name":"GPU 0 Power","value":"0.0"}
+{"t":667.032,"name":"GPU 0 Temp","value":"25.4"}
+{"t":667.672,"name":"Fan 2 RPM","value":9744}
+{"t":667.92,"name":"Fan 1 FF Duty","value":30}
+{"t":668.138,"name":"Fan 0 RPM","value":9786}
+{"t":668.292,"name":"Fan 0 FF Duty","value":30}
+{"t":668.474,"name":"Fan 2 FF Duty","value":30}
+{"t":668.772,"name":"Fan 0 Duty","value":30}
+{"t":669.165,"name":"Fan 1 RPM","value":9540}
+{"t":669.363,"name":"Fan 2 Duty","value":30}
+{"t":669.597,"name":"Fan 1 Duty","value":30}
+{"t":669.924,"name":"GPU 1 Power","value":"0.0"}
+{"t":670.043,"name":"GPU 1 Temp","value":"22.0"}
+{"t":672.672,"name":"Fan 2 RPM","value":9744}
+{"t":672.912,"name":"Fan 1 FF Duty","value":30}
+{"t":673.166,"name":"Fan 0 RPM","value":9780}
+{"t":673.292,"name":"Fan 0 FF Duty","value":30}
+{"t":673.475,"name":"Fan 2 FF Duty","value":30}
+{"t":673.776,"name":"Fan 0 Duty","value":30}
+{"t":673.933,"name":"GPU 2 Power","value":"0.0"}
+{"t":674.105,"name":"GPU 2 Temp","value":"24.0"}
+{"t":674.139,"name":"Fan 1 RPM","value":9540}
+{"t":674.346,"name":"Fan 2 Duty","value":30}
+{"t":674.597,"name":"Fan 1 Duty","value":30}
+{"t":676.989,"name":"GPU 0 Power","value":"0.0"}
+{"t":677.134,"name":"GPU 0 Temp","value":"25.0"}
+{"t":677.671,"name":"Fan 2 RPM","value":9750}
+{"t":677.917,"name":"Fan 1 FF Duty","value":30}
+{"t":678.151,"name":"Fan 0 RPM","value":9780}
+{"t":678.296,"name":"Fan 0 FF Duty","value":30}
+{"t":678.507,"name":"Fan 2 FF Duty","value":30}
+{"t":678.771,"name":"Fan 0 Duty","value":30}
+{"t":679.127,"name":"Fan 1 RPM","value":9540}
+{"t":679.345,"name":"Fan 2 Duty","value":30}
+{"t":679.597,"name":"Fan 1 Duty","value":30}
+{"t":680.058,"name":"GPU 1 Power","value":"0.0"}
+{"t":680.145,"name":"GPU 1 Temp","value":"22.0"}
+{"t":682.675,"name":"Fan 2 RPM","value":9744}
+{"t":682.911,"name":"Fan 1 FF Duty","value":30}
+{"t":683.139,"name":"Fan 0 RPM","value":9786}
+{"t":683.291,"name":"Fan 0 FF Duty","value":30}
+{"t":683.478,"name":"Fan 2 FF Duty","value":30}
+{"t":683.78,"name":"Fan 0 Duty","value":30}
+{"t":683.986,"name":"GPU 2 Power","value":"0.0"}
+{"t":684.06,"name":"GPU 2 Temp","value":"24.0"}
+{"t":684.123,"name":"Fan 1 RPM","value":9540}
+{"t":684.346,"name":"Fan 2 Duty","value":30}
+{"t":684.601,"name":"Fan 1 Duty","value":30}
+{"t":687.215,"name":"GPU 0 Power","value":"0.0"}
+{"t":687.283,"name":"GPU 0 Temp","value":"25.0"}
+{"t":687.697,"name":"Fan 2 RPM","value":9744}
+{"t":687.915,"name":"Fan 1 FF Duty","value":30}
+{"t":688.137,"name":"Fan 0 RPM","value":9780}
+{"t":688.293,"name":"Fan 0 FF Duty","value":30}
+{"t":688.497,"name":"Fan 2 FF Duty","value":30}
+{"t":688.771,"name":"Fan 0 Duty","value":30}
+{"t":689.182,"name":"Fan 1 RPM","value":9540}
+{"t":689.347,"name":"Fan 2 Duty","value":30}
+{"t":689.62,"name":"Fan 1 Duty","value":30}
+{"t":690.185,"name":"GPU 1 Power","value":"0.0"}
+{"t":690.382,"name":"GPU 1 Temp","value":"22.0"}
+{"t":692.686,"name":"Fan 2 RPM","value":9750}
+{"t":692.911,"name":"Fan 1 FF Duty","value":30}
+{"t":693.135,"name":"Fan 0 RPM","value":9786}
+{"t":693.297,"name":"Fan 0 FF Duty","value":30}
+{"t":693.506,"name":"Fan 2 FF Duty","value":30}
+{"t":693.771,"name":"Fan 0 Duty","value":30}
+{"t":694.125,"name":"Fan 1 RPM","value":9540}
+{"t":694.231,"name":"GPU 2 Power","value":"0.0"}
+{"t":694.366,"name":"Fan 2 Duty","value":30}
+{"t":694.481,"name":"GPU 2 Temp","value":"24.0"}
+{"t":694.596,"name":"Fan 1 Duty","value":30}
+{"t":697.352,"name":"GPU 0 Power","value":"0.0"}
+{"t":697.471,"name":"GPU 0 Temp","value":"25.0"}
+{"t":697.71,"name":"Fan 2 RPM","value":9744}
+{"t":697.973,"name":"Fan 1 FF Duty","value":30}
+{"t":698.137,"name":"Fan 0 RPM","value":9780}
+{"t":698.315,"name":"Fan 0 FF Duty","value":30}
+{"t":698.473,"name":"Fan 2 FF Duty","value":30}
+{"t":698.77,"name":"Fan 0 Duty","value":30}
+{"t":699.174,"name":"Fan 1 RPM","value":9540}
+{"t":699.35,"name":"Fan 2 Duty","value":30}
+{"t":699.597,"name":"Fan 1 Duty","value":30}
+{"t":700.212,"name":"GPU 1 Power","value":"0.0"}
+{"t":700.391,"name":"GPU 1 Temp","value":"22.0"}
+{"t":702.671,"name":"Fan 2 RPM","value":9744}
+{"t":702.916,"name":"Fan 1 FF Duty","value":30}
+{"t":703.145,"name":"Fan 0 RPM","value":9786}
+{"t":703.291,"name":"Fan 0 FF Duty","value":30}
+{"t":703.474,"name":"Fan 2 FF Duty","value":30}
+{"t":703.77,"name":"Fan 0 Duty","value":30}
+{"t":704.125,"name":"Fan 1 RPM","value":9540}
+{"t":704.249,"name":"GPU 2 Power","value":"0.0"}
+{"t":704.354,"name":"GPU 2 Temp","value":"24.0"}
+{"t":704.36,"name":"Fan 2 Duty","value":30}
+{"t":704.596,"name":"Fan 1 Duty","value":30}
+{"t":707.491,"name":"GPU 0 Power","value":"0.0"}
+{"t":707.644,"name":"GPU 0 Temp","value":"24.9"}
+{"t":707.674,"name":"Fan 2 RPM","value":9750}
+{"t":707.913,"name":"Fan 1 FF Duty","value":30}
+{"t":708.152,"name":"Fan 0 RPM","value":9780}
+{"t":708.291,"name":"Fan 0 FF Duty","value":30}
+{"t":708.472,"name":"Fan 2 FF Duty","value":30}
+{"t":708.772,"name":"Fan 0 Duty","value":30}
+{"t":709.129,"name":"Fan 1 RPM","value":9540}
+{"t":709.421,"name":"Fan 2 Duty","value":30}
+{"t":709.596,"name":"Fan 1 Duty","value":30}
+{"t":710.296,"name":"GPU 1 Power","value":"0.0"}
+{"t":710.414,"name":"GPU 1 Temp","value":"22.0"}
+{"t":712.67,"name":"Fan 2 RPM","value":9744}
+{"t":712.91,"name":"Fan 1 FF Duty","value":30}
+{"t":713.157,"name":"Fan 0 RPM","value":9786}
+{"t":713.291,"name":"Fan 0 FF Duty","value":30}
+{"t":713.472,"name":"Fan 2 FF Duty","value":30}
+{"t":713.77,"name":"Fan 0 Duty","value":30}
+{"t":714.178,"name":"Fan 1 RPM","value":9540}
+{"t":714.277,"name":"GPU 2 Power","value":"0.0"}
+{"t":714.354,"name":"Fan 2 Duty","value":30}
+{"t":714.409,"name":"GPU 2 Temp","value":"24.0"}
+{"t":714.612,"name":"Fan 1 Duty","value":30}
+{"t":717.514,"name":"GPU 0 Power","value":"0.0"}
+{"t":717.62,"name":"GPU 0 Temp","value":"24.9"}
+{"t":717.682,"name":"Fan 2 RPM","value":9750}
+{"t":717.916,"name":"Fan 1 FF Duty","value":30}
+{"t":718.136,"name":"Fan 0 RPM","value":9786}
+{"t":718.291,"name":"Fan 0 FF Duty","value":30}
+{"t":718.475,"name":"Fan 2 FF Duty","value":30}
+{"t":718.792,"name":"Fan 0 Duty","value":30}
+{"t":719.165,"name":"Fan 1 RPM","value":9546}
+{"t":719.348,"name":"Fan 2 Duty","value":30}
+{"t":719.599,"name":"Fan 1 Duty","value":30}
+{"t":720.276,"name":"GPU 1 Power","value":"0.0"}
+{"t":720.473,"name":"GPU 1 Temp","value":"22.0"}
+{"t":722.683,"name":"Fan 2 RPM","value":9744}
+{"t":722.91,"name":"Fan 1 FF Duty","value":30}
+{"t":723.136,"name":"Fan 0 RPM","value":9786}
+{"t":723.291,"name":"Fan 0 FF Duty","value":30}
+{"t":723.491,"name":"Fan 2 FF Duty","value":30}
+{"t":723.77,"name":"Fan 0 Duty","value":30}
+{"t":724.123,"name":"Fan 1 RPM","value":9540}
+{"t":724.315,"name":"GPU 2 Power","value":"0.0"}
+{"t":724.362,"name":"Fan 2 Duty","value":30}
+{"t":724.427,"name":"GPU 2 Temp","value":"24.0"}
+{"t":724.616,"name":"Fan 1 Duty","value":30}
+{"t":727.685,"name":"GPU 0 Power","value":"0.0"}
+{"t":727.695,"name":"Fan 2 RPM","value":9750.15}
+{"t":727.828,"name":"GPU 0 Temp","value":"24.7"}
+{"t":727.913,"name":"Fan 1 FF Duty","value":30}
+{"t":728.136,"name":"Fan 0 RPM","value":9792}
+{"t":728.297,"name":"Fan 0 FF Duty","value":30}
+{"t":728.479,"name":"Fan 2 FF Duty","value":30}
+{"t":728.769,"name":"Fan 0 Duty","value":30}
+{"t":729.124,"name":"Fan 1 RPM","value":9540}
+{"t":729.348,"name":"Fan 2 Duty","value":30}
+{"t":729.596,"name":"Fan 1 Duty","value":30}
+{"t":730.566,"name":"GPU 1 Power","value":"0.0"}
+{"t":730.692,"name":"GPU 1 Temp","value":"22.0"}
+{"t":732.673,"name":"Fan 2 RPM","value":9750}
+{"t":732.913,"name":"Fan 1 FF Duty","value":30}
+{"t":733.135,"name":"Fan 0 RPM","value":9780}
+{"t":733.293,"name":"Fan 0 FF Duty","value":30}
+{"t":733.472,"name":"Fan 2 FF Duty","value":30}
+{"t":733.772,"name":"Fan 0 Duty","value":30}
+{"t":734.152,"name":"Fan 1 RPM","value":9546}
+{"t":734.349,"name":"Fan 2 Duty","value":30}
+{"t":734.579,"name":"GPU 2 Power","value":"0.0"}
+{"t":734.603,"name":"Fan 1 Duty","value":30}
+{"t":734.685,"name":"GPU 2 Temp","value":"24.0"}
+{"t":737.673,"name":"Fan 2 RPM","value":9750}
+{"t":737.77,"name":"GPU 0 Power","value":"0.0"}
+{"t":737.922,"name":"GPU 0 Temp","value":"24.2"}
+{"t":737.94,"name":"Fan 1 FF Duty","value":30}
+{"t":738.135,"name":"Fan 0 RPM","value":9786}
+{"t":738.29,"name":"Fan 0 FF Duty","value":30}
+{"t":738.479,"name":"Fan 2 FF Duty","value":30}
+{"t":738.77,"name":"Fan 0 Duty","value":30}
+{"t":739.124,"name":"Fan 1 RPM","value":9540}
+{"t":739.348,"name":"Fan 2 Duty","value":30}
+{"t":739.597,"name":"Fan 1 Duty","value":30}
+{"t":740.581,"name":"GPU 1 Power","value":"0.0"}
+{"t":740.717,"name":"GPU 1 Temp","value":"22.0"}
+{"t":742.676,"name":"Fan 2 RPM","value":9744}
+{"t":742.933,"name":"Fan 1 FF Duty","value":30}
+{"t":743.15,"name":"Fan 0 RPM","value":9786}
+{"t":743.29,"name":"Fan 0 FF Duty","value":30}
+{"t":743.471,"name":"Fan 2 FF Duty","value":30}
+{"t":743.769,"name":"Fan 0 Duty","value":30}
+{"t":744.124,"name":"Fan 1 RPM","value":9534}
+{"t":744.365,"name":"Fan 2 Duty","value":30}
+{"t":744.612,"name":"Fan 1 Duty","value":30}
+{"t":744.629,"name":"GPU 2 Power","value":"0.0"}
+{"t":744.749,"name":"GPU 2 Temp","value":"24.0"}
+{"t":747.683,"name":"Fan 2 RPM","value":9744}
+{"t":747.9,"name":"GPU 0 Power","value":"0.0"}
+{"t":747.944,"name":"Fan 1 FF Duty","value":30}
+{"t":748.008,"name":"GPU 0 Temp","value":"24.0"}
+{"t":748.194,"name":"Fan 0 RPM","value":9786}
+{"t":748.29,"name":"Fan 0 FF Duty","value":30}
+{"t":748.481,"name":"Fan 2 FF Duty","value":30}
+{"t":748.769,"name":"Fan 0 Duty","value":30}
+{"t":749.147,"name":"Fan 1 RPM","value":9534}
+{"t":749.379,"name":"Fan 2 Duty","value":30}
+{"t":749.598,"name":"Fan 1 Duty","value":30}
+{"t":750.676,"name":"GPU 1 Power","value":"0.0"}
+{"t":750.813,"name":"GPU 1 Temp","value":"22.0"}
+{"t":752.675,"name":"Fan 2 RPM","value":9750}
+{"t":752.912,"name":"Fan 1 FF Duty","value":30}
+{"t":753.137,"name":"Fan 0 RPM","value":9786}
+{"t":753.292,"name":"Fan 0 FF Duty","value":30}
+{"t":753.472,"name":"Fan 2 FF Duty","value":30}
+{"t":753.777,"name":"Fan 0 Duty","value":30}
+{"t":754.123,"name":"Fan 1 RPM","value":9534}
+{"t":754.35,"name":"Fan 2 Duty","value":30}
+{"t":754.601,"name":"Fan 1 Duty","value":30}
+{"t":754.669,"name":"GPU 2 Power","value":"0.0"}
+{"t":754.77,"name":"GPU 2 Temp","value":"24.0"}
+{"t":757.674,"name":"Fan 2 RPM","value":9750}
+{"t":757.885,"name":"GPU 0 Power","value":"0.0"}
+{"t":757.915,"name":"Fan 1 FF Duty","value":30}
+{"t":757.994,"name":"GPU 0 Temp","value":"24.1"}
+{"t":758.137,"name":"Fan 0 RPM","value":9780}
+{"t":758.292,"name":"Fan 0 FF Duty","value":30}
+{"t":758.515,"name":"Fan 2 FF Duty","value":30}
+{"t":758.769,"name":"Fan 0 Duty","value":30}
+{"t":759.121,"name":"Fan 1 RPM","value":9534}
+{"t":759.349,"name":"Fan 2 Duty","value":30}
+{"t":759.623,"name":"Fan 1 Duty","value":30}
+{"t":760.896,"name":"GPU 1 Power","value":"0.0"}
+{"t":760.963,"name":"GPU 1 Temp","value":"22.0"}
+{"t":762.697,"name":"Fan 2 RPM","value":9744}
+{"t":762.912,"name":"Fan 1 FF Duty","value":30}
+{"t":763.137,"name":"Fan 0 RPM","value":9780}
+{"t":763.314,"name":"Fan 0 FF Duty","value":30}
+{"t":763.473,"name":"Fan 2 FF Duty","value":30}
+{"t":763.769,"name":"Fan 0 Duty","value":30}
+{"t":764.123,"name":"Fan 1 RPM","value":9534}
+{"t":764.349,"name":"Fan 2 Duty","value":30}
+{"t":764.597,"name":"Fan 1 Duty","value":30}
+{"t":764.787,"name":"GPU 2 Power","value":"0.0"}
+{"t":764.907,"name":"GPU 2 Temp","value":"24.0"}
+{"t":767.674,"name":"Fan 2 RPM","value":9744}
+{"t":767.921,"name":"Fan 1 FF Duty","value":30}
+{"t":768.0,"name":"GPU 0 Power","value":"0.0"}
+{"t":768.072,"name":"GPU 0 Temp","value":"24.1"}
+{"t":768.137,"name":"Fan 0 RPM","value":9784.043}
+{"t":768.29,"name":"Fan 0 FF Duty","value":30}
+{"t":768.47,"name":"Fan 2 FF Duty","value":30}
+{"t":768.769,"name":"Fan 0 Duty","value":30}
+{"t":769.132,"name":"Fan 1 RPM","value":9534}
+{"t":769.347,"name":"Fan 2 Duty","value":30}
+{"t":769.597,"name":"Fan 1 Duty","value":30}
+{"t":771.009,"name":"GPU 1 Power","value":"0.0"}
+{"t":771.102,"name":"GPU 1 Temp","value":"22.1"}
+{"t":772.673,"name":"Fan 2 RPM","value":9744}
+{"t":772.915,"name":"Fan 1 FF Duty","value":30}
+{"t":773.135,"name":"Fan 0 RPM","value":9792}
+{"t":773.291,"name":"Fan 0 FF Duty","value":30}
+{"t":773.471,"name":"Fan 2 FF Duty","value":30}
+{"t":773.77,"name":"Fan 0 Duty","value":30}
+{"t":774.152,"name":"Fan 1 RPM","value":9540}
+{"t":774.349,"name":"Fan 2 Duty","value":30}
+{"t":774.616,"name":"Fan 1 Duty","value":30}
+{"t":775.016,"name":"GPU 2 Power","value":"0.0"}
+{"t":775.107,"name":"GPU 2 Temp","value":"24.0"}
+{"t":777.674,"name":"Fan 2 RPM","value":9744}
+{"t":777.93,"name":"Fan 1 FF Duty","value":30}
+{"t":778.146,"name":"Fan 0 RPM","value":9792}
+{"t":778.201,"name":"GPU 0 Power","value":"0.0"}
+{"t":778.29,"name":"Fan 0 FF Duty","value":30}
+{"t":778.349,"name":"GPU 0 Temp","value":"24.1"}
+{"t":778.471,"name":"Fan 2 FF Duty","value":30}
+{"t":778.769,"name":"Fan 0 Duty","value":30}
+{"t":779.128,"name":"Fan 1 RPM","value":9534}
+{"t":779.363,"name":"Fan 2 Duty","value":30}
+{"t":779.597,"name":"Fan 1 Duty","value":30}
+{"t":780.957,"name":"GPU 1 Power","value":"0.0"}
+{"t":781.03,"name":"GPU 1 Temp","value":"22.0"}
+{"t":782.678,"name":"Fan 2 RPM","value":9750}
+{"t":782.916,"name":"Fan 1 FF Duty","value":30}
+{"t":783.156,"name":"Fan 0 RPM","value":9786}
+{"t":783.289,"name":"Fan 0 FF Duty","value":30}
+{"t":783.491,"name":"Fan 2 FF Duty","value":30}
+{"t":783.777,"name":"Fan 0 Duty","value":30}
+{"t":784.122,"name":"Fan 1 RPM","value":9534}
+{"t":784.346,"name":"Fan 2 Duty","value":30}
+{"t":784.597,"name":"Fan 1 Duty","value":30}
+{"t":785.154,"name":"GPU 2 Power","value":"0.0"}
+{"t":785.229,"name":"GPU 2 Temp","value":"24.0"}
+{"t":787.672,"name":"Fan 2 RPM","value":9744}
+{"t":787.912,"name":"Fan 1 FF Duty","value":30}
+{"t":788.136,"name":"Fan 0 RPM","value":9786}
+{"t":788.291,"name":"Fan 0 FF Duty","value":30}
+{"t":788.303,"name":"GPU 0 Power","value":"0.0"}
+{"t":788.388,"name":"GPU 0 Temp","value":"24.0"}
+{"t":788.471,"name":"Fan 2 FF Duty","value":30}
+{"t":788.777,"name":"Fan 0 Duty","value":30}
+{"t":789.121,"name":"Fan 1 RPM","value":9534}
+{"t":789.346,"name":"Fan 2 Duty","value":30}
+{"t":789.607,"name":"Fan 1 Duty","value":30}
+{"t":791.093,"name":"GPU 1 Power","value":"0.0"}
+{"t":791.161,"name":"GPU 1 Temp","value":"22.0"}
+{"t":792.672,"name":"Fan 2 RPM","value":9744}
+{"t":792.912,"name":"Fan 1 FF Duty","value":30}
+{"t":793.136,"name":"Fan 0 RPM","value":9786}
+{"t":793.29,"name":"Fan 0 FF Duty","value":30}
+{"t":793.484,"name":"Fan 2 FF Duty","value":30}
+{"t":793.806,"name":"Fan 0 Duty","value":30}
+{"t":794.124,"name":"Fan 1 RPM","value":9534}
+{"t":794.348,"name":"Fan 2 Duty","value":30}
+{"t":794.619,"name":"Fan 1 Duty","value":30}
+{"t":795.282,"name":"GPU 2 Power","value":"0.0"}
+{"t":795.356,"name":"GPU 2 Temp","value":"24.0"}
+{"t":797.683,"name":"Fan 2 RPM","value":9750}
+{"t":797.911,"name":"Fan 1 FF Duty","value":30}
+{"t":798.135,"name":"Fan 0 RPM","value":9786}
+{"t":798.292,"name":"Fan 0 FF Duty","value":30}
+{"t":798.461,"name":"GPU 0 Power","value":"0.0"}
+{"t":798.471,"name":"Fan 2 FF Duty","value":30}
+{"t":798.572,"name":"GPU 0 Temp","value":"24.0"}
+{"t":798.774,"name":"Fan 0 Duty","value":30}
+{"t":799.121,"name":"Fan 1 RPM","value":9540}
+{"t":799.345,"name":"Fan 2 Duty","value":30}
+{"t":799.598,"name":"Fan 1 Duty","value":30}
+{"t":801.323,"name":"GPU 1 Power","value":"0.0"}
+{"t":801.421,"name":"GPU 1 Temp","value":"22.0"}
+{"t":802.752,"name":"Fan 2 RPM","value":9750}
+{"t":802.913,"name":"Fan 1 FF Duty","value":30}
+{"t":803.137,"name":"Fan 0 RPM","value":9786}
+{"t":803.305,"name":"Fan 0 FF Duty","value":30}
+{"t":803.469,"name":"Fan 2 FF Duty","value":30}
+{"t":803.768,"name":"Fan 0 Duty","value":30}
+{"t":804.128,"name":"Fan 1 RPM","value":9534}
+{"t":804.346,"name":"Fan 2 Duty","value":30}
+{"t":804.637,"name":"Fan 1 Duty","value":30}
+{"t":805.319,"name":"GPU 2 Power","value":"0.0"}
+{"t":805.454,"name":"GPU 2 Temp","value":"24.0"}
+{"t":807.671,"name":"Fan 2 RPM","value":9744}
+{"t":807.917,"name":"Fan 1 FF Duty","value":30}
+{"t":808.137,"name":"Fan 0 RPM","value":9780}
+{"t":808.289,"name":"Fan 0 FF Duty","value":30}
+{"t":808.47,"name":"Fan 2 FF Duty","value":30}
+{"t":808.53,"name":"GPU 0 Power","value":"0.0"}
+{"t":808.653,"name":"GPU 0 Temp","value":"24.1"}
+{"t":808.777,"name":"Fan 0 Duty","value":30}
+{"t":809.242,"name":"Fan 1 RPM","value":9540}
+{"t":809.348,"name":"Fan 2 Duty","value":30}
+{"t":809.598,"name":"Fan 1 Duty","value":30}
+{"t":811.358,"name":"GPU 1 Power","value":"0.0"}
+{"t":811.458,"name":"GPU 1 Temp","value":"22.0"}
+{"t":812.789,"name":"Fan 2 RPM","value":9750}
+{"t":812.926,"name":"Fan 1 FF Duty","value":30}
+{"t":813.138,"name":"Fan 0 RPM","value":9786}
+{"t":813.288,"name":"Fan 0 FF Duty","value":30}
+{"t":813.47,"name":"Fan 2 FF Duty","value":30}
+{"t":813.768,"name":"Fan 0 Duty","value":30}
+{"t":814.121,"name":"Fan 1 RPM","value":9540}
+{"t":814.361,"name":"Fan 2 Duty","value":30}
+{"t":814.596,"name":"Fan 1 Duty","value":30}
+{"t":815.346,"name":"GPU 2 Power","value":"0.0"}
+{"t":815.451,"name":"GPU 2 Temp","value":"24.0"}
+{"t":817.677,"name":"Fan 2 RPM","value":9750}
+{"t":817.919,"name":"Fan 1 FF Duty","value":30}
+{"t":818.149,"name":"Fan 0 RPM","value":9792}
+{"t":818.288,"name":"Fan 0 FF Duty","value":30}
+{"t":818.47,"name":"Fan 2 FF Duty","value":30}
+{"t":818.587,"name":"GPU 0 Power","value":"0.0"}
+{"t":818.78,"name":"Fan 0 Duty","value":30}
+{"t":818.802,"name":"GPU 0 Temp","value":"24.0"}
+{"t":819.125,"name":"Fan 1 RPM","value":9534}
+{"t":819.346,"name":"Fan 2 Duty","value":30}
+{"t":819.597,"name":"Fan 1 Duty","value":30}
+{"t":821.477,"name":"GPU 1 Power","value":"0.0"}
+{"t":821.563,"name":"GPU 1 Temp","value":"22.0"}
+{"t":822.752,"name":"Fan 2 RPM","value":9744}
+{"t":822.911,"name":"Fan 1 FF Duty","value":30}
+{"t":823.14,"name":"Fan 0 RPM","value":9786}
+{"t":823.289,"name":"Fan 0 FF Duty","value":30}
+{"t":823.471,"name":"Fan 2 FF Duty","value":30}
+{"t":823.773,"name":"Fan 0 Duty","value":30}
+{"t":824.123,"name":"Fan 1 RPM","value":9540}
+{"t":824.346,"name":"Fan 2 Duty","value":30}
+{"t":824.598,"name":"Fan 1 Duty","value":30}
+{"t":825.476,"name":"GPU 2 Power","value":"0.0"}
+{"t":825.568,"name":"GPU 2 Temp","value":"24.0"}
+{"t":827.671,"name":"Fan 2 RPM","value":9750}
+{"t":827.911,"name":"Fan 1 FF Duty","value":30}
+{"t":828.138,"name":"Fan 0 RPM","value":9792}
+{"t":828.289,"name":"Fan 0 FF Duty","value":30}
+{"t":828.489,"name":"Fan 2 FF Duty","value":30}
+{"t":828.651,"name":"GPU 0 Power","value":"0.0"}
+{"t":828.728,"name":"GPU 0 Temp","value":"24.0"}
+{"t":828.831,"name":"Fan 0 Duty","value":30}
+{"t":829.122,"name":"Fan 1 RPM","value":9540}
+{"t":829.346,"name":"Fan 2 Duty","value":30}
+{"t":829.609,"name":"Fan 1 Duty","value":30}
+{"t":831.41,"name":"GPU 1 Power","value":"0.0"}
+{"t":831.475,"name":"GPU 1 Temp","value":"22.0"}
+{"t":832.679,"name":"Fan 2 RPM","value":9744}
+{"t":832.916,"name":"Fan 1 FF Duty","value":30}
+{"t":833.14,"name":"Fan 0 RPM","value":9792}
+{"t":833.29,"name":"Fan 0 FF Duty","value":30}
+{"t":833.469,"name":"Fan 2 FF Duty","value":30}
+{"t":833.801,"name":"Fan 0 Duty","value":30}
+{"t":834.125,"name":"Fan 1 RPM","value":9534}
+{"t":834.346,"name":"Fan 2 Duty","value":30}
+{"t":834.597,"name":"Fan 1 Duty","value":30}
+{"t":835.597,"name":"GPU 2 Power","value":"0.0"}
+{"t":835.725,"name":"GPU 2 Temp","value":"24.0"}
+{"t":837.671,"name":"Fan 2 RPM","value":9744}
+{"t":837.91,"name":"Fan 1 FF Duty","value":30}
+{"t":838.134,"name":"Fan 0 RPM","value":9792}
+{"t":838.307,"name":"Fan 0 FF Duty","value":30}
+{"t":838.469,"name":"Fan 2 FF Duty","value":30}
+{"t":838.767,"name":"Fan 0 Duty","value":30}
+{"t":838.896,"name":"GPU 0 Power","value":"0.0"}
+{"t":839.023,"name":"GPU 0 Temp","value":"24.0"}
+{"t":839.247,"name":"Fan 1 RPM","value":9538.093}
+{"t":839.347,"name":"Fan 2 Duty","value":30}
+{"t":839.595,"name":"Fan 1 Duty","value":30}
+{"t":841.74,"name":"GPU 1 Power","value":"0.0"}
+{"t":841.822,"name":"GPU 1 Temp","value":"22.0"}
+{"t":842.676,"name":"Fan 2 RPM","value":9744}
+{"t":842.96,"name":"Fan 1 FF Duty","value":30}
+{"t":843.143,"name":"Fan 0 RPM","value":9792}
+{"t":843.289,"name":"Fan 0 FF Duty","value":30}
+{"t":843.469,"name":"Fan 2 FF Duty","value":30}
+{"t":843.767,"name":"Fan 0 Duty","value":30}
+{"t":844.151,"name":"Fan 1 RPM","value":9534}
+{"t":844.347,"name":"Fan 2 Duty","value":30}
+{"t":844.595,"name":"Fan 1 Duty","value":30}
+{"t":845.746,"name":"GPU 2 Power","value":"0.0"}
+{"t":845.933,"name":"GPU 2 Temp","value":"24.0"}
+{"t":847.67,"name":"Fan 2 RPM","value":9750}
+{"t":847.925,"name":"Fan 1 FF Duty","value":30}
+{"t":848.135,"name":"Fan 0 RPM","value":9786}
+{"t":848.288,"name":"Fan 0 FF Duty","value":30}
+{"t":848.469,"name":"Fan 2 FF Duty","value":30}
+{"t":848.786,"name":"Fan 0 Duty","value":30}
+{"t":849.115,"name":"GPU 0 Power","value":"0.0"}
+{"t":849.158,"name":"Fan 1 RPM","value":9534.559}
+{"t":849.315,"name":"GPU 0 Temp","value":"24.0"}
+{"t":849.362,"name":"Fan 2 Duty","value":30}
+{"t":849.597,"name":"Fan 1 Duty","value":30}
+{"t":851.775,"name":"GPU 1 Power","value":"0.0"}
+{"t":851.96,"name":"GPU 1 Temp","value":"22.0"}
+{"t":852.67,"name":"Fan 2 RPM","value":9744}
+{"t":852.913,"name":"Fan 1 FF Duty","value":30}
+{"t":853.149,"name":"Fan 0 RPM","value":9786}
+{"t":853.287,"name":"Fan 0 FF Duty","value":30}
+{"t":853.469,"name":"Fan 2 FF Duty","value":30}
+{"t":853.767,"name":"Fan 0 Duty","value":30}
+{"t":854.128,"name":"Fan 1 RPM","value":9535.907}
+{"t":854.346,"name":"Fan 2 Duty","value":30}
+{"t":854.6,"name":"Fan 1 Duty","value":30}
+{"t":855.869,"name":"GPU 2 Power","value":"0.0"}
+{"t":855.965,"name":"GPU 2 Temp","value":"24.0"}
+{"t":857.668,"name":"Fan 2 RPM","value":9744}
+{"t":857.916,"name":"Fan 1 FF Duty","value":30}
+{"t":858.175,"name":"Fan 0 RPM","value":9780}
+{"t":858.289,"name":"Fan 0 FF Duty","value":30}
+{"t":858.469,"name":"Fan 2 FF Duty","value":30}
+{"t":858.772,"name":"Fan 0 Duty","value":30}
+{"t":859.143,"name":"Fan 1 RPM","value":9540}
+{"t":859.203,"name":"GPU 0 Power","value":"0.0"}
+{"t":859.314,"name":"GPU 0 Temp","value":"24.0"}
+{"t":859.352,"name":"Fan 2 Duty","value":30}
+{"t":859.606,"name":"Fan 1 Duty","value":30}
+{"t":861.742,"name":"GPU 1 Power","value":"0.0"}
+{"t":861.82,"name":"GPU 1 Temp","value":"22.0"}
+{"t":862.671,"name":"Fan 2 RPM","value":9750}
+{"t":862.912,"name":"Fan 1 FF Duty","value":30}
+{"t":863.133,"name":"Fan 0 RPM","value":9786}
+{"t":863.288,"name":"Fan 0 FF Duty","value":30}
+{"t":863.485,"name":"Fan 2 FF Duty","value":30}
+{"t":863.784,"name":"Fan 0 Duty","value":30}
+{"t":864.126,"name":"Fan 1 RPM","value":9540}
+{"t":864.346,"name":"Fan 2 Duty","value":30}
+{"t":864.606,"name":"Fan 1 Duty","value":30}
+{"t":865.992,"name":"GPU 2 Power","value":"0.0"}
+{"t":866.157,"name":"GPU 2 Temp","value":"24.0"}
+{"t":867.689,"name":"Fan 2 RPM","value":9744}
+{"t":867.912,"name":"Fan 1 FF Duty","value":30}
+{"t":868.133,"name":"Fan 0 RPM","value":9780}
+{"t":868.293,"name":"Fan 0 FF Duty","value":30}
+{"t":868.468,"name":"Fan 2 FF Duty","value":30}
+{"t":868.766,"name":"Fan 0 Duty","value":30}
+{"t":869.187,"name":"Fan 1 RPM","value":9540}
+{"t":869.27,"name":"GPU 0 Power","value":"0.0"}
+{"t":869.35,"name":"Fan 2 Duty","value":30}
+{"t":869.417,"name":"GPU 0 Temp","value":"24.0"}
+{"t":869.595,"name":"Fan 1 Duty","value":30}
+{"t":871.874,"name":"GPU 1 Power","value":"0.0"}
+{"t":871.942,"name":"GPU 1 Temp","value":"22.0"}
+{"t":872.669,"name":"Fan 2 RPM","value":9750}
+{"t":872.918,"name":"Fan 1 FF Duty","value":30}
+{"t":873.14,"name":"Fan 0 RPM","value":9780}
+{"t":873.355,"name":"Fan 0 FF Duty","value":30}
+{"t":873.468,"name":"Fan 2 FF Duty","value":30}
+{"t":873.766,"name":"Fan 0 Duty","value":30}
+{"t":874.14,"name":"Fan 1 RPM","value":9540}
+{"t":874.345,"name":"Fan 2 Duty","value":30}
+{"t":874.596,"name":"Fan 1 Duty","value":30}
+{"t":876.144,"name":"GPU 2 Power","value":"0.0"}
+{"t":876.236,"name":"GPU 2 Temp","value":"24.0"}
+{"t":877.669,"name":"Fan 2 RPM","value":9750}
+{"t":877.91,"name":"Fan 1 FF Duty","value":30}
+{"t":878.134,"name":"Fan 0 RPM","value":9786}
+{"t":878.286,"name":"Fan 0 FF Duty","value":30}
+{"t":878.47,"name":"Fan 2 FF Duty","value":30}
+{"t":878.766,"name":"Fan 0 Duty","value":30}
+{"t":879.155,"name":"Fan 1 RPM","value":9540}
+{"t":879.348,"name":"Fan 2 Duty","value":30}
+{"t":879.369,"name":"GPU 0 Power","value":"0.0"}
+{"t":879.453,"name":"GPU 0 Temp","value":"24.1"}
+{"t":879.597,"name":"Fan 1 Duty","value":30}
+{"t":881.86,"name":"GPU 1 Power","value":"0.0"}
+{"t":881.926,"name":"GPU 1 Temp","value":"22.0"}
+{"t":882.672,"name":"Fan 2 RPM","value":9744}
+{"t":882.925,"name":"Fan 1 FF Duty","value":30}
+{"t":883.134,"name":"Fan 0 RPM","value":9780}
+{"t":883.287,"name":"Fan 0 FF Duty","value":30}
+{"t":883.468,"name":"Fan 2 FF Duty","value":30}
+{"t":883.766,"name":"Fan 0 Duty","value":30}
+{"t":884.152,"name":"Fan 1 RPM","value":9540}
+{"t":884.364,"name":"Fan 2 Duty","value":30}
+{"t":884.594,"name":"Fan 1 Duty","value":30}
+{"t":886.361,"name":"GPU 2 Power","value":"0.0"}
+{"t":886.471,"name":"GPU 2 Temp","value":"24.0"}
+{"t":887.67,"name":"Fan 2 RPM","value":9744}
+{"t":887.909,"name":"Fan 1 FF Duty","value":30}
+{"t":888.148,"name":"Fan 0 RPM","value":9792}
+{"t":888.289,"name":"Fan 0 FF Duty","value":30}
+{"t":888.468,"name":"Fan 2 FF Duty","value":30}
+{"t":888.766,"name":"Fan 0 Duty","value":30}
+{"t":889.126,"name":"Fan 1 RPM","value":9534}
+{"t":889.345,"name":"Fan 2 Duty","value":30}
+{"t":889.602,"name":"Fan 1 Duty","value":30}
+{"t":889.616,"name":"GPU 0 Power","value":"0.0"}
+{"t":889.721,"name":"GPU 0 Temp","value":"24.0"}
+{"t":891.928,"name":"GPU 1 Power","value":"0.0"}
+{"t":892.009,"name":"GPU 1 Temp","value":"22.0"}
+{"t":892.67,"name":"Fan 2 RPM","value":9744}
+{"t":892.923,"name":"Fan 1 FF Duty","value":30}
+{"t":893.135,"name":"Fan 0 RPM","value":9786}
+{"t":893.307,"name":"Fan 0 FF Duty","value":30}
+{"t":893.468,"name":"Fan 2 FF Duty","value":30}
+{"t":893.788,"name":"Fan 0 Duty","value":30}
+{"t":894.128,"name":"Fan 1 RPM","value":9540}
+{"t":894.345,"name":"Fan 2 Duty","value":30}
+{"t":894.597,"name":"Fan 1 Duty","value":30}
+{"t":896.398,"name":"GPU 2 Power","value":"0.0"}
+{"t":896.499,"name":"GPU 2 Temp","value":"24.0"}
+{"t":897.669,"name":"Fan 2 RPM","value":9750}
+{"t":897.909,"name":"Fan 1 FF Duty","value":30}
+{"t":898.132,"name":"Fan 0 RPM","value":9792}
+{"t":898.288,"name":"Fan 0 FF Duty","value":30}
+{"t":898.478,"name":"Fan 2 FF Duty","value":30}
+{"t":898.803,"name":"Fan 0 Duty","value":30}
+{"t":899.205,"name":"Fan 1 RPM","value":9540}
+{"t":899.349,"name":"Fan 2 Duty","value":30}
+{"t":899.607,"name":"Fan 1 Duty","value":30}
+{"t":899.668,"name":"GPU 0 Power","value":"0.0"}
+{"t":899.807,"name":"GPU 0 Temp","value":"24.0"}
+{"t":901.916,"name":"GPU 1 Power","value":"0.0"}
+{"t":901.983,"name":"GPU 1 Temp","value":"22.0"}
+{"t":902.706,"name":"Fan 2 RPM","value":9744}
+{"t":902.909,"name":"Fan 1 FF Duty","value":30}
+{"t":903.134,"name":"Fan 0 RPM","value":9786}
+{"t":903.286,"name":"Fan 0 FF Duty","value":30}
+{"t":903.47,"name":"Fan 2 FF Duty","value":30}
+{"t":903.766,"name":"Fan 0 Duty","value":30}
+{"t":904.125,"name":"Fan 1 RPM","value":9540}
+{"t":904.344,"name":"Fan 2 Duty","value":30}
+{"t":904.597,"name":"Fan 1 Duty","value":30}
+{"t":906.628,"name":"GPU 2 Power","value":"0.0"}
+{"t":906.709,"name":"GPU 2 Temp","value":"24.0"}
+{"t":907.759,"name":"Fan 2 RPM","value":9744}
+{"t":907.909,"name":"Fan 1 FF Duty","value":30}
+{"t":908.132,"name":"Fan 0 RPM","value":9792}
+{"t":908.304,"name":"Fan 0 FF Duty","value":30}
+{"t":908.467,"name":"Fan 2 FF Duty","value":30}
+{"t":908.765,"name":"Fan 0 Duty","value":30}
+{"t":909.18,"name":"Fan 1 RPM","value":9540}
+{"t":909.344,"name":"Fan 2 Duty","value":30}
+{"t":909.597,"name":"Fan 1 Duty","value":30}
+{"t":909.863,"name":"GPU 0 Power","value":"0.0"}
+{"t":909.94,"name":"GPU 0 Temp","value":"24.0"}
+{"t":912.061,"name":"GPU 1 Power","value":"0.0"}
+{"t":912.212,"name":"GPU 1 Temp","value":"22.0"}
+{"t":912.669,"name":"Fan 2 RPM","value":9750}
+{"t":912.91,"name":"Fan 1 FF Duty","value":30}
+{"t":913.139,"name":"Fan 0 RPM","value":9792}
+{"t":913.286,"name":"Fan 0 FF Duty","value":30}
+{"t":913.467,"name":"Fan 2 FF Duty","value":30}
+{"t":913.765,"name":"Fan 0 Duty","value":30}
+{"t":914.153,"name":"Fan 1 RPM","value":9534}
+{"t":914.35,"name":"Fan 2 Duty","value":30}
+{"t":914.597,"name":"Fan 1 Duty","value":30}
+{"t":916.862,"name":"GPU 2 Power","value":"0.0"}
+{"t":917.028,"name":"GPU 2 Temp","value":"24.0"}
+{"t":917.669,"name":"Fan 2 RPM","value":9744}
+{"t":917.925,"name":"Fan 1 FF Duty","value":30}
+{"t":918.139,"name":"Fan 0 RPM","value":9786}
+{"t":918.286,"name":"Fan 0 FF Duty","value":30}
+{"t":918.467,"name":"Fan 2 FF Duty","value":30}
+{"t":918.765,"name":"Fan 0 Duty","value":30}
+{"t":919.158,"name":"Fan 1 RPM","value":9540}
+{"t":919.391,"name":"Fan 2 Duty","value":30}
+{"t":919.598,"name":"Fan 1 Duty","value":30}
+{"t":919.919,"name":"GPU 0 Power","value":"0.0"}
+{"t":920.034,"name":"GPU 0 Temp","value":"24.1"}
+{"t":922.171,"name":"GPU 1 Power","value":"0.0"}
+{"t":922.402,"name":"GPU 1 Temp","value":"22.0"}
+{"t":922.669,"name":"Fan 2 RPM","value":9750}
+{"t":922.908,"name":"Fan 1 FF Duty","value":30}
+{"t":923.212,"name":"Fan 0 RPM","value":9792}
+{"t":923.288,"name":"Fan 0 FF Duty","value":30}
+{"t":923.471,"name":"Fan 2 FF Duty","value":30}
+{"t":923.773,"name":"Fan 0 Duty","value":30}
+{"t":924.125,"name":"Fan 1 RPM","value":9540}
+{"t":924.344,"name":"Fan 2 Duty","value":30}
+{"t":924.596,"name":"Fan 1 Duty","value":30}
+{"t":927.28,"name":"GPU 2 Power","value":"0.0"}
+{"t":927.395,"name":"GPU 2 Temp","value":"24.0"}
+{"t":927.669,"name":"Fan 2 RPM","value":9744}
+{"t":927.908,"name":"Fan 1 FF Duty","value":30}
+{"t":928.133,"name":"Fan 0 RPM","value":9792}
+{"t":928.296,"name":"Fan 0 FF Duty","value":30}
+{"t":928.467,"name":"Fan 2 FF Duty","value":30}
+{"t":928.775,"name":"Fan 0 Duty","value":30}
+{"t":929.18,"name":"Fan 1 RPM","value":9534}
+{"t":929.362,"name":"Fan 2 Duty","value":30}
+{"t":929.596,"name":"Fan 1 Duty","value":30}
+{"t":930.051,"name":"GPU 0 Power","value":"0.0"}
+{"t":930.143,"name":"GPU 0 Temp","value":"24.0"}
+{"t":932.362,"name":"GPU 1 Power","value":"0.0"}
+{"t":932.495,"name":"GPU 1 Temp","value":"22.0"}
+{"t":932.667,"name":"Fan 2 RPM","value":9744}
+{"t":932.967,"name":"Fan 1 FF Duty","value":30}
+{"t":933.235,"name":"Fan 0 RPM","value":9784.043}
+{"t":933.376,"name":"Fan 0 FF Duty","value":30}
+{"t":933.478,"name":"Fan 2 FF Duty","value":30}
+{"t":933.783,"name":"Fan 0 Duty","value":30}
+{"t":934.125,"name":"Fan 1 RPM","value":9534}
+{"t":934.344,"name":"Fan 2 Duty","value":30}
+{"t":934.606,"name":"Fan 1 Duty","value":30}
+{"t":937.303,"name":"GPU 2 Power","value":"0.0"}
+{"t":937.469,"name":"GPU 2 Temp","value":"24.0"}
+{"t":937.675,"name":"Fan 2 RPM","value":9750}
+{"t":937.908,"name":"Fan 1 FF Duty","value":30}
+{"t":938.133,"name":"Fan 0 RPM","value":9780}
+{"t":938.288,"name":"Fan 0 FF Duty","value":30}
+{"t":938.467,"name":"Fan 2 FF Duty","value":30}
+{"t":938.765,"name":"Fan 0 Duty","value":30}
+{"t":939.138,"name":"Fan 1 RPM","value":9534}
+{"t":939.344,"name":"Fan 2 Duty","value":30}
+{"t":939.596,"name":"Fan 1 Duty","value":30}
+{"t":940.078,"name":"GPU 0 Power","value":"0.0"}
+{"t":940.204,"name":"GPU 0 Temp","value":"24.0"}
+{"t":942.333,"name":"GPU 1 Power","value":"0.0"}
+{"t":942.439,"name":"GPU 1 Temp","value":"22.0"}
+{"t":942.732,"name":"Fan 2 RPM","value":9744}
+{"t":942.907,"name":"Fan 1 FF Duty","value":30}
+{"t":943.159,"name":"Fan 0 RPM","value":9792}
+{"t":943.297,"name":"Fan 0 FF Duty","value":30}
+{"t":943.466,"name":"Fan 2 FF Duty","value":30}
+{"t":943.764,"name":"Fan 0 Duty","value":30}
+{"t":944.126,"name":"Fan 1 RPM","value":9528}
+{"t":944.347,"name":"Fan 2 Duty","value":30}
+{"t":944.596,"name":"Fan 1 Duty","value":30}
+{"t":947.347,"name":"GPU 2 Power","value":"0.0"}
+{"t":947.422,"name":"GPU 2 Temp","value":"24.0"}
+{"t":947.668,"name":"Fan 2 RPM","value":9750}
+{"t":947.908,"name":"Fan 1 FF Duty","value":30}
+{"t":948.132,"name":"Fan 0 RPM","value":9786}
+{"t":948.353,"name":"Fan 0 FF Duty","value":30}
+{"t":948.468,"name":"Fan 2 FF Duty","value":30}
+{"t":948.764,"name":"Fan 0 Duty","value":30}
+{"t":949.214,"name":"Fan 1 RPM","value":9540}
+{"t":949.351,"name":"Fan 2 Duty","value":30}
+{"t":949.597,"name":"Fan 1 Duty","value":30}
+{"t":950.327,"name":"GPU 0 Power","value":"0.0"}
+{"t":950.541,"name":"GPU 0 Temp","value":"24.0"}
+{"t":952.484,"name":"GPU 1 Power","value":"0.0"}
+{"t":952.59,"name":"GPU 1 Temp","value":"22.0"}
+{"t":952.667,"name":"Fan 2 RPM","value":9744}
+{"t":952.936,"name":"Fan 1 FF Duty","value":30}
+{"t":953.225,"name":"Fan 0 RPM","value":9792}
+{"t":953.287,"name":"Fan 0 FF Duty","value":30}
+{"t":953.466,"name":"Fan 2 FF Duty","value":30}
+{"t":953.768,"name":"Fan 0 Duty","value":30}
+{"t":954.147,"name":"Fan 1 RPM","value":9540}
+{"t":954.357,"name":"Fan 2 Duty","value":30}
+{"t":954.611,"name":"Fan 1 Duty","value":30}
+{"t":957.528,"name":"GPU 2 Power","value":"0.0"}
+{"t":957.599,"name":"GPU 2 Temp","value":"24.0"}
+{"t":957.666,"name":"Fan 2 RPM","value":9744}
+{"t":957.907,"name":"Fan 1 FF Duty","value":30}
+{"t":958.145,"name":"Fan 0 RPM","value":9792}
+{"t":958.286,"name":"Fan 0 FF Duty","value":30}
+{"t":958.466,"name":"Fan 2 FF Duty","value":30}
+{"t":958.764,"name":"Fan 0 Duty","value":30}
+{"t":959.123,"name":"Fan 1 RPM","value":9546}
+{"t":959.423,"name":"Fan 2 Duty","value":30}
+{"t":959.597,"name":"Fan 1 Duty","value":30}
+{"t":960.561,"name":"GPU 0 Power","value":"0.0"}
+{"t":960.697,"name":"GPU 0 Temp","value":"24.0"}
+{"t":962.603,"name":"GPU 1 Power","value":"0.0"}
+{"t":962.704,"name":"Fan 2 RPM","value":9744}
+{"t":962.77,"name":"GPU 1 Temp","value":"22.0"}
+{"t":962.907,"name":"Fan 1 FF Duty","value":30}
+{"t":963.155,"name":"Fan 0 RPM","value":9792}
+{"t":963.287,"name":"Fan 0 FF Duty","value":30}
+{"t":963.467,"name":"Fan 2 FF Duty","value":30}
+{"t":963.765,"name":"Fan 0 Duty","value":30}
+{"t":964.125,"name":"Fan 1 RPM","value":9534}
+{"t":964.343,"name":"Fan 2 Duty","value":30}
+{"t":964.596,"name":"Fan 1 Duty","value":30}
+{"t":967.672,"name":"Fan 2 RPM","value":9744}
+{"t":967.727,"name":"GPU 2 Power","value":"0.0"}
+{"t":967.835,"name":"GPU 2 Temp","value":"24.0"}
+{"t":967.906,"name":"Fan 1 FF Duty","value":30}
+{"t":968.132,"name":"Fan 0 RPM","value":9792}
+{"t":968.286,"name":"Fan 0 FF Duty","value":30}
+{"t":968.472,"name":"Fan 2 FF Duty","value":30}
+{"t":968.783,"name":"Fan 0 Duty","value":30}
+{"t":969.133,"name":"Fan 1 RPM","value":9534}
+{"t":969.343,"name":"Fan 2 Duty","value":30}
+{"t":969.602,"name":"Fan 1 Duty","value":30}
+{"t":970.781,"name":"GPU 0 Power","value":"0.0"}
+{"t":970.883,"name":"GPU 0 Temp","value":"24.0"}
+{"t":972.679,"name":"Fan 2 RPM","value":9750}
+{"t":972.748,"name":"GPU 1 Power","value":"0.0"}
+{"t":972.873,"name":"GPU 1 Temp","value":"22.0"}
+{"t":972.906,"name":"Fan 1 FF Duty","value":30}
+{"t":973.156,"name":"Fan 0 RPM","value":9792}
+{"t":973.286,"name":"Fan 0 FF Duty","value":30}
+{"t":973.511,"name":"Fan 2 FF Duty","value":30}
+{"t":973.769,"name":"Fan 0 Duty","value":30}
+{"t":974.133,"name":"Fan 1 RPM","value":9532.094}
+{"t":974.343,"name":"Fan 2 Duty","value":30}
+{"t":974.626,"name":"Fan 1 Duty","value":30}
+{"t":977.683,"name":"Fan 2 RPM","value":9744}
+{"t":977.742,"name":"GPU 2 Power","value":"0.0"}
+{"t":977.816,"name":"GPU 2 Temp","value":"24.0"}
+{"t":977.907,"name":"Fan 1 FF Duty","value":30}
+{"t":978.132,"name":"Fan 0 RPM","value":9786}
+{"t":978.3,"name":"Fan 0 FF Duty","value":30}
+{"t":978.468,"name":"Fan 2 FF Duty","value":30}
+{"t":978.788,"name":"Fan 0 Duty","value":30}
+{"t":979.134,"name":"Fan 1 RPM","value":9540}
+{"t":979.344,"name":"Fan 2 Duty","value":30}
+{"t":979.595,"name":"Fan 1 Duty","value":30}
+{"t":980.916,"name":"GPU 0 Power","value":"0.0"}
+{"t":980.989,"name":"GPU 0 Temp","value":"24.0"}
+{"t":982.668,"name":"Fan 2 RPM","value":9750}
+{"t":982.833,"name":"GPU 1 Power","value":"0.0"}
+{"t":982.908,"name":"Fan 1 FF Duty","value":30}
+{"t":982.934,"name":"GPU 1 Temp","value":"22.0"}
+{"t":983.156,"name":"Fan 0 RPM","value":9798}
+{"t":983.286,"name":"Fan 0 FF Duty","value":30}
+{"t":983.465,"name":"Fan 2 FF Duty","value":30}
+{"t":983.764,"name":"Fan 0 Duty","value":30}
+{"t":984.139,"name":"Fan 1 RPM","value":9540}
+{"t":984.344,"name":"Fan 2 Duty","value":30}
+{"t":984.596,"name":"Fan 1 Duty","value":30}
+{"t":987.668,"name":"Fan 2 RPM","value":9744}
+{"t":987.788,"name":"GPU 2 Power","value":"0.0"}
+{"t":987.889,"name":"GPU 2 Temp","value":"24.0"}
+{"t":987.926,"name":"Fan 1 FF Duty","value":30}
+{"t":988.136,"name":"Fan 0 RPM","value":9798}
+{"t":988.287,"name":"Fan 0 FF Duty","value":30}
+{"t":988.469,"name":"Fan 2 FF Duty","value":30}
+{"t":988.763,"name":"Fan 0 Duty","value":30}
+{"t":989.247,"name":"Fan 1 RPM","value":9534}
+{"t":989.351,"name":"Fan 2 Duty","value":30}
+{"t":989.595,"name":"Fan 1 Duty","value":30}
+{"t":991.053,"name":"GPU 0 Power","value":"0.0"}
+{"t":991.142,"name":"GPU 0 Temp","value":"24.0"}
+{"t":992.667,"name":"Fan 2 RPM","value":9744}
+{"t":992.907,"name":"Fan 1 FF Duty","value":30}
+{"t":993.009,"name":"GPU 1 Power","value":"0.0"}
+{"t":993.152,"name":"Fan 0 RPM","value":9796.041}
+{"t":993.152,"name":"GPU 1 Temp","value":"22.0"}
+{"t":993.285,"name":"Fan 0 FF Duty","value":30}
+{"t":993.465,"name":"Fan 2 FF Duty","value":30}
+{"t":993.764,"name":"Fan 0 Duty","value":30}
+{"t":994.125,"name":"Fan 1 RPM","value":9534}
+{"t":994.368,"name":"Fan 2 Duty","value":30}
+{"t":994.597,"name":"Fan 1 Duty","value":30}
+{"t":997.665,"name":"Fan 2 RPM","value":9744}
+{"t":997.906,"name":"Fan 1 FF Duty","value":30}
+{"t":998.0,"name":"GPU 2 Power","value":"0.0"}
+{"t":998.077,"name":"GPU 2 Temp","value":"24.0"}
+{"t":998.147,"name":"Fan 0 RPM","value":9786}
+{"t":998.285,"name":"Fan 0 FF Duty","value":30}
+{"t":998.465,"name":"Fan 2 FF Duty","value":30}
+{"t":998.764,"name":"Fan 0 Duty","value":30}
+{"t":999.127,"name":"Fan 1 RPM","value":9540}
+{"t":999.342,"name":"Fan 2 Duty","value":30}
+{"t":999.596,"name":"Fan 1 Duty","value":30}
+{"t":1001.321,"name":"GPU 0 Power","value":"0.0"}
+{"t":1001.543,"name":"GPU 0 Temp","value":"24.0"}
+{"t":1002.677,"name":"Fan 2 RPM","value":9750}
+{"t":1002.906,"name":"Fan 1 FF Duty","value":30}
+{"t":1003.143,"name":"Fan 0 RPM","value":9792}
+{"t":1003.21,"name":"GPU 1 Power","value":"0.0"}
+{"t":1003.287,"name":"Fan 0 FF Duty","value":30}
+{"t":1003.48,"name":"Fan 2 FF Duty","value":30}
+{"t":1003.53,"name":"GPU 1 Temp","value":"22.0"}
+{"t":1003.781,"name":"Fan 0 Duty","value":30}
+{"t":1004.124,"name":"Fan 1 RPM","value":9534}
+{"t":1004.342,"name":"Fan 2 Duty","value":30}
+{"t":1004.603,"name":"Fan 1 Duty","value":30}
+{"t":1007.669,"name":"Fan 2 RPM","value":9744}
+{"t":1007.906,"name":"Fan 1 FF Duty","value":30}
+{"t":1008.098,"name":"GPU 2 Power","value":"0.0"}
+{"t":1008.14,"name":"Fan 0 RPM","value":9786}
+{"t":1008.215,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1008.296,"name":"Fan 0 FF Duty","value":30}
+{"t":1008.465,"name":"Fan 2 FF Duty","value":30}
+{"t":1008.763,"name":"Fan 0 Duty","value":30}
+{"t":1009.124,"name":"Fan 1 RPM","value":9540}
+{"t":1009.345,"name":"Fan 2 Duty","value":30}
+{"t":1009.609,"name":"Fan 1 Duty","value":30}
+{"t":1011.404,"name":"GPU 0 Power","value":"0.0"}
+{"t":1011.556,"name":"GPU 0 Temp","value":"24.1"}
+{"t":1012.679,"name":"Fan 2 RPM","value":9750}
+{"t":1012.909,"name":"Fan 1 FF Duty","value":30}
+{"t":1013.135,"name":"Fan 0 RPM","value":9792}
+{"t":1013.299,"name":"Fan 0 FF Duty","value":30}
+{"t":1013.472,"name":"GPU 1 Power","value":"0.0"}
+{"t":1013.502,"name":"Fan 2 FF Duty","value":30}
+{"t":1013.739,"name":"GPU 1 Temp","value":"22.0"}
+{"t":1013.781,"name":"Fan 0 Duty","value":30}
+{"t":1014.123,"name":"Fan 1 RPM","value":9540}
+{"t":1014.343,"name":"Fan 2 Duty","value":30}
+{"t":1014.594,"name":"Fan 1 Duty","value":30}
+{"t":1017.702,"name":"Fan 2 RPM","value":9750}
+{"t":1017.907,"name":"Fan 1 FF Duty","value":30}
+{"t":1018.132,"name":"Fan 0 RPM","value":9786}
+{"t":1018.29,"name":"Fan 0 FF Duty","value":30}
+{"t":1018.333,"name":"GPU 2 Power","value":"0.0"}
+{"t":1018.438,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1018.482,"name":"Fan 2 FF Duty","value":30}
+{"t":1018.764,"name":"Fan 0 Duty","value":30}
+{"t":1019.306,"name":"Fan 1 RPM","value":9540}
+{"t":1019.366,"name":"Fan 2 Duty","value":30}
+{"t":1019.604,"name":"Fan 1 Duty","value":30}
+{"t":1021.541,"name":"GPU 0 Power","value":"0.0"}
+{"t":1021.654,"name":"GPU 0 Temp","value":"24.0"}
+{"t":1022.666,"name":"Fan 2 RPM","value":9744}
+{"t":1022.918,"name":"Fan 1 FF Duty","value":30}
+{"t":1023.134,"name":"Fan 0 RPM","value":9786}
+{"t":1023.287,"name":"Fan 0 FF Duty","value":30}
+{"t":1023.475,"name":"Fan 2 FF Duty","value":30}
+{"t":1023.496,"name":"GPU 1 Power","value":"0.0"}
+{"t":1023.594,"name":"GPU 1 Temp","value":"22.0"}
+{"t":1023.763,"name":"Fan 0 Duty","value":30}
+{"t":1024.122,"name":"Fan 1 RPM","value":9534}
+{"t":1024.358,"name":"Fan 2 Duty","value":30}
+{"t":1024.596,"name":"Fan 1 Duty","value":30}
+{"t":1027.665,"name":"Fan 2 RPM","value":9744}
+{"t":1027.907,"name":"Fan 1 FF Duty","value":30}
+{"t":1028.141,"name":"Fan 0 RPM","value":9792}
+{"t":1028.284,"name":"Fan 0 FF Duty","value":30}
+{"t":1028.471,"name":"Fan 2 FF Duty","value":30}
+{"t":1028.492,"name":"GPU 2 Power","value":"0.0"}
+{"t":1028.573,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1028.77,"name":"Fan 0 Duty","value":30}
+{"t":1029.124,"name":"Fan 1 RPM","value":9540}
+{"t":1029.362,"name":"Fan 2 Duty","value":30}
+{"t":1029.593,"name":"Fan 1 Duty","value":30}
+{"t":1031.82,"name":"GPU 0 Power","value":"0.0"}
+{"t":1031.96,"name":"GPU 0 Temp","value":"24.0"}
+{"t":1032.669,"name":"Fan 2 RPM","value":9744}
+{"t":1032.908,"name":"Fan 1 FF Duty","value":30}
+{"t":1033.175,"name":"Fan 0 RPM","value":9792}
+{"t":1033.284,"name":"Fan 0 FF Duty","value":30}
+{"t":1033.469,"name":"Fan 2 FF Duty","value":30}
+{"t":1033.528,"name":"GPU 1 Power","value":"0.0"}
+{"t":1033.634,"name":"GPU 1 Temp","value":"22.0"}
+{"t":1033.774,"name":"Fan 0 Duty","value":30}
+{"t":1034.126,"name":"Fan 1 RPM","value":9534}
+{"t":1034.346,"name":"Fan 2 Duty","value":30}
+{"t":1034.593,"name":"Fan 1 Duty","value":30}
+{"t":1037.665,"name":"Fan 2 RPM","value":9744}
+{"t":1037.905,"name":"Fan 1 FF Duty","value":30}
+{"t":1038.13,"name":"Fan 0 RPM","value":9792}
+{"t":1038.285,"name":"Fan 0 FF Duty","value":30}
+{"t":1038.476,"name":"GPU 2 Power","value":"0.0"}
+{"t":1038.48,"name":"Fan 2 FF Duty","value":30}
+{"t":1038.548,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1038.776,"name":"Fan 0 Duty","value":30}
+{"t":1039.124,"name":"Fan 1 RPM","value":9534}
+{"t":1039.389,"name":"Fan 2 Duty","value":30}
+{"t":1039.597,"name":"Fan 1 Duty","value":30}
+{"t":1042.028,"name":"GPU 0 Power","value":"0.0"}
+{"t":1042.117,"name":"GPU 0 Temp","value":"24.0"}
+{"t":1042.676,"name":"Fan 2 RPM","value":9750}
+{"t":1042.905,"name":"Fan 1 FF Duty","value":30}
+{"t":1043.135,"name":"Fan 0 RPM","value":9798}
+{"t":1043.287,"name":"Fan 0 FF Duty","value":30}
+{"t":1043.484,"name":"Fan 2 FF Duty","value":30}
+{"t":1043.767,"name":"Fan 0 Duty","value":30}
+{"t":1043.824,"name":"GPU 1 Power","value":"0.0"}
+{"t":1043.921,"name":"GPU 1 Temp","value":"22.0"}
+{"t":1044.124,"name":"Fan 1 RPM","value":9540}
+{"t":1044.346,"name":"Fan 2 Duty","value":30}
+{"t":1044.613,"name":"Fan 1 Duty","value":30}
+{"t":1047.679,"name":"Fan 2 RPM","value":9744}
+{"t":1047.905,"name":"Fan 1 FF Duty","value":30}
+{"t":1048.098,"name":"GPU 1 Power","value":"0.0"}
+{"t":1048.134,"name":"Fan 0 RPM","value":9794.082}
+{"t":1048.22,"name":"GPU 1 Temp","value":"24.0"}
+{"t":1048.295,"name":"Fan 0 FF Duty","value":30}
+{"t":1048.469,"name":"Fan 2 FF Duty","value":30}
+{"t":1048.566,"name":"GPU 2 Power","value":"0.0"}
+{"t":1048.653,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1048.764,"name":"Fan 0 Duty","value":30}
+{"t":1049.19,"name":"Fan 1 RPM","value":9534}
+{"t":1049.242,"name":"GPU 1 Power","value":"0.0"}
+{"t":1049.345,"name":"Fan 2 Duty","value":30}
+{"t":1049.392,"name":"GPU 1 Temp","value":"26.3"}
+{"t":1049.595,"name":"Fan 1 Duty","value":30}
+{"t":1052.04,"name":"GPU 0 Power","value":"0.0"}
+{"t":1052.183,"name":"GPU 0 Temp","value":"24.0"}
+{"t":1052.673,"name":"Fan 2 RPM","value":9744}
+{"t":1052.905,"name":"Fan 1 FF Duty","value":30}
+{"t":1053.133,"name":"Fan 0 RPM","value":9793.959}
+{"t":1053.284,"name":"Fan 0 FF Duty","value":30}
+{"t":1053.469,"name":"Fan 2 FF Duty","value":30}
+{"t":1053.763,"name":"Fan 0 Duty","value":30}
+{"t":1054.138,"name":"Fan 1 RPM","value":9540}
+{"t":1054.341,"name":"Fan 2 Duty","value":30}
+{"t":1054.509,"name":"GPU 1 Power","value":"0.0"}
+{"t":1054.592,"name":"GPU 1 Temp","value":"27.6"}
+{"t":1054.607,"name":"Fan 1 Duty","value":30}
+{"t":1055.817,"name":"GPU 1 Power","value":"0.0"}
+{"t":1055.911,"name":"GPU 1 Temp","value":"29.5"}
+{"t":1057.665,"name":"Fan 2 RPM","value":9744}
+{"t":1057.919,"name":"Fan 1 FF Duty","value":30}
+{"t":1058.137,"name":"Fan 0 RPM","value":9792}
+{"t":1058.283,"name":"Fan 0 FF Duty","value":30}
+{"t":1058.469,"name":"Fan 2 FF Duty","value":30}
+{"t":1058.558,"name":"GPU 2 Power","value":"0.0"}
+{"t":1058.675,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1058.763,"name":"Fan 0 Duty","value":30}
+{"t":1059.141,"name":"Fan 1 RPM","value":9540}
+{"t":1059.346,"name":"Fan 2 Duty","value":30}
+{"t":1059.601,"name":"Fan 1 Duty","value":30}
+{"t":1060.039,"name":"GPU 1 Power","value":"0.0"}
+{"t":1060.139,"name":"GPU 1 Temp","value":"28.3"}
+{"t":1062.264,"name":"GPU 0 Power","value":"0.0"}
+{"t":1062.366,"name":"GPU 0 Temp","value":"25.0"}
+{"t":1062.666,"name":"Fan 2 RPM","value":9744}
+{"t":1062.905,"name":"Fan 1 FF Duty","value":30}
+{"t":1063.142,"name":"Fan 0 RPM","value":9790.042}
+{"t":1063.294,"name":"Fan 0 FF Duty","value":30}
+{"t":1063.466,"name":"GPU 1 Power","value":"0.0"}
+{"t":1063.484,"name":"Fan 2 FF Duty","value":30}
+{"t":1063.584,"name":"GPU 1 Temp","value":"27.2"}
+{"t":1063.771,"name":"Fan 0 Duty","value":30}
+{"t":1064.123,"name":"Fan 1 RPM","value":9540}
+{"t":1064.341,"name":"Fan 2 Duty","value":30}
+{"t":1064.599,"name":"Fan 1 Duty","value":30}
+{"t":1067.665,"name":"Fan 2 RPM","value":9744}
+{"t":1067.904,"name":"Fan 1 FF Duty","value":30}
+{"t":1068.154,"name":"Fan 0 RPM","value":9798}
+{"t":1068.287,"name":"Fan 0 FF Duty","value":30}
+{"t":1068.474,"name":"Fan 2 FF Duty","value":30}
+{"t":1068.685,"name":"GPU 2 Power","value":"0.0"}
+{"t":1068.765,"name":"Fan 0 Duty","value":30}
+{"t":1068.785,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1069.124,"name":"Fan 1 RPM","value":9534}
+{"t":1069.34,"name":"Fan 2 Duty","value":30}
+{"t":1069.599,"name":"Fan 1 Duty","value":30}
+{"t":1072.405,"name":"GPU 0 Power","value":"0.0"}
+{"t":1072.547,"name":"GPU 0 Temp","value":"25.5"}
+{"t":1072.667,"name":"Fan 2 RPM","value":9750}
+{"t":1072.905,"name":"Fan 1 FF Duty","value":30}
+{"t":1073.133,"name":"Fan 0 RPM","value":9792}
+{"t":1073.29,"name":"Fan 0 FF Duty","value":30}
+{"t":1073.516,"name":"Fan 2 FF Duty","value":30}
+{"t":1073.639,"name":"GPU 1 Power","value":"0.0"}
+{"t":1073.752,"name":"GPU 1 Temp","value":"26.9"}
+{"t":1073.78,"name":"Fan 0 Duty","value":30}
+{"t":1074.126,"name":"Fan 1 RPM","value":9540}
+{"t":1074.34,"name":"Fan 2 Duty","value":30}
+{"t":1074.598,"name":"Fan 1 Duty","value":30}
+{"t":1077.668,"name":"Fan 2 RPM","value":9744}
+{"t":1077.904,"name":"Fan 1 FF Duty","value":30}
+{"t":1078.135,"name":"Fan 0 RPM","value":9792}
+{"t":1078.284,"name":"Fan 0 FF Duty","value":30}
+{"t":1078.484,"name":"Fan 2 FF Duty","value":30}
+{"t":1078.789,"name":"Fan 0 Duty","value":30}
+{"t":1078.87,"name":"GPU 2 Power","value":"0.0"}
+{"t":1078.963,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1079.17,"name":"Fan 1 RPM","value":9540}
+{"t":1079.344,"name":"Fan 2 Duty","value":30}
+{"t":1079.607,"name":"Fan 1 Duty","value":30}
+{"t":1082.679,"name":"GPU 0 Power","value":"0.0"}
+{"t":1082.685,"name":"Fan 2 RPM","value":9748.051}
+{"t":1082.756,"name":"GPU 0 Temp","value":"25.9"}
+{"t":1082.906,"name":"Fan 1 FF Duty","value":30}
+{"t":1083.135,"name":"Fan 0 RPM","value":9792}
+{"t":1083.312,"name":"Fan 0 FF Duty","value":30}
+{"t":1083.473,"name":"Fan 2 FF Duty","value":30}
+{"t":1083.763,"name":"Fan 0 Duty","value":30}
+{"t":1083.861,"name":"GPU 1 Power","value":"0.0"}
+{"t":1083.977,"name":"GPU 1 Temp","value":"27.0"}
+{"t":1084.121,"name":"Fan 1 RPM","value":9540}
+{"t":1084.34,"name":"Fan 2 Duty","value":30}
+{"t":1084.625,"name":"Fan 1 Duty","value":30}
+{"t":1087.692,"name":"Fan 2 RPM","value":9744}
+{"t":1087.905,"name":"Fan 1 FF Duty","value":30}
+{"t":1088.132,"name":"Fan 0 RPM","value":9792}
+{"t":1088.283,"name":"Fan 0 FF Duty","value":30}
+{"t":1088.473,"name":"Fan 2 FF Duty","value":30}
+{"t":1088.763,"name":"Fan 0 Duty","value":30}
+{"t":1089.078,"name":"GPU 2 Power","value":"0.0"}
+{"t":1089.131,"name":"Fan 1 RPM","value":9534}
+{"t":1089.187,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1089.349,"name":"Fan 2 Duty","value":30}
+{"t":1089.683,"name":"Fan 1 Duty","value":30}
+{"t":1092.668,"name":"Fan 2 RPM","value":9750}
+{"t":1092.77,"name":"GPU 0 Power","value":"0.0"}
+{"t":1092.922,"name":"Fan 1 FF Duty","value":30}
+{"t":1092.966,"name":"GPU 0 Temp","value":"26.0"}
+{"t":1093.132,"name":"Fan 0 RPM","value":9792}
+{"t":1093.289,"name":"Fan 0 FF Duty","value":30}
+{"t":1093.473,"name":"Fan 2 FF Duty","value":30}
+{"t":1093.766,"name":"Fan 0 Duty","value":30}
+{"t":1094.097,"name":"GPU 1 Power","value":"0.0"}
+{"t":1094.15,"name":"Fan 1 RPM","value":9534}
+{"t":1094.195,"name":"GPU 1 Temp","value":"27.0"}
+{"t":1094.343,"name":"Fan 2 Duty","value":30}
+{"t":1094.598,"name":"Fan 1 Duty","value":30}
+{"t":1097.665,"name":"Fan 2 RPM","value":9744}
+{"t":1097.904,"name":"Fan 1 FF Duty","value":30}
+{"t":1098.133,"name":"Fan 0 RPM","value":9786}
+{"t":1098.283,"name":"Fan 0 FF Duty","value":30}
+{"t":1098.472,"name":"Fan 2 FF Duty","value":30}
+{"t":1098.767,"name":"Fan 0 Duty","value":30}
+{"t":1099.122,"name":"Fan 1 RPM","value":9534}
+{"t":1099.307,"name":"GPU 2 Power","value":"0.0"}
+{"t":1099.376,"name":"Fan 2 Duty","value":30}
+{"t":1099.505,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1099.598,"name":"Fan 1 Duty","value":30}
+{"t":1102.671,"name":"Fan 2 RPM","value":9744}
+{"t":1102.839,"name":"GPU 0 Power","value":"0.0"}
+{"t":1102.903,"name":"Fan 1 FF Duty","value":30}
+{"t":1102.961,"name":"GPU 0 Temp","value":"26.1"}
+{"t":1103.148,"name":"Fan 0 RPM","value":9786}
+{"t":1103.286,"name":"Fan 0 FF Duty","value":30}
+{"t":1103.473,"name":"Fan 2 FF Duty","value":30}
+{"t":1103.763,"name":"Fan 0 Duty","value":30}
+{"t":1104.124,"name":"Fan 1 RPM","value":9534}
+{"t":1104.137,"name":"GPU 1 Power","value":"0.0"}
+{"t":1104.227,"name":"GPU 1 Temp","value":"27.0"}
+{"t":1104.341,"name":"Fan 2 Duty","value":30}
+{"t":1104.598,"name":"Fan 1 Duty","value":30}
+{"t":1107.664,"name":"Fan 2 RPM","value":9744}
+{"t":1107.903,"name":"Fan 1 FF Duty","value":30}
+{"t":1108.131,"name":"Fan 0 RPM","value":9792}
+{"t":1108.283,"name":"Fan 0 FF Duty","value":30}
+{"t":1108.473,"name":"Fan 2 FF Duty","value":30}
+{"t":1108.775,"name":"Fan 0 Duty","value":30}
+{"t":1109.122,"name":"Fan 1 RPM","value":9534}
+{"t":1109.396,"name":"Fan 2 Duty","value":30}
+{"t":1109.456,"name":"GPU 2 Power","value":"0.0"}
+{"t":1109.552,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1109.599,"name":"Fan 1 Duty","value":30}
+{"t":1112.666,"name":"Fan 2 RPM","value":9750}
+{"t":1112.91,"name":"Fan 1 FF Duty","value":30}
+{"t":1112.93,"name":"GPU 0 Power","value":"0.0"}
+{"t":1113.042,"name":"GPU 0 Temp","value":"26.2"}
+{"t":1113.131,"name":"Fan 0 RPM","value":9780}
+{"t":1113.283,"name":"Fan 0 FF Duty","value":30}
+{"t":1113.477,"name":"Fan 2 FF Duty","value":30}
+{"t":1113.764,"name":"Fan 0 Duty","value":30}
+{"t":1114.135,"name":"Fan 1 RPM","value":9538.093}
+{"t":1114.171,"name":"GPU 1 Power","value":"0.0"}
+{"t":1114.261,"name":"GPU 1 Temp","value":"26.6"}
+{"t":1114.339,"name":"Fan 2 Duty","value":30}
+{"t":1114.605,"name":"Fan 1 Duty","value":30}
+{"t":1117.682,"name":"Fan 2 RPM","value":9750}
+{"t":1117.903,"name":"Fan 1 FF Duty","value":30}
+{"t":1118.133,"name":"Fan 0 RPM","value":9780}
+{"t":1118.288,"name":"Fan 0 FF Duty","value":30}
+{"t":1118.472,"name":"Fan 2 FF Duty","value":30}
+{"t":1118.762,"name":"Fan 0 Duty","value":30}
+{"t":1119.123,"name":"Fan 1 RPM","value":9534}
+{"t":1119.342,"name":"Fan 2 Duty","value":30}
+{"t":1119.413,"name":"GPU 2 Power","value":"0.0"}
+{"t":1119.516,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1119.597,"name":"Fan 1 Duty","value":30}
+{"t":1122.664,"name":"Fan 2 RPM","value":9744}
+{"t":1122.905,"name":"Fan 1 FF Duty","value":30}
+{"t":1123.079,"name":"GPU 0 Power","value":"0.0"}
+{"t":1123.138,"name":"Fan 0 RPM","value":9786}
+{"t":1123.202,"name":"GPU 0 Temp","value":"26.0"}
+{"t":1123.282,"name":"Fan 0 FF Duty","value":30}
+{"t":1123.472,"name":"Fan 2 FF Duty","value":30}
+{"t":1123.762,"name":"Fan 0 Duty","value":30}
+{"t":1124.137,"name":"Fan 1 RPM","value":9534}
+{"t":1124.283,"name":"GPU 1 Power","value":"0.0"}
+{"t":1124.342,"name":"Fan 2 Duty","value":30}
+{"t":1124.356,"name":"GPU 1 Temp","value":"26.1"}
+{"t":1124.597,"name":"Fan 1 Duty","value":30}
+{"t":1127.665,"name":"Fan 2 RPM","value":9750}
+{"t":1127.912,"name":"Fan 1 FF Duty","value":30}
+{"t":1128.133,"name":"Fan 0 RPM","value":9786}
+{"t":1128.282,"name":"Fan 0 FF Duty","value":30}
+{"t":1128.472,"name":"Fan 2 FF Duty","value":30}
+{"t":1128.762,"name":"Fan 0 Duty","value":30}
+{"t":1129.14,"name":"Fan 1 RPM","value":9534}
+{"t":1129.344,"name":"Fan 2 Duty","value":30}
+{"t":1129.444,"name":"GPU 2 Power","value":"0.0"}
+{"t":1129.582,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1129.597,"name":"Fan 1 Duty","value":30}
+{"t":1132.665,"name":"Fan 2 RPM","value":9750}
+{"t":1132.903,"name":"Fan 1 FF Duty","value":30}
+{"t":1133.198,"name":"Fan 0 RPM","value":9780}
+{"t":1133.265,"name":"GPU 0 Power","value":"0.0"}
+{"t":1133.286,"name":"Fan 0 FF Duty","value":30}
+{"t":1133.369,"name":"GPU 0 Temp","value":"25.7"}
+{"t":1133.472,"name":"Fan 2 FF Duty","value":30}
+{"t":1133.772,"name":"Fan 0 Duty","value":30}
+{"t":1134.123,"name":"Fan 1 RPM","value":9534}
+{"t":1134.355,"name":"Fan 2 Duty","value":30}
+{"t":1134.461,"name":"GPU 1 Power","value":"0.0"}
+{"t":1134.532,"name":"GPU 1 Temp","value":"25.2"}
+{"t":1134.597,"name":"Fan 1 Duty","value":30}
+{"t":1137.669,"name":"Fan 2 RPM","value":9744}
+{"t":1137.905,"name":"Fan 1 FF Duty","value":30}
+{"t":1138.155,"name":"Fan 0 RPM","value":9792}
+{"t":1138.281,"name":"Fan 0 FF Duty","value":30}
+{"t":1138.472,"name":"Fan 2 FF Duty","value":30}
+{"t":1138.764,"name":"Fan 0 Duty","value":30}
+{"t":1139.123,"name":"Fan 1 RPM","value":9540}
+{"t":1139.344,"name":"Fan 2 Duty","value":30}
+{"t":1139.597,"name":"Fan 1 Duty","value":30}
+{"t":1139.656,"name":"GPU 2 Power","value":"0.0"}
+{"t":1139.779,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1142.664,"name":"Fan 2 RPM","value":9750}
+{"t":1142.903,"name":"Fan 1 FF Duty","value":30}
+{"t":1143.131,"name":"Fan 0 RPM","value":9792}
+{"t":1143.282,"name":"Fan 0 FF Duty","value":30}
+{"t":1143.363,"name":"GPU 0 Power","value":"0.0"}
+{"t":1143.443,"name":"GPU 0 Temp","value":"25.1"}
+{"t":1143.481,"name":"Fan 2 FF Duty","value":30}
+{"t":1143.771,"name":"Fan 0 Duty","value":30}
+{"t":1144.122,"name":"Fan 1 RPM","value":9534}
+{"t":1144.341,"name":"Fan 2 Duty","value":30}
+{"t":1144.543,"name":"GPU 1 Power","value":"0.0"}
+{"t":1144.601,"name":"Fan 1 Duty","value":30}
+{"t":1144.655,"name":"GPU 1 Temp","value":"24.9"}
+{"t":1147.666,"name":"Fan 2 RPM","value":9744}
+{"t":1147.903,"name":"Fan 1 FF Duty","value":30}
+{"t":1148.13,"name":"Fan 0 RPM","value":9786}
+{"t":1148.282,"name":"Fan 0 FF Duty","value":30}
+{"t":1148.482,"name":"Fan 2 FF Duty","value":30}
+{"t":1148.764,"name":"Fan 0 Duty","value":30}
+{"t":1149.122,"name":"Fan 1 RPM","value":9540}
+{"t":1149.339,"name":"Fan 2 Duty","value":30}
+{"t":1149.607,"name":"Fan 1 Duty","value":30}
+{"t":1149.846,"name":"GPU 2 Power","value":"0.0"}
+{"t":1149.966,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1152.688,"name":"Fan 2 RPM","value":9744}
+{"t":1152.903,"name":"Fan 1 FF Duty","value":30}
+{"t":1153.134,"name":"Fan 0 RPM","value":9786}
+{"t":1153.285,"name":"Fan 0 FF Duty","value":30}
+{"t":1153.473,"name":"Fan 2 FF Duty","value":30}
+{"t":1153.621,"name":"GPU 0 Power","value":"0.0"}
+{"t":1153.769,"name":"Fan 0 Duty","value":30}
+{"t":1153.797,"name":"GPU 0 Temp","value":"25.0"}
+{"t":1154.121,"name":"Fan 1 RPM","value":9534}
+{"t":1154.339,"name":"Fan 2 Duty","value":30}
+{"t":1154.597,"name":"Fan 1 Duty","value":30}
+{"t":1154.679,"name":"GPU 1 Power","value":"0.0"}
+{"t":1154.757,"name":"GPU 1 Temp","value":"24.1"}
+{"t":1157.664,"name":"Fan 2 RPM","value":9750}
+{"t":1157.905,"name":"Fan 1 FF Duty","value":30}
+{"t":1158.131,"name":"Fan 0 RPM","value":9786}
+{"t":1158.324,"name":"Fan 0 FF Duty","value":30}
+{"t":1158.478,"name":"Fan 2 FF Duty","value":30}
+{"t":1158.764,"name":"Fan 0 Duty","value":30}
+{"t":1159.13,"name":"Fan 1 RPM","value":9540}
+{"t":1159.365,"name":"Fan 2 Duty","value":30}
+{"t":1159.607,"name":"Fan 1 Duty","value":30}
+{"t":1159.947,"name":"GPU 2 Power","value":"0.0"}
+{"t":1160.083,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1162.664,"name":"Fan 2 RPM","value":9744}
+{"t":1162.908,"name":"Fan 1 FF Duty","value":30}
+{"t":1163.134,"name":"Fan 0 RPM","value":9792}
+{"t":1163.281,"name":"Fan 0 FF Duty","value":30}
+{"t":1163.471,"name":"Fan 2 FF Duty","value":30}
+{"t":1163.749,"name":"GPU 0 Power","value":"0.0"}
+{"t":1163.769,"name":"Fan 0 Duty","value":30}
+{"t":1163.827,"name":"GPU 0 Temp","value":"25.0"}
+{"t":1164.161,"name":"Fan 1 RPM","value":9534}
+{"t":1164.343,"name":"Fan 2 Duty","value":30}
+{"t":1164.597,"name":"Fan 1 Duty","value":30}
+{"t":1164.675,"name":"GPU 1 Power","value":"0.0"}
+{"t":1164.777,"name":"GPU 1 Temp","value":"24.0"}
+{"t":1167.664,"name":"Fan 2 RPM","value":9750}
+{"t":1167.902,"name":"Fan 1 FF Duty","value":30}
+{"t":1168.129,"name":"Fan 0 RPM","value":9792}
+{"t":1168.283,"name":"Fan 0 FF Duty","value":30}
+{"t":1168.471,"name":"Fan 2 FF Duty","value":30}
+{"t":1168.764,"name":"Fan 0 Duty","value":30}
+{"t":1169.128,"name":"Fan 1 RPM","value":9540}
+{"t":1169.363,"name":"Fan 2 Duty","value":30}
+{"t":1169.602,"name":"Fan 1 Duty","value":30}
+{"t":1169.92,"name":"GPU 2 Power","value":"0.0"}
+{"t":1170.013,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1172.664,"name":"Fan 2 RPM","value":9744}
+{"t":1172.902,"name":"Fan 1 FF Duty","value":30}
+{"t":1173.149,"name":"Fan 0 RPM","value":9786}
+{"t":1173.28,"name":"Fan 0 FF Duty","value":30}
+{"t":1173.503,"name":"Fan 2 FF Duty","value":30}
+{"t":1173.764,"name":"Fan 0 Duty","value":30}
+{"t":1173.838,"name":"GPU 0 Power","value":"0.0"}
+{"t":1174.004,"name":"GPU 0 Temp","value":"25.0"}
+{"t":1174.121,"name":"Fan 1 RPM","value":9538.093}
+{"t":1174.338,"name":"Fan 2 Duty","value":30}
+{"t":1174.597,"name":"Fan 1 Duty","value":30}
+{"t":1174.955,"name":"GPU 1 Power","value":"0.0"}
+{"t":1175.149,"name":"GPU 1 Temp","value":"24.0"}
+{"t":1177.678,"name":"Fan 2 RPM","value":9750}
+{"t":1177.902,"name":"Fan 1 FF Duty","value":30}
+{"t":1178.13,"name":"Fan 0 RPM","value":9786}
+{"t":1178.281,"name":"Fan 0 FF Duty","value":30}
+{"t":1178.471,"name":"Fan 2 FF Duty","value":30}
+{"t":1178.766,"name":"Fan 0 Duty","value":30}
+{"t":1179.123,"name":"Fan 1 RPM","value":9540}
+{"t":1179.338,"name":"Fan 2 Duty","value":30}
+{"t":1179.605,"name":"Fan 1 Duty","value":30}
+{"t":1180.077,"name":"GPU 2 Power","value":"0.0"}
+{"t":1180.256,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1182.665,"name":"Fan 2 RPM","value":9750}
+{"t":1182.902,"name":"Fan 1 FF Duty","value":30}
+{"t":1183.238,"name":"Fan 0 RPM","value":9786}
+{"t":1183.281,"name":"Fan 0 FF Duty","value":30}
+{"t":1183.478,"name":"Fan 2 FF Duty","value":30}
+{"t":1183.783,"name":"Fan 0 Duty","value":30}
+{"t":1184.127,"name":"Fan 1 RPM","value":9540}
+{"t":1184.168,"name":"GPU 0 Power","value":"0.0"}
+{"t":1184.348,"name":"GPU 0 Temp","value":"24.9"}
+{"t":1184.356,"name":"Fan 2 Duty","value":30}
+{"t":1184.626,"name":"Fan 1 Duty","value":30}
+{"t":1184.969,"name":"GPU 1 Power","value":"0.0"}
+{"t":1185.069,"name":"GPU 1 Temp","value":"23.7"}
+{"t":1187.73,"name":"Fan 2 RPM","value":9744}
+{"t":1187.901,"name":"Fan 1 FF Duty","value":30}
+{"t":1188.13,"name":"Fan 0 RPM","value":9792}
+{"t":1188.298,"name":"Fan 0 FF Duty","value":30}
+{"t":1188.47,"name":"Fan 2 FF Duty","value":30}
+{"t":1188.763,"name":"Fan 0 Duty","value":30}
+{"t":1189.126,"name":"Fan 1 RPM","value":9534}
+{"t":1189.346,"name":"Fan 2 Duty","value":30}
+{"t":1189.597,"name":"Fan 1 Duty","value":30}
+{"t":1190.188,"name":"GPU 2 Power","value":"0.0"}
+{"t":1190.275,"name":"GPU 2 Temp","value":"24.0"}
+{"t":1192.663,"name":"Fan 2 RPM","value":9744}
+{"t":1192.93,"name":"Fan 1 FF Duty","value":30}
+{"t":1193.15,"name":"Fan 0 RPM","value":9792}
+{"t":1193.28,"name":"Fan 0 FF Duty","value":30}
+{"t":1193.47,"name":"Fan 2 FF Duty","value":30}
+{"t":1193.767,"name":"Fan 0 Duty","value":30}
+{"t":1194.127,"name":"Fan 1 RPM","value":9540}
+{"t":1194.18,"name":"GPU 0 Power","value":"0.0"}
+{"t":1194.282,"name":"GPU 0 Temp","value":"24.8"}
+{"t":1194.372,"name":"Fan 2 Duty","value":30}
+{"t":1194.597,"name":"Fan 1 Duty","value":30}
+{"t":1195.222,"name":"GPU 1 Power","value":"0.0"}
+{"t":1195.322,"name":"GPU 1 Temp","value":"23.1"}
+{"t":1197.673,"name":"Fan 2 RPM","value":9750}
+{"t":1197.919,"name":"Fan 1 FF Duty","value":30}
+{"t":1198.129,"name":"Fan 0 RPM","value":9786}
+{"t":1198.28,"name":"Fan 0 FF Duty","value":30}
+{"t":1198.47,"name":"Fan 2 FF Duty","value":30}
+{"t":1198.763,"name":"Fan 0 Duty","value":30}
+{"t":1199.162,"name":"Fan 1 RPM","value":9540}
+{"t":1199.345,"name":"Fan 2 Duty","value":30}
+{"t":1199.598,"name":"Fan 1 Duty","value":30}

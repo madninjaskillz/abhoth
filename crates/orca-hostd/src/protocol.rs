@@ -460,9 +460,25 @@ mod tests {
                 bus: Some("21:00.0".into()),
             },
         );
-        let mut fans = orca_fans::FansPolicy::default();
-        fans.raw
-            .insert("duct1".into(), serde_json::json!({"temp": "sensor.ctrl_A"}));
+        let fans = orca_fans::FansPolicy::compile(
+            &orca_fans::config::FansConfig::from_toml(
+                r#"
+[fan_backends.esp]
+kind = "esphome"
+url = "http://esp.invalid"
+[fans.duct1]
+backend = "esp"
+channel = 1
+temp = "sensor.ctrl_A"
+load = "gpu.A.power_pct"
+curve = [[60, 30], [82, 100]]
+"#,
+            )
+            .unwrap(),
+            &orca_fans::FanLimits::default(),
+            &|_| true,
+        )
+        .unwrap();
         vec![
             ToHostd::Hello {
                 proto: PROTOCOL_VERSION,
