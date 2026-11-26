@@ -66,8 +66,8 @@ impl RouterLink {
             return Err("The router link token must be at least 32 characters.".into());
         }
         let url = url.trim().trim_end_matches('/').to_string();
-        if !(url.starts_with("http://") || url.starts_with("https://")) {
-            return Err("ABHOTH_ROUTER_URL must be an http(s) URL.".into());
+        if let Err(e) = orca_core::router_link::link_url_ok(&url) {
+            return Err(format!("ABHOTH_ROUTER_URL: {e}"));
         }
         Ok(Self {
             url,
@@ -110,12 +110,31 @@ async fn introspect(State(state): State<Arc<AppState>>, req: Request<Body>) -> R
     let Some(link) = state.options.router.clone() else {
         return error(StatusCode::NOT_FOUND, "Not found.");
     };
+    let peer = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|c| c.0.ip());
+    // The link token only over loopback, the container network, or HTTPS (via a trusted
+    // proxy): refused before the token is looked at, so a LAN client learns nothing.
+    let seen = state.login.seen(peer, req.headers());
+    let direct = peer.is_some_and(orca_core::router_link::link_peer_ok)
+        && !peer.is_some_and(|p| state.login.options.trusted_proxies.contains(&p));
+    if !(seen.https || direct) {
+        state.login.record(
+            "router.introspect.rejected",
+            None,
+            None,
+            seen.ip.map(|i| i.to_string()).as_deref(),
+            json!({"why": "plain http from outside loopback and the container network"}),
+        );
+        return error(
+            StatusCode::FORBIDDEN,
+            "The router link needs HTTPS, loopback or the container network.",
+        );
+    }
     let ok = bearer(req.headers()).is_some_and(|t| fixed_time_eq(t.as_bytes(), &link.token));
     if !ok {
-        let ip = req
-            .extensions()
-            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-            .map(|c| c.0.ip().to_string());
+        let ip = peer.map(|i| i.to_string());
         state.login.record(
             "router.introspect.rejected",
             None,
@@ -307,7 +326,11 @@ async fn proxy_root(state: State<Arc<AppState>>, req: Request<Body>) -> Response
     forward(state, String::new(), req).await
 }
 
-async fn proxy(state: State<Arc<AppState>>, Path(rest): Path<String>, req: Request<Body>) -> Response {
+async fn proxy(
+    state: State<Arc<AppState>>,
+    Path(rest): Path<String>,
+    req: Request<Body>,
+) -> Response {
     forward(state, rest, req).await
 }
 
@@ -349,7 +372,11 @@ async fn forward(State(state): State<Arc<AppState>>, rest: String, req: Request<
     } else {
         format!("/admin/api/{rest}")
     };
-    let query = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
+    let query = req
+        .uri()
+        .query()
+        .map(|q| format!("?{q}"))
+        .unwrap_or_default();
     let mut out = reqwest::header::HeaderMap::new();
     for h in FORWARD_IN {
         if let Some(v) = req.headers().get(*h)
@@ -373,13 +400,17 @@ async fn forward(State(state): State<Arc<AppState>>, rest: String, req: Request<
     if let Ok(v) = reqwest::header::HeaderValue::from_str(&sig) {
         out.insert(router_link::ACTING_USER_HEADER, v);
     }
-    out.insert("x-abhoth-no-switch", reqwest::header::HeaderValue::from_static("1"));
+    out.insert(
+        "x-abhoth-no-switch",
+        reqwest::header::HeaderValue::from_static("1"),
+    );
     let body = match axum::body::to_bytes(req.into_body(), 4 * 1024 * 1024).await {
         Ok(b) => b,
         Err(_) => return error(StatusCode::PAYLOAD_TOO_LARGE, "Request too large."),
     };
     let changes = method != Method::GET && method != Method::HEAD;
-    let rm = reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET);
+    let rm =
+        reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET);
     let sent = http_client()
         .request(rm, format!("{}{path}{query}", link.url))
         .headers(out)

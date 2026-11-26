@@ -409,24 +409,62 @@ impl DemoControl {
                 },
             ],
         };
-        let route = |name: &str, targets: &[&str], cold: &str, fb: &[&str], access: &str, now: &[&str]| RouteView {
-            name: name.into(),
-            targets: targets.iter().map(|s| s.to_string()).collect(),
-            cold: cold.into(),
-            fallback: fb.iter().map(|s| s.to_string()).collect(),
-            access: access.into(),
-            adapters: vec![],
-            hidden: false,
-            same_as: None,
-            serving_now: now.iter().map(|s| s.to_string()).collect(),
-            allow_user_switch: false,
-        };
+        let route =
+            |name: &str, targets: &[&str], cold: &str, fb: &[&str], access: &str, now: &[&str]| {
+                RouteView {
+                    name: name.into(),
+                    targets: targets.iter().map(|s| s.to_string()).collect(),
+                    cold: cold.into(),
+                    fallback: fb.iter().map(|s| s.to_string()).collect(),
+                    access: access.into(),
+                    adapters: vec![],
+                    hidden: false,
+                    same_as: None,
+                    serving_now: now.iter().map(|s| s.to_string()).collect(),
+                    allow_user_switch: false,
+                }
+            };
         let routes = vec![
-            route("qwen3.8-27b", &["pool:live"], "reject", &[], "users", &["card A (ninfer)", "card B (ninfer)"]),
-            route("qwen3.8-27b-a", &["card:A", "card:B (fallback)"], "reject", &[], "users", &["card A (ninfer)"]),
-            route("inkling-2-mini", &["model:inkling2-mini"], "fallback", &["qwen3.8-27b"], "users", &["card A (ninfer)", "card B (ninfer)"]),
-            route("dense-stock", &["model:dense-stock"], "reject", &[], "users", &[]),
-            route("claude-sonnet", &["upstream:anthropic/claude-sonnet-5-5"], "reject", &[], "admins", &["anthropic"]),
+            route(
+                "qwen3.8-27b",
+                &["pool:live"],
+                "reject",
+                &[],
+                "users",
+                &["card A (ninfer)", "card B (ninfer)"],
+            ),
+            route(
+                "qwen3.8-27b-a",
+                &["card:A", "card:B (fallback)"],
+                "reject",
+                &[],
+                "users",
+                &["card A (ninfer)"],
+            ),
+            route(
+                "inkling-2-mini",
+                &["model:inkling2-mini"],
+                "fallback",
+                &["qwen3.8-27b"],
+                "users",
+                &["card A (ninfer)", "card B (ninfer)"],
+            ),
+            route(
+                "dense-stock",
+                &["model:dense-stock"],
+                "reject",
+                &[],
+                "users",
+                &[],
+            ),
+            route(
+                "claude-sonnet",
+                &["upstream:anthropic/claude-sonnet-5-5"],
+                "reject",
+                &[],
+                "admins",
+                &["anthropic"],
+            ),
         ];
         let (tx, _) = broadcast::channel(256);
         Arc::new(Self {
@@ -582,8 +620,9 @@ pub fn demo_check(text: &str) -> Vec<Problem> {
                 out.push(Problem {
                     path: path.clone(),
                     line,
-                    message: "looks like a key: put it in [secrets] and reference it as secret:<id>"
-                        .into(),
+                    message:
+                        "looks like a key: put it in [secrets] and reference it as secret:<id>"
+                            .into(),
                     severity: "error".into(),
                 });
             }
@@ -636,7 +675,13 @@ impl ControlBackend for DemoControl {
         v
     }
     fn job(&self, id: &str) -> Option<Job> {
-        self.inner.lock().unwrap().jobs.iter().find(|j| j.id == id).cloned()
+        self.inner
+            .lock()
+            .unwrap()
+            .jobs
+            .iter()
+            .find(|j| j.id == id)
+            .cloned()
     }
     fn audit(&self, limit: usize, before: Option<i64>) -> Vec<AuditRow> {
         self.inner
@@ -684,7 +729,13 @@ impl ControlBackend for DemoControl {
         }
     }
 
-    async fn save_config(&self, text: &str, if_match: &str, reason: &str, who: &str) -> ApiResult<CheckResult> {
+    async fn save_config(
+        &self,
+        text: &str,
+        if_match: &str,
+        reason: &str,
+        who: &str,
+    ) -> ApiResult<CheckResult> {
         let cur = self.config();
         if if_match != cur.rev {
             return Err(ApiError {
@@ -748,8 +799,15 @@ impl ControlBackend for DemoControl {
         for c in ["A", "B"] {
             let (b, a) = (resolve(&from, c), resolve(&to, c));
             let change = a != b;
-            let strata_coupled = c == "B" && a.starts_with("strata") && b.starts_with("strata") && cards.iter().any(|x: &PlanCard| x.action != "keep");
-            let action = if change || strata_coupled { "restart" } else { "keep" };
+            let strata_coupled = c == "B"
+                && a.starts_with("strata")
+                && b.starts_with("strata")
+                && cards.iter().any(|x: &PlanCard| x.action != "keep");
+            let action = if change || strata_coupled {
+                "restart"
+            } else {
+                "keep"
+            };
             if action != "keep" {
                 moving.push(c.to_string());
             }
@@ -817,9 +875,14 @@ impl ControlBackend for DemoControl {
                     n: i as u32 + 1,
                     title: (*t).into(),
                     detail: match i {
-                        2 if !restores.is_empty() => "restore 1 file from the archive (sha256 checked)".into(),
+                        2 if !restores.is_empty() => {
+                            "restore 1 file from the archive (sha256 checked)".into()
+                        }
                         3 => format!("withdraw slots of card {}", moving.join(", ")),
-                        7 => format!("stop card {}; wait until under 1 GiB used", moving.join(", ")),
+                        7 => format!(
+                            "stop card {}; wait until under 1 GiB used",
+                            moving.join(", ")
+                        ),
                         8 => format!("start card {} and wait for /health", moving.join(", ")),
                         9 => "one-token chat on restarted cards; clocks; compute apps".into(),
                         _ => String::new(),
@@ -844,19 +907,41 @@ impl ControlBackend for DemoControl {
             })
             .collect();
         let slots = |cs: &[&str]| -> Vec<String> {
-            cs.iter().flat_map(|c| (1..=4).map(move |n| format!("{c}{n}"))).collect()
+            cs.iter()
+                .flat_map(|c| (1..=4).map(move |n| format!("{c}{n}")))
+                .collect()
         };
         let preconditions = vec![
-            Check { name: "builds present".into(), status: "pass".into(), reason: None },
-            Check { name: "images present".into(), status: "pass".into(), reason: None },
+            Check {
+                name: "builds present".into(),
+                status: "pass".into(),
+                reason: None,
+            },
+            Check {
+                name: "images present".into(),
+                status: "pass".into(),
+                reason: None,
+            },
             Check {
                 name: "model files present or restorable".into(),
                 status: "pass".into(),
                 reason: (!restores.is_empty()).then(|| "1 file to restore".into()),
             },
-            Check { name: "templates render".into(), status: "pass".into(), reason: None },
-            Check { name: "hostctl allowlist up to date".into(), status: "pass".into(), reason: None },
-            Check { name: "VRAM fits (model + profile ≤ card − reserve)".into(), status: "pass".into(), reason: None },
+            Check {
+                name: "templates render".into(),
+                status: "pass".into(),
+                reason: None,
+            },
+            Check {
+                name: "hostctl allowlist up to date".into(),
+                status: "pass".into(),
+                reason: None,
+            },
+            Check {
+                name: "VRAM fits (model + profile ≤ card − reserve)".into(),
+                status: "pass".into(),
+                reason: None,
+            },
         ];
         Ok(Plan {
             server: server.into(),
@@ -875,7 +960,11 @@ impl ControlBackend for DemoControl {
                 vec![RouteChange {
                     route: "inkling-2-mini".into(),
                     before: vec!["card A".into(), "card B".into()],
-                    after: if layout == "flash-x2" { vec![] } else { vec!["card B".into()] },
+                    after: if layout == "flash-x2" {
+                        vec![]
+                    } else {
+                        vec!["card B".into()]
+                    },
                 }]
             },
             slots_before: slots(&["A", "B"]),
@@ -888,7 +977,10 @@ impl ControlBackend for DemoControl {
     async fn switch(&self, server: &str, layout: &str, who: &str) -> ApiResult<Job> {
         let plan = self.plan(server, layout).await?;
         if let Some(j) = self.state().job {
-            return Err(ApiError::new(409, format!("job {} is running on this server", j.id)));
+            return Err(ApiError::new(
+                409,
+                format!("job {} is running on this server", j.id),
+            ));
         }
         if plan.note.as_deref() == Some("already live") {
             return Err(ApiError::new(409, "already live"));
@@ -896,7 +988,14 @@ impl ControlBackend for DemoControl {
         if !plan.blockers.is_empty() {
             return Err(ApiError {
                 status: 409,
-                message: format!("refused: {}", plan.blockers.iter().map(|b| format!("{} {}", b.kind, b.id)).collect::<Vec<_>>().join(", ")),
+                message: format!(
+                    "refused: {}",
+                    plan.blockers
+                        .iter()
+                        .map(|b| format!("{} {}", b.kind, b.id))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
                 extra: Some(json!({"plan": plan})),
             });
         }
@@ -919,7 +1018,13 @@ impl ControlBackend for DemoControl {
             steps: STEPS
                 .iter()
                 .enumerate()
-                .map(|(i, t)| JobStep { n: i as u32 + 1, title: (*t).into(), state: "pending".into(), seconds: 0.0, output: None })
+                .map(|(i, t)| JobStep {
+                    n: i as u32 + 1,
+                    title: (*t).into(),
+                    state: "pending".into(),
+                    seconds: 0.0,
+                    output: None,
+                })
                 .collect(),
         };
         {
@@ -943,7 +1048,12 @@ impl ControlBackend for DemoControl {
         let inner = self.inner.clone();
         let tx = self.tx.clone();
         let step = self.step_seconds;
-        let moving: Vec<String> = plan.cards.iter().filter(|c| c.action != "keep").map(|c| c.card.clone()).collect();
+        let moving: Vec<String> = plan
+            .cards
+            .iter()
+            .filter(|c| c.action != "keep")
+            .map(|c| c.card.clone())
+            .collect();
         let layout = layout.to_string();
         tokio::spawn(async move {
             for i in 0..STEPS.len() {
@@ -979,7 +1089,10 @@ impl ControlBackend for DemoControl {
                     }
                     let j = g.jobs.iter().find(|j| j.id == id).cloned();
                     drop(g);
-                    let _ = tx.send(Event { kind: "job", data: serde_json::to_value(j).unwrap_or_default() });
+                    let _ = tx.send(Event {
+                        kind: "job",
+                        data: serde_json::to_value(j).unwrap_or_default(),
+                    });
                 }
                 if secs > 0.0 {
                     tokio::time::sleep(Duration::from_secs_f64(secs)).await;
@@ -991,7 +1104,13 @@ impl ControlBackend for DemoControl {
                 }
             }
             let mut g = inner.lock().unwrap();
-            let layout_cards = g.state.layouts.iter().find(|l| l.id == layout).map(|l| l.cards.clone()).unwrap_or_default();
+            let layout_cards = g
+                .state
+                .layouts
+                .iter()
+                .find(|l| l.id == layout)
+                .map(|l| l.cards.clone())
+                .unwrap_or_default();
             for s in g.state.servers.iter_mut() {
                 s.active_layout = Some(layout.clone());
                 for c in s.cards.iter_mut() {
@@ -1024,8 +1143,14 @@ impl ControlBackend for DemoControl {
             let j = g.jobs.iter().find(|j| j.id == id).cloned();
             let st = g.state.clone();
             drop(g);
-            let _ = tx.send(Event { kind: "job", data: serde_json::to_value(j).unwrap_or_default() });
-            let _ = tx.send(Event { kind: "state", data: serde_json::to_value(st).unwrap_or_default() });
+            let _ = tx.send(Event {
+                kind: "job",
+                data: serde_json::to_value(j).unwrap_or_default(),
+            });
+            let _ = tx.send(Event {
+                kind: "state",
+                data: serde_json::to_value(st).unwrap_or_default(),
+            });
         });
         Ok(job)
     }
@@ -1034,9 +1159,16 @@ impl ControlBackend for DemoControl {
         let Some(j) = self.job(id) else {
             return Err(ApiError::new(404, "no such job"));
         };
-        let at = j.steps.iter().position(|s| s.state == "running").unwrap_or(0);
+        let at = j
+            .steps
+            .iter()
+            .position(|s| s.state == "running")
+            .unwrap_or(0);
         if j.state != "running" || at >= 7 {
-            return Err(ApiError::new(409, "a job can be cancelled only before it stops anything (step 8)"));
+            return Err(ApiError::new(
+                409,
+                "a job can be cancelled only before it stops anything (step 8)",
+            ));
         }
         self.audit(who, "job.cancel", id, |_| {});
         Err(ApiError::new(501, "the demo does not cancel jobs"))
@@ -1045,7 +1177,13 @@ impl ControlBackend for DemoControl {
     async fn set_card(&self, card: &str, state: &str, reason: &str, who: &str) -> ApiResult<Job> {
         {
             let mut g = self.inner.lock().unwrap();
-            let Some(c) = g.state.servers.iter_mut().flat_map(|s| s.cards.iter_mut()).find(|c| c.id == card) else {
+            let Some(c) = g
+                .state
+                .servers
+                .iter_mut()
+                .flat_map(|s| s.cards.iter_mut())
+                .find(|c| c.id == card)
+            else {
                 return Err(ApiError::new(404, "no such card"));
             };
             if !c.managed {
@@ -1059,7 +1197,9 @@ impl ControlBackend for DemoControl {
             }
             c.admin_note = (!reason.is_empty()).then(|| format!("{reason} ({who})"));
         }
-        self.audit(who, &format!("card.{state}"), card, |r| r.reason = (!reason.is_empty()).then(|| reason.to_string()));
+        self.audit(who, &format!("card.{state}"), card, |r| {
+            r.reason = (!reason.is_empty()).then(|| reason.to_string())
+        });
         self.publish_state();
         Ok(Job {
             id: "j-card".into(),
@@ -1084,7 +1224,10 @@ impl ControlBackend for DemoControl {
             }
         }
         self.audit(who, "lease.release", key, |_| {});
-        let _ = self.tx.send(Event { kind: "lease", data: serde_json::to_value(self.leases()).unwrap_or_default() });
+        let _ = self.tx.send(Event {
+            kind: "lease",
+            data: serde_json::to_value(self.leases()).unwrap_or_default(),
+        });
         Ok(())
     }
 
@@ -1092,7 +1235,10 @@ impl ControlBackend for DemoControl {
         if let Some(c) = &edit.cold
             && !["reject", "fallback", "on_demand"].contains(&c.as_str())
         {
-            return Err(ApiError::new(422, "cold must be reject, fallback or on_demand"));
+            return Err(ApiError::new(
+                422,
+                "cold must be reject, fallback or on_demand",
+            ));
         }
         let mut g = self.inner.lock().unwrap();
         let names: Vec<String> = g.routes.iter().map(|r| r.name.clone()).collect();
@@ -1102,10 +1248,16 @@ impl ControlBackend for DemoControl {
         let cold = edit.cold.clone().unwrap_or_else(|| r.cold.clone());
         let fallback = edit.fallback.clone().unwrap_or_else(|| r.fallback.clone());
         if cold == "on_demand" && !r.targets.iter().all(|t| t.starts_with("model:")) {
-            return Err(ApiError::new(422, "on_demand only on routes whose targets are catalog models (generic and pinned names never switch)"));
+            return Err(ApiError::new(
+                422,
+                "on_demand only on routes whose targets are catalog models (generic and pinned names never switch)",
+            ));
         }
         if cold == "fallback" && fallback.is_empty() {
-            return Err(ApiError::new(422, "cold = fallback needs at least one fallback route"));
+            return Err(ApiError::new(
+                422,
+                "cold = fallback needs at least one fallback route",
+            ));
         }
         if let Some(bad) = fallback.iter().find(|f| !names.contains(f) || *f == name) {
             return Err(ApiError::new(422, format!("unknown fallback route: {bad}")));
@@ -1113,7 +1265,10 @@ impl ControlBackend for DemoControl {
         if let Some(a) = &edit.access
             && !(a == "users" || a == "admins" || a.starts_with("keys:"))
         {
-            return Err(ApiError::new(422, "access must be users, admins or keys:<names>"));
+            return Err(ApiError::new(
+                422,
+                "access must be users, admins or keys:<names>",
+            ));
         }
         r.cold = cold;
         r.fallback = fallback;
@@ -1128,7 +1283,9 @@ impl ControlBackend for DemoControl {
         }
         let out = r.clone();
         drop(g);
-        self.audit(who, "route.edit", name, |row| row.diff = serde_json::to_string(edit).ok());
+        self.audit(who, "route.edit", name, |row| {
+            row.diff = serde_json::to_string(edit).ok()
+        });
         Ok(out)
     }
 }

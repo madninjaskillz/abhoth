@@ -143,10 +143,22 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
         },
         (_, p) if p == "/admin/api" || p.starts_with("/admin/api/") => match st.control.get() {
             Some(cp) => {
-                crate::control_api::handle(cp, &method, &path_q, &headers, peer.map(|p| p.ip()), &raw)
-                    .await
+                crate::control_api::handle(
+                    cp,
+                    &method,
+                    &path_q,
+                    &headers,
+                    peer.map(|p| p.ip()),
+                    &raw,
+                )
+                .await
             }
-            None => proxy::error(404, "the control plane is off (control.enabled)", "not_found", None),
+            None => proxy::error(
+                404,
+                "the control plane is off (control.enabled)",
+                "not_found",
+                None,
+            ),
         },
         (_, p) if p.starts_with("/admin/") => {
             if !loopback && !admin_allowed(&snap, &headers) {

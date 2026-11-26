@@ -48,7 +48,10 @@ pub struct ConfigBackend {
 }
 
 fn not_built() -> ApiError {
-    ApiError::new(501, "the orchestrator is not plugged in yet; nothing was changed")
+    ApiError::new(
+        501,
+        "the orchestrator is not plugged in yet; nothing was changed",
+    )
 }
 
 fn now_ms() -> i64 {
@@ -153,7 +156,12 @@ impl ConfigBackend {
         me
     }
 
-    pub fn with_actions(main: &Path, state_dir: &Path, store: Arc<Store>, actions: Arc<dyn Actions>) -> Arc<Self> {
+    pub fn with_actions(
+        main: &Path,
+        state_dir: &Path,
+        store: Arc<Store>,
+        actions: Arc<dyn Actions>,
+    ) -> Arc<Self> {
         let (tx, _) = broadcast::channel(256);
         let me = Arc::new(Self {
             main: main.to_path_buf(),
@@ -230,7 +238,10 @@ impl ConfigBackend {
         if let Ok(rd) = std::fs::read_dir(&self.backups) {
             let mut v: Vec<PathBuf> = rd
                 .filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("router.toml.bak-")))
+                .filter(|p| {
+                    p.file_name()
+                        .is_some_and(|n| n.to_string_lossy().starts_with("router.toml.bak-"))
+                })
                 .collect();
             v.sort();
             if v.len() > 100 {
@@ -265,7 +276,9 @@ impl ControlBackend for ConfigBackend {
                 .filter(|(_, card)| &card.server == sid)
                 .map(|(cid, card)| {
                     let admin = self.store.card_admin(cid).ok();
-                    let inst = instances.iter().find(|i| &i.card == cid && &i.server == sid);
+                    let inst = instances
+                        .iter()
+                        .find(|i| &i.card == cid && &i.server == sid);
                     CardView {
                         id: cid.clone(),
                         server: sid.clone(),
@@ -286,7 +299,11 @@ impl ControlBackend for ConfigBackend {
                             .map(|a| format!("{} ({})", a.reason, a.by)),
                         engine: inst.filter(|i| !i.engine.is_empty()).map(|i| EngineView {
                             engine: i.engine.clone(),
-                            profile: i.spec.as_ref().map(|s| s.profile.clone()).unwrap_or_default(),
+                            profile: i
+                                .spec
+                                .as_ref()
+                                .map(|s| s.profile.clone())
+                                .unwrap_or_default(),
                             model: i.spec.as_ref().map(|s| s.model.clone()).unwrap_or_default(),
                             served_id: String::new(),
                             state: i.state.as_str().to_string(),
@@ -305,7 +322,11 @@ impl ControlBackend for ConfigBackend {
                 .collect();
             st.servers.push(ServerView {
                 id: sid.clone(),
-                title: if s.title.is_empty() { sid.clone() } else { s.title.clone() },
+                title: if s.title.is_empty() {
+                    sid.clone()
+                } else {
+                    s.title.clone()
+                },
                 reachability: "unknown".into(),
                 exec: format!("{:?}", s.exec).to_lowercase(),
                 active_layout: active.as_ref().map(|a| a.layout.clone()),
@@ -463,7 +484,10 @@ impl ControlBackend for ConfigBackend {
     }
 
     fn leases(&self) -> LeasesView {
-        self.actions.as_ref().map(|a| a.leases()).unwrap_or_default()
+        self.actions
+            .as_ref()
+            .map(|a| a.leases())
+            .unwrap_or_default()
     }
 
     fn routes(&self) -> Vec<RouteView> {
@@ -473,14 +497,24 @@ impl ControlBackend for ConfigBackend {
         c.routes
             .iter()
             .map(|(name, r)| {
-                let base = r.same_as.as_ref().and_then(|s| c.routes.get(s)).unwrap_or(r);
+                let base = r
+                    .same_as
+                    .as_ref()
+                    .and_then(|s| c.routes.get(s))
+                    .unwrap_or(r);
                 RouteView {
                     name: name.clone(),
                     targets: base.targets.iter().map(target_text).collect(),
                     cold: cold_text(r.cold.as_ref().unwrap_or(&c.route_defaults.cold)).into(),
                     fallback: r.fallback.clone(),
-                    access: r.access.clone().unwrap_or_else(|| c.route_defaults.access.clone()),
-                    adapters: r.adapters.clone().unwrap_or_else(|| c.route_defaults.adapters.clone()),
+                    access: r
+                        .access
+                        .clone()
+                        .unwrap_or_else(|| c.route_defaults.access.clone()),
+                    adapters: r
+                        .adapters
+                        .clone()
+                        .unwrap_or_else(|| c.route_defaults.adapters.clone()),
                     hidden: r.hidden,
                     same_as: r.same_as.clone(),
                     serving_now: vec![],
@@ -515,12 +549,20 @@ impl ControlBackend for ConfigBackend {
                         .iter()
                         .filter(|(k, v)| old.routes.get(*k) != Some(*v))
                         .map(|(k, _)| k)
-                        .chain(old.routes.keys().filter(|k| !l.config.routes.contains_key(*k)))
+                        .chain(
+                            old.routes
+                                .keys()
+                                .filter(|k| !l.config.routes.contains_key(*k)),
+                        )
                         .collect();
                     if !changed_routes.is_empty() {
                         consequences.push(format!(
                             "routes changed for new requests: {}",
-                            changed_routes.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                            changed_routes
+                                .iter()
+                                .map(|s| s.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
                         ));
                     }
                     for (sid, _) in &l.config.servers {
@@ -546,7 +588,13 @@ impl ControlBackend for ConfigBackend {
         }
     }
 
-    async fn save_config(&self, text: &str, if_match: &str, reason: &str, who: &str) -> ApiResult<CheckResult> {
+    async fn save_config(
+        &self,
+        text: &str,
+        if_match: &str,
+        reason: &str,
+        who: &str,
+    ) -> ApiResult<CheckResult> {
         let _g = self.save_lock.lock().await;
         // The file may have been edited by hand since the last load: compare with disk.
         let disk = self.main_text();
@@ -629,14 +677,22 @@ impl ControlBackend for ConfigBackend {
         let routes = doc
             .get_mut("routes")
             .and_then(|r| r.as_table_like_mut())
-            .ok_or_else(|| ApiError::new(404, "no routes in the main file (included files are edited in the Config page)"))?;
+            .ok_or_else(|| {
+                ApiError::new(
+                    404,
+                    "no routes in the main file (included files are edited in the Config page)",
+                )
+            })?;
         let route = routes
             .get_mut(name)
             .and_then(|r| r.as_table_like_mut())
             .ok_or_else(|| ApiError::new(404, "no such route in the main file"))?;
         if let Some(c) = &edit.cold {
             if !["reject", "fallback", "on_demand"].contains(&c.as_str()) {
-                return Err(ApiError::new(422, "cold must be reject, fallback or on_demand"));
+                return Err(ApiError::new(
+                    422,
+                    "cold must be reject, fallback or on_demand",
+                ));
             }
             route.insert("cold", toml_edit::value(c.as_str()));
         }
@@ -670,7 +726,9 @@ impl ControlBackend for ConfigBackend {
         }
         let new_text = doc.to_string();
         let rev = self.config().rev;
-        let disk_rev = load::load_with(&self.main, text.clone()).map(|l| l.rev).unwrap_or(rev);
+        let disk_rev = load::load_with(&self.main, text.clone())
+            .map(|l| l.rev)
+            .unwrap_or(rev);
         match self
             .save_config(&new_text, &disk_rev, &format!("route {name}"), who)
             .await
@@ -721,19 +779,57 @@ mod tests {
     async fn saves_check_back_up_write_and_audit() {
         let (d, b) = setup();
         let doc = b.config();
-        let bad = format!("{}\n[upstreams.zz]\nkind = \"openai\"\nbase_url = \"https://x\"\nkey = \"sk-abc123456789\"\n", doc.text);
+        let bad = format!(
+            "{}\n[upstreams.zz]\nkind = \"openai\"\nbase_url = \"https://x\"\nkey = \"sk-abc123456789\"\n",
+            doc.text
+        );
         let chk = b.check_config(&bad).await;
         assert!(!chk.ok);
-        assert!(chk.problems.iter().any(|p| p.path.starts_with("upstreams.zz") && p.severity == "error"), "{:?}", chk.problems);
-        assert_eq!(b.save_config(&bad, &doc.rev, "", "t").await.unwrap_err().status, 422);
-        assert_eq!(b.save_config(&doc.text, "nope", "", "t").await.unwrap_err().status, 412);
+        assert!(
+            chk.problems
+                .iter()
+                .any(|p| p.path.starts_with("upstreams.zz") && p.severity == "error"),
+            "{:?}",
+            chk.problems
+        );
+        assert_eq!(
+            b.save_config(&bad, &doc.rev, "", "t")
+                .await
+                .unwrap_err()
+                .status,
+            422
+        );
+        assert_eq!(
+            b.save_config(&doc.text, "nope", "", "t")
+                .await
+                .unwrap_err()
+                .status,
+            412
+        );
         let edited = doc.text.replacen("version = 1", "version = 1\n# edited", 1);
-        let r = b.save_config(&edited, &doc.rev, "why", "web:admin#1").await.unwrap();
+        let r = b
+            .save_config(&edited, &doc.rev, "why", "web:admin#1")
+            .await
+            .unwrap();
         assert!(r.diff.contains("+# edited"));
-        assert!(std::fs::read_to_string(d.path().join("router.toml")).unwrap().contains("# edited"));
-        assert_eq!(std::fs::read_dir(d.path().join("backups")).unwrap().count(), 1);
+        assert!(
+            std::fs::read_to_string(d.path().join("router.toml"))
+                .unwrap()
+                .contains("# edited")
+        );
+        assert_eq!(
+            std::fs::read_dir(d.path().join("backups")).unwrap().count(),
+            1
+        );
         let a = b.audit(5, None);
-        assert_eq!((a[0].action.as_str(), a[0].who.as_str(), a[0].reason.as_deref()), ("config.save", "web:admin#1", Some("why")));
+        assert_eq!(
+            (
+                a[0].action.as_str(),
+                a[0].who.as_str(),
+                a[0].reason.as_deref()
+            ),
+            ("config.save", "web:admin#1", Some("why"))
+        );
     }
 
     #[tokio::test]
@@ -742,19 +838,45 @@ mod tests {
         let r = b.routes();
         let name = r[0].name.clone();
         let before = std::fs::read_to_string(d.path().join("router.toml")).unwrap();
-        let comments = before.lines().filter(|l| l.trim_start().starts_with('#')).count();
+        let comments = before
+            .lines()
+            .filter(|l| l.trim_start().starts_with('#'))
+            .count();
         let out = b
-            .edit_route(&name, &RouteEdit { access: Some("admins".into()), ..Default::default() }, "t")
+            .edit_route(
+                &name,
+                &RouteEdit {
+                    access: Some("admins".into()),
+                    ..Default::default()
+                },
+                "t",
+            )
             .await
             .unwrap();
         assert_eq!(out.access, "admins");
         let after = std::fs::read_to_string(d.path().join("router.toml")).unwrap();
-        assert_eq!(after.lines().filter(|l| l.trim_start().starts_with('#')).count(), comments);
+        assert_eq!(
+            after
+                .lines()
+                .filter(|l| l.trim_start().starts_with('#'))
+                .count(),
+            comments
+        );
         // on_demand on a pool route: the validator refuses, nothing written
-        let pool = b.routes().into_iter().find(|r| r.targets.iter().any(|t| t.starts_with("pool:")));
+        let pool = b
+            .routes()
+            .into_iter()
+            .find(|r| r.targets.iter().any(|t| t.starts_with("pool:")));
         if let Some(p) = pool {
             let e = b
-                .edit_route(&p.name, &RouteEdit { cold: Some("on_demand".into()), ..Default::default() }, "t")
+                .edit_route(
+                    &p.name,
+                    &RouteEdit {
+                        cold: Some("on_demand".into()),
+                        ..Default::default()
+                    },
+                    "t",
+                )
                 .await
                 .unwrap_err();
             assert_eq!(e.status, 422);
