@@ -124,7 +124,8 @@ jobs:
         run: git diff --exit-code --stat -- dist
 
   # The single image (root Dockerfile, D148): builds, and the container starts healthy with
-  # the web UI on; a router with a bad config stops the whole container (all parts restart).
+  # the web UI on; a router with a bad config is restarted with backoff while the web UI keeps
+  # running (self-healing parts).
   # GitHub-hosted: the self-hosted runners have no Docker. Not pushed anywhere (yet).
   image:
     if: github.event_name != 'pull_request'
@@ -153,17 +154,19 @@ jobs:
           curl -fsS http://127.0.0.1:18093/api/auth/state
           docker stop -t 15 abhoth
           [ "$(docker inspect -f '{{.State.ExitCode}}' abhoth)" = 0 ]
-      - name: A failed part stops the container
+      - name: A failed part is restarted and the web UI keeps running
         run: |
           docker rm -f abhoth
           docker run -d --name abhoth2 --network host --read-only --tmpfs /tmp             -e PORT=18094 -e ROUTER_ARGS="--config /data/router/missing.json --port 18010"             -v "$PWD/data:/data" abhoth:ci
           for i in $(seq 1 30); do
-            [ "$(docker inspect -f '{{.State.Running}}' abhoth2)" = false ] && break
+            docker logs abhoth2 2>&1 | grep -q 'restarting the router (restart 2)' && break
             sleep 2
           done
           docker logs abhoth2 2>&1 | tail -5
-          [ "$(docker inspect -f '{{.State.Running}}' abhoth2)" = false ]
-          [ "$(docker inspect -f '{{.State.ExitCode}}' abhoth2)" != 0 ]
+          docker logs abhoth2 2>&1 | grep -q 'restarting the router (restart 2)'
+          [ "$(docker inspect -f '{{.State.Running}}' abhoth2)" = true ]
+          curl -fsS http://127.0.0.1:18094/api/auth/state
+          docker stop -t 15 abhoth2
 
   # The Windows exes cross-compiled on Linux (cargo-xwin, x86_64-pc-windows-msvc), clippy for
   # the Windows target, the Linux release build, and Velopack packages of both: a Windows

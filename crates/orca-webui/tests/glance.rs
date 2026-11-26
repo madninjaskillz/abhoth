@@ -490,7 +490,8 @@ async fn card_actions_go_to_the_router_as_the_admin_and_the_calendar_comes_from_
     let mut cal = Value::Null;
     for _ in 0..100 {
         cal = glance.full.snapshot().state["calendar"].clone();
-        if cal.is_object() {
+        // The fixture's own `calendar` (now/next) can come first; wait for the router's.
+        if cal["active"].is_array() {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
