@@ -121,8 +121,14 @@ async fn answers_like_an_openai_model() {
     let tdir = tempfile::tempdir().unwrap();
     let token = tdir.path().join("token");
     std::fs::write(&token, "test-oauth-token-value\n").unwrap();
-    // the token file, as a container would mount it
-    let rig = rig_with(HELLO, json!({"oauthTokenFile": token}), json!({})).await;
+    // the token file, as a container would mount it, and a HOME of its own
+    let home = tdir.path().join("claude-home");
+    let rig = rig_with(
+        HELLO,
+        json!({"oauthTokenFile": token, "home": home}),
+        json!({}),
+    )
+    .await;
     let resp = chat(&rig.r.url, hello_body(false)).await;
     assert_eq!(resp.status(), 200);
     assert_eq!(resp.headers()["x-abhoth-card"], "claude");
@@ -153,6 +159,8 @@ async fn answers_like_an_openai_model() {
         "test-oauth-token-value"
     );
     assert!(recs[0]["env"]["ANTHROPIC_API_KEY"].is_null());
+    assert_eq!(recs[0]["env"]["HOME"], home.display().to_string());
+    assert!(home.is_dir(), "the engine creates its HOME");
     assert_eq!(recs[0]["env"]["CLAUDE_CODE_MAX_OUTPUT_TOKENS"], "16");
     assert_eq!(recs[1]["system"], "You are terse.");
     let user = &recs[2]["stdin"];

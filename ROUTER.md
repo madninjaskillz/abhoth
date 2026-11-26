@@ -863,6 +863,7 @@ may not use it keep the route's other cards, or get 403 when it has none.
   "rateLimitWaitSeconds": 30,
   "workDir": "/state/claude",          // default <temp>/abhoth-claude
   "oauthTokenFile": "/run/secrets/claude-oauth-token",  // containers; none = the CLI's login
+  "home": "/state/claude/home",        // the CLI's own HOME; none = the router's HOME
   // admins only by default: it is the operator's personal subscription and Anthropic's
   // consumer terms are about personal use. Change only knowingly.
   "access": "admins",
@@ -897,6 +898,15 @@ version, with the note on `access` as a field, is `deploy/router/claude.example.
    `max_tokens: 8` (from loopback inside the container, or with the admin key) answers;
    `/metrics` shows `abhoth_claude_sessions_started_total 1`.
 6. Rollback: `"enabled": false` in `base.json` (hot reload), or the previous image.
+
+In the single container (D148: web UI, router and supervisor in one process) the web UI's
+Claude Code bridge and terminal already use `HOME`, so the engine gets a `home` of its own
+inside the router's state (`/data/router/claude/home`, with `workDir` `/data/router/claude`):
+32 CLIs starting at once must not write the web UI's `~/.claude.json`. The image is built with
+`--build-arg FEATURES=claude-engine` (the CLI is in it already), the token is mounted read-only
+at `/run/secrets/claude-oauth-token` (owner 568, mode 0400) and the `claude` block goes into
+the router config the container reads (`router.onedocker.json`, hot reloaded). Rollback is the
+same: `"enabled": false`, or the previous image.
 
 Measured on the operator's PC (2026-11-26, CLI 2.1.332, haiku): 2.1 s to the first token and
 2.2 s in all for a short streamed answer, 3.8 s for a tool call, 1.7 s for the follow-up turn

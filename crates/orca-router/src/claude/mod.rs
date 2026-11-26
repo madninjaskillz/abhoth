@@ -59,6 +59,11 @@ pub struct ClaudeConfig {
     /// `CLAUDE_CODE_OAUTH_TOKEN`, read at each start, never logged. None = the CLI's own login.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oauth_token_file: Option<String>,
+    /// The CLI's HOME (its `~/.claude.json` and `~/.claude/`), created if missing. Set it when
+    /// the router shares a HOME with another Claude Code user (the single container's web UI),
+    /// so the two never write the same files. None = the router's own HOME.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home: Option<String>,
     /// Who may use the routes: `admins` (default), `users`, `anonymous` or `keys:<names>`.
     /// It is one person's subscription and Anthropic's consumer terms are about personal use,
     /// so it is not opened to service keys or other users unless the operator says so.
@@ -93,6 +98,7 @@ impl Default for ClaudeConfig {
             rate_limit_wait_seconds: 30,
             work_dir: None,
             oauth_token_file: None,
+            home: None,
             access: "admins".into(),
             safe_mode: true,
             default_system_prompt: "You are Claude, an AI assistant made by Anthropic.".into(),

@@ -49,6 +49,7 @@ fn main() {
             "CLAUDE_CODE_OAUTH_TOKEN": env("CLAUDE_CODE_OAUTH_TOKEN"),
             "ANTHROPIC_API_KEY": env("ANTHROPIC_API_KEY"),
             "CLAUDE_CODE_MAX_OUTPUT_TOKENS": env("CLAUDE_CODE_MAX_OUTPUT_TOKENS"),
+            "HOME": env("HOME"),
         },
     }));
     // the system prompt file, as the real CLI would read it

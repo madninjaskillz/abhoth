@@ -516,6 +516,12 @@ impl Session {
         if let Some(t) = &token {
             cmd.env("CLAUDE_CODE_OAUTH_TOKEN", t);
         }
+        if let Some(h) = cfg.home.as_deref().filter(|h| !h.is_empty()) {
+            std::fs::create_dir_all(h)
+                .map_err(|e| std::io::Error::new(e.kind(), format!("home {h}: {e}")))?;
+            // HOME alone decides where the CLI keeps its files
+            cmd.env("HOME", h).env_remove("CLAUDE_CONFIG_DIR");
+        }
         #[cfg(windows)]
         {
             // no console window per request
