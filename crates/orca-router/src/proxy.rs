@@ -248,11 +248,61 @@ pub async fn forward_cards(
             }
         }
     }
+    // Calendar reservations (SUPERVISOR.md 9.4): others stay off held cards; the event's own
+    // key goes to its cards first.
+    let mut mine: Vec<String> = Vec::new();
+    if let Some(cal) = crate::calendar::installed() {
+        use crate::calendar::reserve::ChatAccess;
+        match cal.chat_access(crate::access::bearer(&headers), &model, &candidates) {
+            ChatAccess::Denied(status, reason) => {
+                return finish_error(
+                    &st,
+                    rec,
+                    started,
+                    &model,
+                    status,
+                    &reason,
+                    "permission_error",
+                    None,
+                );
+            }
+            ChatAccess::Holds(holds) => {
+                mine = holds
+                    .iter()
+                    .filter(|h| h.allowed)
+                    .map(|h| h.card.clone())
+                    .collect();
+                let theirs: Vec<_> = holds.iter().filter(|h| !h.allowed).collect();
+                if let Some(first) = theirs.first() {
+                    let rest: Vec<String> = candidates
+                        .iter()
+                        .filter(|c| !theirs.iter().any(|h| &h.card == *c))
+                        .cloned()
+                        .collect();
+                    rec.set("reserved", first.entry.clone());
+                    if rest.is_empty() {
+                        let wait = (first.until - crate::calendar::reserve::now()).max(1);
+                        let mut resp = error(503, &first.message(), "service_unavailable", None);
+                        if let Ok(v) = HeaderValue::from_str(&wait.to_string()) {
+                            resp.headers_mut().insert("retry-after", v);
+                        }
+                        return finish_resp(&st, rec, started, &model, resp);
+                    }
+                    candidates = rest;
+                }
+            }
+        }
+    }
     let place = placement::place(&st, &snap, &headers, body, &candidates, &mut rec).await;
-    let Placement { order, permit } = match place {
+    let Placement { mut order, permit } = match place {
         Ok(p) => p,
         Err(resp) => return finish_resp(&st, rec, started, &model, *resp),
     };
+    if !mine.is_empty() && permit.is_none() {
+        // the event's reserved lanes first, then the free ones
+        order.sort_by_key(|c| !mine.contains(c));
+        rec.set("placement", "reserved");
+    }
     let mut tried: Vec<String> = Vec::new();
     let max_attempts = 1 + snap.config.settings.failovers as usize;
     let mut last_err = String::new();
@@ -291,6 +341,7 @@ pub async fn forward_cards(
                 if tried.len() > 1 {
                     rec.set("failover", tried[..tried.len() - 1].join(","));
                 }
+                let preempt = preemptible(&mine, &card);
                 return stream_back(
                     &st,
                     rec,
@@ -302,6 +353,7 @@ pub async fn forward_cards(
                     &dep.served_id,
                     &card,
                     &up.url,
+                    preempt,
                 );
             }
             Attempt::Failed(why, resp) => {
@@ -327,6 +379,7 @@ pub async fn forward_cards(
                             &dep.served_id,
                             &card,
                             &up.url,
+                            preemptible(&mine, &card),
                         );
                     }
                 } else {
@@ -396,6 +449,7 @@ async fn relay(
             &dep.served_id,
             "relay",
             &r.url,
+            None,
         ),
         Attempt::Failed(why, None) => {
             drop(guard);
@@ -468,6 +522,7 @@ pub async fn lb(
                     &up.served_id,
                     &card,
                     &up.url,
+                    None,
                 );
             }
             Attempt::Failed(why, resp) => {
@@ -488,6 +543,7 @@ pub async fn lb(
                             &up.served_id,
                             &card,
                             &up.url,
+                            None,
                         );
                     }
                     rec.set("error", why);
@@ -515,6 +571,7 @@ fn stream_back(
     served: &str,
     card: &str,
     upstream: &str,
+    preempt: Option<tokio::sync::watch::Receiver<u64>>,
 ) -> Response {
     let status = resp.status().as_u16();
     rec.set("status", status);
@@ -548,8 +605,25 @@ fn stream_back(
     if let Ok(v) = HeaderValue::from_str(upstream) {
         h.insert("x-abhoth-upstream", v);
     }
+    let sse = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("text/event-stream"));
+    let preempt: Option<Preempt> = preempt.map(|mut rx| {
+        rx.borrow_and_update();
+        let f: Preempt = Box::pin(async move {
+            if rx.changed().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        });
+        f
+    });
     let tracked = Tracked {
         inner: Box::pin(resp.bytes_stream()),
+        preempt,
+        sse,
+        preempted: false,
         fin: Some(Finish {
             st: st.clone(),
             rec,
@@ -585,11 +659,26 @@ struct Finish {
 }
 
 type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>;
+type Preempt = Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+
+/// The preempt watch for a request on `card` (SUPERVISOR.md 9.4), unless the request is the
+/// reserving event's own (`mine`). None without a calendar.
+fn preemptible(mine: &[String], card: &str) -> Option<tokio::sync::watch::Receiver<u64>> {
+    crate::calendar::installed()?;
+    (!mine.iter().any(|c| c == card)).then(|| crate::calendar::reserve::preempt_watch(card))
+}
+
+/// The SSE event a preempted stream ends with.
+const PREEMPTED_SSE: &[u8] = b"data: {\"error\":{\"message\":\"preempted by a calendar reservation of this card; retry\",\"type\":\"preempted_by_reservation\",\"code\":\"503\"}}\n\n";
 
 /// The upstream body on its way to the client: counts TTFT, finds the last `usage`, and logs
 /// the request when it ends (completed, truncated by the upstream, or abandoned by the client).
 struct Tracked {
     inner: ByteStream,
+    /// resolves when a calendar reservation preempts the card
+    preempt: Option<Preempt>,
+    sse: bool,
+    preempted: bool,
     fin: Option<Finish>,
     tail: Vec<u8>,
     first: Option<Instant>,
@@ -604,6 +693,19 @@ impl Stream for Tracked {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = &mut *self;
+        if this.preempted {
+            return Poll::Ready(None);
+        }
+        if let Some(p) = this.preempt.as_mut()
+            && p.as_mut().poll(cx).is_ready()
+        {
+            this.preempt = None;
+            this.preempted = true;
+            if this.sse {
+                return Poll::Ready(Some(Ok(Bytes::from_static(PREEMPTED_SSE))));
+            }
+            return Poll::Ready(None);
+        }
         match this.inner.as_mut().poll_next(cx) {
             Poll::Ready(Some(Ok(b))) => {
                 this.first.get_or_insert_with(Instant::now);
@@ -636,7 +738,12 @@ impl Drop for Tracked {
             f.rec.set("ttftSeconds", round3(t));
         }
         f.rec.set("seconds", round3(total));
-        if self.errored {
+        if self.preempted {
+            f.rec.set("end", "preempted");
+            if let Some(cal) = crate::calendar::installed() {
+                cal.preempted(&f.card, &f.model);
+            }
+        } else if self.errored {
             f.rec.set("end", "truncated");
             f.st.metrics.truncated();
         } else if !self.ended {
