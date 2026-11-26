@@ -1,6 +1,6 @@
 # The Abhoth Supervisor (design)
 
-Status (2026-11-26): **design only, nothing built.** This document grows the router control
+Status (2026-11-26): **design; building started.** The open questions of section 15 are resolved (15). This document grows the router control
 plane of [ROUTER-CONFIG.md](ROUTER-CONFIG.md) into **`abhoth supervisor`**, a single control
 plane for the GPU host. The router, which handles layouts, engines, routes, leases and
 adapters, becomes one subsystem of it. The new subsystems are:
@@ -64,7 +64,7 @@ key names and the fan map.
 12. [Glance in the Abhoth web UI](#12-glance-in-the-abhoth-web-ui)
 13. [Abhoth as a supervisor client](#13-abhoth-as-a-supervisor-client)
 14. [Build plan](#14-build-plan)
-15. [Open questions](#15-open-questions)
+15. [Open questions (resolved)](#15-open-questions-resolved)
 16. [Decisions in this document](#16-decisions-in-this-document)
 - [Appendix A: the ESP32 fan controller (pinout, wiring, BOM, firmware)](#appendix-a-the-esp32-fan-controller)
 
@@ -83,7 +83,7 @@ User decisions, 2026-11-26. These are fixed inputs.
 | S2 | **Glance is rebuilt inside the Abhoth web UI** as a dashboard page, fed live by the supervisor. It has an optional public read-only view. The Python dash container is retired once the new page reaches parity, which needs a parity table. |
 | S3 | **Fan control:** a configurable temperature source per fan or zone: any sensor, or an expression such as max or avg, with fallbacks. The power/load feed-forward is configurable. Backends are pluggable: ESPHome, hwmon, IPMI, liquidctl, NVIDIA and Windows. **Fail-safe to full speed on stale data, preferably on the device.** The fan pusher is reproduced in config and then retired. The ESPHome YAML, the pinout and a BOM are included. |
 | S4 | **Home Assistant over MQTT discovery:** sensors, controls and availability. Credentials come only from env or file references. |
-| S5 | **Also absorbed:** GPU clocks and power (clockctl, gpu-power, boot script; card A pinned at its full 1597 MHz, re-asserted after engine starts); ComfyUI, image-api and SA3 as engines; alerts; and a generic calendar that replaces the special-case guards, with live detection, a UI, iCal import and today's cron pipelines imported. |
+| S5 | **Also absorbed:** GPU clocks and power (clockctl, gpu-power, boot script; card A at its full 1597 MHz, re-asserted after engine starts; **revised 2026-11-26: "unlocked" boost, not pinned**, see D-SV6); ComfyUI, image-api and SA3 as engines; alerts; and a generic calendar that replaces the special-case guards, with live detection, a UI, iCal import and today's cron pipelines imported. |
 | S6 | **Event API keys** (added 2026-11-26): an event can have its own key. Inside the event window, that key bypasses the event's own reservations and blocks. It can carry admin-chosen control scopes, defaulting to least privilege. It is time-bound, uses D140 key storage, is audited, has explicit priority rules, and can never bypass the probe rule, the excluded cards or thermal safety. |
 | S7 | **Abhoth as a supervisor client** (added 2026-11-26): the app (CLI, web UI, desktop) points at a supervisor with one URL and key, and learns models, capabilities, warm/cold state, layouts, leases, calendar and status from it. Manual providers still work alongside it; existing installs migrate without loss. |
 
@@ -564,7 +564,7 @@ verification becomes part of it.
 | `persistence` | `nvidia-smi -pm 1` at boot and on assert. Without it the driver drops `-lgc` locks. |
 | `power_limit_w` | `-pl`. Within the card's min/max and the limits file. |
 | `app_clocks` | `[mem, sm]` (`-ac`), e.g. B `[877, 1380]` |
-| `serving` | Clocks while an engine on the card is `Ready` or busy. `"unlocked"` (`-rgc`); `{ pin = 1597 }` (`-lgc 1597,1597`); `{ range = [lo, hi] }`; `{ cap = 1400 }` (`-lgc 0,1400`). Card A: `{ pin = 1597 }`. **Hardware slowdowns (thermal, power brake) still apply under a lock.** |
+| `serving` | Clocks while an engine on the card is `Ready` or busy. `"unlocked"` (`-rgc`); `{ pin = 1597 }` (`-lgc 1597,1597`); `{ range = [lo, hi] }`; `{ cap = 1400 }` (`-lgc 0,1400`). Card A: `"unlocked"` (it boosts up to 1597 MHz when cool; 15 Q4). **Hardware slowdowns (thermal, power brake) still apply under a lock.** |
 | `idle` | `{ after = "60s", lock_mhz = 135, util_at_most = 0, wake = ["router", "sniff", "util"], sniff_ports = [...] }`, or `false` |
 | `reassert` | `["boot", "engine_ready", "every:5m", "driver_reload"]` |
 | `on_mismatch` | `"fix"` (default for `pin`), `"warn"` or `"fail"` (ROUTER-CONFIG.md 6.6) |
@@ -578,7 +578,7 @@ verification becomes part of it.
 - **Engine `Ready`** (switch step 10 and reconcile): the supervisor sends `assert {card}`.
   - hostd applies `serving`, checks `clocks.max.sm`, the locked range, the app clocks and the
     power limit, and fixes any mismatch.
-  - The result goes into the job step as "A pinned 1597, PL 350 W ✓".
+  - The result goes into the job step as "A unlocked (max 1597), PL 350 W ✓".
   - This is the **re-assert after engine starts** that nothing does today.
 - **Every 5 min:** the same check, cheap. Drift raises a `clock_mismatch` alert and is fixed
   per `on_mismatch`.
@@ -606,7 +606,8 @@ verification becomes part of it.
 
 The old "GPU Max Clock" HA select becomes a **per-card cap with a TTL** (`override {card,
 clock_cap, ttl}`), exposed in the UI and in HA (11.3). It cannot apply to a card whose
-`serving` is `pin` unless `allow_cap = true`. On A it is false by default, so A stays at 1597.
+`serving` is `pin` unless `allow_cap = true`. Card A sets `allow_cap = false` explicitly, so
+nothing caps its boost below 1597.
 The calendar can set a `clock_profile` (for example `quiet = { cap = 1200 }` at night) with
 the same rule.
 
@@ -644,7 +645,7 @@ ComfyUI, the image-api shim and SA3 become `[engines.*]` with drivers from ROUTE
 |---|---|---|---|---|
 | `comfyui` | C | `GET :8188/system_stats` | `standing` | none directly; behind the shim |
 | `image-api` | none (CPU shim) | `GET :8189/health` (it reports backends: enabled, healthy, in flight, queue, served/failed, unet) | `standing`, `depends_on = ["comfyui"]` | `kind = "images"`: `/v1/images/generations` and `/v1/images/edits` → `:8189` |
-| `sa3` | configurable (**not pinned today**: the container has the nvidia runtime without a device list) | `GET :8095/health` | `on_request`, `idle_stop = "30m"` (15 Q9) | `kind = "music"`: `/v1/audio/music` → passthrough to the SA3 API |
+| `sa3` | configurable (**not pinned today**: the container has the nvidia runtime without a device list) | `GET :8095/health` | `standing`: always running (15 Q9) | `kind = "music"`: `/v1/audio/music` → passthrough to the SA3 API |
 
 Routes get a `kind` (`chat` is the default, then `images`, `audio` and `music`). Access,
 budgets, leases and the calendar apply to them as to chat.
@@ -654,7 +655,9 @@ Two safety rules from the LLM side carry over:
 - **A probe can never start a media engine.** Only authenticated admissions can, as with
   switches.
 - **Today's music mode** (a guard file) becomes a calendar effect or an engine conflict:
-  `conflicts = ["layout:*@B"]`, so SA3 on card B blocks LLM switches on B.
+  `conflicts = ["layout:*@B"]`, so SA3 on card B blocks LLM switches on B. Because SA3 is
+  always running (15 Q9), the conflict holds only while it is generating (busy), not merely
+  while it is up.
 
 Glance shows them in the Image generation and Services panels (12.2).
 
@@ -711,7 +714,7 @@ The guards of ROUTER-CONFIG.md 7.1 gain **kind `calendar`** (`{ kind = "calendar
 | `quiet-window` (`schedule` 06:45-07:30) | `lead = "15m"` on the AI News entry |
 | `video` (`process`) | `detect.process` on each pipeline entry |
 | `bench` (`json_file`) | the bench queue creates a one-off entry with its event key when a run starts (or keeps its guard lease; 15 Q10) |
-| `music` (`file_exists`) | a `music` entry created by the SA3 engine's `on_request` start, or the SA3 conflict (7) |
+| `music` (`file_exists`) | the SA3 conflict while it is generating (7), or a `music` calendar entry |
 | `dense-lead` (`file_exists`) | stays a guard; it is a layout fact, not a schedule |
 
 `schedule` guards remain as sugar: the importer turns them into calendar entries.
@@ -1407,30 +1410,35 @@ ROUTER-CONFIG.md phase it waits for.
 | rc-ui | admin page shell | the supervisor pages slot into it (SV14) |
 | all | root `Cargo.toml` | each new crate adds one `members` line: a trivial merge |
 
-## 15. Open questions
+## 15. Open questions (resolved)
 
-| # | Question | Recommendation |
+All resolved on 2026-11-26. Q4 and Q9 were decided by the user against the recommendation;
+the rest take the recommendation.
+
+### Resolved
+
+| # | Question | Resolution |
 |---|---|---|
-| 1 | Host daemon on the host (systemd from the apps pool) vs a privileged container? | **Host** (2.3): hardware loops must outlive container redeploys; a privileged container is root anyway |
-| 2 | ESPHome transport: keep `web_server` REST + digest, or move to the encrypted native API? | **REST for parity** now (proven, SSE for reads); native API later (removes the web password, needs a Rust noise-protocol client) |
-| 3 | Should config own the ESP's curve numbers (Curve Low/High, Min Duty, FF, Critical) and write them? | **Yes, after a read-only diff phase**; the device keeps them with `restore_value`, so it stays safe without the host |
-| 4 | Card A while serving: `pin` 1597 (`-lgc 1597,1597`) or `unlocked` (boost to 1597 when cool)? | **`pin`** as asked; slowdowns still apply. Revisit if HBM temps rise (watch `hot_card`) |
-| 5 | Public Glance: what to hide? | Drop recent requests, OOM process names, container names and error text; keep the rest; off until enabled |
-| 6 | Keep the HA "GPU Max Clock" control at all? | Replace with per-card cap with TTL, not offered on A |
-| 7 | MQTT ids: reuse `deepthought_*` unique_ids for the replaced entities? | **Yes** (history and automations survive); new entities use `abhoth_<server>_*` |
-| 8 | Main push channel for alerts? | **HA mobile notify**; ntfy optional |
-| 9 | SA3: standing or on-request (frees VRAM when idle)? | **On-request with 30 min idle stop**, pinned to one card in config |
-| 10 | Bench protection: calendar entry with key, or keep the guard lease? | **Calendar entry with key** created by the bench queue (one mechanism, visible in the calendar); keep the lease for slot pinning |
-| 11 | Event-key default for `on_reserve`? | **`wait`**; `preempt` only for `high`+ with a warning |
-| 12 | Calendar storage: config include or database? | **`calendar.toml` include** (diffable, backups); occurrences and key use in `router.db` |
-| 13 | iCal: subscribe to an external calendar? | Support it, **off by default**; import-once covers the known need |
-| 14 | BMC fan control | **Read-only** (as today); `ipmi` write only if the limits file allows it |
-| 15 | Prometheus nvidia_gpu_exporter after hostd exports GPU metrics | Keep 30 days, then remove (Grafana panels move to `abhoth_gpu_*`) |
-| 16 | Windows backend | Design only; build when a Windows GPU box needs it |
-| 17 | Client key setup: paste a key, or the browser "connect" flow that mints a per-device key? | **Both**; connect is the default (no copy/paste, revocable per device) |
-| 18 | Web container: one service token with act-as-user, or a key per web user? | **Service token with act-as-user** (no per-user setup; both audited); the token can only act as existing, enabled users |
-| 19 | Cold `on_demand` from the app: ask the user every time, or remember per model? | **Ask once per model per day**, with "always for this model" in settings |
-| 20 | Should `/v1/models` carry the `abhoth` extension, or only the catalog endpoint? | **Both**: the extension costs nothing and helps generic clients; the catalog is the full document |
+| 1 | Host daemon on the host (systemd from the apps pool) vs a privileged container? | **Host** (2.3): hardware loops must outlive container redeploys; a privileged container is root anyway (as recommended) |
+| 2 | ESPHome transport: keep `web_server` REST + digest, or move to the encrypted native API? | **REST for parity** now (proven, SSE for reads); native API later (removes the web password, needs a Rust noise-protocol client) (as recommended) |
+| 3 | Should config own the ESP's curve numbers (Curve Low/High, Min Duty, FF, Critical) and write them? | **Yes, after a read-only diff phase**; the device keeps them with `restore_value`, so it stays safe without the host (as recommended) |
+| 4 | Card A while serving: `pin` 1597 (`-lgc 1597,1597`) or `unlocked` (boost to 1597 when cool)? | **`unlocked`** (user, 2026-11-26): A boosts up to 1597 MHz when cool and is never pinned; `allow_cap = false`; `assert` checks it reaches 1597 when busy and cool (D-SV6) |
+| 5 | Public Glance: what to hide? | Drop recent requests, OOM process names, container names and error text; keep the rest; off until enabled (as recommended) |
+| 6 | Keep the HA "GPU Max Clock" control at all? | Replace with per-card cap with TTL, not offered on A (as recommended) |
+| 7 | MQTT ids: reuse `deepthought_*` unique_ids for the replaced entities? | **Yes** (history and automations survive); new entities use `abhoth_<server>_*` (as recommended) |
+| 8 | Main push channel for alerts? | **HA mobile notify**; ntfy optional (as recommended) |
+| 9 | SA3: standing or on-request (frees VRAM when idle)? | **Standing, always running** (user, 2026-11-26); no idle stop. Its layout conflict on its card applies only while it is generating |
+| 10 | Bench protection: calendar entry with key, or keep the guard lease? | **Calendar entry with key** created by the bench queue (one mechanism, visible in the calendar); keep the lease for slot pinning (as recommended) |
+| 11 | Event-key default for `on_reserve`? | **`wait`**; `preempt` only for `high`+ with a warning (as recommended) |
+| 12 | Calendar storage: config include or database? | **`calendar.toml` include** (diffable, backups); occurrences and key use in `router.db` (as recommended) |
+| 13 | iCal: subscribe to an external calendar? | Support it, **off by default**; import-once covers the known need (as recommended) |
+| 14 | BMC fan control | **Read-only** (as today); `ipmi` write only if the limits file allows it (as recommended) |
+| 15 | Prometheus nvidia_gpu_exporter after hostd exports GPU metrics | Keep 30 days, then remove (Grafana panels move to `abhoth_gpu_*`) (as recommended) |
+| 16 | Windows backend | Design only; build when a Windows GPU box needs it (as recommended) |
+| 17 | Client key setup: paste a key, or the browser "connect" flow that mints a per-device key? | **Both**; connect is the default (no copy/paste, revocable per device) (as recommended) |
+| 18 | Web container: one service token with act-as-user, or a key per web user? | **Service token with act-as-user** (no per-user setup; both audited); the token can only act as existing, enabled users (as recommended) |
+| 19 | Cold `on_demand` from the app: ask the user every time, or remember per model? | **Ask once per model per day**, with "always for this model" in settings (as recommended) |
+| 20 | Should `/v1/models` carry the `abhoth` extension, or only the catalog endpoint? | **Both**: the extension costs nothing and helps generic clients; the catalog is the full document (as recommended) |
 
 ## 16. Decisions in this document
 
@@ -1441,7 +1449,7 @@ ROUTER-CONFIG.md phase it waits for.
 | D-SV3 | Fans prefer device-side curves with host-pushed inputs; host curves only where the hardware has no curve | the device's fail-safe works when everything else is dead |
 | D-SV4 | Missing sensor values are never 0; strict and `_avail` functions are explicit | silent zeros are how fans stop |
 | D-SV5 | Safety floors and caps live below policy (limits file, device), not in profiles, keys or calendar | nothing configurable can make cooling unsafe |
-| D-SV6 | Card A pinned at 1597 while serving; clocks re-asserted on every engine `Ready` and every 5 min | the drift nothing catches today |
+| D-SV6 | Card A runs **unlocked** while serving and boosts up to 1597 MHz when cool (user decision 2026-11-26, replacing the pin); `allow_cap = false` keeps caps off it; clocks re-asserted on every engine `Ready` and every 5 min, and `assert` checks it reaches 1597 when busy and cool | the drift nothing catches today; a pin would hold 1597 even when hot |
 | D-SV7 | Router admission is the primary wake signal for idle clock-down; sniffing stays as a fallback | the router sees requests first and costs nothing |
 | D-SV8 | One calendar replaces the special-case guards; cron keeps starting jobs | describe and protect, don't become a scheduler |
 | D-SV9 | Event keys are D140 keys (`abe_`) valid only in their occurrences, least-privilege scopes, owned and audited | a pipeline gets its card without opening anything outside its window |

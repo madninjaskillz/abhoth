@@ -943,7 +943,8 @@ ha_token          = { file = "/run/secrets/ha-token" }
 [cards.A.power]
 persistence   = true
 power_limit_w = 350
-serving       = { pin = 1597 }             # full boost while serving (lock 1597,1597)
+serving       = "unlocked"                 # boosts up to 1597 MHz when cool (SUPERVISOR.md D-SV6)
+expect_max_sm_mhz = 1597                   # assert: busy and cool, it must reach this
 idle          = { after = "60s", lock_mhz = 135, wake = ["router", "sniff", "util"] }
 reassert      = ["boot", "engine_ready", "every:5m"]
 on_mismatch   = "fix"
@@ -1039,10 +1040,9 @@ api       = "sa3"
 driver    = "compose"
 run       = { app = "stable-audio" }
 health    = { http = "http://127.0.0.1:8095/health" }
-lifecycle = "on_request"
-idle_stop = "30m"
-card      = "B"                             # placement to confirm (SUPERVISOR.md 15 Q9)
-conflicts = ["layout:*@B"]                  # replaces the music-mode guard file
+lifecycle = "standing"                      # always running (SUPERVISOR.md 15 Q9)
+card      = "B"
+conflicts = ["layout:*@B"]                  # while generating; replaces the music-mode guard file
 
 [routes."qwen-image"]
 kind    = "images"
@@ -1440,7 +1440,7 @@ do. It does:
 
 Taking over clock management is a later, separate decision (open question 7). **Decided
 2026-11-26:** the supervisor takes it over through `abhoth hostd` (SUPERVISOR.md 6). The
-verify step above becomes hostd's `assert`, card A is pinned at 1597 MHz while it serves, and
+verify step above becomes hostd's `assert`, card A runs unlocked and boosts up to 1597 MHz while it serves (SUPERVISOR.md D-SV6), and
 clockctl, gpu-power and `boot.sh` are retired.
 
 ## 7. Guards and the cold-model policy
