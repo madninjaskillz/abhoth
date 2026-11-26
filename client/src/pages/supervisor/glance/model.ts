@@ -207,8 +207,8 @@ export interface Pool {
 export interface CalendarEntry {
   id: string;
   title: string;
-  start: string;
-  end: string;
+  start?: string;
+  end?: string;
   badges?: string[];
 }
 
@@ -774,14 +774,14 @@ export function alertsFromSection(a: unknown[]): Alert[] {
   });
 }
 
-type Occ = { id: string; entry?: string; title?: string; start: number; end: number; block_start?: number; block_end?: number; skipped?: boolean };
+type Occ = { id?: string; entry?: string; title?: string; start?: number; end: number; block_start?: number; block_end?: number; skipped?: boolean };
 type CalBlock = { occurrence?: string; entry?: string; action?: string; target?: { kind?: string; name?: string } | string; until?: number };
 
-const targetText = (t: CalBlock["target"]) => (typeof t === "string" ? t : !t || t.kind === "all" ? "" : t.kind === "card" ? `card ${t.name}` : `${t.kind} ${t.name ?? ""}`.trim());
+const targetText = (t: CalBlock["target"]) => (typeof t === "string" ? (t === "*" ? "" : t) : !t || t.kind === "all" ? "" : t.kind === "card" ? `card ${t.name}` : `${t.kind} ${t.name ?? ""}`.trim());
 
 function blockBadge(b: CalBlock): string {
   const t = targetText(b.target);
-  switch (b.action) {
+  switch (b.action?.replace(/^block_/, "")) {
     case "switch": return t && !t.startsWith("server") ? `no switches on ${t}` : "no switches";
     case "on_demand": return "no on-demand";
     case "use": return `${t || "card"} reserved`;
@@ -794,10 +794,10 @@ function blockBadge(b: CalBlock): string {
 export function calendarFromSection(c: Record<string, unknown>): GlanceState["calendar"] {
   // Already the strip's shape (a recording of the old dash's).
   if (Array.isArray(c.now)) return c as GlanceState["calendar"];
-  const iso = (t: number) => new Date(t * 1000).toISOString();
+  const iso = (t: unknown) => (typeof t === "number" && Number.isFinite(t) ? new Date(t * 1000).toISOString() : undefined);
   const blocks = (Array.isArray(c.blocks) ? c.blocks : []) as CalBlock[];
   const badges = (o: Occ) => {
-    const bs = blocks.filter((b) => b.occurrence === o.id || (!b.occurrence && b.entry === o.entry)).map(blockBadge);
+    const bs = blocks.filter((b) => (o.id ? b.occurrence === o.id : b.entry === o.entry) || (!b.occurrence && b.entry === o.entry)).map(blockBadge);
     return [...new Set(bs)];
   };
   const at = typeof c.at === "number" ? c.at : Date.now() / 1000;
@@ -805,12 +805,12 @@ export function calendarFromSection(c: Record<string, unknown>): GlanceState["ca
   let next = (Array.isArray(c.next) ? c.next : []) as Occ[];
   if (Array.isArray(c.entries)) {
     const all = c.entries as Occ[];
-    active = all.filter((o) => (o.block_start ?? o.start) <= at && at < (o.block_end ?? o.end) && !o.skipped);
-    next = all.filter((o) => (o.block_start ?? o.start) > at && !o.skipped).sort((x, y) => x.start - y.start);
+    active = all.filter((o) => (o.block_start ?? o.start ?? 0) <= at && at < (o.block_end ?? o.end ?? 0) && !o.skipped);
+    next = all.filter((o) => (o.block_start ?? o.start ?? 0) > at && !o.skipped).sort((x, y) => (x.start ?? 0) - (y.start ?? 0));
   }
   return {
-    now: active.map((o) => ({ id: o.id, title: o.title ?? o.entry ?? o.id, start: iso(o.start), end: iso(o.end), badges: badges(o) })),
-    next: next.map((o) => ({ id: o.id, title: o.title ?? o.entry ?? o.id, start: iso(o.start), end: iso(o.end), badges: [] })),
+    now: active.map((o) => ({ id: o.id ?? o.entry ?? "", title: o.title ?? o.entry ?? o.id ?? "", start: iso(o.start), end: iso(o.end), badges: badges(o) })),
+    next: next.map((o) => ({ id: o.id ?? o.entry ?? "", title: o.title ?? o.entry ?? o.id ?? "", start: iso(o.start), end: iso(o.end), badges: [] })),
   };
 }
 

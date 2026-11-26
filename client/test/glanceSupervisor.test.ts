@@ -77,6 +77,16 @@ test("calendar: the router's now and next, with the blocks as badges", () => {
   assert.deepEqual(c.now![0].badges, ["no switches", "card C reserved"]);
   assert.equal(c.next![0].title, "Daily news");
   assert.equal(c.now![0].end, new Date((t + 600) * 1000).toISOString());
+  // The supervisor's own calendar section: active items carry no id or start.
+  const sv = calendarFromSection({
+    block: true, active_event: "video",
+    active: [{ entry: "video", title: "Video", end: t + 900 }],
+    blocks: [{ entry: "video", action: "block_switch", target: "*", until: t + 900 }],
+    mutes: [{ rules: "hot_*", entry: "video", until: t + 900 }],
+  })!;
+  assert.equal(sv.now![0].title, "Video");
+  assert.deepEqual(sv.now![0].badges, ["no switches"]);
+  assert.equal(sv.now![0].start, undefined);
   const e = calendarFromSection({ at: t, entries: [{ id: "a", start: t - 1, end: t + 1 }, { id: "b", start: t + 5, end: t + 9 }] })!;
   assert.deepEqual([e.now![0].id, e.next![0].id], ["a", "b"]);
 });

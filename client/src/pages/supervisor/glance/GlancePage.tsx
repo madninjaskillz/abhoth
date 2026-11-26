@@ -590,14 +590,14 @@ function Engines({ s, store, nowMs }: { s: GlanceState; store: GlanceStore; nowM
 function CalendarStrip({ s }: { s: GlanceState }) {
   const c = s.calendar;
   if (!c || (!c.now?.length && !c.next?.length)) return null;
-  const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const time = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "?");
   return (
     <div className="strip" aria-label="Calendar">
       {(c.now || []).map((e) => (
-        <span key={"n" + e.id}><span className="lbl">Now</span> <b>{e.title}</b> until {time(e.end)}{(e.badges || []).map((b) => <span className="badge" key={b}>{b}</span>)}</span>
+        <span key={"n" + e.id}><span className="lbl">Now</span> <b>{e.title}</b> {e.end ? <> until {time(e.end)}</> : null}{(e.badges || []).map((b) => <span className="badge" key={b}>{b}</span>)}</span>
       ))}
       {(c.next || []).slice(0, 2).map((e) => (
-        <span key={"x" + e.id}><span className="lbl">Next</span> {e.title} {time(e.start)}–{time(e.end)}{(e.badges || []).map((b) => <span className="badge" key={b}>{b}</span>)}</span>
+        <span key={"x" + e.id}><span className="lbl">Next</span> {e.title} {e.start ? time(e.start) : ""}{e.end ? `–${time(e.end)}` : ""}{(e.badges || []).map((b) => <span className="badge" key={b}>{b}</span>)}</span>
       ))}
     </div>
   );
