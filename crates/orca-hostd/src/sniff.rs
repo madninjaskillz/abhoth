@@ -25,12 +25,19 @@ pub struct PortMap {
 
 impl PortMap {
     pub fn ports(&self) -> Vec<u16> {
-        let s: BTreeSet<u16> = self.ip.keys().map(|(_, p)| *p).chain(self.any.keys().copied()).collect();
+        let s: BTreeSet<u16> = self
+            .ip
+            .keys()
+            .map(|(_, p)| *p)
+            .chain(self.any.keys().copied())
+            .collect();
         s.into_iter().collect()
     }
 
     pub fn targets(&self, dst: &[u8], port: u16) -> Option<&BTreeSet<String>> {
-        self.ip.get(&(dst.to_vec(), port)).or_else(|| self.any.get(&port))
+        self.ip
+            .get(&(dst.to_vec(), port))
+            .or_else(|| self.any.get(&port))
     }
 }
 
@@ -40,7 +47,8 @@ const IGNORE_PORTS: [u16; 3] = [22, 53, 111];
 fn listen_ports(proc_: &Path, pid: u32, inodes: Option<&BTreeSet<String>>) -> BTreeSet<u16> {
     let mut out = BTreeSet::new();
     for f in ["tcp", "tcp6"] {
-        let Ok(text) = std::fs::read_to_string(proc_.join(pid.to_string()).join("net").join(f)) else {
+        let Ok(text) = std::fs::read_to_string(proc_.join(pid.to_string()).join("net").join(f))
+        else {
             continue;
         };
         for line in text.lines().skip(1) {
@@ -48,7 +56,10 @@ fn listen_ports(proc_: &Path, pid: u32, inodes: Option<&BTreeSet<String>>) -> BT
             if p.len() > 9
                 && p[3] == "0A"
                 && inodes.is_none_or(|i| i.contains(p[9]))
-                && let Some(port) = p[1].rsplit(':').next().and_then(|h| u16::from_str_radix(h, 16).ok())
+                && let Some(port) = p[1]
+                    .rsplit(':')
+                    .next()
+                    .and_then(|h| u16::from_str_radix(h, 16).ok())
             {
                 out.insert(port);
             }
@@ -61,7 +72,12 @@ fn listen_ports(proc_: &Path, pid: u32, inodes: Option<&BTreeSet<String>>) -> BT
 fn stat_parent(proc_: &Path, pid: u32) -> Option<(String, u32)> {
     let st = std::fs::read_to_string(proc_.join(pid.to_string()).join("stat")).ok()?;
     let comm = st.get(st.find('(')? + 1..st.rfind(')')?)?.to_string();
-    let ppid = st.get(st.rfind(')')? + 2..)?.split_whitespace().nth(1)?.parse().ok()?;
+    let ppid = st
+        .get(st.rfind(')')? + 2..)?
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()?;
     Some((comm, ppid))
 }
 
@@ -80,13 +96,21 @@ fn sock_inodes(proc_: &Path, mut pid: u32) -> BTreeSet<String> {
                 }
             }
         }
-        let Some((comm, ppid)) = stat_parent(proc_, pid) else { break };
+        let Some((comm, ppid)) = stat_parent(proc_, pid) else {
+            break;
+        };
         if ppid <= 1 || comm.starts_with("containerd-shim") {
             break;
         }
         pid = ppid;
         match std::fs::read_to_string(proc_.join(pid.to_string()).join("comm")) {
-            Ok(c) if c.starts_with("containerd-shim") || c.starts_with("systemd") || c.starts_with("dockerd") => break,
+            Ok(c)
+                if c.starts_with("containerd-shim")
+                    || c.starts_with("systemd")
+                    || c.starts_with("dockerd") =>
+            {
+                break;
+            }
             Ok(_) => {}
             Err(_) => break,
         }
@@ -132,7 +156,11 @@ fn netns(proc_: &Path, pid: &str) -> Option<std::path::PathBuf> {
 }
 
 /// Builds the port map from the cards' compute PIDs and the configured extra ports.
-pub fn discover(proc_: &Path, pids: &BTreeMap<String, Vec<u32>>, extra: &BTreeMap<String, Vec<u16>>) -> PortMap {
+pub fn discover(
+    proc_: &Path,
+    pids: &BTreeMap<String, Vec<u32>>,
+    extra: &BTreeMap<String, Vec<u16>>,
+) -> PortMap {
     let mut m = PortMap::default();
     for (card, ports) in extra {
         for p in ports {
@@ -142,7 +170,9 @@ pub fn discover(proc_: &Path, pids: &BTreeMap<String, Vec<u32>>, extra: &BTreeMa
     let host_ns = netns(proc_, "1");
     for (card, ps) in pids {
         for &pid in ps {
-            let Some(ns) = netns(proc_, &pid.to_string()) else { continue };
+            let Some(ns) = netns(proc_, &pid.to_string()) else {
+                continue;
+            };
             if host_ns.is_none() || Some(&ns) == host_ns.as_ref() {
                 for p in listen_ports(proc_, pid, Some(&sock_inodes(proc_, pid))) {
                     m.any.entry(p).or_default().insert(card.clone());
@@ -154,7 +184,9 @@ pub fn discover(proc_: &Path, pids: &BTreeMap<String, Vec<u32>>, extra: &BTreeMa
                         m.any.entry(p).or_default().insert(card.clone());
                     }
                     for ip in &ips {
-                        m.ip.entry((ip.clone(), p)).or_default().insert(card.clone());
+                        m.ip.entry((ip.clone(), p))
+                            .or_default()
+                            .insert(card.clone());
                     }
                 }
             }
@@ -192,7 +224,11 @@ mod linux {
 
     fn open(ports: &[u16]) -> std::io::Result<Socket> {
         // ETH_P_ALL in network byte order.
-        let s = Socket::new(Domain::PACKET, Type::DGRAM, Some(Protocol::from(i32::from(3u16.to_be()))))?;
+        let s = Socket::new(
+            Domain::PACKET,
+            Type::DGRAM,
+            Some(Protocol::from(i32::from(3u16.to_be()))),
+        )?;
         attach(&s, ports)?;
         s.set_read_timeout(Some(Duration::from_millis(500)))?;
         Ok(s)
@@ -287,12 +323,20 @@ mod tests {
         };
         mk("1", "1", "", "1 (init) S 0");
         // A container engine on port 8000 (0x1F40), listening; its netns has 172.17.0.2.
-        mk("50", "2", "   0: 00000000:1F40 00000000:0000 0A 0 0 0 0 0 0 0 0 777 1\n   1: 00000000:0016 00000000:0000 0A 0 0 0 0 0 0 0 0 778 1\n", "50 (python) S 1");
+        mk(
+            "50",
+            "2",
+            "   0: 00000000:1F40 00000000:0000 0A 0 0 0 0 0 0 0 0 777 1\n   1: 00000000:0016 00000000:0000 0A 0 0 0 0 0 0 0 0 778 1\n",
+            "50 (python) S 1",
+        );
         std::fs::write(p.join("50/net/fib_trie"), "Main:\n  +-- 0.0.0.0/0\n     |-- 172.17.0.2\n        /32 host LOCAL\n     |-- 127.0.0.1\n        /32 host LOCAL\n").unwrap();
         let pids = BTreeMap::from([("A".to_string(), vec![50]), ("B".to_string(), vec![99])]);
         let extra = BTreeMap::from([("B".to_string(), vec![8188])]);
         let m = discover(p, &pids, &extra);
-        assert_eq!(m.any.get(&8188).unwrap().iter().collect::<Vec<_>>(), vec!["B"]);
+        assert_eq!(
+            m.any.get(&8188).unwrap().iter().collect::<Vec<_>>(),
+            vec!["B"]
+        );
         #[cfg(unix)]
         {
             assert!(m.targets(&[172, 17, 0, 2], 8000).unwrap().contains("A"));

@@ -20,8 +20,8 @@ use crate::files::{self, Paths};
 use crate::limits::LoadedLimits;
 use crate::policy;
 use crate::protocol::{
-    AssertReport, Envelope, ErrorCode, FromHostd, HostdEvent, HostdStatus, LoopHealth, MAX_FRAME, Override, PROTOCOL_VERSION,
-    PolicyDoc, Target, TelemetryBatch, ToHostd,
+    AssertReport, Envelope, ErrorCode, FromHostd, HostdEvent, HostdStatus, LoopHealth, MAX_FRAME,
+    Override, PROTOCOL_VERSION, PolicyDoc, Target, TelemetryBatch, ToHostd,
 };
 use crate::sample::{Collector, Want, batch_readings};
 
@@ -81,7 +81,13 @@ impl Shared {
     }
 
     pub fn event(&self, kind: &str, severity: Severity, text: String, data: Value) {
-        let e = HostdEvent { ts: now_ms(), kind: kind.into(), severity, text, data };
+        let e = HostdEvent {
+            ts: now_ms(),
+            kind: kind.into(),
+            severity,
+            text,
+            data,
+        };
         eprintln!("hostd: {} {}", e.kind, e.text);
         let _ = self.events.send(e);
     }
@@ -92,13 +98,21 @@ impl Shared {
 
     /// Validates and applies a policy. `persist` is false when re-applying the one from disk.
     pub async fn apply_policy(&self, doc: PolicyDoc, persist: bool) -> Result<u64, Vec<String>> {
-        let v = policy::validate(doc, &self.limits.limits, if persist { self.policy_rev() } else { None })?;
+        let v = policy::validate(
+            doc,
+            &self.limits.limits,
+            if persist { self.policy_rev() } else { None },
+        )?;
         let rev = v.doc.rev;
         // Open the fan backends before anything changes, so a bad secret refuses the policy.
         let opened = if v.doc.fans.fans.is_empty() {
             None
         } else {
-            Some(crate::fans::open(&v.doc.fans, &self.limits.limits, &self.secrets_dir)?)
+            Some(crate::fans::open(
+                &v.doc.fans,
+                &self.limits.limits,
+                &self.secrets_dir,
+            )?)
         };
         if persist && let Some(p) = &self.paths {
             files::save_policy(p, &v.doc).map_err(|e| vec![format!("saving the policy: {e}")])?;
@@ -114,13 +128,24 @@ impl Shared {
             }
             if let Some(o) = opened {
                 if !o.shadow.is_empty() {
-                    lock(&self.notes).push(format!("fan backends in shadow: {}", o.shadow.join(", ")));
+                    lock(&self.notes)
+                        .push(format!("fan backends in shadow: {}", o.shadow.join(", ")));
                 }
-                *f = Some(crate::fans::FanRuntime::start(&v.doc.fans, o, self.store.clone(), self.fan_tick));
+                *f = Some(crate::fans::FanRuntime::start(
+                    &v.doc.fans,
+                    o,
+                    self.store.clone(),
+                    self.fan_tick,
+                ));
             }
         }
         *lock(&self.policy) = Some(v.doc);
-        self.event("policy.applied", Severity::Info, format!("policy rev {rev} in force"), Value::Null);
+        self.event(
+            "policy.applied",
+            Severity::Info,
+            format!("policy rev {rev} in force"),
+            Value::Null,
+        );
         Ok(rev)
     }
 
@@ -130,7 +155,10 @@ impl Shared {
         match msg {
             ToHostd::Hello { proto, .. } => {
                 if proto != PROTOCOL_VERSION {
-                    return err(ErrorCode::Version, format!("hostd speaks protocol {PROTOCOL_VERSION}, not {proto}"));
+                    return err(
+                        ErrorCode::Version,
+                        format!("hostd speaks protocol {PROTOCOL_VERSION}, not {proto}"),
+                    );
                 }
                 (
                     FromHostd::Hello {
@@ -149,22 +177,40 @@ impl Shared {
                 match self.apply_policy(doc, true).await {
                     Ok(rev) => (FromHostd::PolicyApplied { rev }, false),
                     Err(reasons) => {
-                        self.event("policy.refused", Severity::Warning, reasons.join("; "), Value::Null);
+                        self.event(
+                            "policy.refused",
+                            Severity::Warning,
+                            reasons.join("; "),
+                            Value::Null,
+                        );
                         (FromHostd::PolicyRefused { rev, reasons }, false)
                     }
                 }
             }
             ToHostd::Wake { card } => {
-                let _ = self.clocks.send(ClockMsg::Wake { card, source: WakeSource::Router, detail: "router admission".into() });
+                let _ = self.clocks.send(ClockMsg::Wake {
+                    card,
+                    source: WakeSource::Router,
+                    detail: "router admission".into(),
+                });
                 (FromHostd::Ack, false)
             }
-            ToHostd::Hold { target, ttl_s, reason } => {
+            ToHostd::Hold {
+                target,
+                ttl_s,
+                reason,
+            } => {
                 if let Err(e) = self.limits.limits.check_ttl(Duration::from_secs(ttl_s)) {
                     return err(ErrorCode::Forbidden, e);
                 }
                 let (tx, rx) = oneshot::channel();
                 let card = target_id(&target);
-                let _ = self.clocks.send(ClockMsg::Hold { card, reason, ttl: Duration::from_secs(ttl_s), reply: tx });
+                let _ = self.clocks.send(ClockMsg::Hold {
+                    card,
+                    reason,
+                    ttl: Duration::from_secs(ttl_s),
+                    reply: tx,
+                });
                 match rx.await {
                     Ok(Ok(())) => (FromHostd::Ack, false),
                     Ok(Err(e)) => err(ErrorCode::Forbidden, e),
@@ -194,14 +240,22 @@ impl Shared {
             }
             ToHostd::Override(o) => match o {
                 Override::FanDuty { fan, duty, ttl_s } => match self.fans.lock().await.as_ref() {
-                    None => err(ErrorCode::NotFound, format!("no fan {fan:?}: the policy has no fans")),
+                    None => err(
+                        ErrorCode::NotFound,
+                        format!("no fan {fan:?}: the policy has no fans"),
+                    ),
                     Some(f) => match f.set_override(&fan, Some(duty), ttl_s as f64) {
                         Ok(()) => (FromHostd::Ack, false),
                         Err(e) => err(ErrorCode::Forbidden, e),
                     },
                 },
                 Override::ClockCap { card, mhz, ttl_s } => self.cap(card, Some(mhz), ttl_s).await,
-                Override::Clear { card: Some(card), .. } => self.cap(card, None, self.limits.limits.gpu.max_ttl.as_secs()).await,
+                Override::Clear {
+                    card: Some(card), ..
+                } => {
+                    self.cap(card, None, self.limits.limits.gpu.max_ttl.as_secs())
+                        .await
+                }
                 Override::Clear { fan: Some(fan), .. } => match self.fans.lock().await.as_ref() {
                     Some(f) => match f.set_override(&fan, None, 0.0) {
                         Ok(()) => (FromHostd::Ack, false),
@@ -213,14 +267,30 @@ impl Shared {
             },
             ToHostd::Assert { card } => {
                 let (tx, rx) = oneshot::channel();
-                let _ = self.clocks.send(ClockMsg::Assert { card: card.clone(), reason: AssertReason::EngineReady, reply: tx });
+                let _ = self.clocks.send(ClockMsg::Assert {
+                    card: card.clone(),
+                    reason: AssertReason::EngineReady,
+                    reply: tx,
+                });
                 match rx.await {
                     Ok(Some(o)) => {
-                        let mut actions: Vec<String> = o.applied.iter().map(|c| c.describe()).collect();
+                        let mut actions: Vec<String> =
+                            o.applied.iter().map(|c| c.describe()).collect();
                         actions.extend(o.mismatches.iter().cloned());
-                        (FromHostd::AssertResult(AssertReport { card: o.card, ok: o.ok, actions, summary: o.summary }), false)
+                        (
+                            FromHostd::AssertResult(AssertReport {
+                                card: o.card,
+                                ok: o.ok,
+                                actions,
+                                summary: o.summary,
+                            }),
+                            false,
+                        )
                     }
-                    Ok(None) => err(ErrorCode::NotFound, format!("card {card} has no power policy")),
+                    Ok(None) => err(
+                        ErrorCode::NotFound,
+                        format!("card {card} has no power policy"),
+                    ),
                     Err(_) => err(ErrorCode::Unavailable, "clocks loop not running".into()),
                 }
             }
@@ -230,18 +300,39 @@ impl Shared {
 
     async fn cap(&self, card: String, mhz: Option<u32>, ttl_s: u64) -> (FromHostd, bool) {
         let (tx, rx) = oneshot::channel();
-        let _ = self.clocks.send(ClockMsg::Cap { card, cap: mhz, ttl: Duration::from_secs(ttl_s), reply: tx });
+        let _ = self.clocks.send(ClockMsg::Cap {
+            card,
+            cap: mhz,
+            ttl: Duration::from_secs(ttl_s),
+            reply: tx,
+        });
         match rx.await {
             Ok(Ok(())) => (FromHostd::Ack, false),
-            Ok(Err(e)) => (FromHostd::Error { code: ErrorCode::Forbidden, message: e }, false),
-            Err(_) => (FromHostd::Error { code: ErrorCode::Unavailable, message: "clocks loop not running".into() }, false),
+            Ok(Err(e)) => (
+                FromHostd::Error {
+                    code: ErrorCode::Forbidden,
+                    message: e,
+                },
+                false,
+            ),
+            Err(_) => (
+                FromHostd::Error {
+                    code: ErrorCode::Unavailable,
+                    message: "clocks loop not running".into(),
+                },
+                false,
+            ),
         }
     }
 
     pub async fn status(&self) -> HostdStatus {
         let (tx, rx) = oneshot::channel();
         let _ = self.clocks.send(ClockMsg::Status { reply: tx });
-        let cards = tokio::time::timeout(Duration::from_secs(5), rx).await.ok().and_then(Result::ok).unwrap_or_default();
+        let cards = tokio::time::timeout(Duration::from_secs(5), rx)
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or_default();
         let mut holds = Vec::new();
         let mut overrides = Vec::new();
         for c in &cards {
@@ -254,7 +345,12 @@ impl Shared {
         }
         let mut loops: Vec<LoopHealth> = lock(&self.health).values().cloned().collect();
         for n in lock(&self.notes).iter() {
-            loops.push(LoopHealth { name: "note".into(), ok: true, last_ok: None, last_error: Some(n.clone()) });
+            loops.push(LoopHealth {
+                name: "note".into(),
+                ok: true,
+                last_ok: None,
+                last_error: Some(n.clone()),
+            });
         }
         HostdStatus {
             version: self.version.clone(),
@@ -276,26 +372,46 @@ impl Shared {
             if last_ok.is_none() && last_error.is_none() {
                 continue;
             }
-            h.insert(src.into(), LoopHealth { name: src.into(), ok: last_error.is_none(), last_ok, last_error });
+            h.insert(
+                src.into(),
+                LoopHealth {
+                    name: src.into(),
+                    ok: last_error.is_none(),
+                    last_ok,
+                    last_error,
+                },
+            );
         }
     }
 }
 
 /// Every 5 s: the cards' compute processes (a change wakes the card, gpu-power "procs") and the
 /// sniff port map (their listening ports plus `idle.sniff_ports` from the policy).
-pub async fn discovery_loop(shared: Arc<Shared>, smi: Vec<String>, proc_root: std::path::PathBuf, map: Arc<Mutex<crate::sniff::PortMap>>) {
+pub async fn discovery_loop(
+    shared: Arc<Shared>,
+    smi: Vec<String>,
+    proc_root: std::path::PathBuf,
+    map: Arc<Mutex<crate::sniff::PortMap>>,
+) {
     let mut last: BTreeMap<String, Vec<u32>> = BTreeMap::new();
     let mut first = true;
     loop {
         let mut cmd = tokio::process::Command::new(&smi[0]);
-        cmd.args(&smi[1..]).args(["--query-compute-apps=pid,gpu_uuid", "--format=csv,noheader,nounits"]).kill_on_drop(true);
+        cmd.args(&smi[1..])
+            .args([
+                "--query-compute-apps=pid,gpu_uuid",
+                "--format=csv,noheader,nounits",
+            ])
+            .kill_on_drop(true);
         let out = tokio::time::timeout(Duration::from_secs(5), cmd.output()).await;
         if let Ok(Ok(o)) = out
             && o.status.success()
         {
             let labels = lock(&shared.labels).clone();
             let mut pids: BTreeMap<String, Vec<u32>> = BTreeMap::new();
-            for (uuid, mut ps) in crate::sniff::parse_compute_apps(&String::from_utf8_lossy(&o.stdout)) {
+            for (uuid, mut ps) in
+                crate::sniff::parse_compute_apps(&String::from_utf8_lossy(&o.stdout))
+            {
                 if let Some(l) = labels.get(&uuid) {
                     ps.sort_unstable();
                     pids.insert(l.clone(), ps);
@@ -304,18 +420,29 @@ pub async fn discovery_loop(shared: Arc<Shared>, smi: Vec<String>, proc_root: st
             if !first {
                 for (card, ps) in &pids {
                     if last.get(card) != Some(ps) {
-                        let _ = shared.clocks.send(ClockMsg::Wake { card: card.clone(), source: orca_gpuctl::WakeSource::Procs, detail: format!("compute processes {ps:?}") });
+                        let _ = shared.clocks.send(ClockMsg::Wake {
+                            card: card.clone(),
+                            source: orca_gpuctl::WakeSource::Procs,
+                            detail: format!("compute processes {ps:?}"),
+                        });
                     }
                 }
             }
             first = false;
             let extra: BTreeMap<String, Vec<u16>> = lock(&shared.policy)
                 .as_ref()
-                .map(|p| p.power.iter().filter_map(|(l, c)| c.idle().map(|i| (l.clone(), i.sniff_ports.clone()))).collect())
+                .map(|p| {
+                    p.power
+                        .iter()
+                        .filter_map(|(l, c)| c.idle().map(|i| (l.clone(), i.sniff_ports.clone())))
+                        .collect()
+                })
                 .unwrap_or_default();
             let pr = proc_root.clone();
             let p2 = pids.clone();
-            if let Ok(m) = tokio::task::spawn_blocking(move || crate::sniff::discover(&pr, &p2, &extra)).await {
+            if let Ok(m) =
+                tokio::task::spawn_blocking(move || crate::sniff::discover(&pr, &p2, &extra)).await
+            {
                 *lock(&map) = m;
             }
             last = pids;
@@ -328,7 +455,10 @@ pub async fn discovery_loop(shared: Arc<Shared>, smi: Vec<String>, proc_root: st
 /// turned N/A (HBM on some cards) becomes absent instead of staying fresh.
 pub fn ingest(store: &mut SensorStore, batch: &TelemetryBatch) {
     for label in batch.gpus.keys() {
-        let old = store.matching(&orca_sensors::SensorId::of(orca_sensors::Namespace::Gpu, &[label.as_str(), "*"]));
+        let old = store.matching(&orca_sensors::SensorId::of(
+            orca_sensors::Namespace::Gpu,
+            &[label.as_str(), "*"],
+        ));
         for id in old {
             store.remove(&id);
         }
@@ -361,7 +491,11 @@ pub fn parse_request(line: &[u8]) -> Result<Envelope<ToHostd>, (Option<u64>, Str
     let id = v.get("id").and_then(Value::as_u64);
     let v = match (v.get("method").and_then(Value::as_str), v.get("type")) {
         (Some(m), None) => {
-            let mut obj = v.get("params").and_then(Value::as_object).cloned().unwrap_or_default();
+            let mut obj = v
+                .get("params")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
             obj.insert("type".into(), Value::String(m.to_string()));
             if let Some(i) = id {
                 obj.insert("id".into(), i.into());
@@ -448,7 +582,10 @@ async fn recv_opt<T: Clone>(rx: &mut Option<broadcast::Receiver<T>>) -> Option<T
     }
 }
 
-async fn write_env<W: AsyncWrite + Unpin>(w: &mut W, env: &Envelope<FromHostd>) -> std::io::Result<()> {
+async fn write_env<W: AsyncWrite + Unpin>(
+    w: &mut W,
+    env: &Envelope<FromHostd>,
+) -> std::io::Result<()> {
     let mut line = serde_json::to_vec(env).map_err(std::io::Error::other)?;
     line.push(b'\n');
     w.write_all(&line).await?;
@@ -477,7 +614,12 @@ impl Default for Intervals {
 
 /// The telemetry loop: samples, evaluates virtual sensors, feeds the clocks loop, publishes
 /// batches, writes the heartbeat and pings the systemd watchdog. Runs until cancelled.
-pub async fn telemetry_loop(shared: Arc<Shared>, mut collector: Collector, iv: Intervals, sd: Option<SdNotify>) {
+pub async fn telemetry_loop(
+    shared: Arc<Shared>,
+    mut collector: Collector,
+    iv: Intervals,
+    sd: Option<SdNotify>,
+) {
     let start = tokio::time::Instant::now();
     let mut last: BTreeMap<&'static str, tokio::time::Instant> = BTreeMap::new();
     let mut last_beat = start - Duration::from_secs(60);
@@ -493,7 +635,12 @@ pub async fn telemetry_loop(shared: Arc<Shared>, mut collector: Collector, iv: I
             }
             d
         };
-        let want = Want { gpu: true, host: due("host", iv.host), hwmon: due("hwmon", iv.hwmon), bmc: due("bmc", iv.bmc) };
+        let want = Want {
+            gpu: true,
+            host: due("host", iv.host),
+            hwmon: due("hwmon", iv.hwmon),
+            bmc: due("bmc", iv.bmc),
+        };
         collector.labels = lock(&shared.labels).clone();
         let mut batch = collector.collect(want).await;
         shared.note_health(&collector);
@@ -501,7 +648,9 @@ pub async fn telemetry_loop(shared: Arc<Shared>, mut collector: Collector, iv: I
             // Never act blind: the clocks loop sees "unreadable" and returns cards to serving.
             let _ = shared.clocks.send(ClockMsg::Samples(Vec::new()));
         } else if !batch.gpus.is_empty() {
-            let _ = shared.clocks.send(ClockMsg::Samples(batch.gpus.values().cloned().collect()));
+            let _ = shared
+                .clocks
+                .send(ClockMsg::Samples(batch.gpus.values().cloned().collect()));
         }
         if let Some(f) = shared.fans.lock().await.as_ref() {
             batch.fans = f.samples.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -532,18 +681,67 @@ pub async fn telemetry_loop(shared: Arc<Shared>, mut collector: Collector, iv: I
 }
 
 /// Logs controller events and republishes them as hostd events.
-pub async fn clock_events(shared: Arc<Shared>, mut rx: tokio::sync::mpsc::UnboundedReceiver<ClockEvent>) {
+pub async fn clock_events(
+    shared: Arc<Shared>,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<ClockEvent>,
+) {
     while let Some(e) = rx.recv().await {
         let (kind, sev, text) = match &e {
-            ClockEvent::Lowered { card, lock_mhz, .. } => ("clock.lowered", Severity::Info, format!("{card} idle: locked at {lock_mhz} MHz")),
-            ClockEvent::Woke { card, source, detail, .. } => ("clock.woke", Severity::Info, format!("{card} woke ({}: {detail})", source.as_str())),
-            ClockEvent::Applied { card, cmd } => ("clock.applied", Severity::Info, format!("{card}: {}", cmd.describe())),
-            ClockEvent::CapSet { card, cap_mhz, ttl_s } => ("clock.cap", Severity::Info, format!("{card}: cap {cap_mhz:?} for {ttl_s} s")),
-            ClockEvent::CapExpired { card } => ("clock.cap_expired", Severity::Info, format!("{card}: cap expired")),
-            ClockEvent::Asserted(o) => ("clock.asserted", if o.ok { Severity::Info } else { Severity::Warning }, o.summary.clone()),
-            ClockEvent::Alert(a) => ("clock.alert", Severity::Warning, format!("{}: {}", a.card, a.message)),
+            ClockEvent::Lowered { card, lock_mhz, .. } => (
+                "clock.lowered",
+                Severity::Info,
+                format!("{card} idle: locked at {lock_mhz} MHz"),
+            ),
+            ClockEvent::Woke {
+                card,
+                source,
+                detail,
+                ..
+            } => (
+                "clock.woke",
+                Severity::Info,
+                format!("{card} woke ({}: {detail})", source.as_str()),
+            ),
+            ClockEvent::Applied { card, cmd } => (
+                "clock.applied",
+                Severity::Info,
+                format!("{card}: {}", cmd.describe()),
+            ),
+            ClockEvent::CapSet {
+                card,
+                cap_mhz,
+                ttl_s,
+            } => (
+                "clock.cap",
+                Severity::Info,
+                format!("{card}: cap {cap_mhz:?} for {ttl_s} s"),
+            ),
+            ClockEvent::CapExpired { card } => (
+                "clock.cap_expired",
+                Severity::Info,
+                format!("{card}: cap expired"),
+            ),
+            ClockEvent::Asserted(o) => (
+                "clock.asserted",
+                if o.ok {
+                    Severity::Info
+                } else {
+                    Severity::Warning
+                },
+                o.summary.clone(),
+            ),
+            ClockEvent::Alert(a) => (
+                "clock.alert",
+                Severity::Warning,
+                format!("{}: {}", a.card, a.message),
+            ),
         };
-        shared.event(kind, sev, text, serde_json::to_value(&e).unwrap_or(Value::Null));
+        shared.event(
+            kind,
+            sev,
+            text,
+            serde_json::to_value(&e).unwrap_or(Value::Null),
+        );
     }
 }
 

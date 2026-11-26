@@ -41,7 +41,9 @@ pub fn read(class_dir: &Path, ts: TimestampMs) -> HwmonSample {
     let named: Vec<(String, std::path::PathBuf)> = devs
         .into_iter()
         .map(|(_, p)| {
-            let n = std::fs::read_to_string(p.join("name")).map(|s| s.trim().to_string()).unwrap_or_else(|_| "unknown".into());
+            let n = std::fs::read_to_string(p.join("name"))
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|_| "unknown".into());
             (n, p)
         })
         .collect();
@@ -59,13 +61,25 @@ pub fn read(class_dir: &Path, ts: TimestampMs) -> HwmonSample {
         } else {
             n.clone()
         };
-        let Ok(rd) = std::fs::read_dir(p) else { continue };
-        let mut files: Vec<String> = rd.filter_map(Result::ok).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        let Ok(rd) = std::fs::read_dir(p) else {
+            continue;
+        };
+        let mut files: Vec<String> = rd
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
         files.sort();
         for f in files {
-            let Some(stem) = f.strip_suffix("_input") else { continue };
-            let Some((unit, div)) = kind(stem) else { continue };
-            let Some(raw) = std::fs::read_to_string(p.join(&f)).ok().and_then(|s| s.trim().parse::<f64>().ok()) else {
+            let Some(stem) = f.strip_suffix("_input") else {
+                continue;
+            };
+            let Some((unit, div)) = kind(stem) else {
+                continue;
+            };
+            let Some(raw) = std::fs::read_to_string(p.join(&f))
+                .ok()
+                .and_then(|s| s.trim().parse::<f64>().ok())
+            else {
                 continue; // unreadable input (sensor asleep): absent, not 0
             };
             let label = std::fs::read_to_string(p.join(format!("{stem}_label")))
@@ -73,7 +87,12 @@ pub fn read(class_dir: &Path, ts: TimestampMs) -> HwmonSample {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| stem.to_string());
-            inputs.push(HwmonReading { chip: chip.clone(), label, value: raw / div, unit });
+            inputs.push(HwmonReading {
+                chip: chip.clone(),
+                label,
+                value: raw / div,
+                unit,
+            });
         }
     }
     HwmonSample { ts, inputs }
@@ -96,14 +115,49 @@ mod tests {
     fn fake_sysfs() {
         let t = tempfile::tempdir().unwrap();
         let r = t.path();
-        dev(r, 0, "nvme", &[("temp1_input", "38850"), ("temp1_label", "Composite")]);
-        dev(r, 1, "nvme", &[("temp1_input", "40850"), ("temp1_label", "Composite")]);
-        dev(r, 3, "k10temp", &[("temp1_input", "52125"), ("temp1_label", "Tctl"), ("temp3_input", "48000"), ("temp3_label", "Tccd1")]);
-        dev(r, 10, "nct6779", &[("fan2_input", "812"), ("in0_input", "1032"), ("power1_input", "12500000"), ("pwm2", "128")]);
+        dev(
+            r,
+            0,
+            "nvme",
+            &[("temp1_input", "38850"), ("temp1_label", "Composite")],
+        );
+        dev(
+            r,
+            1,
+            "nvme",
+            &[("temp1_input", "40850"), ("temp1_label", "Composite")],
+        );
+        dev(
+            r,
+            3,
+            "k10temp",
+            &[
+                ("temp1_input", "52125"),
+                ("temp1_label", "Tctl"),
+                ("temp3_input", "48000"),
+                ("temp3_label", "Tccd1"),
+            ],
+        );
+        dev(
+            r,
+            10,
+            "nct6779",
+            &[
+                ("fan2_input", "812"),
+                ("in0_input", "1032"),
+                ("power1_input", "12500000"),
+                ("pwm2", "128"),
+            ],
+        );
         dev(r, 5, "drivetemp", &[("temp1_input", "31000")]);
         dev(r, 6, "bad", &[("temp1_input", "xx")]);
         let s = read(r, 1);
-        let get = |chip: &str, label: &str| s.inputs.iter().find(|i| i.chip == chip && i.label == label).map(|i| (i.value, i.unit));
+        let get = |chip: &str, label: &str| {
+            s.inputs
+                .iter()
+                .find(|i| i.chip == chip && i.label == label)
+                .map(|i| (i.value, i.unit))
+        };
         assert_eq!(get("nvme0", "Composite"), Some((38.85, Unit::Celsius)));
         assert_eq!(get("nvme1", "Composite"), Some((40.85, Unit::Celsius)));
         assert_eq!(get("k10temp", "Tctl"), Some((52.125, Unit::Celsius)));

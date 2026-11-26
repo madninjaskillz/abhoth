@@ -26,11 +26,24 @@ pub fn parse_sdr(out: &str) -> Vec<SdrEntry> {
                     Ok(x) if x.is_finite() => (Some(x), u.trim().to_string()),
                     _ => (None, String::new()),
                 },
-                None => (parts[1].parse::<f64>().ok().filter(|x| x.is_finite()), String::new()),
+                None => (
+                    parts[1].parse::<f64>().ok().filter(|x| x.is_finite()),
+                    String::new(),
+                ),
             };
             // Discrete sensors read "0x00": keep the name with no value.
-            let value = if parts[1].starts_with("0x") { None } else { value };
-            Some(SdrEntry { name: parts[0].to_string(), value, unit: Unit::from_text(&unit_text), unit_text, status: parts[2].to_string() })
+            let value = if parts[1].starts_with("0x") {
+                None
+            } else {
+                value
+            };
+            Some(SdrEntry {
+                name: parts[0].to_string(),
+                value,
+                unit: Unit::from_text(&unit_text),
+                unit_text,
+                status: parts[2].to_string(),
+            })
         })
         .collect()
 }
@@ -44,21 +57,40 @@ async fn run(cmd: &[String], extra: &[&str]) -> Result<String, String> {
     let (prog, pre) = cmd.split_first().ok_or("no ipmitool command")?;
     let out = tokio::time::timeout(
         std::time::Duration::from_secs(20),
-        tokio::process::Command::new(prog).args(pre).args(extra).kill_on_drop(true).output(),
+        tokio::process::Command::new(prog)
+            .args(pre)
+            .args(extra)
+            .kill_on_drop(true)
+            .output(),
     )
     .await
     .map_err(|_| "ipmitool timed out".to_string())?
     .map_err(|e| format!("ipmitool: {e}"))?;
     if !out.status.success() {
-        return Err(format!("ipmitool exited {}: {}", out.status, String::from_utf8_lossy(&out.stderr).trim()));
+        return Err(format!(
+            "ipmitool exited {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Reads the SDR and (optionally) the fan mode. `ipmitool` is the command prefix.
-pub async fn read(ipmitool: &[String], fan_mode: bool, ts: TimestampMs) -> Result<BmcSample, String> {
+pub async fn read(
+    ipmitool: &[String],
+    fan_mode: bool,
+    ts: TimestampMs,
+) -> Result<BmcSample, String> {
     let sdr = parse_sdr(&run(ipmitool, &["sdr"]).await?);
-    let fan_mode = if fan_mode { run(ipmitool, &["raw", "0x30", "0x45", "0x00"]).await.ok().and_then(|s| parse_fan_mode(&s)) } else { None };
+    let fan_mode = if fan_mode {
+        run(ipmitool, &["raw", "0x30", "0x45", "0x00"])
+            .await
+            .ok()
+            .and_then(|s| parse_fan_mode(&s))
+    } else {
+        None
+    };
     Ok(BmcSample { ts, sdr, fan_mode })
 }
 
@@ -87,10 +119,17 @@ PS1 Status       | 0x01              | ok
         assert_eq!(s[4].status, "ns");
         assert_eq!(s[5].unit, Unit::Volts);
         assert_eq!(s[6].value, None);
-        let b = BmcSample { ts: 1, sdr: s, fan_mode: parse_fan_mode(" 02\n") };
+        let b = BmcSample {
+            ts: 1,
+            sdr: s,
+            fan_mode: parse_fan_mode(" 02\n"),
+        };
         assert_eq!(b.fan_mode, Some(2));
         let ids: Vec<String> = b.readings().iter().map(|(i, _)| i.to_string()).collect();
         assert!(ids.contains(&"bmc.\"CPU1 Temp\"".into()));
-        assert!(!ids.iter().any(|i| i.contains("FAN5")), "no reading is absent, not 0");
+        assert!(
+            !ids.iter().any(|i| i.contains("FAN5")),
+            "no reading is absent, not 0"
+        );
     }
 }

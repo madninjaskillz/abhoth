@@ -22,17 +22,29 @@ pub struct Validated {
 }
 
 /// Validates `doc` against `limits`. `current_rev` is the revision in force, if any.
-pub fn validate(doc: PolicyDoc, limits: &Limits, current_rev: Option<u64>) -> Result<Validated, Vec<String>> {
+pub fn validate(
+    doc: PolicyDoc,
+    limits: &Limits,
+    current_rev: Option<u64>,
+) -> Result<Validated, Vec<String>> {
     let mut why = Vec::new();
     let mut notes = Vec::new();
     if let Some(cur) = current_rev
         && doc.rev < cur
     {
-        why.push(format!("rev {} is older than the policy in force ({cur})", doc.rev));
+        why.push(format!(
+            "rev {} is older than the policy in force ({cur})",
+            doc.rev
+        ));
     }
     let mut labels = BTreeMap::new();
     for (label, b) in &doc.cards {
-        if label.is_empty() || label == "all" || !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        if label.is_empty()
+            || label == "all"
+            || !label
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
             why.push(format!("cards: bad label {label:?}"));
         }
         if !b.uuid.starts_with("GPU-") {
@@ -42,7 +54,11 @@ pub fn validate(doc: PolicyDoc, limits: &Limits, current_rev: Option<u64>) -> Re
             why.push(format!("cards.{label}: UUID bound twice"));
         }
     }
-    let registry = match SensorRegistry::new(doc.sensors.iter().map(|(k, v)| (k.clone(), v.text().to_string()))) {
+    let registry = match SensorRegistry::new(
+        doc.sensors
+            .iter()
+            .map(|(k, v)| (k.clone(), v.text().to_string())),
+    ) {
         Ok(r) => Some(r),
         Err(e) => {
             why.push(e.to_string());
@@ -56,23 +72,43 @@ pub fn validate(doc: PolicyDoc, limits: &Limits, current_rev: Option<u64>) -> Re
             Some(b) => cards.push((label.clone(), b.uuid.clone(), cfg.clone())),
         }
     }
-    if let Err(e) = limits.gpu.validate_policy(cards.iter().map(|(_, u, c)| (u.as_str(), c))) {
+    if let Err(e) = limits
+        .gpu
+        .validate_policy(cards.iter().map(|(_, u, c)| (u.as_str(), c)))
+    {
         why.extend(e.into_iter().map(|m| format!("power: {m}")));
     }
     if let Err(e) = crate::fans::validate(&doc.fans, limits) {
         why.extend(e);
     }
     for f in &doc.fans.fans {
-        if doc.fans.backends.get(&f.backend).is_some_and(|b| b.mode == orca_fans::config::RunMode::Act)
-            && !doc.fans.backends.get(&f.backend).is_some_and(|b| limits.backend_writes(&crate::fans::kind_name(b.kind)))
+        if doc
+            .fans
+            .backends
+            .get(&f.backend)
+            .is_some_and(|b| b.mode == orca_fans::config::RunMode::Act)
+            && !doc
+                .fans
+                .backends
+                .get(&f.backend)
+                .is_some_and(|b| limits.backend_writes(&crate::fans::kind_name(b.kind)))
         {
-            notes.push(format!("fans.{}: backend is act in config but the limits do not let it write: shadow", f.id));
+            notes.push(format!(
+                "fans.{}: backend is act in config but the limits do not let it write: shadow",
+                f.id
+            ));
         }
     }
     if !why.is_empty() {
         return Err(why);
     }
-    Ok(Validated { registry: registry.expect("checked"), cards, labels, notes, doc })
+    Ok(Validated {
+        registry: registry.expect("checked"),
+        cards,
+        labels,
+        notes,
+        doc,
+    })
 }
 
 /// Builds a policy from supervisor-style TOML, for running hostd before the supervisor does it
@@ -88,17 +124,29 @@ pub fn validate(doc: PolicyDoc, limits: &Limits, current_rev: Option<u64>) -> Re
 pub fn from_toml(text: &str, limits: &Limits, default_rev: u64) -> Result<PolicyDoc, String> {
     let mut t: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
     let rev = match t.remove("rev") {
-        Some(v) => v.as_integer().filter(|r| *r >= 0).ok_or("rev: a non-negative integer")? as u64,
+        Some(v) => v
+            .as_integer()
+            .filter(|r| *r >= 0)
+            .ok_or("rev: a non-negative integer")? as u64,
         None => default_rev,
     };
-    let take = |t: &mut toml::Table, k: &str| t.remove(k).unwrap_or(toml::Value::Table(Default::default()));
-    let cards = take(&mut t, "cards").try_into().map_err(|e| format!("cards: {e}"))?;
-    let power = take(&mut t, "power").try_into().map_err(|e| format!("power: {e}"))?;
+    let take = |t: &mut toml::Table, k: &str| {
+        t.remove(k)
+            .unwrap_or(toml::Value::Table(Default::default()))
+    };
+    let cards = take(&mut t, "cards")
+        .try_into()
+        .map_err(|e| format!("cards: {e}"))?;
+    let power = take(&mut t, "power")
+        .try_into()
+        .map_err(|e| format!("power: {e}"))?;
     #[derive(serde::Deserialize)]
     struct S {
         expr: orca_sensors::Expr,
     }
-    let sensors: BTreeMap<String, S> = take(&mut t, "sensors").try_into().map_err(|e| format!("sensors: {e}"))?;
+    let sensors: BTreeMap<String, S> = take(&mut t, "sensors")
+        .try_into()
+        .map_err(|e| format!("sensors: {e}"))?;
     let mut fan = toml::Table::new();
     for k in ["fan_backends", "fan_defaults", "fan_profiles", "fans"] {
         if let Some(v) = t.remove(k) {
@@ -111,10 +159,22 @@ pub fn from_toml(text: &str, limits: &Limits, default_rev: u64) -> Result<Policy
     let fans = if fan.is_empty() {
         Default::default()
     } else {
-        let cfg = orca_fans::config::FansConfig::from_toml(&toml::to_string(&fan).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-        orca_fans::FansPolicy::compile(&cfg, &limits.fans, &|k| limits.backend_writes(&crate::fans::kind_name(k))).map_err(|e| e.to_string())?
+        let cfg = orca_fans::config::FansConfig::from_toml(
+            &toml::to_string(&fan).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        orca_fans::FansPolicy::compile(&cfg, &limits.fans, &|k| {
+            limits.backend_writes(&crate::fans::kind_name(k))
+        })
+        .map_err(|e| e.to_string())?
     };
-    Ok(PolicyDoc { rev, cards, sensors: sensors.into_iter().map(|(k, s)| (k, s.expr)).collect(), fans, power })
+    Ok(PolicyDoc {
+        rev,
+        cards,
+        sensors: sensors.into_iter().map(|(k, s)| (k, s.expr)).collect(),
+        fans,
+        power,
+    })
 }
 
 #[cfg(test)]
@@ -143,9 +203,21 @@ power_limit_w = [250, 350]
             fans: Default::default(),
             power: Default::default(),
         };
-        d.cards.insert("A".into(), CardBinding { uuid: "GPU-a".into(), bus: None });
-        d.sensors.insert("ctrl_A".into(), orca_sensors::Expr::parse("ema(first(gpu.A.hbm, gpu.A.core), 4s)").unwrap());
-        d.power.insert("A".into(), toml::from_str(&format!("persistence = true\npower_limit_w = {pl}")).unwrap());
+        d.cards.insert(
+            "A".into(),
+            CardBinding {
+                uuid: "GPU-a".into(),
+                bus: None,
+            },
+        );
+        d.sensors.insert(
+            "ctrl_A".into(),
+            orca_sensors::Expr::parse("ema(first(gpu.A.hbm, gpu.A.core), 4s)").unwrap(),
+        );
+        d.power.insert(
+            "A".into(),
+            toml::from_str(&format!("persistence = true\npower_limit_w = {pl}")).unwrap(),
+        );
         d
     }
 
@@ -207,13 +279,22 @@ curve = [[60, 30], [82, 100]]
         assert!(validate(doc(1, 350), &limits(), Some(5)).is_err());
         // A card the limits file does not list.
         let mut d = doc(2, 350);
-        d.cards.insert("B".into(), CardBinding { uuid: "GPU-b".into(), bus: None });
-        d.power.insert("B".into(), toml::from_str("persistence = true").unwrap());
+        d.cards.insert(
+            "B".into(),
+            CardBinding {
+                uuid: "GPU-b".into(),
+                bus: None,
+            },
+        );
+        d.power
+            .insert("B".into(), toml::from_str("persistence = true").unwrap());
         assert!(validate(d, &limits(), None).is_err());
         // Power for an unbound label; a sensor cycle.
         let mut d = doc(2, 350);
-        d.power.insert("Z".into(), toml::from_str("persistence = true").unwrap());
-        d.sensors.insert("x".into(), orca_sensors::Expr::parse("sensor.x").unwrap());
+        d.power
+            .insert("Z".into(), toml::from_str("persistence = true").unwrap());
+        d.sensors
+            .insert("x".into(), orca_sensors::Expr::parse("sensor.x").unwrap());
         let e = validate(d, &limits(), None).err().unwrap();
         assert!(e.len() >= 2, "{e:?}");
     }

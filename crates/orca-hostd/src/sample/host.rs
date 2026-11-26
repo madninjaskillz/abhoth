@@ -11,7 +11,11 @@ use orca_sensors::samples::{HostSample, MemSample, NetSample};
 /// `/proc/stat` first line → (busy, total) jiffies.
 pub fn parse_cpu_times(stat: &str) -> Option<(u64, u64)> {
     let line = stat.lines().find(|l| l.starts_with("cpu "))?;
-    let v: Vec<u64> = line.split_whitespace().skip(1).filter_map(|x| x.parse().ok()).collect();
+    let v: Vec<u64> = line
+        .split_whitespace()
+        .skip(1)
+        .filter_map(|x| x.parse().ok())
+        .collect();
     if v.len() < 4 {
         return None;
     }
@@ -23,7 +27,9 @@ pub fn parse_cpu_times(stat: &str) -> Option<(u64, u64)> {
 
 /// Number of `cpuN` lines in `/proc/stat`.
 pub fn parse_cpu_count(stat: &str) -> u32 {
-    stat.lines().filter(|l| l.starts_with("cpu") && l.as_bytes().get(3).is_some_and(u8::is_ascii_digit)).count() as u32
+    stat.lines()
+        .filter(|l| l.starts_with("cpu") && l.as_bytes().get(3).is_some_and(u8::is_ascii_digit))
+        .count() as u32
 }
 
 /// `/proc/loadavg` → (1, 5, 15).
@@ -35,7 +41,13 @@ pub fn parse_loadavg(s: &str) -> Option<(f64, f64, f64)> {
 fn kv_kib(meminfo: &str, key: &str) -> Option<u64> {
     meminfo.lines().find_map(|l| {
         let (k, v) = l.split_once(':')?;
-        (k.trim() == key).then(|| v.split_whitespace().next()?.parse::<u64>().ok().map(|x| x * 1024))?
+        (k.trim() == key).then(|| {
+            v.split_whitespace()
+                .next()?
+                .parse::<u64>()
+                .ok()
+                .map(|x| x * 1024)
+        })?
     })
 }
 
@@ -83,7 +95,10 @@ pub fn parse_net_dev(s: &str) -> Vec<(String, u64, u64)> {
         .skip(2)
         .filter_map(|l| {
             let (name, rest) = l.split_once(':')?;
-            let v: Vec<u64> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+            let v: Vec<u64> = rest
+                .split_whitespace()
+                .filter_map(|x| x.parse().ok())
+                .collect();
             Some((name.trim().to_string(), *v.first()?, *v.get(8)?))
         })
         .collect()
@@ -114,7 +129,13 @@ pub struct HostSampler {
 
 impl HostSampler {
     pub fn new(root: impl Into<PathBuf>) -> HostSampler {
-        HostSampler { root: root.into(), prev_cpu: None, prev_net: Vec::new(), prev_ts: None, ifaces: None }
+        HostSampler {
+            root: root.into(),
+            prev_cpu: None,
+            prev_net: Vec::new(),
+            prev_ts: None,
+            ifaces: None,
+        }
     }
 
     fn read(&self, rel: &str) -> Option<String> {
@@ -124,17 +145,33 @@ impl HostSampler {
     /// One sample at `ts`. Missing files make their fields default; `/proc/meminfo` is required.
     pub fn sample(&mut self, ts: TimestampMs) -> Result<HostSample, String> {
         let stat = self.read("proc/stat").unwrap_or_default();
-        let mem = parse_mem(&self.read("proc/meminfo").ok_or("cannot read /proc/meminfo")?, self.read("proc/spl/kstat/zfs/arcstats").as_deref())
-            .ok_or("cannot parse /proc/meminfo")?;
-        let (load1, load5, load15) = self.read("proc/loadavg").and_then(|s| parse_loadavg(&s)).unwrap_or_default();
-        let uptime_s = self.read("proc/uptime").and_then(|s| s.split_whitespace().next()?.parse().ok()).unwrap_or(0.0);
+        let mem = parse_mem(
+            &self
+                .read("proc/meminfo")
+                .ok_or("cannot read /proc/meminfo")?,
+            self.read("proc/spl/kstat/zfs/arcstats").as_deref(),
+        )
+        .ok_or("cannot parse /proc/meminfo")?;
+        let (load1, load5, load15) = self
+            .read("proc/loadavg")
+            .and_then(|s| parse_loadavg(&s))
+            .unwrap_or_default();
+        let uptime_s = self
+            .read("proc/uptime")
+            .and_then(|s| s.split_whitespace().next()?.parse().ok())
+            .unwrap_or(0.0);
         let cpu_now = parse_cpu_times(&stat);
         let cpu_pct = match (self.prev_cpu, cpu_now) {
-            (Some((b0, t0)), Some((b1, t1))) if t1 > t0 => Some((b1.saturating_sub(b0)) as f64 / (t1 - t0) as f64 * 100.0),
+            (Some((b0, t0)), Some((b1, t1))) if t1 > t0 => {
+                Some((b1.saturating_sub(b0)) as f64 / (t1 - t0) as f64 * 100.0)
+            }
             _ => None,
         };
         self.prev_cpu = cpu_now;
-        let dt = self.prev_ts.map(|p| (ts - p) as f64 / 1000.0).filter(|d| *d > 0.0);
+        let dt = self
+            .prev_ts
+            .map(|p| (ts - p) as f64 / 1000.0)
+            .filter(|d| *d > 0.0);
         let net_now: Vec<_> = self
             .read("proc/net/dev")
             .map(|s| parse_net_dev(&s))
@@ -149,7 +186,10 @@ impl HostSampler {
             .iter()
             .map(|(n, rx, tx)| {
                 let prev = self.prev_net.iter().find(|(p, _, _)| p == n);
-                let rate = |now: u64, before: u64| dt.filter(|_| now >= before).map(|d| (now - before) as f64 / d);
+                let rate = |now: u64, before: u64| {
+                    dt.filter(|_| now >= before)
+                        .map(|d| (now - before) as f64 / d)
+                };
                 NetSample {
                     iface: n.clone(),
                     rx_bytes: *rx,
@@ -161,7 +201,17 @@ impl HostSampler {
             .collect();
         self.prev_net = net_now;
         self.prev_ts = Some(ts);
-        Ok(HostSample { ts, cpu_pct, cpu_count: parse_cpu_count(&stat), load1, load5, load15, uptime_s, mem, net })
+        Ok(HostSample {
+            ts,
+            cpu_pct,
+            cpu_count: parse_cpu_count(&stat),
+            load1,
+            load5,
+            load15,
+            uptime_s,
+            mem,
+            net,
+        })
     }
 
     pub fn root(&self) -> &Path {
@@ -197,9 +247,15 @@ mod tests {
         std::fs::create_dir_all(p("proc/net")).unwrap();
         std::fs::write(p("proc/meminfo"), MEMINFO).unwrap();
         std::fs::write(p("proc/loadavg"), "1.50 1.00 0.50 2/300 1234\n").unwrap();
-        std::fs::write(p("proc/stat"), "cpu  100 0 100 800 0 0 0 0 0 0\ncpu0 1 0 1 8 0 0 0 0\ncpu1 1 0 1 8 0 0 0 0\n").unwrap();
+        std::fs::write(
+            p("proc/stat"),
+            "cpu  100 0 100 800 0 0 0 0 0 0\ncpu0 1 0 1 8 0 0 0 0\ncpu1 1 0 1 8 0 0 0 0\n",
+        )
+        .unwrap();
         let net = |rx: u64, tx: u64| {
-            format!("Inter-|   Receive\n face |bytes\n    lo: 5 0 0 0 0 0 0 0 5 0 0 0 0 0 0 0\n  eth0: {rx} 0 0 0 0 0 0 0 {tx} 0 0 0 0 0 0 0\nveth1: 9 0 0 0 0 0 0 0 9 0 0 0 0 0 0 0\n")
+            format!(
+                "Inter-|   Receive\n face |bytes\n    lo: 5 0 0 0 0 0 0 0 5 0 0 0 0 0 0 0\n  eth0: {rx} 0 0 0 0 0 0 0 {tx} 0 0 0 0 0 0 0\nveth1: 9 0 0 0 0 0 0 0 9 0 0 0 0 0 0 0\n"
+            )
         };
         std::fs::write(p("proc/net/dev"), net(1000, 500)).unwrap();
         let mut s = HostSampler::new(dir.path());

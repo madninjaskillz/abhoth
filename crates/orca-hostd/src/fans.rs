@@ -38,7 +38,10 @@ pub fn wired(kind: BackendKind) -> bool {
 }
 
 pub fn kind_name(kind: BackendKind) -> String {
-    serde_json::to_value(kind).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
+    serde_json::to_value(kind)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default()
 }
 
 /// hostd's checks on the `fans` part of a policy (on top of orca-fans' own validation).
@@ -49,7 +52,11 @@ pub fn validate(p: &FansPolicy, limits: &Limits) -> Result<(), Vec<String>> {
     }
     for f in &p.fans {
         match p.backends.get(&f.backend) {
-            Some(b) if !wired(b.kind) => why.push(format!("fans.{}: backend kind {} is not wired into hostd yet", f.id, kind_name(b.kind))),
+            Some(b) if !wired(b.kind) => why.push(format!(
+                "fans.{}: backend kind {} is not wired into hostd yet",
+                f.id,
+                kind_name(b.kind)
+            )),
             _ => {}
         }
     }
@@ -61,7 +68,11 @@ pub fn validate(p: &FansPolicy, limits: &Limits) -> Result<(), Vec<String>> {
 
 /// Resolves `secret:<name>` to a file `secrets_dir/<name>` (root-only files on the apps pool).
 pub fn resolve_secret(r: &SecretRef, secrets_dir: &std::path::Path) -> Result<String, String> {
-    r.resolve(&|name| Some(SecretRef::File(secrets_dir.join(name).display().to_string())))
+    r.resolve(&|name| {
+        Some(SecretRef::File(
+            secrets_dir.join(name).display().to_string(),
+        ))
+    })
 }
 
 /// An `Arc<EspHome>` as a backend, so the SSE reader and the loop share one device state.
@@ -78,7 +89,12 @@ impl FanBackend for ArcEsp {
     fn caps(&self) -> Caps {
         self.0.caps()
     }
-    async fn push_inputs(&self, ch: &Channel, temp: &str, load: Option<&str>) -> Result<(), BackendError> {
+    async fn push_inputs(
+        &self,
+        ch: &Channel,
+        temp: &str,
+        load: Option<&str>,
+    ) -> Result<(), BackendError> {
         self.0.push_inputs(ch, temp, load).await
     }
     async fn set_duty(&self, ch: &Channel, duty: f64) -> Result<(), BackendError> {
@@ -107,11 +123,24 @@ pub struct Opened {
 }
 
 /// Opens every backend the policy's fans use.
-pub fn open(p: &FansPolicy, limits: &Limits, secrets_dir: &std::path::Path) -> Result<Opened, Vec<String>> {
-    let mut o = Opened { backends: BTreeMap::new(), esp: BTreeMap::new(), shadow: Vec::new() };
+pub fn open(
+    p: &FansPolicy,
+    limits: &Limits,
+    secrets_dir: &std::path::Path,
+) -> Result<Opened, Vec<String>> {
+    let mut o = Opened {
+        backends: BTreeMap::new(),
+        esp: BTreeMap::new(),
+        shadow: Vec::new(),
+    };
     let mut why = Vec::new();
     for (id, b) in &p.backends {
-        let used: Vec<u32> = p.fans.iter().filter(|f| &f.backend == id).filter_map(|f| f.channel.index()).collect();
+        let used: Vec<u32> = p
+            .fans
+            .iter()
+            .filter(|f| &f.backend == id)
+            .filter_map(|f| f.channel.index())
+            .collect();
         if !p.fans.iter().any(|f| &f.backend == id) {
             continue;
         }
@@ -122,7 +151,10 @@ pub fn open(p: &FansPolicy, limits: &Limits, secrets_dir: &std::path::Path) -> R
                 Arc::new(ArcEsp(e)) as Arc<dyn FanBackend>
             }),
             BackendKind::Fake => Ok(Arc::new(Fake::new(id, FanMode::DeviceCurve))),
-            k => Err(format!("backend {id}: kind {} is not wired into hostd yet", kind_name(k))),
+            k => Err(format!(
+                "backend {id}: kind {} is not wired into hostd yet",
+                kind_name(k)
+            )),
         };
         match inner {
             Err(e) => why.push(e),
@@ -131,7 +163,8 @@ pub fn open(p: &FansPolicy, limits: &Limits, secrets_dir: &std::path::Path) -> R
             }
             Ok(b) => {
                 o.shadow.push(id.clone());
-                o.backends.insert(id.clone(), Arc::new(Shadow::new(Box::new(ArcDyn(b)))));
+                o.backends
+                    .insert(id.clone(), Arc::new(Shadow::new(Box::new(ArcDyn(b)))));
             }
         }
     }
@@ -163,13 +196,31 @@ impl FanBackend for ArcDyn {
     }
 }
 
-fn open_esp(id: &str, b: &BackendConfig, channels: Vec<u32>, secrets_dir: &std::path::Path) -> Result<Arc<EspHome>, String> {
-    let url = b.url.as_deref().ok_or(format!("backend {id}: url is missing"))?;
+fn open_esp(
+    id: &str,
+    b: &BackendConfig,
+    channels: Vec<u32>,
+    secrets_dir: &std::path::Path,
+) -> Result<Arc<EspHome>, String> {
+    let url = b
+        .url
+        .as_deref()
+        .ok_or(format!("backend {id}: url is missing"))?;
     let (user, password) = match &b.auth {
-        Some(a) => (a.user.clone(), resolve_secret(&a.password, secrets_dir).map_err(|e| format!("backend {id}: {e}"))?),
+        Some(a) => (
+            a.user.clone(),
+            resolve_secret(&a.password, secrets_dir).map_err(|e| format!("backend {id}: {e}"))?,
+        ),
         None => (String::new(), String::new()),
     };
-    Ok(Arc::new(EspHome::new(id, url, &user, &password, b.names.clone(), channels)))
+    Ok(Arc::new(EspHome::new(
+        id,
+        url,
+        &user,
+        &password,
+        b.names.clone(),
+        channels,
+    )))
 }
 
 /// `esp.<backend>.<entity>` readings from an ESPHome device's SSE state.
@@ -181,7 +232,10 @@ pub fn esp_readings(backend: &str, st: &EspState, ts: i64) -> Vec<(SensorId, Rea
                 EntityValue::Bool(b) => (if *b { 1.0 } else { 0.0 }, Unit::Bool),
                 other => (other.as_f64()?, Unit::Unknown),
             };
-            Some((SensorId::of(Namespace::Esp, &[backend, name]), Reading::new(value, unit, ts, "esp/sse")))
+            Some((
+                SensorId::of(Namespace::Esp, &[backend, name]),
+                Reading::new(value, unit, ts, "esp/sse"),
+            ))
         })
         .collect()
 }
@@ -202,7 +256,12 @@ pub struct FanRuntime {
 
 impl FanRuntime {
     /// Starts the loop, the SSE readers and the watchdog thread.
-    pub fn start(policy: &FansPolicy, opened: Opened, store: Arc<Mutex<SensorStore>>, tick: Duration) -> FanRuntime {
+    pub fn start(
+        policy: &FansPolicy,
+        opened: Opened,
+        store: Arc<Mutex<SensorStore>>,
+        tick: Duration,
+    ) -> FanRuntime {
         let opened = Arc::new(opened);
         let last_tick = Arc::new(AtomicI64::new(now_ms()));
         let samples = Arc::new(Mutex::new(Vec::new()));
@@ -210,7 +269,8 @@ impl FanRuntime {
         let mut lp = FanLoop::new(policy);
         let mut inputs = ExprInputs::new(policy).expect("validated");
         let fan_ids: Vec<String> = policy.fans.iter().map(|f| f.id.clone()).collect();
-        let (overrides, mut ovr_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Option<f64>, f64)>();
+        let (overrides, mut ovr_rx) =
+            tokio::sync::mpsc::unbounded_channel::<(String, Option<f64>, f64)>();
         for (id, e) in &opened.esp {
             let (e, id, stop) = (e.clone(), id.clone(), stop.clone());
             tokio::spawn(async move {
@@ -227,7 +287,12 @@ impl FanRuntime {
                 }
             });
         }
-        let (o2, lt, sm, st2) = (opened.clone(), last_tick.clone(), samples.clone(), stop.clone());
+        let (o2, lt, sm, st2) = (
+            opened.clone(),
+            last_tick.clone(),
+            samples.clone(),
+            stop.clone(),
+        );
         let task = tokio::spawn(async move {
             let mut t = tokio::time::interval(tick);
             t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -277,9 +342,16 @@ impl FanRuntime {
                         }
                     }
                     let spec = lp.spec(i);
-                    let ch = o2.esp.get(&spec.backend).zip(spec.channel.index()).map(|(e, n)| {
-                        e.state.lock().unwrap_or_else(|e| e.into_inner()).channel(&e.names, n)
-                    });
+                    let ch = o2
+                        .esp
+                        .get(&spec.backend)
+                        .zip(spec.channel.index())
+                        .map(|(e, n)| {
+                            e.state
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .channel(&e.names, n)
+                        });
                     out.push(FanSample {
                         fan: st.fan.clone(),
                         ts: now_ms_,
@@ -303,7 +375,15 @@ impl FanRuntime {
             }
         });
         spawn_watchdog(opened.clone(), policy, last_tick.clone(), stop.clone());
-        FanRuntime { last_tick, samples, task, opened, stop, fan_ids, overrides }
+        FanRuntime {
+            last_tick,
+            samples,
+            task,
+            opened,
+            stop,
+            fan_ids,
+            overrides,
+        }
     }
 
     /// A duty override for one fan (TTL ≤ 1 h; floors and the critical temperature still
@@ -315,7 +395,9 @@ impl FanRuntime {
         if duty.is_some() && !(1.0..=orca_fans::limits::MAX_OVERRIDE_TTL_S).contains(&ttl_s) {
             return Err("override ttl must be 1-3600 s".into());
         }
-        self.overrides.send((fan.to_string(), duty, ttl_s)).map_err(|_| "fan loop stopped".to_string())
+        self.overrides
+            .send((fan.to_string(), duty, ttl_s))
+            .map_err(|_| "fan loop stopped".to_string())
     }
 
     /// Stops the loop and hands every backend back to the hardware.
@@ -332,32 +414,48 @@ impl FanRuntime {
 
 /// If the loop stops ticking for 5 s, put every host-curve fan into its safe state, from an OS
 /// thread with its own runtime (works even if the main runtime is wedged).
-fn spawn_watchdog(opened: Arc<Opened>, policy: &FansPolicy, last: Arc<AtomicI64>, stop: Arc<std::sync::atomic::AtomicBool>) {
-    let host: Vec<(String, Channel)> =
-        policy.fans.iter().filter(|f| f.mode == FanMode::HostCurve).map(|f| (f.backend.clone(), f.channel.clone())).collect();
+fn spawn_watchdog(
+    opened: Arc<Opened>,
+    policy: &FansPolicy,
+    last: Arc<AtomicI64>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+) {
+    let host: Vec<(String, Channel)> = policy
+        .fans
+        .iter()
+        .filter(|f| f.mode == FanMode::HostCurve)
+        .map(|f| (f.backend.clone(), f.channel.clone()))
+        .collect();
     if host.is_empty() {
         return;
     }
-    let _ = std::thread::Builder::new().name("hostd-fan-watchdog".into()).spawn(move || {
-        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
-            Ok(r) => r,
-            Err(_) => return,
-        };
-        let mut tripped = false;
-        while !stop.load(Ordering::Relaxed) {
-            std::thread::sleep(Duration::from_secs(1));
-            let stalled = now_ms() - last.load(Ordering::Relaxed) > 5_000;
-            if stalled && !tripped {
-                eprintln!("hostd: fan loop stalled for 5 s: host-curve fans to their safe state");
-                for (b, ch) in &host {
-                    if let Some(be) = opened.backends.get(b) {
-                        let _ = rt.block_on(be.fail_safe(ch));
+    let _ = std::thread::Builder::new()
+        .name("hostd-fan-watchdog".into())
+        .spawn(move || {
+            let rt = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(r) => r,
+                Err(_) => return,
+            };
+            let mut tripped = false;
+            while !stop.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_secs(1));
+                let stalled = now_ms() - last.load(Ordering::Relaxed) > 5_000;
+                if stalled && !tripped {
+                    eprintln!(
+                        "hostd: fan loop stalled for 5 s: host-curve fans to their safe state"
+                    );
+                    for (b, ch) in &host {
+                        if let Some(be) = opened.backends.get(b) {
+                            let _ = rt.block_on(be.fail_safe(ch));
+                        }
                     }
                 }
+                tripped = stalled;
             }
-            tripped = stalled;
-        }
-    });
+        });
 }
 
 #[cfg(test)]
@@ -415,8 +513,14 @@ curve = [[60, 30], [82, 100]]
         st.apply("Failsafe Active".into(), EntityValue::Bool(false), 1.0);
         let r = esp_readings("gpu-fans", &st, 5);
         let ids: Vec<String> = r.iter().map(|(i, _)| i.to_string()).collect();
-        assert!(ids.contains(&"esp.gpu-fans.\"Fan 0 RPM\"".to_string()), "{ids:?}");
-        assert!(r.iter().any(|(_, x)| x.unit == Unit::Bool && x.value == 0.0));
+        assert!(
+            ids.contains(&"esp.gpu-fans.\"Fan 0 RPM\"".to_string()),
+            "{ids:?}"
+        );
+        assert!(
+            r.iter()
+                .any(|(_, x)| x.unit == Unit::Bool && x.value == 0.0)
+        );
     }
 
     #[tokio::test]
@@ -428,15 +532,27 @@ curve = [[60, 30], [82, 100]]
         {
             let mut s = store.lock().unwrap();
             let t = now_ms();
-            s.put(SensorId::parse("gpu.B.core").unwrap(), Reading::new(70.0, Unit::Celsius, t, "t"));
-            s.put(SensorId::parse("gpu.B.power_pct").unwrap(), Reading::new(50.0, Unit::Percent, t, "t"));
+            s.put(
+                SensorId::parse("gpu.B.core").unwrap(),
+                Reading::new(70.0, Unit::Celsius, t, "t"),
+            );
+            s.put(
+                SensorId::parse("gpu.B.power_pct").unwrap(),
+                Reading::new(50.0, Unit::Percent, t, "t"),
+            );
         }
         let rt = FanRuntime::start(&p, o, store.clone(), Duration::from_millis(20));
         tokio::time::sleep(Duration::from_millis(200)).await;
         let s = rt.samples.lock().unwrap().clone();
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].control_temp_c, Some(70.0));
-        assert!(store.lock().unwrap().get(&SensorId::parse("fan.duct0.wanted_duty").unwrap()).is_some());
+        assert!(
+            store
+                .lock()
+                .unwrap()
+                .get(&SensorId::parse("fan.duct0.wanted_duty").unwrap())
+                .is_some()
+        );
         rt.stop().await;
     }
 }

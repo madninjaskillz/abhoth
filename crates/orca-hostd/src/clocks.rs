@@ -12,9 +12,12 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use orca_gpuctl::controller::CardStatus;
 use orca_gpuctl::controller::AssertOutcome;
-use orca_gpuctl::{AssertReason, CardPowerConfig, ClockEvent, Controller, GpuControl, GpuReading, LimitedControl, Limits, Mode, WakeSource};
+use orca_gpuctl::controller::CardStatus;
+use orca_gpuctl::{
+    AssertReason, CardPowerConfig, ClockEvent, Controller, GpuControl, GpuReading, LimitedControl,
+    Limits, Mode, WakeSource,
+};
 use orca_sensors::samples::GpuSample;
 use tokio::sync::oneshot;
 
@@ -28,19 +31,47 @@ pub enum ClockMsg {
     Configure(Vec<CardSpec>),
     /// GPU samples from the telemetry sampler.
     Samples(Vec<GpuSample>),
-    Wake { card: String, source: WakeSource, detail: String },
-    Hold { card: String, reason: String, ttl: Duration, reply: oneshot::Sender<Result<(), String>> },
-    Release { card: String, reason: String },
-    Cap { card: String, cap: Option<u32>, ttl: Duration, reply: oneshot::Sender<Result<(), String>> },
-    Assert { card: String, reason: AssertReason, reply: oneshot::Sender<Option<AssertOutcome>> },
-    Status { reply: oneshot::Sender<Vec<CardStatus>> },
+    Wake {
+        card: String,
+        source: WakeSource,
+        detail: String,
+    },
+    Hold {
+        card: String,
+        reason: String,
+        ttl: Duration,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    Release {
+        card: String,
+        reason: String,
+    },
+    Cap {
+        card: String,
+        cap: Option<u32>,
+        ttl: Duration,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    Assert {
+        card: String,
+        reason: AssertReason,
+        reply: oneshot::Sender<Option<AssertOutcome>>,
+    },
+    Status {
+        reply: oneshot::Sender<Vec<CardStatus>>,
+    },
     /// Shutdown: every card back to serving (no card left low), then the thread ends.
-    Shutdown { reply: oneshot::Sender<()> },
+    Shutdown {
+        reply: oneshot::Sender<()>,
+    },
 }
 
 /// Converts a telemetry sample to the controller's reading.
 pub fn to_reading(s: &GpuSample) -> GpuReading {
-    let u = |v: Option<f64>| v.filter(|x| x.is_finite() && *x >= 0.0).map(|x| x.round() as u32);
+    let u = |v: Option<f64>| {
+        v.filter(|x| x.is_finite() && *x >= 0.0)
+            .map(|x| x.round() as u32)
+    };
     GpuReading {
         uuid: s.uuid.clone(),
         util_pct: u(s.util_pct),
@@ -87,7 +118,10 @@ fn run(
     loop {
         let msg = rx.recv_timeout(Duration::from_secs(1));
         let now = t0.elapsed();
-        let mut g = LimitedControl { limits: &limits, inner: &mut *gpu };
+        let mut g = LimitedControl {
+            limits: &limits,
+            inner: &mut *gpu,
+        };
         let mut out: Vec<ClockEvent> = Vec::new();
         let mut stop = None;
         match msg {
@@ -114,7 +148,8 @@ fn run(
                 }
                 ClockMsg::Samples(samples) => {
                     if let Some(c) = ctl.as_mut() {
-                        let ids: Vec<(String, String)> = c.cards().map(|s| (s.id.clone(), s.uuid.clone())).collect();
+                        let ids: Vec<(String, String)> =
+                            c.cards().map(|s| (s.id.clone(), s.uuid.clone())).collect();
                         for (id, uuid) in ids {
                             let r = samples.iter().find(|s| s.uuid == uuid).map(to_reading);
                             out.extend(c.sample(&mut g, &id, now, r));
@@ -122,14 +157,25 @@ fn run(
                         out.extend(c.tick(&mut g, now));
                     }
                 }
-                ClockMsg::Wake { card, source, detail } => {
+                ClockMsg::Wake {
+                    card,
+                    source,
+                    detail,
+                } => {
                     if let Some(c) = ctl.as_mut() {
                         out.extend(c.wake(&mut g, &card, source, &detail, now));
                     }
                 }
-                ClockMsg::Hold { card, reason, ttl, reply } => {
+                ClockMsg::Hold {
+                    card,
+                    reason,
+                    ttl,
+                    reply,
+                } => {
                     let r = match ctl.as_mut() {
-                        Some(c) => c.hold(&mut g, &card, &reason, ttl, now).map(|e| out.extend(e)),
+                        Some(c) => c
+                            .hold(&mut g, &card, &reason, ttl, now)
+                            .map(|e| out.extend(e)),
                         None => Err("no clock policy".into()),
                     };
                     let _ = reply.send(r);
@@ -139,14 +185,25 @@ fn run(
                         c.release(&card, &reason);
                     }
                 }
-                ClockMsg::Cap { card, cap, ttl, reply } => {
+                ClockMsg::Cap {
+                    card,
+                    cap,
+                    ttl,
+                    reply,
+                } => {
                     let r = match ctl.as_mut() {
-                        Some(c) => c.override_cap(&mut g, &card, cap, ttl, Some(&limits), now).map(|e| out.extend(e)),
+                        Some(c) => c
+                            .override_cap(&mut g, &card, cap, ttl, Some(&limits), now)
+                            .map(|e| out.extend(e)),
                         None => Err("no clock policy".into()),
                     };
                     let _ = reply.send(r);
                 }
-                ClockMsg::Assert { card, reason, reply } => {
+                ClockMsg::Assert {
+                    card,
+                    reason,
+                    reply,
+                } => {
                     let r = match ctl.as_mut() {
                         Some(c) => {
                             let (o, e) = c.assert(&mut g, &card, reason, now);
@@ -171,7 +228,10 @@ fn run(
         for e in out {
             let _ = events.send(e);
         }
-        let now_low = ctl.as_ref().map(Controller::lowered_uuids).unwrap_or_default();
+        let now_low = ctl
+            .as_ref()
+            .map(Controller::lowered_uuids)
+            .unwrap_or_default();
         if now_low != lowered {
             lowered = now_low;
             if let Some(p) = &paths
@@ -218,7 +278,11 @@ power_limit_w = [250, 350]
     /// A fake driver shared with the test through a mutex.
     struct Shared(std::sync::Arc<std::sync::Mutex<FakeNvml>>);
     impl GpuControl for Shared {
-        fn apply(&mut self, uuid: &str, cmd: GpuCommand) -> Result<(), orca_gpuctl::nvml::GpuError> {
+        fn apply(
+            &mut self,
+            uuid: &str,
+            cmd: GpuCommand,
+        ) -> Result<(), orca_gpuctl::nvml::GpuError> {
             self.0.lock().unwrap().apply(uuid, cmd)
         }
         fn read(&mut self, uuid: &str) -> Result<GpuReading, orca_gpuctl::nvml::GpuError> {
@@ -228,17 +292,38 @@ power_limit_w = [250, 350]
 
     #[tokio::test]
     async fn configure_assert_status_shutdown_with_fake_nvml() {
-        let fake = std::sync::Arc::new(std::sync::Mutex::new(FakeNvml::default().with_card("GPU-a", 1597)));
+        let fake = std::sync::Arc::new(std::sync::Mutex::new(
+            FakeNvml::default().with_card("GPU-a", 1597),
+        ));
         let limits = Limits::parse(LIMITS).unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let paths = Paths { limits: dir.path().join("l"), state_dir: dir.path().join("s"), run_dir: dir.path().join("r") };
+        let paths = Paths {
+            limits: dir.path().join("l"),
+            state_dir: dir.path().join("s"),
+            run_dir: dir.path().join("r"),
+        };
         let (etx, mut erx) = tokio::sync::mpsc::unbounded_channel();
-        let (tx, h) = spawn(Box::new(Shared(fake.clone())), limits, Mode::On, Some(paths), etx);
-        let cfg: CardPowerConfig = toml::from_str("persistence = true\npower_limit_w = 350\nserving = \"unlocked\"").unwrap();
-        tx.send(ClockMsg::Configure(vec![("A".into(), "GPU-a".into(), cfg)])).unwrap();
-        tx.send(ClockMsg::Samples(vec![sample("GPU-a", 50.0)])).unwrap();
+        let (tx, h) = spawn(
+            Box::new(Shared(fake.clone())),
+            limits,
+            Mode::On,
+            Some(paths),
+            etx,
+        );
+        let cfg: CardPowerConfig =
+            toml::from_str("persistence = true\npower_limit_w = 350\nserving = \"unlocked\"")
+                .unwrap();
+        tx.send(ClockMsg::Configure(vec![("A".into(), "GPU-a".into(), cfg)]))
+            .unwrap();
+        tx.send(ClockMsg::Samples(vec![sample("GPU-a", 50.0)]))
+            .unwrap();
         let (r, rr) = oneshot::channel();
-        tx.send(ClockMsg::Assert { card: "A".into(), reason: AssertReason::EngineReady, reply: r }).unwrap();
+        tx.send(ClockMsg::Assert {
+            card: "A".into(),
+            reason: AssertReason::EngineReady,
+            reply: r,
+        })
+        .unwrap();
         let o = rr.await.unwrap().expect("assert outcome");
         assert_eq!(o.card, "A");
         let (r, rr) = oneshot::channel();
@@ -248,7 +333,13 @@ power_limit_w = [250, 350]
         assert_eq!(st[0].serving, "unlocked");
         // A command outside the limits never reaches the driver: cap 2000 > 1597.
         let (r, rr) = oneshot::channel();
-        tx.send(ClockMsg::Cap { card: "A".into(), cap: Some(2000), ttl: Duration::from_secs(60), reply: r }).unwrap();
+        tx.send(ClockMsg::Cap {
+            card: "A".into(),
+            cap: Some(2000),
+            ttl: Duration::from_secs(60),
+            reply: r,
+        })
+        .unwrap();
         assert!(rr.await.unwrap().is_err());
         let (r, rr) = oneshot::channel();
         tx.send(ClockMsg::Shutdown { reply: r }).unwrap();
@@ -264,7 +355,12 @@ power_limit_w = [250, 350]
 
     #[test]
     fn reading_conversion() {
-        let r = to_reading(&GpuSample { uuid: "u".into(), util_pct: Some(12.6), mem_temp_c: None, ..Default::default() });
+        let r = to_reading(&GpuSample {
+            uuid: "u".into(),
+            util_pct: Some(12.6),
+            mem_temp_c: None,
+            ..Default::default()
+        });
         assert_eq!(r.util_pct, Some(13));
         assert_eq!(r.mem_temp_c, None);
     }

@@ -29,7 +29,10 @@ impl Paths {
     }
     /// `secret:<name>` files: `etc/secrets/<name>` next to the limits file (root-only).
     pub fn secrets_dir(&self) -> PathBuf {
-        self.limits.parent().unwrap_or(Path::new(".")).join("secrets")
+        self.limits
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("secrets")
     }
     pub fn policy(&self) -> PathBuf {
         self.state_dir.join("policy.json")
@@ -40,7 +43,10 @@ impl Paths {
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir)?;
-    let tmp = dir.join(format!(".{}.tmp", path.file_name().and_then(|n| n.to_str()).unwrap_or("hostd")));
+    let tmp = dir.join(format!(
+        ".{}.tmp",
+        path.file_name().and_then(|n| n.to_str()).unwrap_or("hostd")
+    ));
     std::fs::write(&tmp, bytes)?;
     std::fs::rename(&tmp, path)
 }
@@ -54,7 +60,9 @@ pub fn save_policy(paths: &Paths, p: &PolicyDoc) -> std::io::Result<()> {
 /// Loads the last-known-good policy, if any. A corrupt file is an error (not silently ignored).
 pub fn load_policy(paths: &Paths) -> Result<Option<PolicyDoc>, String> {
     match std::fs::read(paths.policy()) {
-        Ok(b) => serde_json::from_slice(&b).map(Some).map_err(|e| format!("{}: {e}", paths.policy().display())),
+        Ok(b) => serde_json::from_slice(&b)
+            .map(Some)
+            .map_err(|e| format!("{}: {e}", paths.policy().display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("{}: {e}", paths.policy().display())),
     }
@@ -67,7 +75,11 @@ pub fn write_heartbeat(paths: &Paths, now_ms: i64) -> std::io::Result<()> {
 
 /// Age of the heartbeat, or `None` if missing or unreadable (which counts as stale).
 pub fn heartbeat_age(paths: &Paths, now_ms: i64) -> Option<Duration> {
-    let t: i64 = std::fs::read_to_string(paths.heartbeat()).ok()?.trim().parse().ok()?;
+    let t: i64 = std::fs::read_to_string(paths.heartbeat())
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
     Some(Duration::from_millis((now_ms - t).max(0) as u64))
 }
 
@@ -78,7 +90,10 @@ pub fn write_lowered(paths: &Paths, uuids: &[String]) -> std::io::Result<()> {
 }
 
 pub fn read_lowered(paths: &Paths) -> Vec<String> {
-    std::fs::read(paths.lowered()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    std::fs::read(paths.lowered())
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -88,7 +103,11 @@ mod tests {
     #[test]
     fn roundtrips() {
         let d = tempfile::tempdir().unwrap();
-        let p = Paths { limits: d.path().join("l.toml"), state_dir: d.path().join("state"), run_dir: d.path().join("run") };
+        let p = Paths {
+            limits: d.path().join("l.toml"),
+            state_dir: d.path().join("state"),
+            run_dir: d.path().join("run"),
+        };
         assert_eq!(load_policy(&p).unwrap(), None);
         let pol = PolicyDoc {
             rev: 3,

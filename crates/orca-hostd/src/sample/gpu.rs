@@ -34,12 +34,23 @@ pub const QUERY_FIELDS: &[&str] = &[
 
 /// The `nvidia-smi` arguments for one query of every card.
 pub fn query_args() -> Vec<String> {
-    vec![format!("--query-gpu={}", QUERY_FIELDS.join(",")), "--format=csv,noheader,nounits".into()]
+    vec![
+        format!("--query-gpu={}", QUERY_FIELDS.join(",")),
+        "--format=csv,noheader,nounits".into(),
+    ]
 }
 
 fn absent(s: &str) -> bool {
-    let s = s.trim().trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
-    s.is_empty() || s == "n/a" || s == "not supported" || s == "unknown" || s.starts_with("gpu requires reset")
+    let s = s
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase();
+    s.is_empty()
+        || s == "n/a"
+        || s == "not supported"
+        || s == "unknown"
+        || s.starts_with("gpu requires reset")
 }
 
 fn num(s: &str) -> Option<f64> {
@@ -62,9 +73,15 @@ pub fn short_bus(s: &str) -> String {
 pub fn parse_line(line: &str, ts: TimestampMs) -> Result<GpuSample, String> {
     let f: Vec<&str> = line.split(',').map(str::trim).collect();
     if f.len() != QUERY_FIELDS.len() {
-        return Err(format!("expected {} fields, got {}: {line:?}", QUERY_FIELDS.len(), f.len()));
+        return Err(format!(
+            "expected {} fields, got {}: {line:?}",
+            QUERY_FIELDS.len(),
+            f.len()
+        ));
     }
-    let index = f[0].parse::<u32>().map_err(|_| format!("bad index {:?}", f[0]))?;
+    let index = f[0]
+        .parse::<u32>()
+        .map_err(|_| format!("bad index {:?}", f[0]))?;
     if !f[1].starts_with("GPU-") {
         return Err(format!("bad uuid in {line:?}"));
     }
@@ -88,7 +105,9 @@ pub fn parse_line(line: &str, ts: TimestampMs) -> Result<GpuSample, String> {
         vram_total_mib: num(f[14]),
         fan_pct: num(f[15]),
         pstate: (!absent(f[16])).then(|| f[16].to_string()),
-        throttle_reasons: (!absent(f[17])).then(|| u64::from_str_radix(f[17].trim_start_matches("0x"), 16).ok()).flatten(),
+        throttle_reasons: (!absent(f[17]))
+            .then(|| u64::from_str_radix(f[17].trim_start_matches("0x"), 16).ok())
+            .flatten(),
         persistence: match f[18].to_ascii_lowercase().as_str() {
             "enabled" => Some(true),
             "disabled" => Some(false),
@@ -117,15 +136,26 @@ pub async fn query(nvidia_smi: &[String]) -> Result<Vec<GpuSample>, String> {
     let (prog, pre) = nvidia_smi.split_first().ok_or("no nvidia-smi command")?;
     let out = tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        tokio::process::Command::new(prog).args(pre).args(query_args()).kill_on_drop(true).output(),
+        tokio::process::Command::new(prog)
+            .args(pre)
+            .args(query_args())
+            .kill_on_drop(true)
+            .output(),
     )
     .await
     .map_err(|_| "nvidia-smi timed out after 10 s".to_string())?
     .map_err(|e| format!("nvidia-smi: {e}"))?;
     if !out.status.success() {
-        return Err(format!("nvidia-smi exited {}: {}", out.status, String::from_utf8_lossy(&out.stderr).trim()));
+        return Err(format!(
+            "nvidia-smi exited {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
-    let (samples, errs) = parse_output(&String::from_utf8_lossy(&out.stdout), orca_sensors::now_ms());
+    let (samples, errs) = parse_output(
+        &String::from_utf8_lossy(&out.stdout),
+        orca_sensors::now_ms(),
+    );
     if samples.is_empty() && !errs.is_empty() {
         return Err(errs.join("; "));
     }
@@ -157,7 +187,10 @@ mod tests {
         assert_eq!(a.persistence, Some(true));
         let d = &s[2];
         assert_eq!(d.name, "Quadro M4000");
-        assert_eq!(d.mem_temp_c, None, "M4000 has no memory sensor: absent, not 0");
+        assert_eq!(
+            d.mem_temp_c, None,
+            "M4000 has no memory sensor: absent, not 0"
+        );
         assert_eq!(d.fan_pct, Some(46.0));
         assert_eq!(d.throttle_reasons, Some(1));
         assert_eq!(s[3].bus, "e1:00.0");

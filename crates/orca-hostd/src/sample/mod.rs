@@ -52,7 +52,12 @@ pub struct Want {
 }
 
 impl Want {
-    pub const ALL: Want = Want { gpu: true, host: true, hwmon: true, bmc: true };
+    pub const ALL: Want = Want {
+        gpu: true,
+        host: true,
+        hwmon: true,
+        bmc: true,
+    };
 }
 
 /// The sampling state (host counters) and the last error per source.
@@ -69,7 +74,13 @@ pub struct Collector {
 impl Collector {
     pub fn new(sources: Sources) -> Collector {
         let host = host::HostSampler::new(sources.proc_root.clone());
-        Collector { sources, host, labels: BTreeMap::new(), errors: BTreeMap::new(), last_ok: BTreeMap::new() }
+        Collector {
+            sources,
+            host,
+            labels: BTreeMap::new(),
+            errors: BTreeMap::new(),
+            last_ok: BTreeMap::new(),
+        }
     }
 
     fn note(&mut self, src: &'static str, r: Result<(), String>, ts: TimestampMs) {
@@ -86,13 +97,19 @@ impl Collector {
 
     /// The label a GPU is reported under: its policy label, else its UUID.
     pub fn label_for(&self, uuid: &str) -> String {
-        self.labels.get(uuid).cloned().unwrap_or_else(|| uuid.to_string())
+        self.labels
+            .get(uuid)
+            .cloned()
+            .unwrap_or_else(|| uuid.to_string())
     }
 
     /// Samples the wanted parts. Failures are recorded in `errors` and leave the part absent.
     pub async fn collect(&mut self, want: Want) -> TelemetryBatch {
         let ts = orca_sensors::now_ms();
-        let mut b = TelemetryBatch { ts, ..Default::default() };
+        let mut b = TelemetryBatch {
+            ts,
+            ..Default::default()
+        };
         if want.gpu {
             let r = gpu::query(&self.sources.nvidia_smi).await;
             let r = r.map(|v| {
@@ -111,7 +128,9 @@ impl Collector {
             self.note("hwmon", Ok(()), ts);
         }
         if want.bmc && !self.sources.ipmitool.is_empty() {
-            let r = bmc::read(&self.sources.ipmitool, self.sources.bmc_fan_mode, ts).await.map(|s| b.bmc = Some(s));
+            let r = bmc::read(&self.sources.ipmitool, self.sources.bmc_fan_mode, ts)
+                .await
+                .map(|s| b.bmc = Some(s));
             self.note("bmc", r, ts);
         }
         b
