@@ -156,6 +156,12 @@ pub trait LiveSession: Send + Sync {
         SettingChange::failed(key, "This session can't change settings.")
     }
 
+    /// The running session's model server settings (with the key: the connection panel probes
+    /// the router with it, server side; never sent to the page). `None`: not known here.
+    async fn lm_studio(&self) -> Option<orca_core::config::LmStudioConfig> {
+        None
+    }
+
     async fn set_profile(&self, _profile: Option<&str>) -> LiveEngineResult {
         engine_result(
             false,

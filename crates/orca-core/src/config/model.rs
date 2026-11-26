@@ -267,6 +267,21 @@ pub struct LmStudioConfig {
     /// Written only when set, so a C# config stays byte-identical.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub connection: Option<String>,
+    /// Rust-only (D149): the OpenAI-compatible server's settings as they were when the
+    /// connection was switched to router mode, put back when it is switched back to server.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_mode: Option<SavedServerMode>,
+}
+
+/// The server-mode values router mode replaces (`lmStudio.serverMode`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SavedServerMode {
+    pub base_url: String,
+    pub api_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key_env: Option<String>,
+    pub models: Vec<String>,
 }
 
 impl Default for LmStudioConfig {
@@ -292,6 +307,7 @@ impl Default for LmStudioConfig {
             backup_on_refusal: false,
             pair_model_programming: false,
             connection: None,
+            server_mode: None,
         }
     }
 }
@@ -309,6 +325,31 @@ impl LmStudioConfig {
         self.connection
             .as_deref()
             .is_some_and(|c| c.trim().eq_ignore_ascii_case("router"))
+    }
+
+    /// Set the connection (`None`/"server" or "router"). Going to router mode keeps the server
+    /// mode's URL, key and models (`server_mode`); going back puts them back, so switching to a
+    /// router and back leaves the OpenAI-compatible server as it was.
+    pub fn set_connection(&mut self, connection: Option<String>) {
+        let was = self.is_router();
+        self.connection = connection;
+        let now = self.is_router();
+        if now && !was {
+            self.server_mode = Some(SavedServerMode {
+                base_url: self.base_url.clone(),
+                api_key: self.api_key.clone(),
+                api_key_env: self.api_key_env.clone(),
+                models: self.models.clone(),
+            });
+        } else if was
+            && !now
+            && let Some(saved) = self.server_mode.take()
+        {
+            self.base_url = saved.base_url;
+            self.api_key = saved.api_key;
+            self.api_key_env = saved.api_key_env;
+            self.models = saved.models;
+        }
     }
 
     /// True when tool-result images go into the conversation.

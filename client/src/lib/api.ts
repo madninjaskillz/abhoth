@@ -1,6 +1,7 @@
 // REST calls to the server. Auth is the session's HttpOnly cookie, plus its CSRF header on
 // state-changing requests.
 import { csrfHeaders, sessionEnded } from "@/lib/auth";
+import { connectionPath } from "@/features/settings/connection";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -222,13 +223,16 @@ export interface DiscoveredRouter {
   info?: RouterInfo | null;
 }
 
-/** The settings' connection panel (admins; D149). Every probe the server makes is a read-only GET with x-abhoth-no-switch. */
+/**
+ * The settings' connection panel (admins; D149). Every probe the server makes is a read-only GET with x-abhoth-no-switch.
+ * `pid`: a project's running session (the Project scope: changed as /config in its terminal would); null: the server's config.json.
+ */
 export const connectionApi = {
-  status: () => request<ConnectionStatus>("GET", "/api/settings/connection"),
+  status: (pid: string | null) => request<ConnectionStatus>("GET", connectionPath(pid)),
   identify: (url: string) => request<{ url: string; baseUrl: string; router: RouterInfo | null; error: string | null }>("POST", "/api/settings/connection/identify", { url }),
   discover: () => request<{ routers: DiscoveredRouter[]; error?: string }>("GET", "/api/settings/connection/discover"),
-  models: () => request<RouterModelsDoc>("GET", "/api/settings/connection/models"),
-  use: (url: string, model?: string) => request<{ ok: boolean; baseUrl: string; router: RouterInfo }>("POST", "/api/settings/connection/use", { url, model }),
+  models: (pid: string | null) => request<RouterModelsDoc>("GET", `${connectionPath(pid)}/models`),
+  use: (pid: string | null, url: string, model?: string) => request<{ ok: boolean; baseUrl: string; router: RouterInfo }>("POST", `${connectionPath(pid)}/use`, { url, model }),
 };
 
 export interface SettingResult {

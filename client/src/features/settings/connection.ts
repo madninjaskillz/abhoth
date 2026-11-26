@@ -109,3 +109,34 @@ export function keyHint(
   const claude = hasClaude && auth.keys ? ` Add an Abhoth key (${prefix}…) to use Claude.` : "";
   return { tone: claude || placeholder ? "info" : "ok", text: `${placeholder}No key needed on your LAN.${claude}` };
 }
+
+/** The connection endpoints of a scope: a project's running session, or (null) the server's config.json. */
+export function connectionPath(pid: string | null): string {
+  return pid ? `/api/projects/${encodeURIComponent(pid)}/settings/connection` : "/api/settings/connection";
+}
+
+/** Where the panel's changes go, as it tells the user. */
+export function savedNote(project: boolean): string {
+  return project
+    ? "Saved to this project's session settings and its config.json, as /config in its terminal would: the session connects this way when it restarts."
+    : "Saved to the server's config.json: new sessions use it (restart the app to update the profile picker).";
+}
+
+export type RouterPick = { kind: "adopt"; url: string } | { kind: "find" } | { kind: "none" };
+
+/**
+ * What clicking the "Abhoth router" card does: nothing when already in router mode; router mode on
+ * the Base URL when that is a router, or on the one router found on the network; otherwise ask for
+ * one (the router search and URL box, focused).
+ */
+export function routerPick(
+  mode: ConnectionMode,
+  status: { baseUrl: string; router: unknown | null } | null | undefined,
+  found: { url: string; verified: boolean }[] | undefined,
+): RouterPick {
+  if (mode === "router") return { kind: "none" };
+  if (status?.router) return { kind: "adopt", url: status.baseUrl };
+  const live = (found ?? []).filter((r) => r.verified);
+  if (live.length === 1) return { kind: "adopt", url: live[0].url };
+  return { kind: "find" };
+}

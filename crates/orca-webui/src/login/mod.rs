@@ -728,7 +728,7 @@ pub fn admin_only(path: &str, method: &Method) -> bool {
         // Glance: reading is for everyone signed in; card online/offline is for admins.
         || (method != Method::GET && seg(path, "/api/glance"))
         // A project's settings are saved to the shared config.json.
-        || project_of(path).is_some_and(|pid| path == format!("/api/projects/{pid}/settings"))
+        || project_of(path).is_some_and(|pid| seg(path, &format!("/api/projects/{pid}/settings")))
         || (method != Method::GET
             && ["save", "delete", "switch"]
                 .iter()
@@ -1055,6 +1055,15 @@ mod tests {
         assert!(admin_only("/api/profiles/switch", &Method::POST));
         assert!(!admin_only("/api/profiles", &Method::GET));
         assert!(admin_only("/api/projects/abc/settings", &Method::PUT));
+        assert!(admin_only(
+            "/api/projects/abc/settings/connection",
+            &Method::GET
+        ));
+        assert!(admin_only(
+            "/api/projects/abc/settings/connection/use",
+            &Method::POST
+        ));
+        assert!(!admin_only("/api/projects/abc/settingsx", &Method::GET));
         assert!(!admin_only("/api/projects/abc/file", &Method::PUT));
         assert!(!admin_only("/api/settingsx", &Method::GET));
         assert!(admin_only("/api/glance/cards/A/offline", &Method::POST));

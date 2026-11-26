@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, KeyRound, Network, Radar, Router as RouterIcon, Server } from "lucide-react";
 import { connectionApi, settingsApi, type DiscoveredRouter, type RouterInfo, type RouterModel, type Setting } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, keyHint, normalizeUrl, pickerOrder, statusLine, type ConnectionMode, type KeyKind } from "./connection";
+import { CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, keyHint, normalizeUrl, pickerOrder, routerPick, savedNote, statusLine, type ConnectionMode, type KeyKind } from "./connection";
 
 const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
 
@@ -12,11 +12,12 @@ const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-n
  * The connection (D149): an Abhoth router, which supplies the models and their context window,
  * vision and tools and owns failover, slots and layouts; or an OpenAI-compatible server set up
  * here. Router mode is only ever offered (a URL that identifies as a router), never switched to
- * by itself. Saved to the server's config.json; new sessions use it.
+ * by itself. `pid`: the settings page's Project scope (that project's running session, changed as
+ * /config in its terminal would); null: the server's config.json, which new sessions use.
  */
-export function ConnectionPanel({ mode, sections }: { mode: ConnectionMode; sections: { name: string; settings: Setting[] }[] }) {
+export function ConnectionPanel({ pid, mode, sections }: { pid: string | null; mode: ConnectionMode; sections: { name: string; settings: Setting[] }[] }) {
   const qc = useQueryClient();
-  const status = useQuery({ queryKey: ["connection"], queryFn: connectionApi.status, staleTime: 15000 });
+  const status = useQuery({ queryKey: ["connection", pid ?? "server"], queryFn: () => connectionApi.status(pid), staleTime: 15000 });
   const [error, setError] = useState<string | null>(null);
   const [finding, setFinding] = useState(false);
   const refresh = () => {
@@ -25,7 +26,7 @@ export function ConnectionPanel({ mode, sections }: { mode: ConnectionMode; sect
     void qc.invalidateQueries({ queryKey: ["router-models"] });
   };
   const adopt = useMutation({
-    mutationFn: ({ url, model }: { url: string; model?: string }) => connectionApi.use(url, model),
+    mutationFn: ({ url, model }: { url: string; model?: string }) => connectionApi.use(pid, url, model),
     onSuccess: () => {
       setError(null);
       setFinding(false);
@@ -34,21 +35,28 @@ export function ConnectionPanel({ mode, sections }: { mode: ConnectionMode; sect
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
   const toServer = useMutation({
-    mutationFn: () => settingsApi.set(null, CONNECTION_KEY, "server"),
+    mutationFn: () => settingsApi.set(pid, CONNECTION_KEY, "server"),
     onSuccess: (r) => {
       setError(r.ok ? null : (r.error ?? "Refused."));
+      setFinding(false);
       refresh();
     },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
   const line = statusLine(status.data ?? undefined);
   const hidden = hiddenInMode(sections, "router");
   const pick = (m: ConnectionMode) => {
     if (m === mode) return;
+    setError(null);
     if (m === "server") return toServer.mutate();
-    // Router mode on the configured URL when it is one; otherwise find or type one.
-    if (status.data?.router) adopt.mutate({ url: status.data.baseUrl });
-    else setFinding(true);
+    // Router mode on the configured URL when it is one, or on the one router found; otherwise find or type one.
+    const found = qc.getQueryData<{ routers: DiscoveredRouter[] }>(["connection-discover"])?.routers;
+    const next = routerPick(mode, status.data, found);
+    if (next.kind === "adopt") adopt.mutate({ url: next.url });
+    else if (next.kind === "find") setFinding(true);
   };
+  const busy = adopt.isPending || toServer.isPending;
+  const finder = finding || mode === "server";
 
   return (
     <section className="space-y-3 border-b py-3" data-testid="connection-panel" data-mode={mode}>
@@ -62,18 +70,33 @@ export function ConnectionPanel({ mode, sections }: { mode: ConnectionMode; sect
           {mode === "router" && status.data?.router && <CheckCircle2 className="size-3.5 text-success" />}
           <span>{line.text}</span>
           {line.offer && status.data && (
-            <Button size="sm" className="h-6" disabled={adopt.isPending} onClick={() => adopt.mutate({ url: status.data!.baseUrl })} data-testid="connection-offer">
+            <Button size="sm" className="h-6" disabled={busy} onClick={() => adopt.mutate({ url: status.data!.baseUrl })} data-testid="connection-offer">
               Use router mode
             </Button>
           )}
         </div>
       )}
-      {error && <div className="text-xs text-destructive" data-testid="connection-error">{error}</div>}
-      {(finding || mode === "server") && <FindRouter busy={adopt.isPending} onUse={(url) => adopt.mutate({ url })} />}
+      {busy && (
+        <div className="text-xs text-muted-foreground" data-testid="connection-busy">
+          {adopt.isPending ? "Checking the router and switching…" : "Switching…"}
+        </div>
+      )}
+      {error && !finder && <div className="text-xs text-destructive" data-testid="connection-error">{error}</div>}
+      {finder && (
+        <FindRouter
+          busy={busy}
+          prompt={finding}
+          error={error}
+          onUse={(url) => {
+            setError(null);
+            adopt.mutate({ url });
+          }}
+        />
+      )}
       {mode === "router" && (
         <>
           {status.data?.router && <RouterSummary info={status.data.router} baseUrl={status.data.baseUrl} keyKind={status.data.apiKey} />}
-          <RouterModels />
+          <RouterModels pid={pid} />
           {hidden.length > 0 && (
             <p className="text-xs text-muted-foreground" data-testid="connection-hidden">
               The router takes care of {hidden.length} settings here ({hidden.map((h) => h.label).join(", ")}), and of inference profiles, slots and GPU layouts.
@@ -82,7 +105,7 @@ export function ConnectionPanel({ mode, sections }: { mode: ConnectionMode; sect
           )}
         </>
       )}
-      <p className="text-[11px] text-muted-foreground">Saved to the server's config.json: new sessions use it (restart the app to update the profile picker).</p>
+      <p className="text-[11px] text-muted-foreground">{savedNote(!!pid)}</p>
     </section>
   );
 }
@@ -106,8 +129,13 @@ function ModeButton({ on, onClick, icon, title, sub, testid }: { on: boolean; on
 }
 
 /** Routers on the LAN (mDNS) and a typed URL, each checked before it can be used. */
-function FindRouter({ busy, onUse }: { busy: boolean; onUse: (url: string) => void }) {
+function FindRouter({ busy, prompt, error, onUse }: { busy: boolean; prompt: boolean; error: string | null; onUse: (url: string) => void }) {
   const [url, setUrl] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  // Asked for router mode with no router known: the URL box is where to go next.
+  useEffect(() => {
+    if (prompt) input.current?.focus();
+  }, [prompt]);
   const found = useQuery({ queryKey: ["connection-discover"], queryFn: connectionApi.discover, staleTime: 60000, retry: false });
   const check = useMutation({ mutationFn: (u: string) => connectionApi.identify(normalizeUrl(u)) });
   const routers = found.data?.routers ?? [];
@@ -120,6 +148,11 @@ function FindRouter({ busy, onUse }: { busy: boolean; onUse: (url: string) => vo
           Search again
         </Button>
       </div>
+      {prompt && (
+        <div className="text-xs text-foreground" data-testid="connection-prompt">
+          Pick a router found on the network, or type its URL and Check, then Use it.
+        </div>
+      )}
       {routers.map((r) => (
         <Found key={r.url} r={r} busy={busy} onUse={onUse} />
       ))}
@@ -130,7 +163,7 @@ function FindRouter({ busy, onUse }: { busy: boolean; onUse: (url: string) => vo
           if (url.trim()) check.mutate(url);
         }}
       >
-        <input className={field} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Router URL, e.g. http://gpu-host:8010" aria-label="Router URL" data-testid="connection-url" />
+        <input ref={input} className={field} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Router URL, e.g. http://gpu-host:8010" aria-label="Router URL" data-testid="connection-url" />
         <Button type="submit" size="sm" className="h-8" variant="outline" disabled={!url.trim() || check.isPending} data-testid="connection-check">
           Check
         </Button>
@@ -141,7 +174,7 @@ function FindRouter({ busy, onUse }: { busy: boolean; onUse: (url: string) => vo
             <span className="flex flex-wrap items-center gap-2">
               <CheckCircle2 className="size-3.5 text-success" />
               {check.data.router.name} (v{check.data.router.version}) at {check.data.url}
-              <Button size="sm" className="h-6" disabled={busy} onClick={() => onUse(check.data!.url)}>
+              <Button size="sm" className="h-6" disabled={busy} onClick={() => onUse(check.data!.url)} data-testid="connection-check-use">
                 Use it
               </Button>
             </span>
@@ -151,6 +184,11 @@ function FindRouter({ busy, onUse }: { busy: boolean; onUse: (url: string) => vo
         </div>
       )}
       {check.isError && <div className="text-xs text-destructive">{(check.error as Error).message}</div>}
+      {error && (
+        <div className="text-xs text-destructive" data-testid="connection-error">
+          Could not switch to the router: {error}
+        </div>
+      )}
     </div>
   );
 }
@@ -196,17 +234,18 @@ function RouterSummary({ info, baseUrl, keyKind }: { info: RouterInfo; baseUrl: 
 }
 
 /** The router's models as this config's key sees them; the default model is picked here. */
-function RouterModels() {
+function RouterModels({ pid }: { pid: string | null }) {
   const qc = useQueryClient();
-  const models = useQuery({ queryKey: ["router-models"], queryFn: connectionApi.models, staleTime: 15000, retry: false });
+  const models = useQuery({ queryKey: ["router-models", pid ?? "server"], queryFn: () => connectionApi.models(pid), staleTime: 15000, retry: false });
   const [error, setError] = useState<string | null>(null);
   const choose = useMutation({
-    mutationFn: (id: string) => settingsApi.set(null, "lmStudio.models", id ? [id] : []),
+    mutationFn: (id: string) => settingsApi.set(pid, "lmStudio.models", id ? [id] : []),
     onSuccess: (r) => {
       setError(r.ok ? null : (r.error ?? "Refused."));
       void qc.invalidateQueries({ queryKey: ["router-models"] });
       void qc.invalidateQueries({ queryKey: ["settings"] });
     },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
   if (models.isLoading) return <div className="text-xs text-muted-foreground">Asking the router for its models…</div>;
   if (models.isError) return <div className="text-xs text-destructive" data-testid="router-models-error">The router's models: {(models.error as Error).message}</div>;

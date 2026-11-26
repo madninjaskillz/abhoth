@@ -164,7 +164,7 @@ export function SettingsDialog({ project, requested, onClose }: { project: Proje
                   <p className="pt-2 text-xs text-muted-foreground">{activeTab.blurb}</p>
                   {doc.isLoading && <div className="py-6 text-sm text-muted-foreground">Loading…</div>}
                   {doc.isError && <div className="py-6 text-sm text-destructive">{(doc.error as Error).message}</div>}
-                  {activeTab.id === "models" && doc.isSuccess && <ConnectionPanel mode={mode} sections={all} />}
+                  {activeTab.id === "models" && doc.isSuccess && <ConnectionPanel key={pid ?? "server"} pid={pid} mode={mode} sections={all} />}
                   {sectionsOfTab(activeTab, all).map((s) => (
                     <section key={s.name} className="py-2" data-testid="settings-section">
                       <h3 className="sticky top-0 z-10 bg-panel py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{s.name}</h3>

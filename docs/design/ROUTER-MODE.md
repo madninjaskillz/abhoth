@@ -149,6 +149,16 @@ link-local last).
   `GET /api/settings/connection`, `POST …/identify {url}`, `GET …/discover`, `GET …/models`,
   `POST …/use {url, model?}` (connection and base URL in one save, audited
   `settings.connection`; only for a URL that identifies as a router).
+  `/api/projects/{pid}/settings/connection[/models|/use]` are the same for the settings page's
+  Project scope: that project's running session's config, changed as /config in its terminal
+  would (saved to config.json too; the session connects that way when it restarts). The panel
+  always talks to the scope it is in (it once wrote the server's config.json while
+  showing the project's session, so "Use it" and the router card seemed to do nothing there).
+- **Switching back:** going to router mode keeps the server mode's Base URL, key and models
+  (`lmStudio.serverMode`, written only while in router mode); choosing "OpenAI-compatible
+  server" again puts them back (`LmStudioConfig::set_connection`, the connection setting's
+  setter, so /config does the same). Clicking the router card uses the Base URL when it is a
+  router, else the one router found on the LAN, else asks for a URL (the URL box, focused).
 - **Sessions** (`orca_core::router_mode::apply`, at startup and for each project session):
   metadata fetched with the configured key (cached 30 s), overrides applied, notices for a
   model the router does not offer to this key or when none is chosen (the first live one is

@@ -931,6 +931,10 @@ impl LiveSession for AgentLiveSession {
         Some(d)
     }
 
+    async fn lm_studio(&self) -> Option<orca_core::config::LmStudioConfig> {
+        Some(self.shared.config.lock().unwrap().lm_studio.clone())
+    }
+
     /// `SetSettingAsync`: applied to the session's config (live settings take effect with the
     /// next turn) and saved to config.json as /config saves it.
     async fn set_setting(

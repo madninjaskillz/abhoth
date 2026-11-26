@@ -11,21 +11,25 @@
 //! - `POST /api/settings/connection/use` `{url}`: router mode on that router (connection and
 //!   base URL in one save).
 //!
+//! `/api/projects/{pid}/settings/connection[/models|/use]` are the same for one project's
+//! running session (the settings page's Project scope): its config, changed as /config in its
+//! terminal would (`LiveSession::set_setting`, saved to config.json too).
+//!
 //! Every request to a router is a read-only GET with `x-abhoth-no-switch: 1` and no redirects.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::extract::{ConnectInfo, State};
+use axum::extract::{ConnectInfo, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use orca_core::config::ConfigManager;
 use orca_core::config::schema::{self, CONNECTION_KEY};
+use orca_core::config::{ConfigManager, LmStudioConfig};
 use orca_core::router_mode::{self, RouterInfo};
 
 use crate::audit::Caller;
@@ -43,6 +47,40 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/api/settings/connection/discover", get(discover_routers))
         .route("/api/settings/connection/models", get(models))
         .route("/api/settings/connection/use", post(use_router))
+        .route(
+            "/api/projects/{pid}/settings/connection",
+            get(project_status),
+        )
+        .route(
+            "/api/projects/{pid}/settings/connection/models",
+            get(project_models),
+        )
+        .route(
+            "/api/projects/{pid}/settings/connection/use",
+            post(project_use),
+        )
+}
+
+type Session = Arc<dyn crate::live::LiveSession>;
+/// Why a project-scope request is refused (made a response with [`bad`]).
+type Refusal = (StatusCode, &'static str);
+
+/// A project's running session, or the answer for a project that has none.
+fn session_of(state: &AppState, pid: &str) -> Result<Session, Refusal> {
+    state
+        .projects
+        .get(pid)
+        .map(|rt| rt.session.clone())
+        .ok_or((StatusCode::NOT_FOUND, "No such project."))
+}
+
+/// The model server settings of a project's session.
+async fn project_lm(state: &AppState, pid: &str) -> Result<LmStudioConfig, Refusal> {
+    let session = session_of(state, pid)?;
+    session.lm_studio().await.ok_or((
+        StatusCode::CONFLICT,
+        "This project's session has no settings to show.",
+    ))
 }
 
 fn load(state: &AppState) -> ConfigManager {
@@ -101,8 +139,17 @@ pub fn status_of(
 }
 
 async fn status(State(state): State<Arc<AppState>>) -> Response {
-    let m = load(&state);
-    let lm = &m.config.lm_studio;
+    status_for(&load(&state).config.lm_studio).await
+}
+
+async fn project_status(State(state): State<Arc<AppState>>, Path(pid): Path<String>) -> Response {
+    match project_lm(&state, &pid).await {
+        Ok(lm) => status_for(&lm).await,
+        Err((code, why)) => bad(code, why),
+    }
+}
+
+async fn status_for(lm: &LmStudioConfig) -> Response {
     let identified = router_mode::identify(&lm.base_url, &router_mode::probe_client()).await;
     axum::Json(status_of(
         lm.is_router(),
@@ -161,8 +208,17 @@ async fn discover_routers() -> Response {
 }
 
 async fn models(State(state): State<Arc<AppState>>) -> Response {
-    let m = load(&state);
-    let lm = &m.config.lm_studio;
+    models_for(&load(&state).config.lm_studio).await
+}
+
+async fn project_models(State(state): State<Arc<AppState>>, Path(pid): Path<String>) -> Response {
+    match project_lm(&state, &pid).await {
+        Ok(lm) => models_for(&lm).await,
+        Err((code, why)) => bad(code, why),
+    }
+}
+
+async fn models_for(lm: &LmStudioConfig) -> Response {
     let key = lm.resolve_api_key();
     match router_mode::models_cached(&lm.base_url, &key, &router_mode::probe_client()).await {
         Ok(doc) => {
@@ -182,11 +238,54 @@ struct UseBody {
     model: Option<String>,
 }
 
+/// Where `/use` saves: the server's config.json, or a project's running session.
+enum Target {
+    Global,
+    Project(String, Session),
+}
+
 async fn use_router(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     principal: Option<axum::Extension<crate::login::Principal>>,
     axum::Json(b): axum::Json<UseBody>,
+) -> Response {
+    adopt(&state, Target::Global, addr, principal, b).await
+}
+
+async fn project_use(
+    State(state): State<Arc<AppState>>,
+    Path(pid): Path<String>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    principal: Option<axum::Extension<crate::login::Principal>>,
+    axum::Json(b): axum::Json<UseBody>,
+) -> Response {
+    let session = match session_of(&state, &pid) {
+        Ok(s) => s,
+        Err((code, why)) => return bad(code, why),
+    };
+    adopt(&state, Target::Project(pid, session), addr, principal, b).await
+}
+
+/// The changes `/use` makes, in order: the connection first (going to router mode keeps the
+/// server mode's URL, key and models, to put back when switching back), then the URL.
+pub fn use_changes(base: &str, model: Option<&str>) -> Vec<(String, Value)> {
+    let mut changes: Vec<(String, Value)> = vec![
+        (CONNECTION_KEY.into(), json!("router")),
+        ("lmStudio.baseUrl".into(), json!(base)),
+    ];
+    if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
+        changes.push(("lmStudio.models".into(), json!([model])));
+    }
+    changes
+}
+
+async fn adopt(
+    state: &AppState,
+    target: Target,
+    addr: std::net::SocketAddr,
+    principal: Option<axum::Extension<crate::login::Principal>>,
+    b: UseBody,
 ) -> Response {
     let root = match probe_url(&b.url) {
         Ok(r) => r,
@@ -204,23 +303,33 @@ async fn use_router(
         }
     };
     let base = router_mode::base_url_of(&root, Some(&info));
-    let mut m = load(&state);
-    let mut changes: Vec<(String, Value)> = vec![
-        (CONNECTION_KEY.into(), json!("router")),
-        ("lmStudio.baseUrl".into(), json!(base)),
-    ];
-    if let Some(model) = b.model.as_deref().filter(|s| !s.trim().is_empty()) {
-        changes.push(("lmStudio.models".into(), json!([model.trim()])));
-    }
-    for (k, v) in &changes {
-        let c = schema::apply(&mut m.config, k, Some(v), false, None);
-        if !c.ok {
-            return bad(StatusCode::BAD_REQUEST, c.error.unwrap_or_default());
+    let changes = use_changes(&base, b.model.as_deref());
+    let project = match &target {
+        Target::Global => {
+            let mut m = load(state);
+            for (k, v) in &changes {
+                let c = schema::apply(&mut m.config, k, Some(v), false, None);
+                if !c.ok {
+                    return bad(StatusCode::BAD_REQUEST, c.error.unwrap_or_default());
+                }
+            }
+            if let Err(e) = m.save() {
+                return bad(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+            }
+            None
         }
-    }
-    if let Err(e) = m.save() {
-        return bad(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
-    }
+        // As /config in its terminal: the session's config, saved to config.json too.
+        Target::Project(pid, session) => {
+            for (k, v) in &changes {
+                let c = session.set_setting(k, Some(v.clone()), false).await;
+                if !c.ok {
+                    let why = c.error.unwrap_or_else(|| "Refused.".into());
+                    return bad(StatusCode::BAD_REQUEST, format!("{k}: {why}"));
+                }
+            }
+            Some(pid.clone())
+        }
+    };
     router_mode::clear_cache();
     let caller = Caller {
         ip: Some(addr.ip().to_string()),
@@ -231,7 +340,7 @@ async fn use_router(
     state.audit.write(
         Some(&caller),
         "settings.connection",
-        json!({"connection": "router", "baseUrl": base, "router": info.name, "model": b.model}),
+        json!({"connection": "router", "project": project, "baseUrl": base, "router": info.name, "model": b.model}),
     );
     axum::Json(json!({"ok": true, "baseUrl": base, "router": info, "live": false})).into_response()
 }
@@ -267,6 +376,18 @@ mod tests {
         );
         assert!(!s.suggest_router);
         assert_eq!(s.error.as_deref(), Some("could not connect"));
+    }
+
+    #[test]
+    fn use_switches_the_connection_before_the_url() {
+        let c = use_changes("http://r:8010/v1", Some(" m1 "));
+        let keys: Vec<&str> = c.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(
+            keys,
+            [CONNECTION_KEY, "lmStudio.baseUrl", "lmStudio.models"]
+        );
+        assert_eq!(c[2].1, json!(["m1"]));
+        assert_eq!(use_changes("http://r:8010/v1", Some("  ")).len(), 2);
     }
 
     #[test]

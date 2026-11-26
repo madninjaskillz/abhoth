@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, modeOf, normalizeUrl, pickerOrder, statusLine, visibleInMode, keyHint,
+  CONNECTION_KEY, capabilityBadges, connectionPath, formatTokens, hiddenInMode, modeOf, normalizeUrl, pickerOrder, routerPick, savedNote, statusLine, visibleInMode, keyHint,
 } from "../src/features/settings/connection.ts";
 
 const s = (key: string, routerMode?: "shown" | "hidden" | "router") => ({ key, routerMode });
@@ -103,4 +103,30 @@ test("keyHint: warns when a key is needed or would be refused", () => {
   assert.equal(keyHint("other", lan, false).tone, "warn");
   assert.equal(keyHint("other", { ...lan, keys: false }, false).tone, "ok");
   assert.equal(keyHint("abhoth", { ...lan, required: true }, true).tone, "ok");
+});
+
+test("the panel talks to the scope it is in: a project's session, or the server's config.json", () => {
+  assert.equal(connectionPath(null), "/api/settings/connection");
+  assert.equal(connectionPath("abc"), "/api/projects/abc/settings/connection");
+  assert.equal(connectionPath("a b"), "/api/projects/a%20b/settings/connection");
+  assert.match(savedNote(true), /this project's session/);
+  assert.match(savedNote(false), /server's config\.json/);
+});
+
+test("clicking the router card switches when a router is known, and asks for one otherwise", () => {
+  const router = { name: "R" };
+  // Already router mode: nothing.
+  assert.deepEqual(routerPick("router", { baseUrl: "http://r:8010/v1", router }, []), { kind: "none" });
+  // The Base URL is a router: use it.
+  assert.deepEqual(routerPick("server", { baseUrl: "http://r:8010/v1", router }, []), { kind: "adopt", url: "http://r:8010/v1" });
+  // LM Studio's URL, one router found on the network: that one.
+  const lm = { baseUrl: "http://localhost:1234/v1", router: null };
+  assert.deepEqual(routerPick("server", lm, [{ url: "http://gpu:8010", verified: true }, { url: "http://old:8010", verified: false }]), {
+    kind: "adopt",
+    url: "http://gpu:8010",
+  });
+  // None, several, or no search yet: ask (the URL box).
+  assert.deepEqual(routerPick("server", lm, undefined), { kind: "find" });
+  assert.deepEqual(routerPick("server", lm, [{ url: "http://a:8010", verified: true }, { url: "http://b:8010", verified: true }]), { kind: "find" });
+  assert.deepEqual(routerPick("server", undefined, []), { kind: "find" });
 });

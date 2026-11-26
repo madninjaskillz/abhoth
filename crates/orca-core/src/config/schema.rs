@@ -566,9 +566,11 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
             "What the Base URL is: \"router\" (an Abhoth router: it supplies the models and their context window, vision and tools) or \"server\" (an OpenAI-compatible server set up here: LM Studio, llama.cpp, vLLM…).",
             |c| V::text(&c.lm_studio.connection),
             |c, v| {
-                c.lm_studio.connection = blank_to_none(v)
-                    .map(|s| s.to_ascii_lowercase())
-                    .filter(|s| s != "server");
+                c.lm_studio.set_connection(
+                    blank_to_none(v)
+                        .map(|s| s.to_ascii_lowercase())
+                        .filter(|s| s != "server"),
+                );
             },
         )
         .not_live()
@@ -1660,5 +1662,44 @@ mod tests {
         assert_eq!(config.lm_studio.connection, None);
         let text = crate::config::manager::serialize_config(&config).unwrap();
         assert!(!text.contains("connection"), "{text}");
+    }
+
+    #[test]
+    fn switching_to_a_router_and_back_restores_the_server() {
+        let mut config = OrcaConfig::default();
+        let set = |c: &mut OrcaConfig, k: &str, v: Value| {
+            assert!(apply(c, k, Some(&v), false, None).ok, "{k}")
+        };
+        set(&mut config, "lmStudio.models", json!(["qwen-local"]));
+        set(&mut config, CONNECTION_KEY, json!("router"));
+        set(&mut config, "lmStudio.baseUrl", json!("http://r:8010/v1"));
+        set(&mut config, "lmStudio.apiKey", json!("abk_test"));
+        set(&mut config, "lmStudio.models", json!(["router-model"]));
+        // Another router while in router mode keeps the server's values from the first switch.
+        set(&mut config, CONNECTION_KEY, json!("router"));
+        set(&mut config, "lmStudio.baseUrl", json!("http://r2:8010/v1"));
+        let saved = config.lm_studio.server_mode.clone().expect("saved");
+        assert_eq!(saved.base_url, "http://localhost:1234/v1");
+        let text = crate::config::manager::serialize_config(&config).unwrap();
+        assert!(text.contains("serverMode"), "{text}");
+
+        set(&mut config, CONNECTION_KEY, json!("server"));
+        let lm = &config.lm_studio;
+        assert!(!lm.is_router());
+        assert_eq!(lm.base_url, "http://localhost:1234/v1");
+        assert_eq!(lm.api_key, "lm-studio");
+        assert_eq!(lm.models, vec!["qwen-local".to_string()]);
+        assert_eq!(lm.server_mode, None);
+        let text = crate::config::manager::serialize_config(&config).unwrap();
+        assert!(!text.contains("serverMode"), "{text}");
+
+        // Server mode again: nothing saved, nothing restored.
+        set(
+            &mut config,
+            "lmStudio.baseUrl",
+            json!("http://other:1234/v1"),
+        );
+        set(&mut config, CONNECTION_KEY, json!("server"));
+        assert_eq!(config.lm_studio.base_url, "http://other:1234/v1");
     }
 }
