@@ -80,6 +80,11 @@
 /* A soft light halo so the navy mascot reads on dark surfaces. */
 .mascot-glow { background: var(--mascot-glow, radial-gradient(closest-side, hsl(280 80% 88% / 0.22), hsl(286 60% 56% / 0.10) 60%, transparent 100%)); }
 /* Thinking: a slow fade only (no movement); off for reduced motion. */
+/* A mood (the mascot's face) fades in when it changes; no movement. */
+@keyframes mood-fade { from { opacity: 0; } to { opacity: 1; } }
+.mood-in { animation: mood-fade 0.4s ease-out; }
+@media (prefers-reduced-motion: reduce) { .mood-in { animation: none; } }
+
 @keyframes mascot-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 .mascot-thinking { animation: mascot-breathe 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .mascot-thinking { animation: none; } }

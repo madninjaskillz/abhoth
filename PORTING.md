@@ -409,7 +409,8 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   server `openorca`, log categories, slot owner labels, User-Agent). The React client is Abhoth
   outright (the C# build is being retired): `public/brand/` holds the Abhoth images under the old
   file names plus `branding.json` (name, optional glow) read by `lib/brand.ts` before the first
-  render; brand files and index.html are served `no-cache`.
+  render; brand files and index.html are served `no-cache`. (D150: the images are now
+  content-hashed assets under `src/assets/brand`; only `branding.json` stays in `public/brand/`.)
 - **D89** State moves to `~/.abhoth`; `ABHOTH_*` env vars win over `OPENORCA_*`. At startup, with
   no home in the environment, `~/.openorca` is copied once (staged then renamed; logs,
   checkpoints and config backups skipped; a `.migrated-from-openorca` marker) and left as is for
@@ -963,3 +964,13 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     5353 with address reuse); a Windows PC on the same LAN finds it within the 2.5 s browse, on
     its LAN address (the Docker bridge addresses are ranked last), verified by its
     identification document. No fallback was needed; a pasted URL works where multicast does not.
+- **D150** (user request 2026-11-26) **Mascot moods**: "could we use them on responses based on
+  the outcome?" Design and the table in [`docs/design/MOODS.md`](docs/design/MOODS.md).
+  - Six faces (happy, sad, angry, surprised, wink, sleepy) at the end of each response, beside
+    "working…" and in the empty chat; branding spots keep the neutral mascot. A setting (the
+    Moods checkbox) turns them off.
+  - The mood comes from structured turn state only: `turnEnd` gains an optional `reason`
+    (`orca_core::live::reasons`, from the typed error: HTTP 401/403/429/402, no model, engine
+    unavailable or failed, iteration limit), plus the turn's denied permissions and notice levels.
+  - Cache busting: the brand images are Vite-hashed assets (`/assets/abhoth-…-<hash>`), so the
+    OpenOrca build's cached orca at `/brand/mascot-256.webp` can no longer show.

@@ -30,17 +30,43 @@ async fn brand_images_are_public_nothing_else_is() {
     let work = tempfile::tempdir().unwrap();
     let host = Host::start(FakeSession::new(work.path())).await;
     let c = host.http();
-    let mascot = c
+    // The brand images have content-hashed names (D150), public like every hashed asset: the
+    // favicon the page links to is an Abhoth file, cached for good.
+    let page = c.get(host.url("/")).send().await.unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let html = page.text().await.unwrap();
+    // Pages without a session are the sign-in page (the app shows the form; D140).
+    assert!(html.contains("<div id=\"root\">"));
+    let icon = html
+        .split("href=\"")
+        .skip(1)
+        .map(|s| s.split('"').next().unwrap())
+        .find(|h| h.starts_with("/assets/abhoth-favicon-32-") && h.ends_with(".png"))
+        .expect("a hashed Abhoth favicon");
+    let image = c.get(host.url(icon)).send().await.unwrap();
+    assert_eq!(image.status(), StatusCode::OK);
+    assert_eq!(image.headers()["content-type"], "image/png");
+    assert!(
+        image.headers()["cache-control"]
+            .to_str()
+            .unwrap()
+            .contains("immutable")
+    );
+    // branding.json stays at its path, public and never cached (a host can serve its own).
+    let branding = c
+        .get(host.url("/brand/branding.json"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(branding.status(), StatusCode::OK);
+    assert_eq!(branding.headers()["cache-control"], "no-cache");
+    // The old paths (the OpenOrca build's orca was served there) are no image any more.
+    let old = c
         .get(host.url("/brand/mascot-256.webp"))
         .send()
         .await
         .unwrap();
-    assert_eq!(mascot.status(), StatusCode::OK);
-    assert_eq!(mascot.headers()["content-type"], "image/webp");
-    // Pages without a session are the sign-in page (the app shows the form; D140).
-    let page = c.get(host.url("/")).send().await.unwrap();
-    assert_eq!(page.status(), StatusCode::OK);
-    assert!(page.text().await.unwrap().contains("<div id=\"root\">"));
+    assert_ne!(old.headers()["content-type"], "image/webp");
     assert_eq!(
         c.post(host.url("/brand/x")).send().await.unwrap().status(),
         StatusCode::UNAUTHORIZED

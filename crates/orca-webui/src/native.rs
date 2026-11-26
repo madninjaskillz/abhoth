@@ -12,6 +12,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use orca_abstractions::ToolResult;
 use orca_core::agent::permissions::{PermissionDecision, PermissionPrompter};
+use orca_core::agent::session::{AgentError, TurnEnd};
 use orca_core::agent::{AgentObserver, AgentSession};
 use orca_core::chat::conversation::TEXT_TOOL_RESULTS_PREFIX;
 use orca_core::client::{ChatMessage, OpenAiClient, Role, ToolCall};
@@ -23,7 +24,7 @@ use orca_core::engines::{
 };
 use orca_core::live::{
     LiveAgent, LiveEngineResult, LiveEventBus, LivePermission, LiveQuestion, LiveSnapshot,
-    LiveTranscriptItem, truncate, types,
+    LiveTranscriptItem, reasons, truncate, types,
 };
 use orca_core::session::EngineRef;
 use serde_json::json;
@@ -673,7 +674,7 @@ async fn run_bridge(
     shared: &Shared,
     text: &str,
     rx: tokio::sync::oneshot::Receiver<()>,
-) -> &'static str {
+) -> (&'static str, Option<&'static str>) {
     session.messages.push(ChatMessage::user(text));
     let mut conversation = session.conversation();
     {
@@ -716,23 +717,32 @@ async fn run_bridge(
     };
     session.set_conversation(conversation);
     match result {
-        Ok(()) => "done",
+        Ok(()) => ("done", None),
         // C# prints this in its console only; the browser is told too (D103).
         Err(EngineError::Unavailable(m)) => {
             shared.bus.publish(
                 types::NOTICE,
                 json!({"level": "error", "text": format!("\u{2717} {m}")}),
             );
-            "done"
+            ("done", Some(reasons::UNAVAILABLE))
         }
-        Err(EngineError::Cancelled) => "cancelled",
+        Err(EngineError::Cancelled) => ("cancelled", None),
         Err(EngineError::Failed(m)) => {
             shared.bus.publish(
                 types::NOTICE,
                 json!({"level": "error", "text": format!("Error: {m}")}),
             );
-            "error"
+            ("error", Some(reasons::FAILED))
         }
+    }
+}
+
+/// A native turn's `turnEnd` outcome and reason (`orca_core::live::reasons`).
+fn native_turn_end(r: &Result<TurnEnd, AgentError>) -> (&'static str, Option<&'static str>) {
+    match r {
+        Ok(TurnEnd::Done) => ("done", None),
+        Ok(TurnEnd::IterationLimit) => ("done", Some(reasons::ITERATION_LIMIT)),
+        Err(AgentError::Chat(e)) => ("error", Some(e.turn_reason())),
     }
 }
 
@@ -752,24 +762,23 @@ async fn run_one(session: &mut AgentSession, shared: &Shared, text: &str, source
         started: HashMap::new(),
     };
     let bridge = EngineHost::is_bridge(&session.config);
-    let outcome = if bridge {
+    let (outcome, reason) = if bridge {
         run_bridge(session, shared, text, rx).await
     } else if session.active_model().is_none() {
         bus.publish(
             types::NOTICE,
             json!({"level": "error", "text": NO_MODEL_NOTICE}),
         );
-        "error"
+        ("error", Some(reasons::NO_MODEL))
     } else {
         tokio::select! {
-        r = session.run_turn(text, &mut observer) => match r {
-            Ok(_) => "done",
-            Err(e) => {
+        r = session.run_turn(text, &mut observer) => {
+            if let Err(e) = &r {
                 bus.publish(types::NOTICE, json!({"level": "error", "text": format!("Error: {e}")}));
-                "error"
             }
+            native_turn_end(&r)
         },
-        _ = rx => "cancelled",
+        _ = rx => ("cancelled", None),
         }
     };
     if outcome == "cancelled" && !bridge {
@@ -777,10 +786,11 @@ async fn run_one(session: &mut AgentSession, shared: &Shared, text: &str, source
     }
     shared.cancel.lock().unwrap().take();
     *shared.history.lock().unwrap() = session.messages.clone();
-    bus.publish_turn_end(
+    bus.publish_turn_end_with(
         started.elapsed().as_millis() as i64,
         session.total_output_tokens - tokens_before,
         outcome,
+        reason,
     );
     shared.publish_busy();
 }
@@ -1155,6 +1165,36 @@ pub fn clean_assistant(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn turn_end_reasons_come_from_the_error_kind() {
+        use orca_core::client::ChatError;
+        let http = |status| {
+            Err(AgentError::Chat(ChatError::Http {
+                status,
+                url: "u".into(),
+                body: "b".into(),
+            }))
+        };
+        assert_eq!(native_turn_end(&Ok(TurnEnd::Done)), ("done", None));
+        assert_eq!(
+            native_turn_end(&Ok(TurnEnd::IterationLimit)),
+            ("done", Some("iterationLimit"))
+        );
+        assert_eq!(native_turn_end(&http(401)), ("error", Some("auth")));
+        assert_eq!(native_turn_end(&http(403)), ("error", Some("auth")));
+        assert_eq!(native_turn_end(&http(429)), ("error", Some("rateLimited")));
+        assert_eq!(native_turn_end(&http(402)), ("error", Some("quota")));
+        assert_eq!(native_turn_end(&http(500)), ("error", Some("server")));
+        assert_eq!(
+            native_turn_end(&Err(AgentError::Chat(ChatError::NoModel))),
+            ("error", Some("noModel"))
+        );
+        assert_eq!(
+            native_turn_end(&Err(AgentError::Chat(ChatError::Protocol("x".into())))),
+            ("error", Some("server"))
+        );
+    }
 
     #[test]
     fn clean_assistant_strips_markup() {

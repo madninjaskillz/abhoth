@@ -74,8 +74,11 @@ uses them. The executables carry the mascot icon and version info.
   (`X-OpenOrca-Token`, the `openorca` MCP server name of the bridges, log categories
   `OpenOrca.Usage`) keep their names for compatibility.
 - **Mascot:** `assets/abhoth/abhoth.svg` (vector original) and `abhoth-reference.webp`; the
-  PNGs, the multi-size `abhoth.ico` and the web client's `brand/` files are rendered from the SVG
-  (resvg, then Pillow for the .ico and .webp files).
+  PNGs, the multi-size `abhoth.ico` and the web client's brand images (`client/src/assets/brand`,
+  bundled with content-hashed names) are rendered from the SVG (resvg, then Pillow for the .ico
+  and .webp files). The six moods the chat shows at the end of a response (happy, sad, angry,
+  surprised, wink, sleepy; [`docs/design/MOODS.md`](docs/design/MOODS.md)) are cut out of the
+  artist's PNGs by `tools/brand/cut_moods.py`.
 
 ## Security: web UI accounts
 

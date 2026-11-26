@@ -1,6 +1,7 @@
 /**
- * The product name and mascot styling: `/brand/branding.json` (public, like the mascot images
- * beside it in public/brand). The product is Abhoth; a host can still serve its own file there.
+ * The product name and mascot styling: `/brand/branding.json` (public, in public/brand; the mascot
+ * images are bundled with hashed names, src/assets/brand). The product is Abhoth; a host can
+ * still serve its own branding.json there.
  * Loaded once before the first render; a missing or broken file keeps the defaults.
  */
 export interface Branding {

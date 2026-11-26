@@ -47,6 +47,28 @@ pub mod types {
     pub const AGENT_DELTA: &str = "agentDelta";
 }
 
+/// Why a turn ended, beyond its `outcome` ("done", "error", "cancelled"): the `reason` of a
+/// `turnEnd` event, when there is one. The web client picks the mascot's mood from these
+/// (client/src/lib/moods.ts), never from the message text.
+pub mod reasons {
+    /// The server refused the credentials (HTTP 401/403; a router that refused the key).
+    pub const AUTH: &str = "auth";
+    /// Rate limited (HTTP 429).
+    pub const RATE_LIMITED: &str = "rateLimited";
+    /// Out of quota or credit (HTTP 402).
+    pub const QUOTA: &str = "quota";
+    /// No model is configured.
+    pub const NO_MODEL: &str = "noModel";
+    /// The selected engine (Claude Code, Codex) cannot run: not installed or not signed in.
+    pub const UNAVAILABLE: &str = "unavailable";
+    /// The model server failed (other HTTP errors, unreachable, timed out, broken stream).
+    pub const SERVER: &str = "server";
+    /// The engine's turn failed.
+    pub const FAILED: &str = "failed";
+    /// The agent stopped at its iteration limit without finishing.
+    pub const ITERATION_LIMIT: &str = "iterationLimit";
+}
+
 type Handler = Arc<dyn Fn(&LiveEvent) + Send + Sync>;
 
 const MAX_TURN_EVENTS: usize = 4000;
@@ -257,14 +279,26 @@ impl LiveEventBus {
     }
 
     pub fn publish_turn_end(&self, elapsed_ms: i64, tokens: i64, outcome: &str) {
+        self.publish_turn_end_with(elapsed_ms, tokens, outcome, None);
+    }
+
+    /// [`Self::publish_turn_end`] with why it ended (one of [`reasons`]), when known.
+    pub fn publish_turn_end_with(
+        &self,
+        elapsed_ms: i64,
+        tokens: i64,
+        outcome: &str,
+        reason: Option<&str>,
+    ) {
         if !self.is_active() {
             return;
         }
         self.state.lock().unwrap().in_turn = false;
-        self.publish(
-            types::TURN_END,
-            json!({"elapsedMs": elapsed_ms, "tokens": tokens, "outcome": outcome}),
-        );
+        let mut data = json!({"elapsedMs": elapsed_ms, "tokens": tokens, "outcome": outcome});
+        if let Some(r) = reason {
+            data["reason"] = json!(r);
+        }
+        self.publish(types::TURN_END, data);
     }
 
     /// A tool call is starting: returns the id its result will carry.
@@ -546,6 +580,18 @@ mod tests {
         assert_eq!((seq, base, in_turn), (5, 3, true));
         bus.publish_turn_end(10, 5, "success");
         assert!(!bus.in_turn());
+    }
+
+    #[test]
+    fn turn_end_carries_a_reason_only_when_there_is_one() {
+        let bus = Arc::new(LiveEventBus::new());
+        let (_sub, seen) = collecting(&bus);
+        bus.publish_turn_end(1, 0, "done");
+        bus.publish_turn_end_with(1, 0, "error", Some(reasons::RATE_LIMITED));
+        let seen = seen.lock().unwrap();
+        assert!(seen[0].data.get("reason").is_none());
+        assert_eq!(seen[1].data["outcome"], "error");
+        assert_eq!(seen[1].data["reason"], "rateLimited");
     }
 
     #[test]

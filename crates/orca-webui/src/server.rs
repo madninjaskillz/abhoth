@@ -649,7 +649,8 @@ async fn static_or_index(State(state): State<Arc<AppState>>, method: Method, uri
         }
         if let Some(bytes) = client_file(&state, &rel) {
             let mime = mime_guess::from_path(&rel).first_or_octet_stream();
-            // index.html and the brand files (same names across rebrands) are never cached.
+            // index.html and brand/ (branding.json, which a host may replace) are never cached;
+            // the images are hashed assets.
             let cache = if rel.ends_with("index.html") || rel.starts_with("brand/") {
                 "no-cache"
             } else {

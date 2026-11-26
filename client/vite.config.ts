@@ -12,6 +12,9 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: false,
     chunkSizeWarningLimit: 4096,
+    // The brand images keep their own hashed files (never inlined): the favicon and the mascot
+    // are fetched by URL, and a hashed name is what keeps a stale cached copy from showing.
+    assetsInlineLimit: (file) => (file.replace(/\\/g, "/").includes("/assets/brand/") ? false : undefined),
     rollupOptions: {
       // glance.html: the public Glance page's own bundle (SUPERVISOR.md 12.1).
       input: { main: path.resolve(__dirname, "index.html"), glance: path.resolve(__dirname, "glance.html") },

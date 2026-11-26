@@ -1,6 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { brandName } from "@/lib/brand";
-import { Mascot, MascotThinking } from "@/components/Mascot";
+import { Mascot, MascotThinking, MoodBadge, useMoods } from "@/components/Mascot";
+import { emptyStateMood, lastMood, liveMood, moodLabel, moodReason, turnMoods, LONG_TURN_MS, type Mood } from "@/lib/moods";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -101,15 +102,38 @@ function UserText({ text }: { text: string }) {
 function Transcript() {
   const items = useSession((s) => s.items);
   const busy = useSession((s) => s.busy);
-  return <TranscriptList items={items} busy={busy} empty={<EmptyState />} />;
+  const working = useLiveMood();
+  return <TranscriptList items={items} busy={busy} empty={<EmptyState />} workingMood={working} />;
+}
+
+/** The working mascot's face (lib/moods.ts liveMood): surprised while you are asked, sleepy on a long turn. */
+function useLiveMood(): Mood | null {
+  const on = useMoods((s) => s.on);
+  const busy = useSession((s) => s.busy);
+  const pending = useSession((s) => s.permissions.length + s.questions.length);
+  const startedAt = useSession((s) => s.turnStartedAt);
+  const [now, setNow] = useState(() => Date.now());
+  // One re-render when the turn becomes long; none while it is short or idle.
+  useEffect(() => {
+    if (!on || !busy || !startedAt) return;
+    const left = startedAt + LONG_TURN_MS - Date.now();
+    if (left <= 0) return;
+    const t = setTimeout(() => setNow(Date.now()), left + 50);
+    return () => clearTimeout(t);
+  }, [on, busy, startedAt]);
+  if (!on) return null;
+  return liveMood({ busy, pending, elapsedMs: startedAt ? Math.max(now, Date.now()) - startedAt : 0 });
 }
 
 /** A list of chat items as the main chat draws them (also a sub-agent's tab). */
-export function TranscriptList({ items, busy, empty, testId = "transcript" }: { items: ChatItem[]; busy: boolean; empty?: ReactNode; testId?: string }) {
+export function TranscriptList({ items, busy, empty, testId = "transcript", workingMood }: { items: ChatItem[]; busy: boolean; empty?: ReactNode; testId?: string; workingMood?: Mood | null }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   // Each media file once per turn, outside the collapsible blocks (see planMedia).
   const media = useMemo(() => planMedia(items), [items]);
+  // The face at the end of each response (lib/moods.ts), unless moods are off.
+  const moodsOn = useMoods((s) => s.on);
+  const moods = useMemo(() => (moodsOn ? turnMoods(items) : null), [items, moodsOn]);
 
   // Follow the stream unless the user scrolled up.
   const onScroll = () => {
@@ -126,11 +150,11 @@ export function TranscriptList({ items, busy, empty, testId = "transcript" }: { 
       {items.length === 0 && empty}
       <div className="w-full space-y-3">
         {items.map((item) => (
-          <Item key={item.key} item={item} media={media.get(item.key)?.join("\n")} />
+          <Item key={item.key} item={item} media={media.get(item.key)?.join("\n")} mood={moods?.get(item.key)} />
         ))}
         {busy && !items.some((i) => (i.kind === "assistant" || i.kind === "thinking") && i.streaming) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <MascotThinking /> working…
+            <MascotThinking mood={workingMood} /> working…
           </div>
         )}
       </div>
@@ -140,9 +164,11 @@ export function TranscriptList({ items, busy, empty, testId = "transcript" }: { 
 
 function EmptyState() {
   const mode = useSession((s) => s.mode);
+  const moodsOn = useMoods((s) => s.on);
+  const last = useSession((s) => lastMood(s.items));
   return (
     <div className="mx-auto mt-12 max-w-md text-center text-muted-foreground" data-testid="chat-empty">
-      <Mascot size={128} className="mb-5" />
+      <Mascot size={128} className="mb-5" mood={moodsOn ? emptyStateMood(last) : null} />
       <div className="mb-2 text-lg font-semibold text-foreground">{brandName()}</div>
       <p className="text-sm">
         {mode === "tui"
@@ -156,7 +182,7 @@ function EmptyState() {
 }
 
 /** One transcript item. `media`: the files previewed under it by default (newline separated, so the memo holds). */
-const Item = memo(function Item({ item, media }: { item: ChatItem; media?: string }) {
+const Item = memo(function Item({ item, media, mood }: { item: ChatItem; media?: string; mood?: Mood }) {
   const shown = media ? media.split("\n") : [];
   switch (item.kind) {
     case "user":
@@ -205,8 +231,9 @@ const Item = memo(function Item({ item, media }: { item: ChatItem; media?: strin
     }
     case "turnEnd":
       return (
-        <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground" data-testid="turn-end">
           <span className="h-px flex-1 bg-border" />
+          {mood && <MoodBadge mood={mood} size={28} title={`Abhoth is ${moodLabel(mood)}: ${moodReason(mood)}`} />}
           <span>
             ✻ {formatMs(item.elapsedMs)}
             {item.tokens > 0 ? ` · ${item.tokens.toLocaleString()} tokens` : ""}
@@ -463,6 +490,7 @@ function Composer() {
           <EnginePicker flow={engineFlow} />
           <ProfilePicker pid={pid} busy={busy} />
           <InlineMediaToggle />
+          <MoodsToggle />
           <UncensoredToggle />
           {error && <span className="text-destructive">{error}</span>}
           {queued > 0 && <span>{queued} queued</span>}
@@ -500,6 +528,18 @@ function UncensoredToggle() {
         data-testid="uncensored"
       />
       Uncensored
+    </label>
+  );
+}
+
+/** The mascot's moods at the end of responses (on by default; remembered in this browser). */
+function MoodsToggle() {
+  const on = useMoods((s) => s.on);
+  const set = useMoods((s) => s.set);
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-1" title="Show Abhoth's mood at the end of each response (happy, sad, cross, surprised…)">
+      <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} className="size-3 accent-primary" data-testid="moods-toggle" />
+      Moods
     </label>
   );
 }

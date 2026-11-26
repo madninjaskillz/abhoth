@@ -115,7 +115,29 @@ export type ChatItem =
     }
   | { kind: "system"; key: number; text: string }
   | { kind: "notice"; key: number; level: string; text: string }
-  | { kind: "turnEnd"; key: number; elapsedMs: number; tokens: number; outcome: string };
+  | ({ kind: "turnEnd"; key: number; elapsedMs: number; tokens: number } & TurnEndSignals);
+
+/**
+ * How a turn ended, from its events (the mascot's mood: lib/moods.ts). `outcome` and `reason`
+ * are the server's; the counts are the turn's permission answers and notice levels.
+ */
+export interface TurnEndSignals {
+  outcome: string;
+  reason?: string | null;
+  denied: number;
+  errors: number;
+  warnings: number;
+  pending: number;
+}
+
+/** What the running turn has seen so far (reset when a turn starts). */
+export interface TurnTally {
+  denied: number;
+  errors: number;
+  warnings: number;
+}
+
+const emptyTally: TurnTally = { denied: 0, errors: 0, warnings: 0 };
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected" | "unauthorized";
 
@@ -143,6 +165,10 @@ export interface SessionState {
   permissions: LivePermission[];
   /** Bumped when the agent may have changed files (git panel refreshes). */
   fileEpoch: number;
+  /** The running turn's permission answers and notice levels (for its turn-end mood). */
+  tally: TurnTally;
+  /** When the running turn started here (ms since epoch; 0 when not known). */
+  turnStartedAt: number;
 
   loadSnapshot: (s: LiveSnapshot) => void;
   applyEvents: (events: LiveEvent[]) => void;
@@ -164,7 +190,12 @@ function reduce(state: SessionState, ev: LiveEvent): Partial<SessionState> {
   switch (ev.type) {
     case "turnStart":
       // A prompt from the queue (browser, bench) started: one fewer waiting.
-      return { busy: true, queued: d.source && d.source !== "tui" ? Math.max(0, state.queued - 1) : state.queued };
+      return {
+        busy: true,
+        queued: d.source && d.source !== "tui" ? Math.max(0, state.queued - 1) : state.queued,
+        tally: emptyTally,
+        turnStartedAt: Date.parse(ev.at) || Date.now(),
+      };
     case "user":
       return { items: [...closeStreaming(state.items), { kind: "user", key: nextKey++, text: d.text ?? "", source: d.source ?? "" }] };
     case "assistantDelta":
@@ -205,16 +236,33 @@ function reduce(state: SessionState, ev: LiveEvent): Partial<SessionState> {
       copy[at] = { ...(copy[at] as Extract<ChatItem, { kind: "tool" }>), ...patch };
       return { items: copy, fileEpoch: state.fileEpoch + 1 };
     }
-    case "notice":
-      return { items: [...closeStreaming(state.items), { kind: "notice", key: nextKey++, level: d.level ?? "info", text: d.text ?? "" }] };
+    case "notice": {
+      const level = d.level ?? "info";
+      const t = state.tally;
+      return {
+        items: [...closeStreaming(state.items), { kind: "notice", key: nextKey++, level, text: d.text ?? "" }],
+        tally: { ...t, errors: t.errors + (level === "error" ? 1 : 0), warnings: t.warnings + (level === "warning" ? 1 : 0) },
+      };
+    }
     case "turnEnd":
       return {
         busy: false,
         items: [
           ...closeStreaming(state.items),
-          { kind: "turnEnd", key: nextKey++, elapsedMs: d.elapsedMs ?? 0, tokens: d.tokens ?? 0, outcome: d.outcome ?? "done" },
+          {
+            kind: "turnEnd",
+            key: nextKey++,
+            elapsedMs: d.elapsedMs ?? 0,
+            tokens: d.tokens ?? 0,
+            outcome: d.outcome ?? "done",
+            reason: d.reason ?? null,
+            ...state.tally,
+            pending: state.permissions.length + state.questions.length,
+          },
         ],
         fileEpoch: state.fileEpoch + 1,
+        tally: emptyTally,
+        turnStartedAt: 0,
       };
     case "busy":
       return { busy: !!d.busy, queued: d.queued ?? 0 };
@@ -225,7 +273,10 @@ function reduce(state: SessionState, ev: LiveEvent): Partial<SessionState> {
     case "permission":
       return state.permissions.some((p) => p.id === d.id) ? {} : { permissions: [...state.permissions, d] };
     case "permissionResolved":
-      return { permissions: state.permissions.filter((p) => p.id !== d.id) };
+      return {
+        permissions: state.permissions.filter((p) => p.id !== d.id),
+        tally: d.decision === "no" ? { ...state.tally, denied: state.tally.denied + 1 } : state.tally,
+      };
     case "question":
       return state.questions.some((q) => q.id === d.id) ? {} : { questions: [...state.questions, d] };
     case "questionResolved":
@@ -280,6 +331,8 @@ const makeSessionStore = () =>
   uncensored: false,
   permissions: [],
   fileEpoch: 0,
+  tally: emptyTally,
+  turnStartedAt: 0,
 
   loadSnapshot: (s) => {
     let state: SessionState = {

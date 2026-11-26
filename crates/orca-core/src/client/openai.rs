@@ -55,6 +55,22 @@ impl ChatError {
             _ => None,
         }
     }
+
+    /// Why a turn that ended on this error ended, as the web client's `turnEnd` `reason`
+    /// (`crate::live::reasons`): refused by the server (auth, rate limit, quota), no model,
+    /// or the server failed.
+    pub fn turn_reason(&self) -> &'static str {
+        use crate::live::reasons;
+        match self {
+            ChatError::Http {
+                status: 401 | 403, ..
+            } => reasons::AUTH,
+            ChatError::Http { status: 429, .. } => reasons::RATE_LIMITED,
+            ChatError::Http { status: 402, .. } => reasons::QUOTA,
+            ChatError::NoModel => reasons::NO_MODEL,
+            _ => reasons::SERVER,
+        }
+    }
 }
 
 /// Settings for one OpenAI-compatible endpoint.
