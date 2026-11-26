@@ -265,7 +265,17 @@ impl WebUiServer {
             crate::bench::BenchRunner::new(b, projects.clone(), audit.clone(), profiles.clone())
         });
         let bench_queue = bench.as_ref().map(|b| {
-            crate::bench::BenchQueue::new(b.clone(), b.options.dir.clone(), profiles.clone(), true)
+            let q = crate::bench::BenchQueue::new(
+                b.clone(),
+                b.options.dir.clone(),
+                profiles.clone(),
+                true,
+            );
+            // Bench protection through the router's calendar, when a router is linked.
+            if let Some(link) = options.router.clone() {
+                q.set_protect(Arc::new(crate::router_admin::RouterBenchProtect { link }));
+            }
+            q
         });
         let clones = crate::projects::clone::CloneService::new(projects.clone());
         let github_app = {

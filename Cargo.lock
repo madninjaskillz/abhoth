@@ -3623,6 +3623,7 @@ dependencies = [
  "image",
  "mime_guess",
  "orca-abstractions",
+ "orca-calendar",
  "orca-core",
  "orca-router",
  "orca-testkit",

@@ -75,6 +75,9 @@ pub struct BenchQueueFile {
     pub restore_scheduled: bool,
     pub confirmed_at: Option<String>,
     pub items: Vec<BenchQueueItem>,
+    /// The router calendar's bench entry protecting this run of the queue, and its end (epoch).
+    pub protection: Option<String>,
+    pub protection_until: Option<i64>,
 }
 
 /// A saved profile by name, or per-card picks (`cards`: composed into a profile on the server).
@@ -100,8 +103,25 @@ impl NewItem {
     }
 }
 
+/// Bench protection (SUPERVISOR.md 9, Q10): while the queue runs, a calendar entry on the
+/// router keeps on-demand switches off the server. The router link implements it
+/// (`router_admin::RouterBenchProtect`); failures are logged and never stop the bench.
+#[async_trait::async_trait]
+pub trait BenchProtect: Send + Sync {
+    /// Starts protection for about `seconds`: the calendar entry id and when it ends (epoch).
+    async fn begin(&self, run: &str, seconds: i64) -> Result<(String, i64), String>;
+    /// Moves the end to `seconds` from now; returns the new end.
+    async fn extend(&self, id: &str, seconds: i64) -> Result<i64, String>;
+    async fn end(&self, id: &str) -> Result<(), String>;
+}
+
+/// The first protection window; when less than [`PROTECT_MARGIN`] is left it is extended.
+pub const PROTECT_SECONDS: i64 = 2 * 3600;
+pub const PROTECT_MARGIN: i64 = 20 * 60;
+
 pub struct BenchQueue {
     runner: Arc<BenchRunner>,
+    protect: Mutex<Option<Arc<dyn BenchProtect>>>,
     profiles: Option<Arc<ProfileService>>,
     file: PathBuf,
     q: Mutex<BenchQueueFile>,
@@ -140,6 +160,7 @@ impl BenchQueue {
         let (changed, _) = watch::channel(0u64);
         let queue = Arc::new(Self {
             runner,
+            protect: Mutex::new(None),
             profiles,
             file,
             q: Mutex::new(q),
@@ -159,6 +180,56 @@ impl BenchQueue {
             *queue.loop_task.lock().unwrap() = Some(h);
         }
         queue
+    }
+
+    /// Turns bench protection on (the server sets it when a router is linked).
+    pub fn set_protect(&self, p: Arc<dyn BenchProtect>) {
+        *self.protect.lock().unwrap() = Some(p);
+        self.notify();
+    }
+
+    /// Keeps the protection in step with the queue: begun (or extended) while it runs or an
+    /// item is in progress, ended after that.
+    async fn sync_protection(&self) {
+        let Some(p) = self.protect.lock().unwrap().clone() else {
+            return;
+        };
+        let (want, id, until) = {
+            let q = self.q.lock().unwrap();
+            (
+                q.running || q.current.is_some(),
+                q.protection.clone(),
+                q.protection_until,
+            )
+        };
+        let now = time::unix(SystemTime::now()).0;
+        let result = match (want, id) {
+            (true, None) => {
+                let run = format!("queue {}", chrono::Utc::now().format("%Y%m%d-%H%M"));
+                p.begin(&run, PROTECT_SECONDS).await.map(|(id, until)| {
+                    tracing::info!("Bench queue: protected by calendar entry {id}");
+                    (Some(id), Some(until))
+                })
+            }
+            (true, Some(id)) if until.unwrap_or(0) - now < PROTECT_MARGIN => p
+                .extend(&id, PROTECT_SECONDS / 2)
+                .await
+                .map(|u| (Some(id), Some(u))),
+            (false, Some(id)) => p.end(&id).await.map(|_| {
+                tracing::info!("Bench queue: protection {id} ended");
+                (None, None)
+            }),
+            _ => return,
+        };
+        match result {
+            Ok((id, until)) => {
+                let mut q = self.q.lock().unwrap();
+                q.protection = id;
+                q.protection_until = until;
+                self.save(&q);
+            }
+            Err(e) => tracing::warn!("Bench queue: calendar protection: {e}"),
+        }
     }
 
     pub fn subscribe(&self) -> watch::Receiver<u64> {
@@ -448,6 +519,7 @@ impl BenchQueue {
     /// One step: settle the item in progress, start the next (grouped by layout), or switch
     /// back when done.
     pub async fn tick(&self) {
+        self.sync_protection().await;
         let (current, running) = {
             let q = self.q.lock().unwrap();
             let cur = q
