@@ -1,6 +1,7 @@
 //! What the public Glance leaves out (SUPERVISOR.md 12.1, 15 Q5): the recent-requests table,
-//! OOM process names, container names and error text. Everything else stays. Each part can be
-//! turned off on its own.
+//! OOM process names, container names, error text and network endpoints (model servers'
+//! host:port keys, service ports, lease hosts). Everything else stays. Each part can be turned
+//! off on its own.
 
 use serde_json::{Value, json};
 
@@ -15,6 +16,9 @@ pub struct Redaction {
     pub containers: bool,
     /// Error text: `errors`, `*.error`, `*.last_error`, alert details.
     pub errors: bool,
+    /// Network endpoints: model servers keyed `name:port` become their role (`ninfer-b`),
+    /// without `port`/`url`/`host`; services lose their ports; leases their client host.
+    pub endpoints: bool,
 }
 
 impl Default for Redaction {
@@ -24,6 +28,7 @@ impl Default for Redaction {
             oom_processes: true,
             containers: true,
             errors: true,
+            endpoints: true,
         }
     }
 }
@@ -36,6 +41,7 @@ impl Redaction {
             oom_processes: false,
             containers: false,
             errors: false,
+            endpoints: false,
         };
         for part in list.split(',').map(str::trim).filter(|p| !p.is_empty()) {
             match part {
@@ -45,9 +51,10 @@ impl Redaction {
                 "oom" | "oom_processes" => r.oom_processes = true,
                 "containers" => r.containers = true,
                 "errors" => r.errors = true,
+                "endpoints" => r.endpoints = true,
                 other => {
                     return Err(format!(
-                        "unknown redaction '{other}' (requests, oom, containers, errors, all, none)"
+                        "unknown redaction '{other}' (requests, oom, containers, errors, endpoints, all, none)"
                     ));
                 }
             }
@@ -60,6 +67,10 @@ impl Redaction {
         let mut v = state.clone();
         let Some(o) = v.as_object_mut() else { return v };
         let mut dropped = Vec::new();
+        if self.endpoints {
+            dropped.push("network endpoints");
+            redact_endpoints(o);
+        }
         if self.requests {
             dropped.push("recent requests");
             for i in llm(o) {
@@ -165,7 +176,25 @@ impl Redaction {
         let mut out = Vec::new();
         for (k, v) in sections {
             let mut v = v.clone();
+            if v.is_null() {
+                out.push((k.clone(), v));
+                continue;
+            }
             match k.as_str() {
+                "feed_errors" if self.errors => {
+                    if let Some(m) = v.as_object_mut() {
+                        for e in m.values_mut() {
+                            *e = json!("unavailable");
+                        }
+                    }
+                }
+                // The model servers' chart history is keyed host:port (and goes once, at start).
+                "history" if self.endpoints => {
+                    if let Some(m) = v.as_object_mut() {
+                        m.remove("llm");
+                    }
+                }
+                "leases" if self.endpoints => strip_keys(&mut v, &["host", "client", "addr", "ip"]),
                 "dash" => {
                     v = self.apply(&v);
                     if let Some(o) = v.as_object_mut() {
@@ -226,6 +255,9 @@ impl Redaction {
 
     fn dropped(&self) -> Vec<&'static str> {
         let mut d = Vec::new();
+        if self.endpoints {
+            d.push("network endpoints");
+        }
         if self.requests {
             d.push("recent requests");
         }
@@ -258,6 +290,76 @@ impl Redaction {
             strip_keys(&mut e.data, &["container"]);
         }
         e
+    }
+}
+
+/// Model servers keyed by role instead of `host:port`, and no ports or client hosts.
+fn redact_endpoints(o: &mut serde_json::Map<String, Value>) {
+    let mut renamed: Vec<(String, String)> = Vec::new();
+    if let Some(Value::Object(llm)) = o.remove("llm") {
+        let mut out = serde_json::Map::new();
+        for (n, (key, mut i)) in llm.into_iter().enumerate() {
+            let base: String = i["role"]
+                .as_str()
+                .map(|r| {
+                    r.trim()
+                        .to_lowercase()
+                        .chars()
+                        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                        .collect()
+                })
+                .filter(|r: &String| !r.is_empty())
+                .unwrap_or_else(|| format!("server-{}", n + 1));
+            let mut id = base.clone();
+            let mut k = 2;
+            while out.contains_key(&id) {
+                id = format!("{base}-{k}");
+                k += 1;
+            }
+            if let Some(m) = i.as_object_mut() {
+                m.insert("key".into(), json!(id));
+                for f in ["port", "url", "base_url", "host"] {
+                    m.remove(f);
+                }
+            }
+            renamed.push((key, id.clone()));
+            out.insert(id, i);
+        }
+        o.insert("llm".into(), Value::Object(out));
+    }
+    let map = |k: &str| renamed.iter().find(|(a, _)| a == k).map(|(_, b)| b.clone());
+    for g in o
+        .get_mut("gpus")
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(l) = g.get_mut("llm").and_then(Value::as_array_mut) {
+            for x in l.iter_mut() {
+                if let Some(n) = x.as_str().and_then(map) {
+                    *x = json!(n);
+                }
+            }
+        }
+    }
+    if let Some(Value::Object(c)) = o.get_mut("copies") {
+        let old = std::mem::take(c);
+        for (k, v) in old {
+            c.insert(map(&k).unwrap_or(k), v);
+        }
+    }
+    for svc in o
+        .get_mut("services")
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(m) = svc.as_object_mut() {
+            m.remove("port");
+        }
+    }
+    if let Some(p) = o.get_mut("pig") {
+        strip_keys(p, &["host"]);
     }
 }
 
@@ -317,7 +419,10 @@ mod tests {
         ] {
             assert!(!text.contains(gone), "{gone} leaked: {text}");
         }
-        assert_eq!(out["llm"]["a:1"]["tok_s"], 3);
+        assert_eq!(
+            out["llm"]["server-1"]["tok_s"], 3,
+            "keyed by role (none here), not host:port"
+        );
         assert_eq!(
             out["gpus"][0]["procs"][0]["process"], "x",
             "GPU process names stay"
@@ -325,7 +430,29 @@ mod tests {
         assert_eq!(out["ooms"][0]["anon_mb"], 9);
         assert_eq!(out["alerts"][0]["title"], "Pool full");
         assert_eq!(out["profile"]["onDemand"]["text"], "ok");
-        assert_eq!(out["redacted"].as_array().unwrap().len(), 4);
+        assert_eq!(out["redacted"].as_array().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn endpoints_become_roles() {
+        let st = json!({
+            "llm": {"ninfer-b:8096": {"key": "ninfer-b:8096", "role": "ninfer B", "port": 8096, "tok_s": 1},
+                    "x:1": {"key": "x:1", "role": "ninfer B"}},
+            "gpus": [{"uuid": "u", "llm": ["ninfer-b:8096"]}],
+            "services": [{"name": "LiteLLM", "port": 8010, "up": true}],
+            "pig": {"slots": {"A1": {"label": "bench", "host": "my-pc"}}},
+        });
+        let out = Redaction::default().apply(&st);
+        let text = out.to_string();
+        for gone in ["8096", "8010", "my-pc", "x:1"] {
+            assert!(!text.contains(gone), "{gone}: {text}");
+        }
+        assert_eq!(out["llm"]["ninfer-b"]["tok_s"], 1);
+        assert_eq!(out["llm"]["ninfer-b"]["key"], "ninfer-b");
+        assert!(out["llm"]["ninfer-b-2"].is_object());
+        assert_eq!(out["gpus"][0]["llm"][0], "ninfer-b");
+        let kept = Redaction::parse("requests").unwrap().apply(&st);
+        assert!(kept["llm"]["ninfer-b:8096"].is_object());
     }
 
     #[test]
@@ -350,7 +477,7 @@ mod tests {
             assert!(!text.contains(gone), "{gone}");
         }
         assert_eq!(out["health"]["hostd"]["ts"], 1);
-        assert_eq!(out["redacted"].as_array().unwrap().len(), 4);
+        assert_eq!(out["redacted"].as_array().unwrap().len(), 5);
         let e = orca_sensors::feed::FeedEvent {
             kind: "engine.error".into(),
             severity: Default::default(),

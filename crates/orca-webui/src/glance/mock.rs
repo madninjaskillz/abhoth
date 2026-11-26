@@ -8,14 +8,33 @@
 //!   services, image generation, pools, news, OOM kills), without its history, until the
 //!   owning subsystems publish sections of their own;
 //! - `history`: the legacy history, once at start (the hub's rings are not in the snapshot).
+//!
+//! With the supervisor's feed on (`supervised`), only `dash` (without what the supervisor
+//! covers: `host`, `bmc`) and `history` come from here.
 
 use orca_sensors::TimestampMs;
 use orca_sensors::samples::{GpuSample, HostSample, MemSample, NetSample};
 use serde_json::{Map, Value, json};
 
-/// Sections of one legacy state. `with_history` adds the `history` section.
-pub fn sections(legacy: &Value, with_history: bool) -> Map<String, Value> {
+/// Sections of one legacy state. `with_history` adds the `history` section; `supervised`: the
+/// supervisor publishes `gpus`, `host` and the rest, so only `dash` and `history`.
+pub fn sections(legacy: &Value, with_history: bool, supervised: bool) -> Map<String, Value> {
     let mut out = Map::new();
+    if supervised {
+        let mut dash = legacy.clone();
+        if let Some(o) = dash.as_object_mut() {
+            for k in ["calendar", "alerts", "engines", "host", "bmc"] {
+                o.remove(k);
+            }
+        }
+        let history = with_history.then(|| history_of(legacy));
+        super::feed_strip_hist(&mut dash);
+        out.insert("dash".into(), dash);
+        if let Some(h) = history {
+            out.insert("history".into(), h);
+        }
+        return out;
+    }
     let ts = (legacy["time"].as_f64().unwrap_or(0.0) * 1000.0) as TimestampMs;
     let cards = card_labels(legacy);
     let mut gpus = Map::new();
@@ -189,7 +208,7 @@ mod tests {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/glance-feed.jsonl");
         let frames = super::super::load_fixture(&path).unwrap();
-        let s = sections(&frames[0], true);
+        let s = sections(&frames[0], true, false);
         let a = &s["gpus"]["A"];
         assert_eq!(a["bus"], "21:00.0");
         assert!(a["core_c"].as_f64().unwrap() > 0.0);
@@ -200,7 +219,10 @@ mod tests {
         assert!(s["dash"].get("hist").is_none());
         assert!(s["dash"]["gpus"][0].get("hist").is_none());
         assert!(s["calendar"]["now"].is_array());
-        assert!(sections(&frames[1], false).get("history").is_none());
+        assert!(sections(&frames[1], false, false).get("history").is_none());
+        let sup = sections(&frames[0], true, true);
+        assert_eq!(sup.keys().collect::<Vec<_>>(), vec!["dash", "history"]);
+        assert!(sup["dash"].get("host").is_none() && sup["dash"].get("bmc").is_none());
         let g = gpu_sample(
             &json!({"clocks_event_reasons_sw_power_cap": 1.0, "clocks_event_reasons_hw_thermal_slowdown": 1.0}),
             0,

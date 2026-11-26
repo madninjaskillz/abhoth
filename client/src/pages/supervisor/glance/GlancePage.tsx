@@ -172,6 +172,12 @@ const GpuCard = memo(function GpuCard({ g, s, h, version }: { g: Gpu; s: GlanceS
           <dt>SM / mem clock</dt>
           <dd>{fmt((g.clocks_current_sm_clock_hz ?? NaN) / 1e6)}<span className="muted">/{fmt((g.clocks_max_sm_clock_hz ?? NaN) / 1e6)}</span> · {fmt((g.clocks_current_memory_clock_hz ?? NaN) / 1e6)} MHz</dd>
         </div>
+        {g.clock && (
+          <div className="stat" title="The clock controller (gpuctl): serving mode, idle phase, energy saved at idle">
+            <dt>Clock control</dt>
+            <dd className="small">{[g.clock.serving, g.clock.phase === "low" ? "idle-low" : g.clock.phase, g.clock.cap_mhz ? `cap ${g.clock.cap_mhz} MHz` : null, g.clock.pinned ? "pinned" : null].filter(Boolean).join(" · ")}{g.clock.saved_wh != null && <span className="muted"> · saved {fmt(g.clock.saved_wh, 1)} Wh</span>}</dd>
+          </div>
+        )}
         <div className="stat"><dt>PCIe</dt><dd>gen{fmt(g.pcie_link_gen_current)} ×{fmt(g.pcie_link_width_current)}</dd></div>
         <div className="stat">
           <dt>Throttle</dt>

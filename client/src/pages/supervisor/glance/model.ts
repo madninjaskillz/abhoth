@@ -98,6 +98,8 @@ export interface Gpu {
   llm?: string[];
   procs?: { pid?: number; process?: string; container?: string; mem_mib?: number }[];
   duct?: Duct | null;
+  /** The clock controller's state (the supervisor's `clocks` section). */
+  clock?: { serving?: string; phase?: string; saved_wh?: number; locked?: boolean; pinned?: boolean; cap_mhz?: number };
   hist?: Record<string, Point[]>;
 }
 
@@ -632,7 +634,8 @@ function gpuFromSampleNew(card: string, x: GpuSample, base?: Gpu): Gpu {
 
 /** HostSample → the host tile's fields (the dash's RAM formulas use total, MemAvailable, ARC). */
 export function hostFromSample(h: HostSample): NonNullable<GlanceState["host"]> {
-  const sum = (k: "rx_bps" | "tx_bps") => (h.net || []).reduce<number | undefined>((a, n) => (n[k] == null ? a : (a ?? 0) + n[k]!), undefined);
+  const nets = pickInterfaces(h.net || []);
+  const sum = (k: "rx_bps" | "tx_bps") => nets.reduce<number | undefined>((a, n) => (n[k] == null ? a : (a ?? 0) + n[k]!), undefined);
   return {
     cpu: h.cpu_pct,
     mem_total: h.mem?.total,
@@ -645,6 +648,172 @@ export function hostFromSample(h: HostSample): NonNullable<GlanceState["host"]> 
   };
 }
 
+/** The host's traffic: bonds when there are any (not their members twice), never VPN or bridges. */
+export function pickInterfaces<T extends { iface: string }>(net: T[]): T[] {
+  const real = net.filter((n) => !/^(lo|tailscale|wg|tun|docker|veth|br-|virbr|vnet|cali|flannel|kube)/.test(n.iface));
+  const bonds = real.filter((n) => n.iface.startsWith("bond"));
+  return bonds.length ? bonds : real;
+}
+
+/** orca-fans `FanSample` (the supervisor's `fans` section, keyed `duct0`…). */
+export interface FanSample {
+  fan: string;
+  ts?: number;
+  duty_pct?: number;
+  rpm?: number;
+  ff_duty_pct?: number;
+  failsafe?: boolean;
+  stalled?: boolean;
+  control_temp_c?: number;
+  wanted_duty_pct?: number;
+}
+
+/** The fans section over the dash's ESP block (which knows each duct's card, the curve, WiFi). */
+export function espFromFans(fans: Record<string, FanSample>, base: Esp | null | undefined, gpus: Gpu[]): Esp {
+  const byFan = new Map((base?.fans || []).map((f) => [f.fan, f]));
+  const out: (Duct & { pci: string })[] = [];
+  for (const [id, f] of Object.entries(fans)) {
+    const n = Number(id.replace(/\D+/g, ""));
+    const b = byFan.get(n);
+    const g = b ? gpus.find((x) => x.pci === b.pci) : undefined;
+    out.push({
+      fan: n, pci: b?.pci ?? id, rpm: f.rpm ?? null, duty: f.duty_pct ?? null, ff_duty: f.ff_duty_pct ?? null,
+      temp: f.control_temp_c ?? null, load: g?.utilization_gpu_ratio != null ? g.utilization_gpu_ratio * 100 : b?.load ?? null,
+      stalled: !!f.stalled,
+    });
+  }
+  out.sort((x, y) => x.fan - y.fan);
+  const vals = Object.values(fans);
+  return { ...(base || {}), live: vals.length > 0, connected: vals.length > 0, failsafe: vals.some((f) => f.failsafe), fans: out };
+}
+
+/** orca-sensors `BmcSample`: IPMI SDR rows. */
+export interface BmcSample {
+  ts?: number;
+  sdr?: { name: string; value?: number; unit?: string; status?: string }[];
+  fan_mode?: number;
+}
+
+const FAN_MODES: Record<number, string> = { 0: "Standard", 1: "Full", 2: "Optimal", 3: "PUE2", 4: "Heavy IO" };
+
+/** The BMC's SDR → the panel's CPU, NIC, VRM, DIMM and fan readings. */
+export function bmcFromSample(b: BmcSample, nowMs: number): Bmc {
+  const rows = (b.sdr || []).filter((r) => r.value != null);
+  const get = (name: string) => rows.find((r) => r.name === name)?.value;
+  const max = (re: RegExp) => {
+    const v = rows.filter((r) => re.test(r.name) && r.unit !== "rpm").map((r) => r.value!);
+    return v.length ? Math.max(...v) : undefined;
+  };
+  const fans: Record<string, number> = {};
+  for (const r of rows) if (/^FAN/.test(r.name) && (r.value ?? 0) > 0) fans[r.name] = r.value!;
+  const age = b.ts != null ? Math.max(0, (nowMs - b.ts) / 1000) : undefined;
+  return {
+    live: age == null || age < 120, age_s: age,
+    fan_mode: b.fan_mode != null ? FAN_MODES[b.fan_mode] ?? `mode ${b.fan_mode}` : undefined,
+    cpu1: get("CPU1 Temp"), cpu2: get("CPU2 Temp"), nic: get("MB_10G Temp") ?? max(/10G|NIC/i),
+    system: get("System Temp"), peripheral: get("Peripheral Temp"),
+    vrm_max: max(/^VRM/i), dimm_max: max(/DIMM/i), fans,
+  };
+}
+
+/** The router's `engines` section (layout, cards, engines). */
+export interface RouterEngines {
+  layout?: string;
+  layout_title?: string;
+  switch_state?: string;
+  last_switch?: unknown;
+  on_demand?: string | boolean;
+  slots_busy?: number;
+  slots_total?: number;
+  cards?: Record<string, { title?: string; online?: boolean; engine?: string; state?: string; model?: string; model_title?: string; summary?: string; tok_s?: number; running?: number; queued?: number }>;
+  engines?: Record<string, { title?: string; kind?: string; cards?: string[]; state?: string; healthy?: boolean }>;
+}
+
+/** The router's view over the dash's profile block (which still has the on-demand state). */
+export function profileFromEngines(e: RouterEngines, base: Profile | null | undefined): Profile {
+  const engines = Object.values(e.engines || {});
+  const cards: Record<string, CardState> = {};
+  const want = base?.cards ? new Set(Object.keys(base.cards)) : null;
+  for (const [id, c] of Object.entries(e.cards || {})) {
+    if (want && !want.has(id)) continue;
+    const b = base?.cards?.[id];
+    cards[id] = {
+      ...(b || {}), card: id, gpu: c.title ?? b?.gpu, offline: c.online === false,
+      engine: c.engine ?? b?.engine, model: c.model_title ?? c.model ?? b?.model,
+      healthy: c.state === "ready" || c.state === "serving", detail: c.summary ?? c.state ?? b?.detail,
+    };
+  }
+  const switching = !!e.switch_state && e.switch_state !== "idle";
+  const od = e.on_demand;
+  return {
+    ...(base || {}),
+    layout: e.layout ?? base?.layout,
+    title: e.layout_title ?? base?.title,
+    healthy: engines.length ? engines.every((x) => x.healthy !== false) : base?.healthy,
+    job: switching ? { ...(base?.job || {}), state: e.switch_state } : base?.job && !switching ? null : base?.job,
+    ...(od != null ? { onDemandEnabled: od === true || od === "on" || od === "enabled" } : {}),
+    cards: Object.keys(cards).length ? cards : base?.cards,
+  };
+}
+
+export function enginesFromRouter(e: RouterEngines): EngineLife[] {
+  return Object.entries(e.engines || {}).map(([id, x]) => ({
+    id, kind: x.kind, card: (x.cards || []).join(" + ") || undefined, state: x.state ?? (x.healthy ? "ready" : "unknown"),
+    detail: x.title,
+  }));
+}
+
+/** orca-alerts' open alerts: `[{identity, severity, text, since, count}]`. */
+export function alertsFromSection(a: unknown[]): Alert[] {
+  return a.flatMap((x): Alert[] => {
+    if (!x || typeof x !== "object") return [];
+    const r = x as { identity?: string; id?: string; severity?: string; text?: string; title?: string; since?: number | string; count?: number; detail?: string };
+    const since = typeof r.since === "number" ? new Date(r.since < 1e12 ? r.since * 1000 : r.since).toISOString() : r.since;
+    const sev = r.severity === "critical" || r.severity === "info" ? r.severity : "warning";
+    return [{ id: r.identity ?? r.id ?? String(r.text), severity: sev, title: r.text ?? r.title ?? r.identity ?? "alert", since, detail: r.detail ?? ((r.count ?? 0) > 1 ? `×${r.count}` : undefined) }];
+  });
+}
+
+type Occ = { id: string; entry?: string; title?: string; start: number; end: number; block_start?: number; block_end?: number; skipped?: boolean };
+type CalBlock = { occurrence?: string; entry?: string; action?: string; target?: { kind?: string; name?: string } | string; until?: number };
+
+const targetText = (t: CalBlock["target"]) => (typeof t === "string" ? t : !t || t.kind === "all" ? "" : t.kind === "card" ? `card ${t.name}` : `${t.kind} ${t.name ?? ""}`.trim());
+
+function blockBadge(b: CalBlock): string {
+  const t = targetText(b.target);
+  switch (b.action) {
+    case "switch": return t && !t.startsWith("server") ? `no switches on ${t}` : "no switches";
+    case "on_demand": return "no on-demand";
+    case "use": return `${t || "card"} reserved`;
+    case "ensure": return t ? `keeps ${t}` : "keeps engines";
+    default: return b.action ?? "block";
+  }
+}
+
+/** The calendar section (the router's `now` + next occurrences, orca-calendar shapes) → the strip. */
+export function calendarFromSection(c: Record<string, unknown>): GlanceState["calendar"] {
+  // Already the strip's shape (a recording of the old dash's).
+  if (Array.isArray(c.now)) return c as GlanceState["calendar"];
+  const iso = (t: number) => new Date(t * 1000).toISOString();
+  const blocks = (Array.isArray(c.blocks) ? c.blocks : []) as CalBlock[];
+  const badges = (o: Occ) => {
+    const bs = blocks.filter((b) => b.occurrence === o.id || (!b.occurrence && b.entry === o.entry)).map(blockBadge);
+    return [...new Set(bs)];
+  };
+  const at = typeof c.at === "number" ? c.at : Date.now() / 1000;
+  let active = (Array.isArray(c.active) ? c.active : []) as Occ[];
+  let next = (Array.isArray(c.next) ? c.next : []) as Occ[];
+  if (Array.isArray(c.entries)) {
+    const all = c.entries as Occ[];
+    active = all.filter((o) => (o.block_start ?? o.start) <= at && at < (o.block_end ?? o.end) && !o.skipped);
+    next = all.filter((o) => (o.block_start ?? o.start) > at && !o.skipped).sort((x, y) => x.start - y.start);
+  }
+  return {
+    now: active.map((o) => ({ id: o.id, title: o.title ?? o.entry ?? o.id, start: iso(o.start), end: iso(o.end), badges: badges(o) })),
+    next: next.map((o) => ({ id: o.id, title: o.title ?? o.entry ?? o.id, start: iso(o.start), end: iso(o.end), badges: [] })),
+  };
+}
+
 /**
  * The page's state from the hub's sections. `dash` (the legacy dash's state, while the owning
  * subsystems have no sections of their own) is the base; `gpus`, `host`, `calendar`, `alerts`,
@@ -652,7 +821,10 @@ export function hostFromSample(h: HostSample): NonNullable<GlanceState["host"]> 
  */
 export function fromSections(sec: Record<string, unknown>, tsMs: number): GlanceState {
   const dash = (sec.dash ?? {}) as Partial<GlanceState>;
-  const s: GlanceState = { ...dash, time: dash.time ?? tsMs / 1000 };
+  // The supervisor's sections carry no clock of their own: the newest of theirs and the dash's.
+  const host = sec.host as { ts?: number } | undefined;
+  const time = Math.max(dash.time ?? 0, (host?.ts ?? 0) / 1000) || tsMs / 1000;
+  const s: GlanceState = { ...dash, time };
   const gs = sec.gpus as Record<string, GpuSample> | undefined;
   if (gs && typeof gs === "object") {
     const base = new Map((dash.gpus || []).map((g) => [g.uuid, g]));
@@ -661,9 +833,34 @@ export function fromSections(sec: Record<string, unknown>, tsMs: number): Glance
     s.gpus = out.sort((a, b) => a.index - b.index);
   }
   if (sec.host && typeof sec.host === "object") s.host = { ...dash.host, ...hostFromSample(sec.host as HostSample) };
-  if (sec.calendar) s.calendar = sec.calendar as GlanceState["calendar"];
-  if (Array.isArray(sec.alerts)) s.alerts = sec.alerts as Alert[];
+  const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+  if (isObj(sec.calendar)) {
+    // The supervisor's calendar has what is on now; the router's upcoming occurrences come apart.
+    const c = Array.isArray(sec.calendar_next) && !Array.isArray(sec.calendar.next) ? { ...sec.calendar, next: sec.calendar_next } : sec.calendar;
+    s.calendar = calendarFromSection(c);
+  }
+  if (Array.isArray(sec.alerts)) s.alerts = alertsFromSection(sec.alerts);
   if (Array.isArray(sec.engines)) s.engines = sec.engines as EngineLife[];
+  else if (isObj(sec.engines)) {
+    const e = sec.engines as RouterEngines;
+    s.profile = profileFromEngines(e, dash.profile);
+    s.engines = enginesFromRouter(e);
+  }
+  if (isObj(sec.fans)) {
+    s.esp = espFromFans(sec.fans as Record<string, FanSample>, dash.esp, s.gpus || []);
+    const byPci = new Map((s.esp.fans || []).map((f) => [f.pci, f]));
+    if (s.gpus) s.gpus = s.gpus.map((g) => (g.duct && byPci.has(g.pci) ? { ...g, duct: { ...g.duct, ...byPci.get(g.pci)! } } : g));
+  }
+  if (isObj(sec.bmc)) s.bmc = bmcFromSample(sec.bmc as BmcSample, tsMs);
+  if (isObj(sec.clocks) && s.gpus) {
+    const clocks = sec.clocks as Record<string, Gpu["clock"]>;
+    s.gpus = s.gpus.map((g) => (g.card && clocks[g.card] ? { ...g, clock: clocks[g.card] } : g));
+  }
+  const errors: Record<string, string> = { ...(dash.errors || {}) };
+  if (isObj(sec.feed_errors)) for (const [k, v] of Object.entries(sec.feed_errors)) errors[k] = String(v);
+  const hostd = isObj(sec.health) && isObj(sec.health.hostd) ? (sec.health.hostd as { status?: string }) : null;
+  if (hostd && hostd.status && hostd.status !== "ok") errors.hostd = hostd.status;
+  if (Object.keys(errors).length) s.errors = errors;
   if (Array.isArray(sec.redacted)) s.redacted = sec.redacted as string[];
   return s;
 }

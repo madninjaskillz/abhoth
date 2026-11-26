@@ -1,18 +1,21 @@
 //! Glance: the GPU host's live dashboard inside the web UI (SUPERVISOR.md 12), with an optional
 //! public, redacted read-only view on its own listener.
 //!
-//! The feed comes from a source: until the supervisor's telemetry hub is integrated that is a
-//! recorded fixture (a JSON-lines file of states, replayed in a loop) or a URL that answers a
-//! full state (the legacy dash's `/api/state`, read-only GETs). Off unless configured.
+//! The feed: the supervisor's (`abhoth-supervisor`, `/api/v1/supervisor/stream`) for what it
+//! covers (GPUs, host, BMC, hwmon, fans, clocks, engines, leases, alerts, health), the router's
+//! calendar, and for the panels nothing in Abhoth publishes yet the legacy dash (`/api/state`,
+//! read-only GETs, as the `dash` section) or a recording of it. Off unless configured.
 
 pub mod endpoints;
 pub mod feed;
 pub mod mock;
 pub mod public;
 pub mod redact;
+pub mod supervisor;
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use orca_sensors::feed::{FeedEvent, Severity, TelemetryFeed, TelemetrySink};
@@ -63,14 +66,14 @@ impl PublicOptions {
 
 #[derive(Debug, Clone)]
 pub struct GlanceOptions {
-    pub source: GlanceSource,
+    /// The legacy dash (or a recording of it), for the panels the supervisor does not cover.
+    pub source: Option<GlanceSource>,
+    /// `abhoth-supervisor`'s feed (`http://127.0.0.1:9890`).
+    pub supervisor: Option<String>,
     /// How often the source is read.
     pub interval: Duration,
     /// How often the hub flushes a patch (1 s in production, as the supervisor's hub).
     pub flush: Duration,
-    /// The control plane for the card online/offline buttons (`POST {url}/cards/{card}/{action}`,
-    /// `GET {url}/jobs/{id}`); `None`: the profiles API, if configured.
-    pub control_url: Option<String>,
     /// The public read-only view; `None` = off (the default).
     pub public: Option<PublicOptions>,
     /// How often an idle stream sends `ping`.
@@ -80,10 +83,10 @@ pub struct GlanceOptions {
 impl GlanceOptions {
     pub fn new(source: GlanceSource) -> Self {
         Self {
-            source,
+            source: Some(source),
+            supervisor: None,
             interval: Duration::from_millis(2500),
             flush: Duration::from_secs(1),
-            control_url: None,
             public: None,
             ping: Duration::from_secs(5),
         }
@@ -99,6 +102,10 @@ pub struct Glance {
     pub public: Option<Arc<TelemetryHub>>,
     tasks: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>,
     public_addr: std::sync::Mutex<Option<std::net::SocketAddr>>,
+    /// The supervisor's feed has a `calendar` section (then the router's is not polled in).
+    supervisor_calendar: AtomicBool,
+    /// The router's calendar answered (then a recording's calendar is left out).
+    router_calendar: AtomicBool,
 }
 
 impl Glance {
@@ -113,6 +120,8 @@ impl Glance {
             public,
             tasks: Default::default(),
             public_addr: Default::default(),
+            supervisor_calendar: AtomicBool::new(false),
+            router_calendar: AtomicBool::new(false),
         })
     }
 
@@ -147,9 +156,25 @@ impl Glance {
         }
     }
 
-    /// A legacy dash state (fixture or poll), as hub sections.
+    /// A legacy dash state (fixture or poll), as hub sections. With the supervisor's feed on,
+    /// only what it does not cover (the `dash` section, and the chart history once).
     pub fn publish_legacy(&self, state: &Value, with_history: bool) {
-        self.set_sections(&mock::sections(state, with_history));
+        let mut s = mock::sections(state, with_history, self.options.supervisor.is_some());
+        if self.router_calendar.load(Ordering::Relaxed) {
+            s.remove("calendar");
+        }
+        self.set_sections(&s);
+    }
+
+    /// A source's trouble (or its end), in the `feed_errors` section.
+    pub fn set_feed_error(&self, source: &str, error: Option<&str>) {
+        let cur = self.full.section("feed_errors");
+        let next = supervisor::feed_errors(cur.clone(), source, error);
+        if cur.unwrap_or(Value::Null) != next {
+            let mut m = serde_json::Map::new();
+            m.insert("feed_errors".into(), next);
+            self.set_sections(&m);
+        }
     }
 
     /// Flushes both hubs now (tests; the flushers do it every `flush`).
@@ -169,26 +194,100 @@ impl Glance {
         self.full.event(event);
     }
 
-    /// Starts reading the source.
-    pub fn start(self: &Arc<Self>, http: reqwest::Client) -> Result<(), String> {
-        let task = match self.options.source.clone() {
-            GlanceSource::Fixture(path) => {
+    /// Starts reading the sources; `router`: the calendar, when the supervisor has none.
+    pub fn start(
+        self: &Arc<Self>,
+        http: reqwest::Client,
+        router: Option<crate::router_admin::RouterLink>,
+    ) -> Result<(), String> {
+        let mut tasks = Vec::new();
+        match self.options.source.clone() {
+            Some(GlanceSource::Fixture(path)) => {
                 let frames = load_fixture(&path)?;
                 let me = self.clone();
-                tokio::spawn(async move { me.replay(frames).await })
+                tasks.push(tokio::spawn(async move { me.replay(frames).await }));
             }
-            GlanceSource::Poll(url) => {
+            Some(GlanceSource::Poll(url)) => {
                 let me = self.clone();
-                tokio::spawn(async move { me.poll(http, url).await })
+                let h = http.clone();
+                tasks.push(tokio::spawn(async move { me.poll(h, url).await }));
             }
-        };
-        let mut tasks = self.tasks.lock().unwrap();
-        tasks.push(task);
+            None => {}
+        }
+        if let Some(url) = self.options.supervisor.clone() {
+            let me = self.clone();
+            let h = http.clone();
+            tasks.push(tokio::spawn(
+                async move { me.follow_supervisor(h, url).await },
+            ));
+        }
+        if let Some(link) = router {
+            let me = self.clone();
+            tasks.push(tokio::spawn(async move { me.follow_calendar(link).await }));
+        }
         tasks.push(self.full.spawn_flusher(self.options.flush));
         if let Some(p) = &self.public {
             tasks.push(p.spawn_flusher(self.options.flush));
         }
+        self.tasks.lock().unwrap().extend(tasks);
         Ok(())
+    }
+
+    /// The router's calendar (orca-calendar: what is on now, the blocks, and the next 24 h) as
+    /// the `calendar` section, every 30 s. When the supervisor's feed carries `calendar` (now
+    /// and blocks, without what comes next), only the next occurrences, as `calendar_next`.
+    async fn follow_calendar(self: Arc<Self>, link: crate::router_admin::RouterLink) {
+        let me = orca_core::router_link::ActingUser {
+            user_id: 0,
+            name: "glance".into(),
+            admin: true,
+        };
+        let mut tick = tokio::time::interval(Duration::from_secs(30));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+            let supervised = self.supervisor_calendar.load(Ordering::Relaxed);
+            let t = chrono::Utc::now().timestamp();
+            let now = if supervised {
+                Ok((200, Value::Null))
+            } else {
+                link.call("GET", "calendar/now", &me, &Value::Null).await
+            };
+            let occ = link
+                .call(
+                    "GET",
+                    &format!(
+                        "calendar/occurrences?from={}&to={}",
+                        t - 6 * 3600,
+                        t + 86_400
+                    ),
+                    &me,
+                    &Value::Null,
+                )
+                .await;
+            match (now, occ) {
+                (Ok((200, now)), Ok((200, occ))) => {
+                    self.set_feed_error("router calendar", None);
+                    self.router_calendar.store(true, Ordering::Relaxed);
+                    let mut m = serde_json::Map::new();
+                    let cal = calendar_section(&now, &occ, t);
+                    if supervised {
+                        m.insert("calendar_next".into(), cal["next"].clone());
+                    } else {
+                        m.insert("calendar".into(), cal);
+                    }
+                    self.set_sections(&m);
+                }
+                (Ok((404, _)), _) | (_, Ok((404, _))) => {
+                    // No calendar on this router.
+                }
+                (Err(e), _) | (_, Err(e)) => self.set_feed_error("router calendar", Some(&e)),
+                (Ok((a, _)), Ok((b, _))) => {
+                    let st = if a != 200 { a } else { b };
+                    self.set_feed_error("router calendar", Some(&format!("HTTP {st}")))
+                }
+            }
+        }
     }
 
     pub fn add_task(&self, t: tokio::task::JoinHandle<()>) {
@@ -232,7 +331,6 @@ impl Glance {
     async fn poll(self: Arc<Self>, http: reqwest::Client, url: String) {
         let mut tick = tokio::time::interval(self.options.interval);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let mut last: Option<Value> = None;
         let mut first = true;
         loop {
             tick.tick().await;
@@ -251,33 +349,43 @@ impl Glance {
                     .map_err(|e| e.without_url().to_string())
             }
             .await;
+            // On failure the last state stays, with the error among the collector warnings.
             match got {
                 Ok(v) if v.is_object() => {
                     self.publish_legacy(&v, first);
+                    self.set_feed_error("old dash", None);
                     first = false;
-                    last = Some(v);
                 }
-                Ok(_) => {
-                    self.feed_error(&mut last, "the feed answered something that is not a state")
-                }
-                Err(e) => self.feed_error(&mut last, &e),
+                Ok(_) => self.set_feed_error(
+                    "old dash",
+                    Some("it answered something that is not a state"),
+                ),
+                Err(e) => self.set_feed_error("old dash", Some(&e)),
             }
         }
     }
+}
 
-    /// The source failed: keep the last state, with the error among the collector warnings.
-    fn feed_error(&self, last: &mut Option<Value>, error: &str) {
-        let Some(v) = last.as_mut() else { return };
-        if let Some(o) = v.as_object_mut() {
-            let errors = o
-                .entry("errors")
-                .or_insert_with(|| Value::Object(Default::default()));
-            if let Some(e) = errors.as_object_mut() {
-                e.insert("glance feed".into(), Value::String(error.to_string()));
-            }
-        }
-        self.publish_legacy(v, false);
-    }
+/// The router's `calendar/now` and `calendar/occurrences` as the `calendar` section:
+/// `{at, active: [Occurrence], next: [Occurrence], blocks: [CalBlock], holders: {card: Holder}}`
+/// (orca-calendar's shapes; `next`: not started, not skipped, by start).
+pub fn calendar_section(now: &Value, occ: &Value, at: i64) -> Value {
+    let all = occ["occurrences"].as_array().cloned().unwrap_or_default();
+    let mut next: Vec<Value> = all
+        .into_iter()
+        .filter(|o| {
+            o["block_start"].as_i64().is_some_and(|b| b > at) && o["skipped"] != Value::Bool(true)
+        })
+        .collect();
+    next.sort_by_key(|o| o["start"].as_i64().unwrap_or(i64::MAX));
+    next.truncate(6);
+    serde_json::json!({
+        "at": at,
+        "active": now["active"].clone(),
+        "blocks": now["blocks"].clone(),
+        "holders": now["holders"].clone(),
+        "next": next,
+    })
 }
 
 fn now_secs() -> f64 {

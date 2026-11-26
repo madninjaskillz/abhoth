@@ -353,7 +353,7 @@ impl WebUiServer {
                 .unwrap_or_default(),
         });
         if let Some(g) = &state.glance {
-            g.start(state.http.clone())
+            g.start(state.http.clone(), state.options.router.clone())
                 .map_err(StartError::BadOptions)?;
             if let (Some(p), Some(feed)) = (&g.options.public, g.public_feed()) {
                 let dir = state.options.client_dir.clone();

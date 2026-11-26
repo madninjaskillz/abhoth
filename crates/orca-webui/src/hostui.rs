@@ -118,17 +118,17 @@ pub struct HostUiArgs {
     pub bench_dir: Option<PathBuf>,
     pub bench_kit: Option<String>,
     pub bench_power: Option<String>,
-    /// `--hostui-glance=<url or file>`: the Glance page's feed (SUPERVISOR.md 12), a URL that
-    /// answers the full state or a recorded JSON-lines fixture. Off without it.
+    /// `--hostui-glance-supervisor=<url>` (or `ABHOTH_SUPERVISOR_URL`): the Glance page's feed
+    /// (SUPERVISOR.md 12), `abhoth-supervisor`'s (`http://127.0.0.1:9890`).
+    pub glance_supervisor: Option<String>,
+    /// `--hostui-glance=<url or file>`: the legacy dash's `/api/state` (or a recording of it)
+    /// for the panels the supervisor does not cover yet. Glance is off without one of the two.
     pub glance: Option<String>,
     /// `--hostui-glance-public=<host:port>`: the redacted public view on its own listener.
     pub glance_public: Option<String>,
     /// `--hostui-glance-redact=<list>`: what the public view drops (default: requests, oom,
     /// containers, errors).
     pub glance_redact: Option<String>,
-    /// `--hostui-glance-control=<url>`: the control plane for the card buttons (default: the
-    /// profiles API).
-    pub glance_control: Option<String>,
 }
 
 fn openorca_home() -> PathBuf {
@@ -256,9 +256,12 @@ impl HostUiArgs {
             bench_kit: value(args, "--hostui-bench-kit"),
             bench_power: value(args, "--hostui-bench-power"),
             glance: value(args, "--hostui-glance").filter(|v| !v.is_empty()),
+            glance_supervisor: value(args, "--hostui-glance-supervisor")
+                .or_else(|| orca_core::brand::env_var("SUPERVISOR_URL"))
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
             glance_public: value(args, "--hostui-glance-public").filter(|v| !v.is_empty()),
             glance_redact: value(args, "--hostui-glance-redact"),
-            glance_control: value(args, "--hostui-glance-control").filter(|v| !v.is_empty()),
         })
         .map(|mut a| {
             if let Err(e) = a.glance_options() {
@@ -270,20 +273,26 @@ impl HostUiArgs {
 
     /// The Glance options these flags ask for; `None` when the page is off.
     pub fn glance_options(&self) -> Result<Option<crate::glance::GlanceOptions>, String> {
-        let Some(src) = &self.glance else {
-            if self.glance_public.is_some()
-                || self.glance_redact.is_some()
-                || self.glance_control.is_some()
-            {
-                return Err(
-                    "--hostui-glance-public, -redact and -control need --hostui-glance=<feed>."
-                        .into(),
-                );
+        if self.glance.is_none() && self.glance_supervisor.is_none() {
+            if self.glance_public.is_some() || self.glance_redact.is_some() {
+                return Err("--hostui-glance-public and -redact need --hostui-glance-supervisor=<url> (or --hostui-glance=<feed>).".into());
             }
             return Ok(None);
-        };
-        let mut o = crate::glance::GlanceOptions::new(crate::glance::GlanceSource::parse(src));
-        o.control_url = self.glance_control.clone();
+        }
+        if let Some(u) = &self.glance_supervisor
+            && !(u.starts_with("http://") || u.starts_with("https://"))
+        {
+            return Err(format!(
+                "--hostui-glance-supervisor: '{u}' is not an http(s) URL."
+            ));
+        }
+        let mut o =
+            crate::glance::GlanceOptions::new(crate::glance::GlanceSource::Poll(String::new()));
+        o.source = self
+            .glance
+            .as_deref()
+            .map(crate::glance::GlanceSource::parse);
+        o.supervisor = self.glance_supervisor.clone();
         if let Some(listen) = &self.glance_public {
             listen.parse::<std::net::SocketAddr>().map_err(|_| {
                 format!("--hostui-glance-public: '{listen}' is not host:port (e.g. 0.0.0.0:8077).")
@@ -423,7 +432,25 @@ mod tests {
         let a = parse(&["--hostui", "--hostui-glance=http://h:1/api/state"]).unwrap();
         let o = a.glance_options().unwrap().unwrap();
         assert!(o.public.is_none(), "no public view unless asked");
-        assert!(matches!(o.source, crate::glance::GlanceSource::Poll(_)));
+        assert!(matches!(
+            o.source,
+            Some(crate::glance::GlanceSource::Poll(_))
+        ));
+        assert!(o.supervisor.is_none());
+        let a = parse(&[
+            "--hostui",
+            "--hostui-glance-supervisor=http://127.0.0.1:9890",
+        ])
+        .unwrap();
+        let o = a.glance_options().unwrap().unwrap();
+        assert!(o.source.is_none());
+        assert_eq!(o.supervisor.as_deref(), Some("http://127.0.0.1:9890"));
+        assert!(
+            parse(&["--hostui", "--hostui-glance-supervisor=127.0.0.1:9890"])
+                .unwrap()
+                .error
+                .is_some()
+        );
         let a = parse(&[
             "--hostui",
             "--hostui-glance=/f.jsonl",

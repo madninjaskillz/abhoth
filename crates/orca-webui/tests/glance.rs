@@ -427,39 +427,77 @@ async fn the_public_view_is_redacted_limited_and_has_no_controls() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn card_actions_are_admin_only_and_relayed_to_the_control_plane() {
-    let seen: Arc<Mutex<Vec<(String, Value)>>> = Arc::default();
+async fn card_actions_go_to_the_router_as_the_admin_and_the_calendar_comes_from_it() {
+    // A fake router admin API: the card action, the job, and the calendar.
+    let seen: Arc<Mutex<Vec<(String, Value, String)>>> = Arc::default();
     let s2 = seen.clone();
-    let control = axum::Router::new()
+    let router = axum::Router::new()
         .route(
-            "/cards/{card}/{action}",
+            "/admin/api/cards/{card}/{action}",
             post(
                 move |axum::extract::Path((c, a)): axum::extract::Path<(String, String)>,
+                      headers: axum::http::HeaderMap,
                       axum::Json(b): axum::Json<Value>| {
                     let seen = s2.clone();
                     async move {
-                        seen.lock().unwrap().push((format!("{c}/{a}"), b));
+                        let who = headers
+                            .get(orca_core::router_link::ACTING_USER_HEADER)
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or_default()
+                            .to_string();
+                        seen.lock().unwrap().push((format!("{c}/{a}"), b, who));
                         (StatusCode::ACCEPTED, axum::Json(json!({"id": "job-1"})))
                     }
                 },
             ),
         )
         .route(
-            "/jobs/{id}",
+            "/admin/api/jobs/{id}",
             get(|| async {
                 axum::Json(json!({"state": "done", "steps": [{"msg": "card A offline"}]}))
+            }),
+        )
+        .route(
+            "/admin/api/calendar/now",
+            get(|| async {
+                axum::Json(json!({"at": 1, "active": [{"id": "news@1", "title": "Daily news video", "start": 1, "end": 2}],
+                    "blocks": [{"action": "switch", "target": {"kind": "all"}, "until": 2}], "holders": {}}))
+            }),
+        )
+        .route(
+            "/admin/api/calendar/occurrences",
+            get(|| async {
+                let t = chrono_now() + 3600;
+                axum::Json(json!({"occurrences": [{"id": "x@1", "title": "Later", "start": t, "end": t + 60, "block_start": t, "skipped": false}]}))
             }),
         );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, control).await.unwrap() });
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
 
     let h = host_with(|o| {
-        let mut g = quiet_options();
-        g.control_url = Some(format!("http://{addr}/"));
-        o.glance = Some(g);
+        o.glance = Some(quiet_options());
+        o.router = Some(
+            orca_webui::router_admin::RouterLink::new(
+                &format!("http://{addr}"),
+                "a-link-token-of-at-least-32-characters-long",
+            )
+            .unwrap(),
+        );
     })
     .await;
+    let glance = h.server.state().glance.clone().unwrap();
+    let mut cal = Value::Null;
+    for _ in 0..100 {
+        cal = glance.full.snapshot().state["calendar"].clone();
+        if cal.is_object() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(cal["active"][0]["title"], "Daily news video", "{cal}");
+    assert_eq!(cal["next"][0]["title"], "Later");
+    assert_eq!(cal["blocks"][0]["action"], "switch");
 
     // The admin (the launch token stands for them).
     let r = h
@@ -470,9 +508,10 @@ async fn card_actions_are_admin_only_and_relayed_to_the_control_plane() {
         .unwrap();
     assert_eq!(r.status(), StatusCode::ACCEPTED);
     assert_eq!(r.json::<Value>().await.unwrap()["id"], "job-1");
-    let (what, body) = seen.lock().unwrap()[0].clone();
+    let (what, body, who) = seen.lock().unwrap()[0].clone();
     assert_eq!(what, "A/offline");
-    assert_eq!(body["requestedBy"], "glance:admin");
+    assert_eq!(body["reason"], "test");
+    assert!(who.contains("admin"), "signed as the acting admin: {who}");
     let j: Value = h
         .api(Method::GET, "/api/glance/jobs/job-1")
         .send()
@@ -536,11 +575,7 @@ async fn card_actions_are_admin_only_and_relayed_to_the_control_plane() {
         .unwrap()
         .status();
     assert_eq!(st, StatusCode::FORBIDDEN);
-    assert_eq!(
-        seen.lock().unwrap().len(),
-        1,
-        "nothing reached the control plane"
-    );
+    assert_eq!(seen.lock().unwrap().len(), 1, "nothing reached the router");
     // Signed out: nothing at all.
     let st = reqwest::get(h.url("/api/glance/snapshot"))
         .await
@@ -548,4 +583,106 @@ async fn card_actions_are_admin_only_and_relayed_to_the_control_plane() {
         .status();
     assert_eq!(st, StatusCode::UNAUTHORIZED);
     let _ = TOKEN;
+}
+
+fn chrono_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_supervisor_feed_is_mirrored_and_the_old_dash_fills_only_the_rest() {
+    use orca_sensors::feed::TelemetrySink;
+    // A fake `abhoth-supervisor`: its hub behind /api/v1/supervisor/stream.
+    let sup = orca_supervisor::TelemetryHub::new(orca_supervisor::HubConfig::default());
+    sup.set_section("gpus", json!({"A": {"index": 1, "uuid": "GPU-x", "bus": "21:00.0", "name": "V100", "ts": 1, "core_c": 41.0}}));
+    sup.set_section("host", json!({"ts": 1, "cpu_pct": 7.0, "cpu_count": 8, "load1": 0, "load5": 0, "load15": 0, "uptime_s": 1, "mem": {"total": 1, "free": 1, "available": 1, "arc": 0, "cache": 0, "used": 0, "consumed": 0, "swap_total": 0, "swap_free": 0}}));
+    sup.flush(1);
+    let hub = sup.clone();
+    let app = axum::Router::new().route(
+        "/api/v1/supervisor/stream",
+        get(move |headers: axum::http::HeaderMap| {
+            let hub = hub.clone();
+            async move {
+                orca_webui::glance::feed::sse(
+                    hub,
+                    orca_webui::glance::feed::last_event_id(&headers),
+                    Duration::from_secs(5),
+                )
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let h = host_with(|o| {
+        let mut g = quiet_options();
+        g.supervisor = Some(format!("http://{addr}"));
+        g.public = Some(PublicOptions::new("127.0.0.1:0"));
+        o.glance = Some(g);
+    })
+    .await;
+    let glance = h.server.state().glance.clone().unwrap();
+    let ready = || {
+        let s = glance.full.snapshot().state;
+        s["gpus"]["A"]["core_c"] == json!(41.0) && s["dash"].is_object()
+    };
+    for _ in 0..100 {
+        if ready() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let s = glance.full.snapshot().state;
+    assert!(
+        ready(),
+        "{}",
+        s.to_string().chars().take(400).collect::<String>()
+    );
+    assert_eq!(
+        s["gpus"].as_object().unwrap().len(),
+        1,
+        "GPUs only from the supervisor"
+    );
+    assert_eq!(s["host"]["cpu_pct"], 7.0);
+    assert!(s["dash"].get("host").is_none() && s["dash"].get("bmc").is_none());
+    assert!(
+        s["dash"]["llm"].is_object(),
+        "the old dash fills what the supervisor lacks"
+    );
+
+    // Patches and events follow.
+    let (_, sse) = Sse::open(h.api(Method::GET, "/api/glance/stream")).await;
+    let mut sse = sse.unwrap();
+    sup.set_section("gpus", json!({"A": {"index": 1, "uuid": "GPU-x", "bus": "21:00.0", "name": "V100", "ts": 2, "core_c": 55.0}}));
+    sup.flush(2);
+    sup.event(FeedEvent {
+        kind: "alert.fired".into(),
+        severity: Severity::Warning,
+        text: "hot".into(),
+        data: Value::Null,
+    });
+    let mut saw = (false, false);
+    for _ in 0..40 {
+        let ev = sse.next().await;
+        if ev.data.contains("55.0") {
+            saw.0 = true;
+        }
+        if ev.event == "event" && ev.data.contains("alert.fired") {
+            saw.1 = true;
+        }
+        if saw.0 && saw.1 {
+            break;
+        }
+    }
+    assert!(saw.0 && saw.1, "{saw:?}");
+    // The public copy: model servers by role, no ports.
+    let p = glance.public.as_ref().unwrap().snapshot().state.to_string();
+    assert!(p.contains("55.0"));
+    for gone in [":8094", ":8096", "\"port\""] {
+        assert!(!p.contains(gone), "{gone}");
+    }
 }

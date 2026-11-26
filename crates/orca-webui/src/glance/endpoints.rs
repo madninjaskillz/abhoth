@@ -1,7 +1,8 @@
 //! The signed-in Glance API: the snapshot and the SSE stream for every user, and the card
 //! online/offline actions for admins (`admin_only` covers every non-GET under `/api/glance`).
-//! The actions go to the control plane from the server, with the user's name in the audit log:
-//! the old dash POSTed from the browser to an unauthenticated LAN port.
+//! The actions go to the router's admin API (`POST /admin/api/cards/{card}/{online|offline}`,
+//! `GET /admin/api/jobs/{id}`) from the server, signed as the acting admin (the router audits
+//! them as that user): the old dash POSTed from the browser to an unauthenticated LAN port.
 
 use std::sync::Arc;
 
@@ -56,20 +57,21 @@ async fn stream(State(state): State<Arc<AppState>>, headers: axum::http::HeaderM
     )
 }
 
-fn control_url(state: &AppState) -> Option<String> {
-    let g = glance(state)?;
-    g.options
-        .control_url
-        .clone()
-        .or_else(|| state.options.profiles_url.clone())
-        .map(|u| u.trim_end_matches('/').to_string())
+fn acting(p: &Principal) -> orca_core::router_link::ActingUser {
+    orca_core::router_link::ActingUser {
+        user_id: p.user_id,
+        name: p.username.clone(),
+        admin: p.admin,
+    }
 }
+
+const NO_ROUTER: &str = "card controls are not connected (no router control plane linked)";
 
 fn safe_id(s: &str, max: usize) -> bool {
     !s.is_empty()
         && s.len() <= max
         && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
 }
 
 async fn card_action(
@@ -87,11 +89,8 @@ async fn card_action(
     if !safe_id(&card, 8) || !matches!(action.as_str(), "online" | "offline") {
         return err(StatusCode::BAD_REQUEST, "bad card or action");
     }
-    let Some(base) = control_url(&state) else {
-        return err(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "card controls are not connected (no control plane configured)",
-        );
+    let Some(link) = state.options.router.clone() else {
+        return err(StatusCode::SERVICE_UNAVAILABLE, NO_ROUTER);
     };
     let reason = body
         .as_ref()
@@ -104,43 +103,47 @@ async fn card_action(
         "glance-card",
         json!({"user": p.username, "card": card, "action": action, "reason": reason}),
     );
-    let url = format!("{base}/cards/{card}/{action}");
-    let sent = state
-        .http
-        .post(&url)
-        .json(&json!({"requestedBy": format!("glance:{}", p.username), "reason": reason}))
-        .send()
-        .await;
-    relay(sent).await
+    relay(
+        link.call(
+            "POST",
+            &format!("cards/{card}/{action}"),
+            &acting(&p),
+            &json!({"reason": reason}),
+        )
+        .await,
+    )
 }
 
-async fn job(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+async fn job(
+    State(state): State<Arc<AppState>>,
+    principal: Option<Extension<Principal>>,
+    Path(id): Path<String>,
+) -> Response {
     if glance(&state).is_none() {
         return StatusCode::NOT_FOUND.into_response();
     }
+    let Some(Extension(p)) = principal else {
+        return err(StatusCode::UNAUTHORIZED, "sign in");
+    };
     if !safe_id(&id, 96) {
         return err(StatusCode::BAD_REQUEST, "bad job id");
     }
-    let Some(base) = control_url(&state) else {
-        return err(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "card controls are not connected",
-        );
+    let Some(link) = state.options.router.clone() else {
+        return err(StatusCode::SERVICE_UNAVAILABLE, NO_ROUTER);
     };
-    relay(state.http.get(format!("{base}/jobs/{id}")).send().await).await
+    relay(
+        link.call("GET", &format!("jobs/{id}"), &acting(&p), &Value::Null)
+            .await,
+    )
 }
 
-/// The control plane's answer, status and JSON body, as it came (errors without the URL).
-async fn relay(sent: reqwest::Result<reqwest::Response>) -> Response {
-    match sent {
-        Ok(r) => {
-            let code = StatusCode::from_u16(r.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-            let body = r.json::<Value>().await.unwrap_or_else(|_| json!({}));
+/// The router's answer, status and JSON body, as it came.
+fn relay(r: Result<(u16, Value), String>) -> Response {
+    match r {
+        Ok((st, body)) => {
+            let code = StatusCode::from_u16(st).unwrap_or(StatusCode::BAD_GATEWAY);
             (code, Json(body)).into_response()
         }
-        Err(e) => err(
-            StatusCode::BAD_GATEWAY,
-            &format!("control plane: {}", e.without_url()),
-        ),
+        Err(e) => err(StatusCode::BAD_GATEWAY, &e),
     }
 }
