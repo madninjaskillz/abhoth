@@ -11,7 +11,9 @@
 //!
 //! The behaviours kept from `layoutctl.py switch` are listed on [`Orchestrator::switch`].
 
+pub mod gate;
 mod job;
+pub mod profiles_shim;
 mod run;
 pub mod wiring;
 

@@ -336,6 +336,14 @@ pub struct OnDemandConfig {
     pub models: IndexMap<String, OnDemandModel>,
     /// How long a drain waits for requests in flight.
     pub drain_timeout_seconds: u64,
+    /// Only callers with a key (a principal) may start a switch. Off for the LiteLLM-era data
+    /// plane; the control plane turns it on (keys from day one).
+    pub require_key: bool,
+    /// On-demand switches started per hour (server), and per principal.
+    pub max_switches_per_hour: u32,
+    pub max_switches_per_principal_per_hour: u32,
+    /// Cards an on-demand switch never picks (dense-pi's card, a card on `on_demand = false`).
+    pub exclude_cards: Vec<String>,
 }
 
 impl Default for OnDemandConfig {
@@ -358,6 +366,10 @@ impl Default for OnDemandConfig {
             allow_both_cards: false,
             models: IndexMap::new(),
             drain_timeout_seconds: 120,
+            require_key: false,
+            max_switches_per_hour: 4,
+            max_switches_per_principal_per_hour: 2,
+            exclude_cards: Vec::new(),
         }
     }
 }

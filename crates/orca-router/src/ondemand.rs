@@ -37,6 +37,8 @@ pub struct CardIn {
     pub busy: Option<bool>,
     pub last_busy: Option<f64>,
     pub last_change: Option<f64>,
+    /// Never picked for an on-demand switch (it may still serve the model when it runs it).
+    pub excluded: bool,
 }
 
 /// Host guards written by the layouts runner (state/guards.json).
@@ -223,6 +225,10 @@ pub fn decide(
     let mut why = Vec::new();
     let mut ok = Vec::new();
     for (c, v) in cards {
+        if v.excluded {
+            why.push(format!("card {c} is excluded from on-demand switches"));
+            continue;
+        }
         if let Some(lc) = v.last_change {
             let stay = cfg.min_stay_seconds as f64 - (now - lc);
             if stay > 0.0 {
@@ -375,6 +381,8 @@ struct Inner {
 pub struct Coordinator {
     inner: Mutex<Inner>,
     ensure_lock: tokio::sync::Mutex<()>,
+    /// On-demand switches started (rate limits).
+    pub limiter: crate::switch::gate::RateLimiter,
 }
 
 impl Coordinator {
@@ -498,6 +506,7 @@ async fn inputs(st: &AppState, snap: &Snapshot, now: f64) -> Inputs {
                 busy,
                 last_busy,
                 last_change: changes.get(c).copied().filter(|t| *t > 0.0),
+                excluded: od.exclude_cards.iter().any(|x| x == c),
             },
         );
     }
@@ -615,7 +624,13 @@ async fn progress(st: &AppState, snap: &Snapshot, now: f64) {
 }
 
 /// One decision for `target` (Coordinator.ensure): may start a switch (not in dry-run).
-pub async fn ensure(st: &AppState, snap: &Snapshot, target: &str, who: &str) -> Decision {
+pub async fn ensure(
+    st: &AppState,
+    snap: &Snapshot,
+    adm: &crate::switch::gate::ChatAdmission,
+    target: &str,
+    who: &str,
+) -> Decision {
     let co = &st.ext.ondemand;
     let _one = co.ensure_lock.lock().await;
     let od = &snap.config.on_demand;
@@ -656,7 +671,29 @@ pub async fn ensure(st: &AppState, snap: &Snapshot, target: &str, who: &str) -> 
             reason: format!("dry run: would switch card {card} to {target} ({reason})"),
             retry: 60,
         },
-        Decision::Switch { card, .. } => start(st, snap, target, &card, who, &inp.cards, now).await,
+        Decision::Switch { card, .. } => {
+            let rules = crate::switch::gate::GateRules {
+                require_key: od.require_key,
+                per_hour: od.max_switches_per_hour,
+                per_principal_per_hour: od.max_switches_per_principal_per_hour,
+            };
+            match crate::switch::gate::admit(adm, &rules, &co.limiter, now) {
+                Err((reason, retry)) => Decision::Block { reason, retry },
+                Ok(t) => {
+                    let d = start(st, snap, target, &card, who, &inp.cards, now).await;
+                    if matches!(
+                        d,
+                        Decision::Wait {
+                            switching: true,
+                            ..
+                        }
+                    ) {
+                        co.limiter.record(t.caller.principal.as_deref(), now);
+                    }
+                    d
+                }
+            }
+        }
         other => other,
     };
     co.note(target, &d, who, od.dry_run);
@@ -868,6 +905,7 @@ fn live_deployment(snap: &Snapshot, dep: &Deployment, cards: &[String]) -> Deplo
 }
 
 /// A request for a name no card runs, with on-demand on.
+#[allow(clippy::too_many_arguments)]
 pub async fn handle(
     st: Arc<AppState>,
     _snap: Arc<Snapshot>,
@@ -875,6 +913,7 @@ pub async fn handle(
     headers: HeaderMap,
     body: Map<String, Value>,
     dep: Deployment,
+    adm: crate::switch::gate::ChatAdmission,
     mut rec: LogRec,
 ) -> Response {
     let started = ctx.started.unwrap_or_else(Instant::now);
@@ -892,7 +931,7 @@ pub async fn handle(
         let mut switch_t0: Option<Instant> = None;
         loop {
             let snap = st.snapshot();
-            let d = ensure(&st, &snap, &target, &who).await;
+            let d = ensure(&st, &snap, &adm, &target, &who).await;
             match d {
                 Decision::Live { cards } => {
                     let live = live_deployment(&snap, &dep, &cards);
@@ -979,7 +1018,7 @@ pub async fn handle(
         loop {
             let snap = st2.snapshot();
             let note_mode = snap.config.on_demand.stream_note == "reasoning";
-            let d = ensure(&st2, &snap, &target, &who).await;
+            let d = ensure(&st2, &snap, &adm, &target, &who).await;
             let fail = |status: u16, msg: String, retry: u64| {
                 sse(&fail_body(status, &msg, retry, "ondemand_unavailable"))
             };

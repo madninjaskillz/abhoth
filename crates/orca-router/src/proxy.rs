@@ -196,6 +196,13 @@ pub async fn chat(st: Arc<AppState>, ctx: RequestCtx, headers: HeaderMap, raw: B
     if card_deps.is_empty() {
         let (_, dep) = deps[0];
         if snap.config.on_demand.enabled {
+            // the only place a ChatAdmission is made: a parsed chat body for a resolved route
+            // (ROUTER-CONFIG.md 7.4); probes and other endpoints never get here
+            let caller = crate::guards::Caller {
+                principal: crate::switch::gate::principal_of(&headers),
+                grants: Vec::new(),
+            };
+            let adm = crate::switch::gate::ChatAdmission::from_chat(&dep.name, &headers, caller);
             return crate::ondemand::handle(
                 st.clone(),
                 snap.clone(),
@@ -203,6 +210,7 @@ pub async fn chat(st: Arc<AppState>, ctx: RequestCtx, headers: HeaderMap, raw: B
                 headers,
                 body,
                 dep.clone(),
+                adm,
                 rec,
             )
             .await;

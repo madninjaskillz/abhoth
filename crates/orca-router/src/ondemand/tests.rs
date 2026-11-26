@@ -51,6 +51,7 @@ fn cards(a: &str, b: &str, kw: &[(&str, &str, Option<f64>)]) -> BTreeMap<String,
         busy: Some(false),
         last_busy: Some(NOW - 600.0),
         last_change: Some(NOW - 3600.0),
+        excluded: false,
     };
     let mut out = BTreeMap::from([("A".to_string(), base(a)), ("B".to_string(), base(b))]);
     for (c, f, v) in kw {
@@ -435,4 +436,32 @@ fn last_changes_from_live_json() {
     // any other switch: both cards
     let both = last_changes(&live, &HashMap::new(), &HashMap::new(), &cards);
     assert_eq!((both["A"], both["B"]), (t, t));
+}
+
+#[test]
+fn excluded_cards_are_never_picked() {
+    // A idles longest but is excluded (dense-pi's card): B is picked
+    let mut c = with(&[("A", "lastBusy", Some(NOW - 900.0))]);
+    c.cards.get_mut("A").unwrap().excluded = true;
+    assert_eq!(card_of(&run(TARGET, c)), "B");
+    // both excluded: never a switch
+    let mut c = with(&[]);
+    for v in c.cards.values_mut() {
+        v.excluded = true;
+    }
+    let d = run(TARGET, c);
+    assert_ne!(d.action(), "switch", "{d:?}");
+}
+
+#[test]
+fn guard_data_is_fresh_for_45_seconds() {
+    let at = |age: f64| Call {
+        guards: Some(Guards {
+            at: NOW - age,
+            ..guards()
+        }),
+        ..Call::default()
+    };
+    assert_eq!(run(TARGET, at(45.0)).action(), "switch");
+    assert_eq!(run(TARGET, at(46.0)).action(), "wait");
 }
