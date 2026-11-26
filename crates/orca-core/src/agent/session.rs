@@ -463,12 +463,12 @@ impl AgentSession {
         call: &ToolCall,
         observer: &mut dyn AgentObserver,
     ) -> ToolResult {
-        use super::log_lines::{self as log, PIPELINE};
+        use super::log_lines::{self, PIPELINE};
         tracing::debug!(
             target: PIPELINE,
             "ExecuteToolAsync called: {} args: {}",
             call.name,
-            log::head_ellipsis(&call.arguments, log::ARGS_MAX_CHARS)
+            log_lines::head_ellipsis(&call.arguments, log_lines::ARGS_MAX_CHARS)
         );
         let pi_profile = orca_tools_pi::is_pi_profile(&self.config.tool_profile);
         let Some(tool) = self.registry.resolve(&call.name) else {
@@ -603,7 +603,7 @@ impl AgentSession {
             target: PIPELINE,
             "Tool {} completed: isError={} ({} chars)",
             call.name,
-            log::dotnet_bool(result.is_error),
+            log_lines::dotnet_bool(result.is_error),
             result.content.encode_utf16().count()
         );
         if result.is_error {
@@ -611,7 +611,7 @@ impl AgentSession {
                 target: PIPELINE,
                 "Tool {} error: {}",
                 call.name,
-                log::head_ellipsis(&result.content, log::PREVIEW_MAX_CHARS)
+                log_lines::head_ellipsis(&result.content, log_lines::PREVIEW_MAX_CHARS)
             );
         }
         // `cd`: later tool calls resolve paths against the new directory (C# changes the

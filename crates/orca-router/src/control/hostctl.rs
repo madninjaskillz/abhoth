@@ -379,6 +379,28 @@ pub fn parse_reply(text: &str) -> Option<Result<ExecOutput, ExecError>> {
 }
 
 /// A hostd call: one JSON line to its unix socket, one line back.
+/// The frames for one hostd call (`orca-hostd::protocol`, NDJSON envelopes): `hello` (id 0),
+/// then the message: `type` = `method`, the other fields from `params`, id 1.
+pub fn hostd_frames(method: &str, params: &Value) -> [Value; 2] {
+    let hello = serde_json::json!({"id": 0, "type": "hello", "proto": 1,
+        "version": env!("CARGO_PKG_VERSION"), "client": "router"});
+    let mut msg = params.as_object().cloned().unwrap_or_default();
+    msg.insert("type".into(), Value::from(method));
+    msg.insert("id".into(), Value::from(1));
+    [hello, Value::Object(msg)]
+}
+
+/// The reply to a call among hostd's frames: id 1, or an `error` to the hello (id 0). Stream
+/// frames (telemetry, events) carry no id and are skipped.
+pub fn hostd_reply(line: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(line.trim()).ok()?;
+    match v.get("id").and_then(Value::as_u64) {
+        Some(1) => Some(line.trim().to_string()),
+        Some(0) if v["type"] == "error" => Some(line.trim().to_string()),
+        _ => None,
+    }
+}
+
 async fn hostd_call(
     al: &Allowlist,
     method: &str,
@@ -387,28 +409,40 @@ async fn hostd_call(
 ) -> Result<ExecOutput, ExecError> {
     #[cfg(unix)]
     {
-        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
         let h = al
             .hostd
             .as_ref()
             .ok_or_else(|| ExecError::Refused("no host daemon".into()))?;
         let fut = async {
-            let mut s = tokio::net::UnixStream::connect(&h.socket)
+            let s = tokio::net::UnixStream::connect(&h.socket)
                 .await
                 .map_err(|e| ExecError::Io(format!("hostd: {e}")))?;
-            let line = serde_json::json!({"method": method, "params": params}).to_string();
-            s.write_all(line.as_bytes())
-                .await
-                .map_err(|e| ExecError::Io(e.to_string()))?;
-            s.write_all(b"\n")
-                .await
-                .map_err(|e| ExecError::Io(e.to_string()))?;
-            let mut r = BufReader::new(s);
-            let mut out = String::new();
-            r.read_line(&mut out)
-                .await
-                .map_err(|e| ExecError::Io(e.to_string()))?;
-            Ok(ExecOutput::ok_with(out.trim()))
+            let (rd, mut wr) = s.into_split();
+            let mut r = BufReader::new(rd);
+            for frame in hostd_frames(method, params) {
+                let mut line = frame.to_string().into_bytes();
+                line.push(b'\n');
+                wr.write_all(&line)
+                    .await
+                    .map_err(|e| ExecError::Io(e.to_string()))?;
+            }
+            wr.flush().await.map_err(|e| ExecError::Io(e.to_string()))?;
+            let mut line = String::new();
+            loop {
+                line.clear();
+                let n = (&mut r)
+                    .take(4 * 1024 * 1024)
+                    .read_line(&mut line)
+                    .await
+                    .map_err(|e| ExecError::Io(e.to_string()))?;
+                if n == 0 {
+                    return Err(ExecError::Io("hostd closed the connection".into()));
+                }
+                if let Some(reply) = hostd_reply(&line) {
+                    return Ok(ExecOutput::ok_with(&reply));
+                }
+            }
         };
         tokio::time::timeout(timeout, fut)
             .await

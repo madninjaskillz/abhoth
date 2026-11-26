@@ -6,7 +6,7 @@
 //!               [--key-file /run/secrets/ninfer-key] [--base router.json] --out router.json [--watch SECONDS]
 //! abhoth router check --config router.json
 //! abhoth router import --from DIR --out router.toml [--report report.md] [--seed seed.json]
-//!               [--key-delivery file_flag|wrapper|argv] [--enable-on-demand] [--server ID]
+//!               [--key-delivery file_flag|wrapper|argv] [--key-file-build ENGINE=BUILD]... [--enable-on-demand] [--server ID]
 //! abhoth router config-check --config router.toml
 //! ```
 
@@ -25,7 +25,8 @@ pub const HELP: &str = "abhoth router: the OpenAI-compatible gateway (replaces L
 
 USAGE:
   abhoth router --config router.json [--port P | --listen ADDR] [--host H] [--lb-port P] [--slots-port P]
-                [--control router.toml]   (the admin API, when its control.enabled is on)
+                [--control router.toml]   (the control plane, when its control.enabled is on)
+                [--profiles-port N]       (the profiles API shim, :8098; needs --control)
   abhoth router observe-summary --dir DIR [--date YYYY-MM-DD]   (the decision-only shadow's day)
   abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
                 [--key-file PATH] [--base router.json] --out router.json [--watch SECONDS]
@@ -33,7 +34,7 @@ USAGE:
   abhoth router admin-demo --listen 127.0.0.1:8010 --link-token-file FILE [--accounts-url URL]
                 (the admin API on an in-memory demo host, for the web UI's admin pages)
   abhoth router import --from DIR --out router.toml [--report report.md] [--seed seed.json]
-                [--key-delivery file_flag|wrapper|argv] [--enable-on-demand] [--server ID]
+                [--key-delivery file_flag|wrapper|argv] [--key-file-build ENGINE=BUILD]... [--enable-on-demand] [--server ID]
                 (router.toml for the control plane from a copy of the GPU host's layout files)
   abhoth router config-check --config router.toml
   abhoth router hostctl serve --allowlist FILE        (the SSH forced command on a GPU host)
@@ -159,6 +160,7 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     let mut port: Option<u16> = None;
     let mut lb_port: Option<u16> = None;
     let mut slots_port: Option<u16> = None;
+    let mut profiles_port: Option<u16> = None;
     let mut control: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
@@ -182,6 +184,13 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
                         .context("--slots-port")?,
                 )
             }
+            "--profiles-port" => {
+                profiles_port = Some(
+                    take(args, &mut i, "--profiles-port")?
+                        .parse()
+                        .context("--profiles-port")?,
+                )
+            }
             a => bail!("unknown argument {a} (abhoth router --help)"),
         }
         i += 1;
@@ -192,10 +201,13 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     let snap = Snapshot::load(&path).map_err(|e| anyhow!(e))?;
     let addr = listen.unwrap_or_else(|| format!("{host}:{}", port.unwrap_or(8010)));
     let st = AppState::new(snap, Some(path));
+    let mut shim = None;
     if let Some(c) = &control {
-        let msg = crate::control_api::install_from_toml(&st, std::path::Path::new(c))
+        let started = crate::control::startup::start(&st, std::path::Path::new(c))
+            .await
             .map_err(|e| anyhow!("--control {c}: {e}"))?;
-        eprintln!("abhoth router: {msg}");
+        eprintln!("abhoth router: {}", started.message);
+        shim = started.shim;
     }
     let mut tasks = Vec::new();
     let (tx, rx) = tokio::sync::watch::channel(false);
@@ -223,6 +235,22 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     }
     if let Some(p) = slots_port {
         bind(format!("{host}:{p}"), Mode::Slots)?;
+    }
+    if let Some(p) = profiles_port {
+        let Some(shim) = shim.clone() else {
+            bail!("--profiles-port needs --control with control.enabled = true");
+        };
+        let addr = format!("{host}:{p}");
+        let std_l =
+            std::net::TcpListener::bind(&addr).with_context(|| format!("binding {addr}"))?;
+        std_l.set_nonblocking(true)?;
+        let l = tokio::net::TcpListener::from_std(std_l)?;
+        eprintln!("abhoth router: profiles shim on {addr}");
+        tasks.push(tokio::spawn(async move {
+            if let Err(e) = crate::switch::shim_backend::serve(l, shim).await {
+                eprintln!("abhoth router: profiles shim: {e}");
+            }
+        }));
     }
     tokio::spawn(crate::reload::watch(st.clone(), Duration::from_secs(2)));
     tokio::spawn(crate::ondemand::background(st.clone()));
@@ -397,6 +425,16 @@ fn control_import_cmd(args: &[String]) -> Result<i32> {
             "--seed" => seed = Some(PathBuf::from(take(args, &mut i, "--seed")?)),
             "--server" => opt.server = take(args, &mut i, "--server")?,
             "--enable-on-demand" => opt.enable_on_demand = true,
+            "--key-file-build" => {
+                let v = take(args, &mut i, "--key-file-build")?;
+                let (engine, build) = v
+                    .split_once('=')
+                    .ok_or_else(|| anyhow!("--key-file-build {v}: ENGINE=BUILD"))?;
+                opt.key_file_builds
+                    .entry(engine.to_string())
+                    .or_default()
+                    .push(build.to_string());
+            }
             "--key-delivery" => {
                 key = Some(match take(args, &mut i, "--key-delivery")?.as_str() {
                     "file_flag" => KeyChoice::FileFlag,
@@ -411,8 +449,9 @@ fn control_import_cmd(args: &[String]) -> Result<i32> {
     }
     let from = from.ok_or_else(|| anyhow!("--from is required"))?;
     let out = out.ok_or_else(|| anyhow!("--out is required"))?;
-    // Default: llama-server reads --api-key-file; ninfer has no such flag yet, so its key is
-    // read inside the container by a wrapper.
+    // Default: llama-server reads --api-key-file; ninfer only from our 2026-11-26 fork build,
+    // so its key is read inside the container by a wrapper except on builds named with
+    // --key-file-build ninfer=<build>.
     opt.keys
         .insert("ninfer".into(), key.unwrap_or(KeyChoice::Wrapper));
     opt.keys

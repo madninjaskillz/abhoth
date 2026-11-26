@@ -39,7 +39,13 @@ pub struct AppState {
     /// Ends a card's idle clock-down before a request goes to it (hostd `wake`, SUPERVISOR.md
     /// 6.3); unset = no host daemon.
     pub wake: std::sync::OnceLock<Arc<dyn crate::control::hostd::CardWake>>,
+    /// The control plane's changes to every loaded `router.json` (on-demand settings, what
+    /// the cards run now); unset = the file as it is.
+    pub overlay: std::sync::OnceLock<ConfigOverlay>,
 }
+
+/// Applied to each snapshot's config before it is swapped in.
+pub type ConfigOverlay = Arc<dyn Fn(&mut crate::config::RouterConfig) + Send + Sync>;
 
 impl AppState {
     pub fn new(snap: Snapshot, config_path: Option<PathBuf>) -> Arc<Self> {
@@ -65,6 +71,7 @@ impl AppState {
             ext,
             control: std::sync::OnceLock::new(),
             wake: std::sync::OnceLock::new(),
+            overlay: std::sync::OnceLock::new(),
         })
     }
 
@@ -73,10 +80,27 @@ impl AppState {
     }
 
     /// Swap in a new snapshot; requests in flight keep theirs.
-    pub fn swap(&self, snap: Snapshot) {
+    pub fn swap(&self, mut snap: Snapshot) {
+        if let Some(f) = self.overlay.get() {
+            f(&mut snap.config);
+        }
         self.log.reopen(snap.config.settings.request_log.as_deref());
         *self.snap.write().unwrap() = Arc::new(snap);
         *self.config_error.lock().unwrap() = None;
+    }
+
+    /// Apply the overlay again to the config in force (after what it reflects changed).
+    pub fn reapply_overlay(&self) {
+        let Some(f) = self.overlay.get() else {
+            return;
+        };
+        let mut g = self.snap.write().unwrap();
+        let mut config = g.config.clone();
+        f(&mut config);
+        if let Ok(mut s) = g.with_config(config) {
+            s.sig = g.sig;
+            *g = Arc::new(s);
+        }
     }
 
     pub fn next_id(&self) -> u64 {

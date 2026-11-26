@@ -580,6 +580,10 @@ pub struct KeyDelivery {
     /// Where hostctl `secret-put` writes it on the host (tmpfs, 0600).
     #[serde(default = "d_key_host_dir")]
     pub host_dir: String,
+    /// Builds known to read `--api-key-file` (our ninfer fork from 2026-11-26): with `wrapper`
+    /// mode, instances of these builds get `file_flag` instead; older builds keep the wrapper.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_flag_builds: Vec<String>,
 }
 
 impl Default for KeyDelivery {
@@ -589,6 +593,7 @@ impl Default for KeyDelivery {
             flag: None,
             path: d_key_path(),
             host_dir: d_key_host_dir(),
+            file_flag_builds: Vec::new(),
         }
     }
 }
@@ -601,6 +606,27 @@ fn d_key_host_dir() -> String {
 }
 
 impl KeyDelivery {
+    /// The mode for an instance of `build`: `wrapper` becomes `file_flag` on builds listed in
+    /// `file_flag_builds`.
+    pub fn mode_for(&self, build: Option<&str>) -> KeyMode {
+        if self.mode == KeyMode::Wrapper
+            && build.is_some_and(|b| self.file_flag_builds.iter().any(|x| x == b))
+        {
+            KeyMode::FileFlag
+        } else {
+            self.mode
+        }
+    }
+
+    /// The engine flag for an instance of `build`.
+    pub fn flag_for(&self, build: Option<&str>) -> &str {
+        if self.mode_for(build) != self.mode {
+            "--api-key-file"
+        } else {
+            self.flag_or_default()
+        }
+    }
+
     pub fn flag_or_default(&self) -> &str {
         match (&self.flag, self.mode) {
             (Some(f), _) => f,
