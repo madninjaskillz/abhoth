@@ -32,7 +32,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.16.6"
+version = "0.16.7"
 edition = "2024"
 rust-version = "1.100"
 license = "MIT"
@@ -126,7 +126,7 @@ unicode-width = "=0.2.2"
 vt100 = "=0.18.1"
 walkdir = "=2.5.1"
 windows-version = "=0.1.1"
-# orca-crosscheck only (Windows): SetConsoleCtrlHandler; already in the tree.
+# orca-crosscheck (Windows: SetConsoleCtrlHandler) and orca-webui (Windows: DPAPI); already in the tree.
 windows-sys = "=0.61.2"
 zip = { version = "=9.8.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 

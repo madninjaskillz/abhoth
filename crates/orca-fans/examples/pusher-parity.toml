@@ -1,0 +1,50 @@
+# push-gpu-fans.py expressed as supervisor config (SUPERVISOR.md 5.4; ROUTER-CONFIG.md 4.11).
+# Used by `cargo run -p orca-fans --example fan_shadow` and mirrored in tests/parity.rs.
+# FAN_MAP="01:00.0 21:00.0 E1:00.0": fan0 <- card B, fan1 <- card A, fan2 <- card C.
+
+[sensors.ctrl_A]
+expr = "ema(first(gpu.A.hbm, gpu.A.core), 4s)"
+[sensors.ctrl_B]
+expr = "ema(first(gpu.B.hbm, gpu.B.core), 4s)"
+[sensors.ctrl_C]
+expr = "ema(first(gpu.C.hbm, gpu.C.core), 4s)"
+[sensors.ctrl_D]
+expr = "ema(first(gpu.D.hbm, gpu.D.core), 4s)"
+
+[fan_backends.esp-gpu-fans]
+kind      = "esphome"
+url       = "http://esp-gpu-fans.lan"
+transport = "web_server"
+auth      = { kind = "digest", user = "fans", password = "secret:esp_fans_password" }
+names     = { temp = "GPU {n} Temp", load = "GPU {n} Power" }
+device_stale_seconds = 30
+sync_device_settings = false
+mode      = "shadow"
+
+[fan_defaults]
+mode         = "device_curve"
+load_gate    = { lo = 52, hi = 64 }
+curve        = [[60, 30], [82, 100]]          # the ESP's numbers as read 2026-11-26
+feed_forward = { lo = 50, hi = 100, max_duty = 60 }
+min_duty     = 30
+max_temp     = 85
+ramp_down    = "2%/2s"
+stale_input  = "3s"
+send         = { temp_delta = 1.0, load_delta = 10, min_gap = "1s", heartbeat = "10s" }
+alerts       = { temp_warn = 75, stalled = true, failsafe = true }
+
+[fans.duct0]
+backend = "esp-gpu-fans"
+channel = 0
+temp    = "sensor.ctrl_B"
+load    = "gpu.B.power_pct"
+[fans.duct1]
+backend = "esp-gpu-fans"
+channel = 1
+temp    = "sensor.ctrl_A"
+load    = "gpu.A.power_pct"
+[fans.duct2]
+backend = "esp-gpu-fans"
+channel = 2
+temp    = "sensor.ctrl_C"
+load    = "gpu.C.power_pct"

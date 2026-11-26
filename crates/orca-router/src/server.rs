@@ -135,32 +135,20 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
             );
             r
         }
-        (Method::GET, "/v1/abhoth/view" | "/v1/abhoth/events") => match st.control.get() {
-            Some(cp) => {
-                crate::control_api::user_view::handle(cp, &path, &headers, peer.map(|p| p.ip()))
-                    .await
-            }
-            None => not_found(),
-        },
-        (_, p) if p == "/admin/api" || p.starts_with("/admin/api/") => match st.control.get() {
-            Some(cp) => {
-                crate::control_api::handle(
-                    cp,
-                    &method,
-                    &path_q,
-                    &headers,
-                    peer.map(|p| p.ip()),
-                    &raw,
-                )
+        // The control plane's routes exist only while it is on; off, these paths go where they
+        // went before it existed.
+        (Method::GET, "/v1/abhoth/view" | "/v1/abhoth/events") if st.control.get().is_some() => {
+            let cp = st.control.get().expect("checked");
+            crate::control_api::user_view::handle(cp, &path, &headers, peer.map(|p| p.ip())).await
+        }
+        (_, p)
+            if (p == "/admin/api" || p.starts_with("/admin/api/"))
+                && st.control.get().is_some() =>
+        {
+            let cp = st.control.get().expect("checked");
+            crate::control_api::handle(cp, &method, &path_q, &headers, peer.map(|p| p.ip()), &raw)
                 .await
-            }
-            None => proxy::error(
-                404,
-                "the control plane is off (control.enabled)",
-                "not_found",
-                None,
-            ),
-        },
+        }
         (_, p) if p.starts_with("/admin/") => {
             if !loopback && !admin_allowed(&snap, &headers) {
                 return proxy::error(403, "admin endpoints are loopback-only", "forbidden", None);

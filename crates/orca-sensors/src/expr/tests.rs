@@ -145,11 +145,20 @@ fn ema_tracks_with_time_constant() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     // Same instant again: unchanged.
     assert!((e.eval(&s, 4_000, &mut st).unwrap().v - want).abs() < 1e-9);
-    // A gap resets the average.
+    // Evaluating again later without a new sample does not re-apply the old one: time is
+    // the sample's, not the evaluation's.
+    assert!((e.eval(&s, 4_400, &mut st).unwrap().v - want).abs() < 1e-9);
+    // A short gap: missing meanwhile, then the average continues over the whole interval.
     s.remove(&core);
     assert!(e.eval(&s, 4_500, &mut st).is_err());
-    s.put(core.clone(), Reading::new(30.0, Unit::Celsius, 5_000, "t"));
-    assert_eq!(e.eval(&s, 5_000, &mut st).unwrap().v, 30.0);
+    s.put(core.clone(), Reading::new(30.0, Unit::Celsius, 8_000, "t"));
+    let cont = want + (1.0 - (-1.0f64).exp()) * (30.0 - want);
+    assert!((e.eval(&s, 8_000, &mut st).unwrap().v - cont).abs() < 1e-9);
+    // A gap longer than EMA_RESTART_MS restarts the average.
+    s.remove(&core);
+    assert!(e.eval(&s, 9_000, &mut st).is_err());
+    s.put(core.clone(), Reading::new(50.0, Unit::Celsius, 18_001, "t"));
+    assert_eq!(e.eval(&s, 18_001, &mut st).unwrap().v, 50.0);
 }
 
 #[test]

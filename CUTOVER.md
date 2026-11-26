@@ -8,8 +8,8 @@ A plan, not yet executed. The user's decisions (2026-11-25):
 - **Abhoth lives in a new private GitHub repo, `abhoth`,** under the same owner as `openorca`.
   It keeps the port's history: `rust/` with its commits becomes the repo root (the Cargo
   workspace), and the React client comes along as `client/` with its own history.
-- **C# stays for about two weeks as the rollback,** in the `openorca` repo, untouched. After
-  that the `openorca` repo is archived. Its C# code is not deleted commit by commit; the
+- **C# stays as the rollback until it is no longer needed,** in the `openorca` repo,
+  untouched (no timed wait; the user decides). Then the `openorca` repo is archived. Its C# code is not deleted commit by commit; the
   archive is the record.
 
 Every step marked **(user triggers)** waits for the user. Agents prepare and test, but never
@@ -75,8 +75,8 @@ rust/tools/split-abhoth-repo.sh <openorca clone> <empty dir> feature/rust-port -
   `rust/.github/` holds the file so that the split carries it; it is inert in openorca.
 - **Client:** `npm ci && npm run build && npm test` in `client/`, failing when `client/dist`
   differs from what is checked in.
-- **Cross-check:** it needs the C# build, which is not in the new repo. During the rollback
-  weeks, a job (or a local run) checks out `openorca` at its last commit, builds the C#
+- **Cross-check:** it needs the C# build, which is not in the new repo. While C# is
+  kept as the rollback, a job (or a local run) checks out `openorca` at its last commit, builds the C#
   Release CLI and runs `orca-crosscheck --csharp <that exe>`. When openorca is archived, the
   scenarios are frozen as golden files from the last C# outputs, or the crate is dropped.
 - **Releases** (tag `abhoth-v<version>`, matching the workspace version): CI's `package` job
@@ -137,12 +137,12 @@ rust/tools/split-abhoth-repo.sh <openorca clone> <empty dir> feature/rust-port -
      bench state.
 2. Build `local/abhoth-web:1` next to the old image, the same way as today: a tarball of the
    abhoth repo into `src<n>`, logged to `build<n>.log`.
-3. **Short trial** on the cutover day:
+3. **Smoke check** on the cutover day (minutes):
    - Run a second app on another port (e.g. 8094) with a COPY of the state:
      `cp -a $AI_ROOT/orca/state $AI_ROOT/orca/state-abhoth`.
    - Sign in, open a project, chat, and run one bench item.
 4. **Switch:** point `openorca-web` at `local/abhoth-web:1` with the real `/state`. Port 8093
-   and the npm proxy are unchanged. Keep the `:25` image for the rollback period.
+   and the npm proxy are unchanged. Keep the `:25` image as rollback material until no longer needed.
 
 ## 5. Bench and tooling
 
@@ -150,7 +150,7 @@ rust/tools/split-abhoth-repo.sh <openorca clone> <empty dir> feature/rust-port -
   container symlink.
 - `results.jsonl` is unchanged (cross-checked), so old and new results compare directly.
 
-## 6. After about two weeks (user triggers)
+## 6. When the rollback is no longer needed (user triggers)
 
 - If nothing was rolled back:
   - archive the `openorca` GitHub repo (read-only);
@@ -164,7 +164,7 @@ rust/tools/split-abhoth-repo.sh <openorca clone> <empty dir> feature/rust-port -
 - Optionally offer to delete `~/.openorca` once `~/.abhoth` is in use. Never delete it
   automatically.
 
-## Rollback (within the two weeks)
+## Rollback (while the rollback material is kept)
 
 - **Desktop:** run `openorca` again. Its `~/.openorca` was only copied, never changed.
   Sessions made under Abhoth stay in `~/.abhoth` and can be copied back by hand, because the

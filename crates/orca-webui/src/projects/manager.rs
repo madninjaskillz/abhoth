@@ -152,6 +152,8 @@ pub struct ProjectManager {
     /// The GitHub sign-in (the "Clone from GitHub" wizard), whose access token projects linked
     /// to it use (unset: not set up).
     pub github_app: OnceLock<Arc<GitHubAppService>>,
+    /// Each user's own GitHub credentials (D147), for projects linked with `@github-user:<id>`.
+    pub github_user: OnceLock<Arc<crate::git::github_user::GitHubUserService>>,
 }
 
 impl ProjectManager {
@@ -175,6 +177,7 @@ impl ProjectManager {
             listeners: Arc::new(Listeners::default()),
             primary: info.clone(),
             github_app: OnceLock::new(),
+            github_user: OnceLock::new(),
         });
         pm.create(info, primary, true, false);
         pm.reload();
@@ -199,6 +202,15 @@ impl ProjectManager {
     /// near expiry). `Err`: the link's sign-in is gone (a message for the user).
     pub async fn git_token(&self, project_id: &str) -> Result<Option<String>, String> {
         let saved = self.tokens.get(project_id);
+        if let Some(link) = saved
+            .as_deref()
+            .filter(|s| s.starts_with(crate::git::github_user::USER_LINK_PREFIX))
+        {
+            return Ok(match self.github_user.get() {
+                Some(svc) => svc.token_for_link(link).await,
+                None => None,
+            });
+        }
         if saved.as_deref() != Some(APP_LINK) {
             return Ok(saved);
         }
