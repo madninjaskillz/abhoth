@@ -21,6 +21,7 @@ members = [
     "crates/orca-testkit",
     "crates/orca-crosscheck",
     "crates/orca-router",
+    "crates/orca-homeassistant",
 ]
 
 [workspace.package]
@@ -102,6 +103,9 @@ tempfile = "=3.27.0"
 toml = { version = "=1.2.3", features = ["preserve_order"] }
 toml_edit = "=0.25.21"
 tokio-tungstenite = "=0.29.0"
+# Supervisor HA (SUPERVISOR.md 11): the MQTT client; rumqttd is the in-process broker for tests only.
+rumqttc = { version = "=0.25.1", default-features = false, features = ["use-rustls"] }
+rumqttd = { version = "=0.20.0", default-features = false }
 thiserror = "=2.0.21"
 tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "process", "fs", "io-util", "time", "sync", "net"] }
 tracing = "=0.1.44"
