@@ -232,6 +232,10 @@ async fn route_access_rules() {
     assert!(!dash.may_use_route("users"), "a read-only key has no chat");
     assert!(lan.may_use_route("users") && !lan.may_use_route("keys:switchers"));
     assert!(Principal::Loopback.may_use_route("admins"));
+    // `keys:` is "admins and these keys" (claude.access = "keys:agents-bench"): an admin
+    // always passes, other keys do not
+    assert!(Principal::Loopback.may_use_route("keys:jarvis"));
+    assert!(!dash.may_use_route("keys:jarvis") && !user.may_use_route("keys:jarvis"));
 }
 
 #[test]

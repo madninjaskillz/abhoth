@@ -74,6 +74,23 @@ pub async fn main(args: &[String]) -> i32 {
     }
 }
 
+/// `run --config FILE` for a caller that restarts the supervisor itself (the single-container
+/// mode): reads and checks the config, then runs until SIGTERM. Every failure comes back as
+/// one line of text (config problems joined with "; ") instead of a printed exit code.
+pub async fn run_file(path: &str) -> Result<(), String> {
+    let cfg = std::fs::read_to_string(path)
+        .map_err(|e| format!("{path}: {e}"))
+        .and_then(|t| Config::parse(&t))?;
+    for n in &cfg.not_wired {
+        eprintln!("note: [{n}] is not wired in this build; ignored");
+    }
+    let problems = cfg.check();
+    if !problems.is_empty() {
+        return Err(problems.join("; "));
+    }
+    run(cfg).await
+}
+
 pub async fn run(cfg: Config) -> Result<(), String> {
     let hub = TelemetryHub::new(HubConfig::default());
     hub.spawn_flusher(Duration::from_millis(500));
@@ -403,5 +420,38 @@ mod tests {
         assert!(v["series"].get("host.cpu").is_none());
         assert_eq!(history_json(&hub, "range=1w").0, 400);
         assert_eq!(percent_decode("a%2Cb+c%"), "a,b c%");
+    }
+
+    /// `run_file` (the single container restarts the supervisor on these): every startup
+    /// failure comes back as text, nothing exits the process.
+    #[tokio::test]
+    async fn run_file_reports_startup_failures() {
+        let e = run_file("/nonexistent/supervisor.toml").await.unwrap_err();
+        assert!(e.starts_with("/nonexistent/supervisor.toml: "), "{e}");
+        let d = std::env::temp_dir().join(format!("sv-runfile-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let cfg = d.join("supervisor.toml");
+        std::fs::write(&cfg, "[supervisor]\nserver = \"x\"\nname = \"X\"\n").unwrap();
+        let e = run_file(cfg.to_str().unwrap()).await.unwrap_err();
+        assert!(e.contains("hostd_socket or hostd_command"), "{e}");
+        // the case that crash-looped the container: a secret the supervisor cannot read
+        let missing = d.join("no-such-key");
+        let fwd = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
+        std::fs::write(
+            &cfg,
+            format!(
+                "[supervisor]\nserver = \"x\"\nname = \"X\"\nhostd_socket = \"{}\"\n\
+                 router_url = \"http://127.0.0.1:1\"\nrouter_key = {{ file = \"{}\" }}\n",
+                fwd(d.join("hostd.sock")),
+                fwd(missing),
+            ),
+        )
+        .unwrap();
+        let e = run_file(cfg.to_str().unwrap()).await.unwrap_err();
+        assert!(
+            e.contains("secret file") && e.contains("no-such-key"),
+            "{e}"
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

@@ -14,6 +14,7 @@ pub mod hub;
 pub mod live;
 pub mod login;
 pub mod native;
+pub mod parts;
 pub mod paths;
 pub mod profiles;
 pub mod projects;

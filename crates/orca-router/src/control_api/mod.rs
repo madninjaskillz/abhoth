@@ -350,7 +350,7 @@ pub async fn handle(
         (m, ["calendar", ..]) => match crate::calendar::installed() {
             Some(svc) => {
                 let (status, v) =
-                    crate::calendar::api::handle(svc, m.as_str(), &parts, &qs, &body, &who);
+                    crate::calendar::api::handle(&svc, m.as_str(), &parts, &qs, &body, &who);
                 json_resp(status, &v)
             }
             None => err(404, "the calendar is off (calendar.enabled = false)"),

@@ -20,7 +20,7 @@ pub mod reserve;
 pub mod store;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use indexmap::IndexMap;
 use orca_calendar::effects::Target;
@@ -37,17 +37,19 @@ use crate::guards::{Action, Caller, EventGrant, EventScope, Guard, Reservation, 
 use store::CalStore;
 
 /// The installed calendar (one per process, set when the control plane starts with
-/// `calendar.enabled`). The admin API and the switch side find it here.
-static INSTALLED: OnceLock<Arc<CalendarService>> = OnceLock::new();
+/// `calendar.enabled`). The admin API and the switch side find it here. A router restarted
+/// in-process (the single-container mode restarts a failed router) installs its own again,
+/// replacing the old one, whose preempt ticker died with the old router's runtime.
+static INSTALLED: RwLock<Option<Arc<CalendarService>>> = RwLock::new(None);
 
-pub fn installed() -> Option<&'static Arc<CalendarService>> {
-    INSTALLED.get()
+pub fn installed() -> Option<Arc<CalendarService>> {
+    INSTALLED.read().ok().and_then(|g| g.clone())
 }
 
 pub fn install(s: Arc<CalendarService>) -> Result<(), String> {
-    INSTALLED
-        .set(s.clone())
-        .map_err(|_| "the calendar is already installed".to_string())?;
+    *INSTALLED
+        .write()
+        .map_err(|_| "the calendar lock is poisoned".to_string())? = Some(s.clone());
     reserve::spawn_preempt_ticker(s);
     Ok(())
 }
@@ -70,7 +72,13 @@ pub fn start(
             install(svc)?;
             Ok(format!(", calendar on ({n} entries)"))
         }
-        None => Ok(String::new()),
+        None => {
+            // Off in this run (a router restarted in-process may have had it on before).
+            if let Ok(mut g) = INSTALLED.write() {
+                *g = None;
+            }
+            Ok(String::new())
+        }
     }
 }
 

@@ -911,9 +911,21 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     runtime, so agent work on the web UI's runtime cannot starve the gateway, and each keeps its
     own ports and config. A part that stops with a non-zero code (bad config, port in use,
     panic) exits the process with that code, so the restart policy restarts all three; a restart
-    of one is a restart of all (accepted). With `--hostui`, SIGTERM now stops the process
+    of one is a restart of all (accepted; replaced by self-healing parts, below). With `--hostui`, SIGTERM now stops the process
     cleanly (the web UI only listened for Ctrl-C), after the other parts have had up to 10 s.
     `abhoth supervisor run|check` is new (feature `supervisor`, on by default).
+  - **Self-healing parts** (user request 2026-11-26, after a supervisor that could not read a
+    secret crash-looped the whole container): a failed router or supervisor (startup error,
+    error or stop later on, panic) is restarted in the process with exponential backoff (1 s,
+    doubling, 60 s cap, reset after 5 minutes up), each run on a fresh runtime that is shut down
+    before the next (so its listeners are closed and the ports can be bound again). It never
+    takes the web UI or the other part down, and it is retried for good rather than exiting
+    after N failures: a container restart fixes neither a missing secret nor a port someone
+    else holds, and would take the web UI down with it. The web UI stopping still exits the
+    process. Status: `GET /api/parts` and `parts` in `/api/info` (admins); the health check
+    stays strict (unhealthy while a part is down; nothing restarts the container on that). The
+    router's calendar is now re-installable (it was a set-once global, so a restarted router
+    would have failed to start). Panics unwind (no `panic = "abort"` profile).
   - **The image:** tini as PID 1 (reaps orphaned tool processes); `/data/web`, `/data/router`,
     `/data/supervisor`, `/data/projects` (one `/data` volume is enough) and read-only `/run/secrets`; `ROUTER_ARGS`,
     `SUPERVISOR_CONFIG`, `ABHOTH_SUPERVISOR_URL` (the Glance feed, defaulted when the supervisor

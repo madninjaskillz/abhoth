@@ -64,7 +64,8 @@ pub struct ClaudeConfig {
     /// so the two never write the same files. None = the router's own HOME.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub home: Option<String>,
-    /// Who may use the routes: `admins` (default), `users`, `anonymous` or `keys:<names>`.
+    /// Who may use the routes: `admins` (default), `users`, `anonymous` or `keys:<names>`
+    /// (admins and those keys or key groups, e.g. `keys:agents-bench`; admins always may).
     /// It is one person's subscription and Anthropic's consumer terms are about personal use,
     /// so it is not opened to service keys or other users unless the operator says so.
     pub access: String,

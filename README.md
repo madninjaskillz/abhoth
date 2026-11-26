@@ -169,8 +169,10 @@ it needs goes in `abhoth-data/secrets/strata-api-key`.
   `crates/orca-supervisor/deploy/supervisor.example.toml`). The Glance page then follows its
   feed (`ABHOTH_SUPERVISOR_URL`, default `http://127.0.0.1:9890`; `GLANCE=0` turns it off).
 - **Health:** the image's health check asks every part that is on (`deploy/abhoth/healthcheck.sh`).
-  If any part stops with an error, the container exits and its restart policy restarts all of
-  them.
+  A router or supervisor that fails (a startup error such as a missing secret, an error later on,
+  or a panic) is restarted inside the container with backoff (1 s doubling to 60 s) while the
+  other parts keep serving; the container is unhealthy meanwhile, and `/api/parts` (admins)
+  shows each part's state, restarts and last error. Only the web UI stopping exits the container.
 - **Fans and clocks (optional):** `abhoth-hostd` needs root, so it is installed on the host, not
   in the container: [`crates/orca-hostd/deploy/install.sh`](crates/orca-hostd/deploy). Mount
   `/run/abhoth` into the container and add the socket's group (`group_add`) so the supervisor can

@@ -489,6 +489,7 @@ impl Drop for WebUiServer {
 fn router(state: Arc<AppState>) -> Router {
     let mut api: Router<Arc<AppState>> = Router::new()
         .route("/api/info", get(info))
+        .route("/api/parts", get(parts_status))
         .route("/hub/ws", get(hub_socket))
         .merge(crate::projects::endpoints::routes())
         .merge(crate::git::endpoints::routes())
@@ -568,7 +569,21 @@ async fn info(
     if state.options.desktop.is_some() {
         info["desktop"] = json!(true);
     }
+    // The router / supervisor running alongside (single-container mode): state, restarts and
+    // the last error. Admins only (errors can name files).
+    let parts = crate::parts::all();
+    if admin && !parts.is_empty() {
+        info["parts"] = json!(parts);
+    }
     axum::Json(info).into_response()
+}
+
+/// `GET /api/parts`: the extra parts' status (admins; `{}` when the web UI runs alone).
+async fn parts_status(principal: Option<axum::Extension<crate::login::Principal>>) -> Response {
+    if !principal.as_ref().is_some_and(|p| p.admin) {
+        return (axum::http::StatusCode::FORBIDDEN, "admins only").into_response();
+    }
+    axum::Json(json!(crate::parts::all())).into_response()
 }
 
 #[derive(Deserialize)]
