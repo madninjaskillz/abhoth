@@ -254,7 +254,8 @@ pub enum ExecKind {
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum HostctlMode {
-    /// The router sends template ids and typed values; the host renders from its allowlist.
+    /// The host runs only commands whose id and exact text are in its root-owned allowlist
+    /// (`hostctl export`), builtins by name with path rules, and allowed hostd methods.
     #[default]
     Strict,
     /// The router sends rendered command text (development hosts only; flagged loudly).

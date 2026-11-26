@@ -20,6 +20,8 @@ pub mod lifecycle;
 pub mod load;
 pub mod resolve;
 pub mod schema;
+pub mod ssh;
 pub mod store;
+pub mod telemetry;
 pub mod template;
 pub mod validate;
