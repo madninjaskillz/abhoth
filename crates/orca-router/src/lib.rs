@@ -1,9 +1,11 @@
 //! `abhoth router`: the OpenAI-compatible gateway for DeepThought (ROUTER.md). Replaces LiteLLM
 //! (`:8010`), qfn-lb (`:8092`), pig-slots (`:8099`) and the profiles API's on-demand relay.
 
+pub mod access;
 pub mod cli;
 pub mod config;
 pub mod control;
+pub mod control_api;
 pub mod effort;
 pub mod guards;
 pub mod import;

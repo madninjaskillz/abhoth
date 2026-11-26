@@ -36,6 +36,10 @@ pub enum Op {
     /// A hostctl builtin (`flock`, `gpu-free-wait`, `numa-room`, `json-set`, `restore-file`,
     /// `oom-kills`, `proc-scan`, `secret-put`, `docker-rm-robust`, `telemetry`, …).
     Builtin { name: String, args: Value },
+    /// A call to the host daemon (`abhoth hostd`, SUPERVISOR.md: telemetry, fans, clocks),
+    /// carried by the same channel as commands: the forced command hands it to the daemon's
+    /// socket. `method` is one of the daemon's own allowlisted methods.
+    Hostd { method: String, params: Value },
 }
 
 impl Op {
@@ -43,6 +47,7 @@ impl Op {
         match self {
             Op::Command { id, .. } => id,
             Op::Builtin { name, .. } => name,
+            Op::Hostd { method, .. } => method,
         }
     }
 }
@@ -313,6 +318,11 @@ impl Executor for LocalExecutor {
             }
             Op::Builtin { name, args } => {
                 super::builtins::run(name, args, req.stdin.as_deref(), req.timeout, cancel).await?
+            }
+            Op::Hostd { method, .. } => {
+                return Err(ExecError::Refused(format!(
+                    "hostd call {method}: no host daemon on the local executor yet"
+                )));
             }
         };
         Ok(self.scrubber.scrub_output(out))

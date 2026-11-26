@@ -238,3 +238,73 @@ async fn a_real_chat_switches_unless_forbidden() {
     assert_eq!(real_chat(&r, &[]).await, 503);
     assert_eq!(switches(&api), 0);
 }
+
+struct Keys(std::collections::HashMap<String, orca_core::router_link::Introspection>);
+
+#[async_trait::async_trait]
+impl orca_router::access::keys::Introspector for Keys {
+    async fn introspect(&self, d: &str) -> Result<orca_core::router_link::Introspection, String> {
+        Ok(self.0.get(d).cloned().unwrap_or_default())
+    }
+}
+
+const SWITCH_KEY: &str = "abk_svc_switchswitchswitchsw";
+const USER_KEY: &str = "abk_user_useruseruseruseruse";
+
+fn control_plane() -> std::sync::Arc<orca_router::control_api::ControlPlane> {
+    use orca_core::router_link::{Introspection, Role, key_digest};
+    use orca_router::access::keys::{CacheTimes, KeyCache, system_clock};
+    use orca_router::access::{Access, AccessSettings};
+    let i = |role: Role, scopes: &[&str]| Introspection {
+        active: true,
+        user_id: Some(1),
+        name: Some("someone".into()),
+        role: Some(role),
+        key_id: Some(7),
+        key_name: Some("k".into()),
+        scopes: scopes.iter().map(|s| s.to_string()).collect(),
+        disabled: false,
+    };
+    let keys = Keys(std::collections::HashMap::from([
+        (
+            key_digest(SWITCH_KEY),
+            i(Role::Service, &["chat", "switch"]),
+        ),
+        (key_digest(USER_KEY), i(Role::User, &[])),
+    ]));
+    let cache = KeyCache::new(
+        std::sync::Arc::new(keys),
+        CacheTimes::default(),
+        system_clock(),
+    );
+    let access = Access::with_parts(
+        AccessSettings::default(),
+        None,
+        Some(cache),
+        std::sync::Arc::new(|| chrono::Utc::now().timestamp()),
+    );
+    std::sync::Arc::new(orca_router::control_api::ControlPlane {
+        access,
+        backend: orca_router::control_api::demo::DemoControl::new(),
+    })
+}
+
+#[tokio::test]
+async fn with_the_gate_only_a_switch_key_switches() {
+    if orca_router::ondemand::quiet(orca_router::proxy::now_epoch()).is_some() {
+        return;
+    }
+    let (a, b) = (Fake::ok("A").await, Fake::ok("B").await);
+    let relay = Fake::ok("relay").await;
+    let dir = tempfile::tempdir().unwrap();
+    for (key, want) in [(USER_KEY, 0), (SWITCH_KEY, 1)] {
+        let api = Fake::start(profiles_api()).await;
+        let mut c = cfg(&a.url(), &b.url(), &relay.url(), &api.url(), dir.path());
+        c.on_demand.control_gate = true;
+        let r = start_router(c, None, Mode::Gateway).await;
+        let _ = r.st.control.set(control_plane());
+        let bearer = format!("Bearer {key}");
+        real_chat(&r, &[("authorization", bearer.as_str())]).await;
+        assert_eq!(switches(&api), want, "{key}");
+    }
+}

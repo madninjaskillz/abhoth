@@ -113,6 +113,7 @@ pub fn validate(c: &ControlConfig) -> Vec<Issue> {
     guards(c, &mut v);
     inline_secrets(c, &mut v);
     templates(c, &mut v);
+    access(c, &mut v);
     v.sort_by(|a, b| b.level.cmp(&a.level).then(a.path.cmp(&b.path)));
     v
 }
@@ -1105,3 +1106,28 @@ fn templates(c: &ControlConfig, v: &mut Vec<Issue>) {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// `[access]` (11.1): CIDRs, the token as a reference to a defined secret.
+fn access(c: &ControlConfig, v: &mut Vec<Issue>) {
+    for (path, msg) in c.access.problems() {
+        v.push(Issue::err(path, msg));
+    }
+    if let Some(id) = c
+        .access
+        .accounts_token
+        .as_deref()
+        .and_then(|t| t.strip_prefix("secret:"))
+        && !c.secrets.contains_key(id)
+    {
+        v.push(Issue::err(
+            "access.accounts_token",
+            format!("no [secrets] entry named {id}"),
+        ));
+    }
+    if c.control.enabled && c.access.accounts_url.is_none() {
+        v.push(Issue::warn(
+            "access.accounts_url",
+            "no accounts server: every abk_ key is refused and only loopback can administer",
+        ));
+    }
+}

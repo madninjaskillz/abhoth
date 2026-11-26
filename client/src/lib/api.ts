@@ -218,6 +218,8 @@ export interface ServerInfo {
   bench?: boolean;
   /** The inference server's profiles API is configured (profile pickers, server layout). */
   profiles?: boolean;
+  /** Admins: an `abhoth router` control plane is linked (the router tabs in the settings). */
+  router?: boolean;
   /** Served to the desktop window (`abhoth --desktop`): native folder dialog available. */
   desktop?: boolean;
 }
