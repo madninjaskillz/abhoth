@@ -28,7 +28,8 @@ install -d -o root -g root -m 0755 "$H/etc" "$H/bin" "$H/state"
 install -d -o root -g root -m 0700 "$H/etc/secrets" "$H/state/hostd"
 chown root:root "$H/etc/hostd-limits.toml" && chmod 0644 "$H/etc/hostd-limits.toml"
 "$BIN" limits-check --apps "$APPS"
-install -o root -g root -m 0755 "$(dirname "$0")/start-hostd.sh" "$H/bin/start-hostd.sh"
+# Run from the source tree: copy the start script; run from $H/bin: it is already there.
+[ "$(cd "$(dirname "$0")" && pwd)" = "$H/bin" ] || install -o root -g root -m 0755 "$(dirname "$0")/start-hostd.sh" "$H/bin/start-hostd.sh"
 
 q() { midclt call "$@"; }
 if ! q initshutdownscript.query '[["command","=","'"$H"'/bin/start-hostd.sh"]]' | grep -q '"id"'; then

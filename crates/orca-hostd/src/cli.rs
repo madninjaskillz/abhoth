@@ -374,7 +374,7 @@ async fn run(o: &Opts) -> Result<(), String> {
     tokio::spawn(crate::daemon::discovery_loop(
         shared.clone(),
         o.sources.nvidia_smi.clone(),
-        o.sources.proc_root.clone(),
+        o.sources.proc_root.join("proc"),
         ports.clone(),
     ));
     #[cfg(target_os = "linux")]
