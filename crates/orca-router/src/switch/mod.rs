@@ -13,7 +13,6 @@
 
 pub mod callers;
 pub mod gate;
-pub mod host;
 mod job;
 pub mod ondemand_switch;
 pub mod plane;
