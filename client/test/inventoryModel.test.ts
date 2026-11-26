@@ -119,3 +119,27 @@ test("the file an engine loads: first GGUF shard, the one weight file, else the 
   const [e] = newModelEdits("v", { ...details, kind: "tts", vision: false }, ch("safetensors", [["config.json", 1], ["a.safetensors", 5], ["b.safetensors", 5]]), "vllm", [], "/m/o/v");
   assert.equal(((e.value as Record<string, Record<string, Record<string, unknown>>>).artifacts.vllm).file, "/m/o/v");
 });
+
+test("D153: a CPU card leaves the host some RAM and is never switched", async () => {
+  const { newCpuCardEdits } = await import("../src/features/router/forms/inventoryModel.ts");
+  const [e] = newCpuCardEdits("DT-CPU", "deepthought", { model: "AMD EPYC 7K62", cores: 96, threads: 192, ramGib: 251 }, { music: ["sa3"] });
+  assert.deepEqual(e.path, ["cards", "DT-CPU"]);
+  const v = e.value as Record<string, unknown>;
+  assert.equal(v.device, "cpu");
+  assert.equal(v.managed, false);
+  assert.equal(v.on_demand, false);
+  assert.equal(v.cores, 96);
+  assert.equal(v.ram_gib, 188.3);
+  assert.equal(v.gpu_uuid, undefined);
+  const [s] = newCpuCardEdits("S-CPU", "small", { ramGib: 16 });
+  assert.equal((s.value as Record<string, unknown>).ram_gib, 8);
+});
+
+test("D153: presence and needs lines", async () => {
+  const { presenceLine, needsLine } = await import("../src/features/router/forms/inventoryModel.ts");
+  const m = { present: { deepthought: true, pc: false, lab: null } } as unknown as InvModel;
+  assert.equal(presenceLine(m), "deepthought ✓ · pc ✗ · lab ?");
+  const r = { needsMet: { deepthought: { ok: true, missing: [] }, pc: { ok: false, missing: ["qwen-clip"] } } } as unknown as InvModel;
+  assert.equal(needsLine(r), "deepthought: ready · pc: missing qwen-clip");
+  assert.equal(presenceLine({} as InvModel), "");
+});

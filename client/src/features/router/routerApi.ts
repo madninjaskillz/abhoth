@@ -9,7 +9,7 @@ import {
   type RouteEdit, type RouteView, type StateView,
 } from "./routerModel";
 import type { AdminKey, ConfigData, FormEdit, GatewayCheck, GatewayDoc, NewAdminKey } from "./forms/formModel";
-import type { CardOption, CatalogKind, DetectedGpu, DirListing, DownloadJob, HfDetails, HfFile, HfRow, Inventory, PathStat } from "./forms/inventoryModel";
+import type { CardOption, CatalogKind, DetectedCpu, DetectedGpu, DirListing, DownloadJob, HfDetails, HfFile, HfRow, Inventory, PathStat } from "./forms/inventoryModel";
 
 /** Where the admin API is and how calls authenticate. */
 export interface RouterTransport {
@@ -92,7 +92,7 @@ export const routerApi = {
   // D152: the inventory, engine capabilities, Hugging Face and downloads.
   inventory: () => call<Inventory>("GET", `${R()}/inventory`),
   catalog: () => call<CatalogKind[]>("GET", `${R()}/catalog`),
-  detect: (server: string) => call<{ server: string; gpus: DetectedGpu[] }>("POST", `${R()}/inventory/detect`, { server }),
+  detect: (server: string) => call<{ server: string; gpus: DetectedGpu[]; cpu?: DetectedCpu | null }>("POST", `${R()}/inventory/detect`, { server }),
   ggufMeta: (server: string, path: string) => call<Record<string, string>>("POST", `${R()}/inventory/gguf`, { server, path }),
   browse: (server: string, path: string, offset = 0) =>
     call<DirListing>("GET", `${R()}/inventory/browse?server=${encodeURIComponent(server)}&path=${encodeURIComponent(path)}&offset=${offset}&limit=200`),

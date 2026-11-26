@@ -1018,3 +1018,20 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   - **UI:** an Inventory tab in both the app's Router config and `/admin/` (servers & cards with
     GPU detection, engines with capability pages and forks, models with computed engines and
     reasons, Hugging Face add, downloads); phone width.
+- **D153** (user request 2026-11-26) **Media engines under the router**: "the comfyui models and
+  other models - and relevant engines, should be managed by abhoth". The router starts, stops and
+  routes image, video, speech, transcription and music engines (ComfyUI, Chatterbox, whisper,
+  Kokoro, Stable Audio) on GPU **and CPU cards**, built from **engine packages** (a JSON manifest
+  with install methods: compose, docker, pip, binary, git, existing) with a metadata-only store
+  and a wizard; **bridges** (headless `abhoth bridge`, dialling the router) add servers such as
+  the PC and truenas.local. Plan, decisions and phases in
+  [`docs/design/ROUTER-MEDIA-PLAN.md`](docs/design/ROUTER-MEDIA-PLAN.md).
+  - **Phase 1 (0.16.17), inventory only:** the `video` kind; component models (`role` = the
+    ComfyUI folder: diffusion, text_encoder, vae, lora…, `needs`, `aliases`); `servers.x.comfy_root`;
+    CPU cards (`device = "cpu"`, `cores`, `ram_gib`, fit against RAM, never in a switch); the
+    `cpu-info` builtin and CPU detection; the `external` driver (an engine started outside the
+    router: probed, never started, stopped or observed); catalog `comfyui`, `chatterbox`, more
+    whisper and sa3 formats; read-only media probes (ComfyUI `/queue` first, then
+    `/system_stats` and `/models/<folder>`; SA3 `/health`; `x-abhoth-no-switch`, every 10 min);
+    presence per server and "needs met"; component downloads go flat into their ComfyUI folder.
+    The observe loop only asks an engine about cards it has a port on.

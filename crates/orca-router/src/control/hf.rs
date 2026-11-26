@@ -178,6 +178,7 @@ pub fn pipelines(k: ModelKind) -> &'static [&'static str] {
         ModelKind::Image => &["text-to-image", "image-to-image"],
         ModelKind::Music => &["text-to-audio"],
         ModelKind::Embedding => &["feature-extraction", "sentence-similarity"],
+        ModelKind::Video => &["text-to-video", "image-to-video"],
     }
 }
 

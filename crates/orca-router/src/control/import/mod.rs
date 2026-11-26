@@ -392,6 +392,9 @@ pub fn import(src: &Sources, opt: &Options) -> Result<Imported, String> {
             Card {
                 server: server_id.clone(),
                 gpu_uuid: s(&d["uuid"]),
+                device: Default::default(),
+                cores: None,
+                ram_gib: None,
                 label: s(&d["label"]),
                 vram_gib: Some(vram),
                 reserve_gib: 1.5,
@@ -434,6 +437,9 @@ pub fn import(src: &Sources, opt: &Options) -> Result<Imported, String> {
                 Card {
                     server: server_id.clone(),
                     gpu_uuid: uuid.to_string(),
+                    device: Default::default(),
+                    cores: None,
+                    ram_gib: None,
                     label: parts.get(1).unwrap_or(&"").to_string(),
                     vram_gib: None,
                     reserve_gib: 1.5,

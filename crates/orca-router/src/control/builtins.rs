@@ -27,6 +27,7 @@ pub const NAMES: &[&str] = &[
     "secret-put",
     "docker-rm-robust",
     "telemetry",
+    "cpu-info",
     "compute-apps",
     "docker-up",
     "mounted",
@@ -241,6 +242,7 @@ pub async fn run(
             )
             .await?
         }
+        "cpu-info" => ExecOutput::ok_with(&cpu_info().to_string()),
         "compute-apps" => compute_apps(timeout, cancel).await?,
         "gpu-free-wait" => {
             let a: GpuFreeArgs = args_of(name, args)?;
@@ -560,6 +562,73 @@ fn mounts_contain(mounts: &str, path: &str) -> bool {
 }
 
 /// `(node, free GiB, page cache GiB)` from sysfs.
+/// The host's CPU and memory (D153: CPU cards): model, threads, cores, RAM, free RAM, the
+/// SIMD flags engines care about. Reads `/proc/cpuinfo` and `/proc/meminfo` only.
+pub fn cpu_info() -> Value {
+    let cpuinfo = std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
+    let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    parse_cpu_info(
+        &cpuinfo,
+        &meminfo,
+        std::thread::available_parallelism().map_or(0, |n| n.get()) as u32,
+    )
+}
+
+/// [`cpu_info`] from the two files' text (tests).
+pub fn parse_cpu_info(cpuinfo: &str, meminfo: &str, threads: u32) -> Value {
+    let field = |k: &str| {
+        cpuinfo.lines().find_map(|l| {
+            let (a, b) = l.split_once(':')?;
+            (a.trim() == k).then(|| b.trim().to_string())
+        })
+    };
+    let mut cores: std::collections::BTreeSet<(String, String)> = Default::default();
+    let (mut phys, mut core) = (String::new(), String::new());
+    for l in cpuinfo.lines() {
+        if let Some((a, b)) = l.split_once(':') {
+            match a.trim() {
+                "physical id" => phys = b.trim().to_string(),
+                "core id" => core = b.trim().to_string(),
+                _ => {}
+            }
+        } else if l.trim().is_empty() && !core.is_empty() {
+            cores.insert((phys.clone(), core.clone()));
+        }
+    }
+    if !core.is_empty() {
+        cores.insert((phys, core));
+    }
+    let kib = |k: &str| {
+        meminfo.lines().find_map(|l| {
+            let (a, b) = l.split_once(':')?;
+            (a.trim() == k).then(|| b.split_whitespace().next()?.parse::<f64>().ok())?
+        })
+    };
+    let gib = |x: Option<f64>| x.map(|k| (k / 1024.0 / 1024.0 * 10.0).round() / 10.0);
+    let flags = field("flags").unwrap_or_default();
+    let simd: Vec<&str> = [
+        "avx",
+        "avx2",
+        "fma",
+        "f16c",
+        "avx512f",
+        "avx512_vnni",
+        "avx512_bf16",
+        "amx_tile",
+    ]
+    .into_iter()
+    .filter(|f| flags.split_whitespace().any(|x| x == *f))
+    .collect();
+    json!({
+        "model": field("model name"),
+        "threads": if threads > 0 { threads } else { cpuinfo.lines().filter(|l| l.starts_with("processor")).count() as u32 },
+        "cores": (!cores.is_empty()).then_some(cores.len()),
+        "ramGib": gib(kib("MemTotal")),
+        "availableGib": gib(kib("MemAvailable")),
+        "simd": simd,
+    })
+}
+
 pub fn node_free_gib() -> Vec<(u32, f64, f64)> {
     let mut out = Vec::new();
     let Ok(rd) = std::fs::read_dir("/sys/devices/system/node") else {

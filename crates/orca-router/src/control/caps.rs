@@ -112,12 +112,12 @@ pub const CATALOG: &[KindDef] = &[
         id: "whisper",
         title: "whisper.cpp",
         kinds: &[Stt],
-        formats: &["ggml", "gguf"],
+        formats: &["ggml", "gguf", "safetensors", "ct2"],
         archs: &["whisper"],
         quants: &[],
         probe: "none",
         driver: "docker",
-        notes: "Speech to text.",
+        notes: "Speech to text (whisper.cpp, faster-whisper or transformers Whisper). Wyoming or HTTP.",
     },
     KindDef {
         id: "kokoro",
@@ -134,12 +134,34 @@ pub const CATALOG: &[KindDef] = &[
         id: "sa3",
         title: "Stable Audio",
         kinds: &[Music],
-        formats: &["safetensors", "ckpt"],
+        formats: &["safetensors", "ckpt", "tflite"],
         archs: &["stable-audio"],
+        quants: &[],
+        probe: "sa3",
+        driver: "docker",
+        notes: "Instrumental music. The tflite build runs on the CPU (no card).",
+    },
+    KindDef {
+        id: "comfyui",
+        title: "ComfyUI",
+        kinds: &[Image, Video],
+        formats: &["safetensors", "gguf", "ckpt", "pytorch"],
+        archs: &[],
+        quants: &[],
+        probe: "comfyui",
+        driver: "docker",
+        notes: "Image and video workflows. Its files are components (diffusion model, text encoder, VAE, LoRA…) in the ComfyUI model folders; a probe lists the files it has.",
+    },
+    KindDef {
+        id: "chatterbox",
+        title: "Chatterbox",
+        kinds: &[Tts],
+        formats: &["safetensors", "pytorch"],
+        archs: &["chatterbox"],
         quants: &[],
         probe: "none",
         driver: "docker",
-        notes: "Instrumental music.",
+        notes: "Text to speech with cloned voices (Turbo, nano).",
     },
     KindDef {
         id: "qwen-image",
@@ -193,6 +215,12 @@ pub struct Probe {
     pub kinds_seen: Vec<ModelKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ctx: Option<u64>,
+    /// Media engines (D153): the model files it has, per folder (ComfyUI `/models/<folder>`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub files: BTreeMap<String, Vec<String>>,
+    /// The device it reported (`cuda:0 Tesla V100-SXM2-16GB`, `cpu`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
     pub at: i64,
 }
 
@@ -406,6 +434,7 @@ pub fn format_of_name(file: &str) -> Option<String> {
             "safetensors" => "safetensors",
             "ninfer" => "ninfer",
             "onnx" => "onnx",
+            "tflite" => "tflite",
             "ckpt" => "ckpt",
             "pt" | "pth" => "pytorch",
             "bin" if base.starts_with("ggml") => "ggml",
@@ -515,6 +544,53 @@ pub struct EngineMatch {
 
 /// Every engine, answered for `model` (unordered: see [`engine_order`]).
 pub fn supported(c: &ControlConfig, model: &Model) -> Vec<EngineMatch> {
+    // D153: a model made of components (no files of its own) runs on an engine that runs
+    // every component it needs
+    if model.artifacts.is_empty() && !model.needs.is_empty() && model.role.is_none() {
+        let parts: Vec<(&String, Vec<EngineMatch>)> = model
+            .needs
+            .iter()
+            .filter_map(|n| c.models.get(n).map(|m| (n, m)))
+            // only files (a role or files of their own): a recipe needing a recipe, or itself,
+            // never recurses
+            .filter(|(_, m)| m.role.is_some() || !m.artifacts.is_empty() || m.needs.is_empty())
+            .map(|(n, m)| (n, supported(c, m)))
+            .collect();
+        return c
+            .engines
+            .keys()
+            .map(|eid| {
+                let bad = parts.iter().find_map(|(n, ms)| {
+                    ms.iter()
+                        .find(|m| &m.engine == eid)
+                        .filter(|m| !m.ok)
+                        .map(|m| format!("{n}: {}", m.reason))
+                });
+                let missing = model.needs.iter().find(|n| !c.models.contains_key(*n));
+                let denied = model.deny.iter().any(|d| d == eid);
+                let ok = bad.is_none() && missing.is_none() && !denied && !parts.is_empty();
+                EngineMatch {
+                    engine: eid.clone(),
+                    ok,
+                    reason: if denied {
+                        "never used for this model (deny)".into()
+                    } else if let Some(m) = missing {
+                        format!("needs `{m}`, which is not set up")
+                    } else if let Some(b) = bad {
+                        b
+                    } else {
+                        format!("runs its {} components ✓", parts.len())
+                    },
+                    via: if denied {
+                        "deny".into()
+                    } else {
+                        "components".into()
+                    },
+                    file_of: None,
+                }
+            })
+            .collect();
+    }
     let kind = model.kind();
     c.engines
         .keys()
@@ -756,6 +832,211 @@ pub fn probe_how(c: &ControlConfig, engine: &str) -> &'static str {
 /// under `max_age` seconds old.
 pub fn needs_probe(c: &ControlConfig, engine: &str, now: i64, max_age: i64) -> bool {
     probe_how(c, engine) != "none" && probe_of(c, engine).is_none_or(|p| now - p.at > max_age)
+}
+
+// ── media engine probes (D153) ──────────────────────────────────────────────────────────────
+
+/// ComfyUI folders a probe lists (component folders, their old names, the GGUF loaders').
+pub const COMFY_FOLDERS: &[&str] = &[
+    "checkpoints",
+    "diffusion_models",
+    "unet",
+    "unet_gguf",
+    "text_encoders",
+    "clip",
+    "clip_gguf",
+    "vae",
+    "loras",
+    "controlnet",
+    "ipadapter",
+    "clip_vision",
+    "upscale_models",
+    "background_removal",
+    "embeddings",
+    "audio_encoders",
+];
+
+/// A ComfyUI probe from `/system_stats` and the `/models/<folder>` lists.
+pub fn parse_comfyui(
+    stamp: String,
+    stats: &Value,
+    files: BTreeMap<String, Vec<String>>,
+    now: i64,
+) -> Probe {
+    Probe {
+        stamp,
+        version: stats
+            .pointer("/system/comfyui_version")
+            .and_then(Value::as_str)
+            .map(|v| format!("ComfyUI {v}")),
+        kinds_seen: vec![ModelKind::Image],
+        device: stats
+            .pointer("/devices/0/name")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        files,
+        at: now,
+        ..Default::default()
+    }
+}
+
+/// A Stable Audio service probe from its `/health` (`{"ok", "model", …}`).
+pub fn parse_sa3(stamp: String, health: &Value, now: i64) -> Probe {
+    let model = health.get("model").and_then(Value::as_str);
+    Probe {
+        stamp,
+        version: model.map(str::to_string),
+        kinds_seen: vec![ModelKind::Music],
+        device: model.map(|m| {
+            if m.to_ascii_lowercase().contains("cpu") {
+                "cpu".to_string()
+            } else {
+                "gpu".to_string()
+            }
+        }),
+        at: now,
+        ..Default::default()
+    }
+}
+
+/// Ask a running media engine at `base` what it is and which files it has: static reads only
+/// (`/system_stats`, `/models`, `/models/<folder>`, `/health`), with `x-abhoth-no-switch`.
+/// Never a prompt, a load or a queue change.
+pub async fn probe_media(
+    http: &reqwest::Client,
+    base: &str,
+    how: &str,
+    stamp: String,
+) -> Option<Probe> {
+    let base = base.trim_end_matches('/');
+    let get = |path: String| async move {
+        let r = http
+            .get(format!("{base}{path}"))
+            .header("x-abhoth-no-switch", "1")
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+            .ok()?;
+        if !r.status().is_success() {
+            return None;
+        }
+        r.json::<Value>().await.ok()
+    };
+    let now = chrono::Utc::now().timestamp();
+    match how {
+        "comfyui" => {
+            // busy (a prompt running): ask another time
+            let q = get("/queue".into()).await?;
+            if q["queue_running"].as_array().is_some_and(|a| !a.is_empty()) {
+                return None;
+            }
+            let stats = get("/system_stats".into()).await?;
+            let listed: Vec<String> = get("/models".into())
+                .await
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default();
+            let mut files = BTreeMap::new();
+            for f in COMFY_FOLDERS {
+                if !listed.iter().any(|x| x == f) {
+                    continue;
+                }
+                if let Some(v) = get(format!("/models/{f}")).await {
+                    let names: Vec<String> = serde_json::from_value(v).unwrap_or_default();
+                    if !names.is_empty() {
+                        files.insert((*f).to_string(), names);
+                    }
+                }
+            }
+            Some(parse_comfyui(stamp, &stats, files, now))
+        }
+        "sa3" => Some(parse_sa3(stamp, &get("/health".into()).await?, now)),
+        _ => None,
+    }
+}
+
+/// Where each media engine (one whose probe is `comfyui` or `sa3`) listens: (engine, server,
+/// base URL), from its ports on GPU and CPU cards.
+pub fn media_targets(c: &ControlConfig) -> Vec<(String, String, String)> {
+    let host_of = |server: &str| -> Option<String> {
+        let s = c.servers.get(server)?;
+        Some(if s.exec == super::schema::ExecKind::Local {
+            "127.0.0.1".to_string()
+        } else {
+            s.host.clone()
+        })
+    };
+    let mut out = Vec::new();
+    for (eid, e) in &c.engines {
+        if !matches!(probe_how(c, eid), "comfyui" | "sa3") {
+            continue;
+        }
+        let mut ports: Vec<(String, u16)> = Vec::new();
+        for (card, cd) in &c.cards {
+            if let Some(p) = e.port.get(card) {
+                ports.push((cd.server.clone(), *p));
+            }
+        }
+        for (server, p) in ports {
+            let Some(h) = host_of(&server) else { continue };
+            let t = (eid.clone(), server, format!("http://{h}:{p}"));
+            if !out.contains(&t) {
+                out.push(t);
+            }
+        }
+    }
+    out
+}
+
+/// Record a media probe for `engine` on `server` (its files differ per server).
+pub fn record_media_probe(engine: &str, server: &str, p: Probe) {
+    record_probe(&format!("{engine}@{server}"), p.clone());
+    record_probe(engine, p);
+}
+
+/// The files a media engine reported on `server` (its last probe), by folder.
+pub fn files_on(engine: &str, server: &str) -> Option<BTreeMap<String, Vec<String>>> {
+    probes()
+        .read()
+        .ok()?
+        .get(&format!("{engine}@{server}"))
+        .map(|p| p.files.clone())
+}
+
+/// Is a component's file on `server`, by any ComfyUI engine's last probe there? `None`: no
+/// probe has listed that server's files.
+pub fn component_present(
+    c: &ControlConfig,
+    role: &super::schema::ComponentRole,
+    file: &str,
+    server: &str,
+) -> Option<bool> {
+    let base = file.rsplit(['/', '\\']).next().unwrap_or(file);
+    let mut seen = false;
+    for eid in c.engines.keys() {
+        if probe_how(c, eid) != "comfyui" {
+            continue;
+        }
+        let Some(files) = files_on(eid, server) else {
+            continue;
+        };
+        seen = true;
+        let mut folders = vec![role.folder];
+        folders.extend(role.legacy.iter().copied());
+        if role.id == "diffusion" {
+            folders.push("unet_gguf");
+        }
+        if role.id == "text_encoder" {
+            folders.push("clip_gguf");
+        }
+        if folders.iter().any(|f| {
+            files
+                .get(*f)
+                .is_some_and(|v| v.iter().any(|x| x == file || x == base))
+        }) {
+            return Some(true);
+        }
+    }
+    seen.then_some(false)
 }
 
 /// The engine catalog as the admin pages show it.

@@ -152,6 +152,15 @@ fn servers(c: &ControlConfig, v: &mut Vec<Issue>) {
                 "the model folder must be an absolute path (no `..`)",
             ));
         }
+        if let Some(cr) = &s.comfy_root
+            && (!(cr.starts_with('/') || cr.as_bytes().get(1) == Some(&b':'))
+                || cr.split(['/', '\\']).any(|x| x == ".."))
+        {
+            v.push(Issue::err(
+                format!("servers.{}.comfy_root", key(id)),
+                "the ComfyUI model folder must be an absolute path (no `..`)",
+            ));
+        }
         for (i, r) in s.browse_roots.iter().enumerate() {
             if !r.starts_with('/') || super::browse::clean(r).is_err() {
                 v.push(Issue::err(
@@ -300,7 +309,7 @@ fn cards(c: &ControlConfig, v: &mut Vec<Issue>) {
                 v.push(Issue::err(
                     format!("{p}.engines.{}", key(kind)),
                     format!(
-                        "`{kind}` is not a model type (llm, tts, stt, image, music, embedding)"
+                        "`{kind}` is not a model type (llm, tts, stt, image, music, embedding, video)"
                     ),
                 ));
             }
@@ -318,6 +327,33 @@ fn cards(c: &ControlConfig, v: &mut Vec<Issue>) {
             v.push(Issue::err(
                 format!("{p}.server"),
                 format!("no server `{}`", card.server),
+            ));
+        }
+        if card.is_cpu() {
+            if !card.gpu_uuid.is_empty() {
+                v.push(Issue::err(
+                    format!("{p}.gpu_uuid"),
+                    "a CPU card has no GPU UUID (device = \"cpu\")",
+                ));
+            }
+            if card.ram_gib.is_none_or(|r| r <= 0.0) {
+                v.push(Issue::warn(
+                    format!("{p}.ram_gib"),
+                    "set the RAM engines on this CPU card may use (nothing fits until it is set)",
+                ));
+            }
+            if card.on_demand {
+                v.push(Issue::err(
+                    format!("{p}.on_demand"),
+                    "a CPU card is never part of a layout switch (on_demand = false)",
+                ));
+            }
+            continue;
+        }
+        if card.ram_gib.is_some() || card.cores.is_some() {
+            v.push(Issue::warn(
+                format!("{p}.ram_gib"),
+                "ram_gib and cores are for CPU cards (device = \"cpu\"); a GPU card uses vram_gib",
             ));
         }
         if !is_uuid(&card.gpu_uuid) {
@@ -403,6 +439,19 @@ fn engines(c: &ControlConfig, v: &mut Vec<Issue>) {
                 format!("{p}.process"),
                 "driver = \"process\" needs process = { command }",
             )),
+            DriverKind::External => {
+                for card in e.port.cards() {
+                    if c.cards
+                        .get(card)
+                        .is_some_and(|cd| cd.managed && !cd.is_cpu())
+                    {
+                        v.push(Issue::warn(
+                            format!("{p}.port.{card}"),
+                            format!("an external engine on managed card `{card}`: the router never observes it, so keep other engines off this card (engines = {{ llm = [] }})"),
+                        ));
+                    }
+                }
+            }
             DriverKind::Template if e.templates.is_none() => v.push(Issue::err(
                 format!("{p}.templates"),
                 "driver = \"template\" needs templates = { start, stop, status }",
@@ -503,6 +552,63 @@ fn models(c: &ControlConfig, v: &mut Vec<Issue>) {
                         format!("no engine `{e}` (yet)"),
                     ));
                 }
+            }
+        }
+        // D153: components, what a model needs, other names
+        if let Some(r) = &m.role {
+            if super::schema::component_role(r).is_none() {
+                v.push(Issue::err(
+                    format!("{mp}.role"),
+                    format!(
+                        "`{r}` is not a component role ({})",
+                        super::schema::COMPONENT_ROLES
+                            .iter()
+                            .map(|x| x.id)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                ));
+            }
+            if !matches!(
+                m.kind(),
+                super::schema::ModelKind::Image | super::schema::ModelKind::Video
+            ) {
+                v.push(Issue::err(
+                    format!("{mp}.role"),
+                    "only image and video models are components (kind = \"image\" or \"video\")",
+                ));
+            }
+        }
+        for n in &m.needs {
+            match c.models.get(n) {
+                None => v.push(Issue::err(format!("{mp}.needs"), format!("no model `{n}`"))),
+                Some(x) if x.role.is_none() => v.push(Issue::err(
+                    format!("{mp}.needs"),
+                    format!("`{n}` is not a component (give it a role)"),
+                )),
+                _ if n == mid => v.push(Issue::err(
+                    format!("{mp}.needs"),
+                    "a model cannot need itself",
+                )),
+                _ => {}
+            }
+        }
+        for a in &m.aliases {
+            if c.models.contains_key(a) || c.routes.contains_key(a) {
+                v.push(Issue::err(
+                    format!("{mp}.aliases"),
+                    format!("`{a}` is already a model or route name"),
+                ));
+            }
+            if let Some((other, _)) = c
+                .models
+                .iter()
+                .find(|(o, x)| *o != mid && x.aliases.contains(a))
+            {
+                v.push(Issue::err(
+                    format!("{mp}.aliases"),
+                    format!("`{a}` is also an alias of `{other}`"),
+                ));
             }
         }
         for sv in m.servers.iter().flatten() {

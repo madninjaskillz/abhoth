@@ -73,6 +73,9 @@ pub struct StartReq {
     /// Download into this folder instead of `<model_dir>/<owner>/<name>` (absolute, no `..`).
     #[serde(default)]
     pub dir: Option<String>,
+    /// A ComfyUI component (D153): the files go flat into `<comfy_root>/<role folder>/`.
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -230,7 +233,7 @@ impl Service {
                 .iter()
                 .filter(|(_, cd)| cd.managed)
                 .map(|(id, cd)| {
-                    let room = cd.vram_gib.map(|v| v - cd.reserve_gib);
+                    let room = cd.memory_gib().map(|v| v - cd.reserve_gib);
                     json!({"card": id, "server": cd.server, "label": cd.label, "roomGib": room,
                         "fits": room.map(|r| need <= r)})
                 })
@@ -329,7 +332,28 @@ impl Service {
                 })
             })
             .collect();
-        Ok(json!({"server": server, "gpus": gpus}))
+        // D153: the CPU as a card too (an older host without the builtin: no CPU line)
+        let cpu = match ex
+            .run(
+                ExecRequest::builtin(server, "cpu-info", json!({}), Duration::from_secs(15)),
+                &Cancel::new(),
+            )
+            .await
+        {
+            Ok(o) if o.ok() => serde_json::from_str::<Value>(o.stdout.trim())
+                .ok()
+                .map(|mut v| {
+                    let known = c
+                        .cards
+                        .iter()
+                        .find(|(_, cd)| cd.server == server && cd.is_cpu())
+                        .map(|(k, _)| k.clone());
+                    v["card"] = json!(known);
+                    v
+                }),
+            _ => None,
+        };
+        Ok(json!({"server": server, "gpus": gpus, "cpu": cpu}))
     }
 
     // ── folder browsing ────────────────────────────────────────────────────────────────────
@@ -507,6 +531,30 @@ impl Service {
         Ok(format!("{}/{repo}", md.trim_end_matches('/')))
     }
 
+    /// Where a component of `role` goes on `server`: `<comfy_root>/<folder>` (default
+    /// `<model_dir>/comfyui/<folder>`).
+    pub fn comfy_dir_for(c: &ControlConfig, server: &str, role: &str) -> Result<String, String> {
+        let r = super::schema::component_role(role)
+            .ok_or_else(|| format!("`{role}` is not a component role"))?;
+        let s = c
+            .servers
+            .get(server)
+            .ok_or_else(|| format!("no server `{server}`"))?;
+        let mut root = match (&s.comfy_root, &s.model_dir) {
+            (Some(r), _) => r.trim_end_matches('/').to_string(),
+            (None, Some(md)) => format!("{}/comfyui", md.trim_end_matches('/')),
+            (None, None) => {
+                return Err(format!(
+                    "set a ComfyUI model folder (or a model folder) for {server} first"
+                ));
+            }
+        };
+        for (k, v) in &s.vars {
+            root = root.replace(&format!("{{var:{k}}}"), v);
+        }
+        Ok(format!("{root}/{}", r.folder))
+    }
+
     /// Start a download job.
     pub fn start(self: &Arc<Self>, req: StartReq, who: &str) -> Result<Download, String> {
         let c = self.config()?;
@@ -529,8 +577,26 @@ impl Service {
                 }
                 super::browse::clean(d)?
             }
-            None => Self::dir_for(&c, &req.server, &req.repo)?,
+            None => {
+                let role = req.role.clone().or_else(|| {
+                    req.model
+                        .as_ref()
+                        .and_then(|m| c.models.get(m))
+                        .and_then(|m| m.role.clone())
+                });
+                match role {
+                    Some(r) => Self::comfy_dir_for(&c, &req.server, &r)?,
+                    None => Self::dir_for(&c, &req.server, &req.repo)?,
+                }
+            }
         };
+        // ComfyUI lists a folder's files by name: components go in flat
+        let flat = req.role.is_some()
+            || req
+                .model
+                .as_ref()
+                .and_then(|m| c.models.get(m))
+                .is_some_and(|m| m.role.is_some());
         if let Some(m) = &req.model
             && !c.models.contains_key(m)
         {
@@ -559,7 +625,11 @@ impl Service {
                     path: f.path.clone(),
                     size: f.size,
                     sha256: f.sha256.clone(),
-                    dest: format!("{dir}/{}", f.path),
+                    dest: if flat {
+                        format!("{dir}/{}", f.path.rsplit('/').next().unwrap_or(&f.path))
+                    } else {
+                        format!("{dir}/{}", f.path)
+                    },
                     bytes: 0,
                     done: false,
                 })

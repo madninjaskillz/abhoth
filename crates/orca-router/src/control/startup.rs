@@ -234,6 +234,32 @@ async fn probe_engines(st: Arc<AppState>, c: Arc<ControlConfig>, running: Arc<Mu
     }
 }
 
+/// Ask media engines (ComfyUI, Stable Audio) what they are and which files they have (D153):
+/// static reads only, never a prompt or a load; a busy ComfyUI is skipped until next time.
+async fn probe_media_engines(st: Arc<AppState>, c: Arc<ControlConfig>) {
+    tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+    loop {
+        for (engine, server, base) in super::caps::media_targets(&c) {
+            let Some(e) = c.engines.get(&engine) else {
+                continue;
+            };
+            let how = super::caps::probe_how(&c, &engine);
+            match super::caps::probe_media(&st.http, &base, how, super::caps::stamp(e)).await {
+                Some(p) => {
+                    tracing::info!(
+                        "media engine {engine} on {server}: probed ({}, {} folders)",
+                        p.version.as_deref().unwrap_or("no version"),
+                        p.files.len()
+                    );
+                    super::caps::record_media_probe(&engine, &server, p);
+                }
+                None => tracing::debug!("media engine {engine} on {server}: no answer or busy"),
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(600)).await;
+    }
+}
+
 /// The effective cold policy of a route.
 fn cold_of(c: &ControlConfig, r: &schema::Route) -> ColdPolicy {
     r.cold.unwrap_or(c.route_defaults.cold)
@@ -1091,6 +1117,7 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
     let inv = crate::control::downloads::install(main, &state_dir, backend.clone());
     inv.note_started(&c);
     tokio::spawn(probe_engines(st.clone(), c.clone(), running.clone()));
+    tokio::spawn(probe_media_engines(st.clone(), c.clone()));
     crate::control_api::bootstrap_hint(&local_keys, &c, main);
     let cp = Arc::new(ControlPlane {
         access: Access::new(c.access.clone(), token).with_local_keys(local_keys),

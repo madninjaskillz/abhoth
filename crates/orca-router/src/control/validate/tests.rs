@@ -302,3 +302,117 @@ fn issues_get_file_and_line() {
     assert_eq!(i.line, Some(want), "{i}");
     assert!(i.to_string().contains("router.toml"));
 }
+
+// ── D153: CPU cards, components ─────────────────────────────────────────────────────────────
+
+const MEDIA: &str = r#"
+[cards.CPU]
+server = "gpu"
+device = "cpu"
+label = "EPYC"
+cores = 48
+ram_gib = 64.0
+managed = false
+
+[engines.comfyui]
+driver = "template"
+port = { C = 8188 }
+templates = { start = "true", stop = "true", status = "true" }
+
+[models.qwen-unet]
+kind = "image"
+role = "diffusion"
+[models.qwen-unet.artifacts.comfyui]
+file = "qwen-image-2.1-turbo-Q4_K_M.gguf"
+
+[models.qwen-image]
+kind = "image"
+needs = ["qwen-unet"]
+aliases = ["qwen"]
+"#;
+
+fn media(extra: &str) -> ControlConfig {
+    toml::from_str(&format!("{SAMPLE}\n{MEDIA}\n{extra}")).expect("parses")
+}
+
+#[test]
+fn cpu_cards_and_components_are_valid() {
+    let c = media("");
+    let e = errors(&c);
+    assert!(e.is_empty(), "{e:#?}");
+    assert!(c.cards["CPU"].is_cpu());
+    assert_eq!(c.cards["CPU"].memory_gib(), Some(64.0));
+    // a CPU card is never one of the cards a switch manages
+    assert!(!c.managed_cards("gpu").contains(&"CPU"));
+}
+
+#[test]
+fn cpu_card_rules() {
+    let mut c = media("");
+    {
+        let cpu = c.cards.get_mut("CPU").unwrap();
+        cpu.gpu_uuid = "GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into();
+        cpu.on_demand = true;
+        cpu.ram_gib = None;
+    }
+    assert!(has(&c, "cards.CPU.gpu_uuid", "no GPU UUID"));
+    assert!(has(&c, "cards.CPU.on_demand", "never part of a layout"));
+    assert!(has(&c, "cards.CPU.ram_gib", "set the RAM"));
+    let mut c = media("");
+    c.cards.get_mut("A").unwrap().ram_gib = Some(8.0);
+    assert!(has(&c, "cards.A.ram_gib", "for CPU cards"));
+}
+
+#[test]
+fn roles_needs_and_aliases_are_checked() {
+    use crate::control::schema::ModelKind;
+    let mut c = media("");
+    c.models.get_mut("qwen-unet").unwrap().role = Some("nope".into());
+    assert!(has(&c, "models.qwen-unet.role", "not a component role"));
+    let mut c = media("");
+    c.models.get_mut("qwen-unet").unwrap().kind = Some(ModelKind::Llm);
+    assert!(has(&c, "models.qwen-unet.role", "only image and video"));
+    let mut c = media("");
+    c.models.get_mut("qwen-image").unwrap().needs = vec!["ghost".into(), "qwen-image".into()];
+    assert!(has(&c, "models.qwen-image.needs", "no model `ghost`"));
+    assert!(has(&c, "models.qwen-image.needs", "not a component"));
+    let mut c = media("");
+    c.models.get_mut("qwen-unet").unwrap().aliases = vec!["qwen".into()];
+    assert!(has(&c, "models.qwen-unet.aliases", "also an alias"));
+    let mut c = media("");
+    c.models.get_mut("qwen-image").unwrap().aliases = vec!["qwen-unet".into()];
+    assert!(has(&c, "models.qwen-image.aliases", "already a model"));
+    let mut c = media("");
+    c.servers.get_mut("gpu").unwrap().comfy_root = Some("rel/path".into());
+    assert!(has(&c, "servers.gpu.comfy_root", "absolute"));
+}
+
+#[test]
+fn the_video_kind_is_a_card_engine_kind() {
+    let mut c = media("");
+    c.cards.get_mut("C").unwrap().engines = Some(
+        [("video".to_string(), vec!["comfyui".to_string()])]
+            .into_iter()
+            .collect(),
+    );
+    assert!(errors(&c).is_empty(), "{:#?}", errors(&c));
+    c.cards.get_mut("C").unwrap().engines = Some(
+        [("lora".to_string(), vec!["comfyui".to_string()])]
+            .into_iter()
+            .collect(),
+    );
+    assert!(has(&c, "cards.C.engines.lora", "not a model type"));
+}
+
+#[test]
+fn external_engines_never_sit_on_managed_cards() {
+    let mut c = media("");
+    let e = c.engines.get_mut("comfyui").unwrap();
+    e.driver = DriverKind::External;
+    e.templates = None;
+    assert!(errors(&c).is_empty(), "{:#?}", errors(&c));
+    c.engines.get_mut("comfyui").unwrap().port =
+        super::super::schema::PerCard::Each([("A".to_string(), 8188u16)].into_iter().collect());
+    assert!(has(&c, "engines.comfyui.port.A", "never observes it"));
+    assert!(errors(&c).is_empty());
+}

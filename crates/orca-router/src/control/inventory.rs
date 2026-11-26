@@ -190,7 +190,7 @@ pub fn place(c: &ControlConfig, model: &str, pin: &Pin) -> Vec<CardOption> {
             rank: usize::MAX,
             ok: false,
             need_gib: None,
-            room_gib: cd.vram_gib.map(|v| round1(v - cd.reserve_gib)),
+            room_gib: cd.memory_gib().map(|v| round1(v - cd.reserve_gib)),
             restore: false,
             preset: None,
             why: Vec::new(),
@@ -266,7 +266,7 @@ pub fn place(c: &ControlConfig, model: &str, pin: &Pin) -> Vec<CardOption> {
                 why_all.push(format!("{eid} has no engine profile to run it with"));
                 continue;
             }
-            let room = cd.vram_gib.map(|v| v - cd.reserve_gib);
+            let room = cd.memory_gib().map(|v| v - cd.reserve_gib);
             let mut chosen: Option<(String, f64, bool)> = None;
             for p in &profiles {
                 let need = a.vram_gib + e.profiles[p].vram_gib;
@@ -339,6 +339,7 @@ impl ModelKind {
             ModelKind::Image => "image models",
             ModelKind::Music => "music models",
             ModelKind::Embedding => "embeddings",
+            ModelKind::Video => "video models",
         }
     }
 }
@@ -573,7 +574,7 @@ pub fn view(c: &ControlConfig) -> Value {
                         .collect();
                     json!({
                         "id": cid, "label": cd.label, "gpuUuid": cd.gpu_uuid,
-                        "vramGib": cd.vram_gib, "reserveGib": cd.reserve_gib,
+                        "vramGib": cd.vram_gib, "device": if cd.is_cpu() { "cpu" } else { "gpu" }, "ramGib": cd.ram_gib, "cores": cd.cores, "reserveGib": cd.reserve_gib,
                         "managed": cd.managed, "onDemand": cd.on_demand,
                         "explicit": cd.engines.is_some(), "engines": allowed,
                     })
@@ -582,7 +583,7 @@ pub fn view(c: &ControlConfig) -> Value {
             json!({
                 "id": sid, "title": s.title, "host": s.host,
                 "exec": match s.exec { super::schema::ExecKind::Local => "local", super::schema::ExecKind::Ssh => "ssh" },
-                "modelDir": s.model_dir, "cards": cards,
+                "modelDir": s.model_dir, "comfyRoot": s.comfy_root, "cards": cards,
             })
         })
         .collect();
@@ -645,6 +646,9 @@ pub fn view(c: &ControlConfig) -> Value {
                 "servers": m.servers, "context": m.context, "sizeGib": m.size_gib, "licence": m.licence,
                 "source": m.source.as_ref().map(|s| json!({"hf": s.hf, "revision": s.revision, "files": s.files, "gated": s.gated})),
                 "routes": routes,
+                "role": m.role, "needs": m.needs, "aliases": m.aliases,
+                "present": component_presence(c, m),
+                "needsMet": needs_met(c, m),
                 "placement": place(c, mid, &Pin::default()),
                 "pinned": pin_od.filter(|o| o.pick.is_some()).map(|o| place(c, mid, &Pin::of(Some(o)))),
             })
@@ -654,10 +658,71 @@ pub fn view(c: &ControlConfig) -> Value {
         "migrated": migrated(c),
         "catalog": super::caps::catalog_view(),
         "kinds": ModelKind::ALL.iter().map(|k| json!({"id": k.as_str(), "label": k.label()})).collect::<Vec<_>>(),
+        "roles": super::schema::COMPONENT_ROLES,
         "servers": servers,
         "engines": engines,
         "models": models,
     })
+}
+
+/// The file a component model is (its first artifact's, else its first source file).
+pub fn component_file(m: &super::schema::Model) -> Option<String> {
+    m.artifacts
+        .values()
+        .map(|a| a.file.clone())
+        .find(|f| !f.is_empty())
+        .or_else(|| m.source.as_ref().and_then(|s| s.files.first().cloned()))
+}
+
+/// Per server: is this component's file there, by the last ComfyUI probe (`null`: not known).
+/// Empty for a model that is not a component.
+pub fn component_presence(
+    c: &ControlConfig,
+    m: &super::schema::Model,
+) -> serde_json::Map<String, Value> {
+    let mut out = serde_json::Map::new();
+    let (Some(role), Some(file)) = (
+        m.role.as_deref().and_then(super::schema::component_role),
+        component_file(m),
+    ) else {
+        return out;
+    };
+    for sid in c.servers.keys() {
+        out.insert(
+            sid.clone(),
+            json!(super::caps::component_present(c, role, &file, sid)),
+        );
+    }
+    out
+}
+
+/// Per server, for a model that needs components: the ones missing there (by probe, else by
+/// `servers`). Empty when it needs nothing.
+pub fn needs_met(c: &ControlConfig, m: &super::schema::Model) -> serde_json::Map<String, Value> {
+    let mut out = serde_json::Map::new();
+    if m.needs.is_empty() {
+        return out;
+    }
+    for sid in c.servers.keys() {
+        let missing: Vec<&String> = m
+            .needs
+            .iter()
+            .filter(|n| {
+                let Some(x) = c.models.get(*n) else {
+                    return true;
+                };
+                match component_presence(c, x).get(sid).and_then(Value::as_bool) {
+                    Some(p) => !p,
+                    None => !x.on_server(sid),
+                }
+            })
+            .collect();
+        out.insert(
+            sid.clone(),
+            json!({"ok": missing.is_empty(), "missing": missing}),
+        );
+    }
+    out
 }
 
 #[cfg(test)]

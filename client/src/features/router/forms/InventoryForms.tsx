@@ -18,6 +18,7 @@ import { PathField } from "./FolderBrowser";
 import {
   KIND_LABELS, cardEnginesEdit, enginesFor, enginesForKind, fitSummary, fmtGib, modelEngineEdits, modelIdFromRepo, moved, newCardEdits, newModelEdits,
   cleanPath, newServerEdits, nextCardId, nextStep, pct, placementLine, repoDir, toggled, validModelDir, validateServerId,
+  newCpuCardEdits, presenceLine, needsLine,
   type DetectedGpu, type DownloadJob, type HfChoice, type HfDetails, type InvCard, type InvEngine, type InvModel, type InvServer, type Inventory, type ModelKind,
 } from "./inventoryModel";
 
@@ -156,7 +157,7 @@ function CardLine({ c, inv, onEngines }: { c: InvCard; inv: Inventory; onEngines
     <div className="flex flex-wrap items-center gap-2 px-3 py-2" data-testid="inv-card" data-card={c.id}>
       <span className="flex size-7 items-center justify-center rounded bg-muted font-mono text-xs font-semibold">{c.id}</span>
       <div className="min-w-0 flex-1">
-        <div className="text-xs font-medium">{c.label || c.gpuUuid} <span className="text-muted-foreground">· {fmtGib(c.vramGib)}</span>{!c.managed && <Badge variant="outline" className="ml-1">not managed</Badge>}{c.onDemand && <Badge variant="secondary" className="ml-1">on demand</Badge>}</div>
+        <div className="text-xs font-medium">{c.device === "cpu" && <Badge variant="secondary" className="mr-1" data-testid="inv-cpu-badge">CPU</Badge>}{c.label || c.gpuUuid} <span className="text-muted-foreground">· {c.device === "cpu" ? `${fmtGib(c.ramGib)} RAM${c.cores ? ` · ${c.cores} cores` : ""}` : fmtGib(c.vramGib)}</span>{!c.managed && <Badge variant="outline" className="ml-1">not managed</Badge>}{c.onDemand && <Badge variant="secondary" className="ml-1">on demand</Badge>}</div>
         <div className="mt-0.5 flex flex-wrap gap-1">
           {kinds.length === 0 && <span className="text-[11px] text-muted-foreground">runs nothing yet</span>}
           {kinds.map(([k, v]) => (
@@ -214,6 +215,9 @@ function DetectDialog({ server, inv, busy, onClose, submit }: { server: InvServe
   const q = useQuery({ queryKey: ["router-detect", server.id], queryFn: () => routerApi.detect(server.id), retry: false });
   const taken = inv.servers.flatMap((s) => s.cards.map((c) => c.id));
   const fresh = (q.data?.gpus ?? []).filter((g) => !g.card);
+  const cpu = q.data?.cpu ?? null;
+  const [withCpu, setWithCpu] = useState(true);
+  const addCpu = !!cpu && !cpu.card && withCpu;
   const [pick, setPick] = useState<Record<string, boolean>>({});
   const chosen: DetectedGpu[] = fresh.filter((g) => pick[g.uuid] ?? true);
   const llm = enginesForKind(inv, "llm").map((e) => e.id);
@@ -224,11 +228,12 @@ function DetectDialog({ server, inv, busy, onClose, submit }: { server: InvServe
       ids.push(id);
       return newCardEdits(id, server.id, g, { llm });
     });
+    if (addCpu) edits.push(...newCpuCardEdits(`${server.id.toUpperCase().slice(0, 12)}-CPU`.replace(/[^A-Z0-9_-]/g, "-"), server.id, cpu!));
     submit(edits, onClose);
   };
   return (
     <FormDialog title={`GPUs on ${server.title || server.id}`} description="What nvidia-smi reports on the server. New ones become cards (by UUID, so a reboot's reordering is harmless)." onClose={onClose}
-      onSubmit={add} busy={busy || q.isLoading} error={q.isError ? errText(q.error) : chosen.length === 0 && q.data ? "every GPU here is already a card" : null} submitLabel={`Add ${chosen.length} card${chosen.length === 1 ? "" : "s"}`} testid="inv-detect-dialog">
+      onSubmit={add} busy={busy || q.isLoading} error={q.isError ? errText(q.error) : chosen.length === 0 && !addCpu && q.data ? "every GPU (and the CPU) here is already a card" : null} submitLabel={`Add ${chosen.length + (addCpu ? 1 : 0)} card${chosen.length + (addCpu ? 1 : 0) === 1 ? "" : "s"}`} testid="inv-detect-dialog">
       {q.isLoading && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> Asking the server…</div>}
       {(q.data?.gpus ?? []).map((g) => (
         <div key={g.uuid} className="flex items-center gap-2 rounded border px-2 py-1.5 text-xs" data-testid="inv-gpu">
@@ -238,6 +243,15 @@ function DetectDialog({ server, inv, busy, onClose, submit }: { server: InvServe
           <span className="ml-auto hidden truncate font-mono text-[10px] text-muted-foreground sm:inline">{g.uuid}</span>
         </div>
       ))}
+      {cpu && (
+        <div className="flex items-center gap-2 rounded border px-2 py-1.5 text-xs" data-testid="inv-cpu">
+          {cpu.card ? <Badge variant="success">card {cpu.card}</Badge> : <input type="checkbox" checked={withCpu} onChange={(e) => setWithCpu(e.target.checked)} />}
+          <Badge variant="secondary">CPU</Badge>
+          <span className="font-medium">{cpu.model || "CPU"}</span>
+          <span className="text-muted-foreground">{cpu.cores ? `${cpu.cores} cores · ` : ""}{cpu.threads} threads · {fmtGib(cpu.ramGib)} RAM ({fmtGib(cpu.availableGib)} free)</span>
+          {(cpu.simd ?? []).length > 0 && <span className="ml-auto hidden font-mono text-[10px] text-muted-foreground sm:inline">{cpu.simd!.join(" ")}</span>}
+        </div>
+      )}
       {chosen.length > 0 && <p className="text-[11px] text-muted-foreground">New cards may run language models on {llm.length ? llm.join(", ") : "no engine yet"}; change it per card under Engines….</p>}
     </FormDialog>
   );
@@ -438,12 +452,16 @@ function ModelsPane({ inv, submit, busy, onDownloads }: { inv: Inventory; submit
                 <div className="flex flex-wrap gap-1 pt-0.5">
                   {[m.format ?? m.files[0]?.format, m.arch ?? m.files[0]?.arch, m.quant ?? m.files[0]?.quant].filter(Boolean).map((x) => <Badge key={x!} variant="outline">{x}</Badge>)}
                   {m.vision && <Badge variant="secondary">vision</Badge>}
+                  {m.role && <Badge variant="secondary" data-testid="inv-role">{inv.roles?.find((r) => r.id === m.role)?.title ?? m.role}</Badge>}
+                  {(m.aliases ?? []).length > 0 && <span className="text-[11px] text-muted-foreground">also {m.aliases!.join(", ")}</span>}
                   {m.source?.gated && <Badge variant="warning"><Lock className="mr-0.5 size-3" />gated</Badge>}
                 </div>
               </div>
               <div className="text-right text-[11px]">
                 <div><span className="text-muted-foreground">primary</span> <b>{m.primary ?? "none"}</b>{m.order.length > 1 && <span className="text-muted-foreground"> +{m.order.length - 1}</span>}</div>
-                <div className={cn(m.placement.some((p) => p.ok) ? "text-muted-foreground" : "text-warning")}>{placementLine(m)}</div>
+                {m.role ? <div className="text-muted-foreground" data-testid="inv-presence">{presenceLine(m) || "files not listed yet"}</div>
+                  : (m.needs ?? []).length > 0 ? <div className="text-muted-foreground" data-testid="inv-needs">{needsLine(m)}</div>
+                  : <div className={cn(m.placement.some((p) => p.ok) ? "text-muted-foreground" : "text-warning")}>{placementLine(m)}</div>}
               </div>
             </button>
           ))}

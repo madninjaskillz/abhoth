@@ -393,3 +393,174 @@ fn gguf_metadata_gives_the_architecture() {
     // cut short: no answer rather than a panic
     assert!(gguf_meta(&b[..30]).is_none());
 }
+
+// ── D153: media engines ─────────────────────────────────────────────────────────────────────
+
+const COMFY: &str = r#"
+[engines.comfyui]
+driver = "template"
+port = { C = 8188 }
+templates = { start = "true", stop = "true", status = "true" }
+
+[engines.sa3]
+driver = "template"
+port = { C = 8095 }
+templates = { start = "true", stop = "true", status = "true" }
+
+[models.unet]
+kind = "image"
+role = "diffusion"
+format = "gguf"
+[models.unet.artifacts.comfyui]
+file = "qwen-image-2.1-turbo-Q4_K_M.gguf"
+"#;
+
+#[test]
+fn comfyui_and_sa3_are_catalog_media_engines() {
+    let c = cfg(COMFY);
+    let cp = caps(&c, "comfyui");
+    assert!(cp.kinds.contains(&ModelKind::Image) && cp.kinds.contains(&ModelKind::Video));
+    assert_eq!(probe_how(&c, "comfyui"), "comfyui");
+    assert_eq!(probe_how(&c, "sa3"), "sa3");
+    assert_eq!(format_of_name("medium.tflite").as_deref(), Some("tflite"));
+    // a GGUF diffusion model is something ComfyUI runs
+    let m = &c.models["unet"];
+    assert_eq!(engine_order(&c, m), vec!["comfyui".to_string()]);
+    let t = media_targets(&c);
+    assert!(
+        t.contains(&(
+            "comfyui".into(),
+            "gpu".into(),
+            "http://gpu-host:8188".into()
+        )),
+        "{t:?}"
+    );
+    assert!(t.iter().any(|x| x.0 == "sa3"));
+    assert!(!t.iter().any(|x| x.0 == "llamacpp"));
+    // a model made of components runs where every component runs
+    let mut c = c;
+    let mut recipe = crate::control::schema::Model {
+        kind: Some(ModelKind::Image),
+        needs: vec!["unet".into()],
+        ..Default::default()
+    };
+    c.models.insert("img".into(), recipe.clone());
+    assert_eq!(engine_order(&c, &recipe), vec!["comfyui".to_string()]);
+    let s = supported(&c, &recipe);
+    let cm = s.iter().find(|m| m.engine == "comfyui").unwrap();
+    assert!(cm.ok && cm.via == "components", "{cm:?}");
+    assert!(s.iter().filter(|m| m.engine != "comfyui").all(|m| !m.ok));
+    recipe.needs.push("ghost".into());
+    assert!(engine_order(&c, &recipe).is_empty());
+    // a recipe that needs itself (an invalid config) does not recurse
+    let mut selfish = recipe.clone();
+    selfish.needs = vec!["selfish".into()];
+    c.models.insert("selfish".into(), selfish.clone());
+    let _ = supported(&c, &selfish);
+}
+
+#[test]
+fn comfyui_probe_lists_files_and_presence_follows_it() {
+    let c = cfg(COMFY);
+    let stats = json!({"system": {"comfyui_version": "0.39.0"},
+        "devices": [{"name": "cuda:0 Tesla V100-SXM2-16GB : cudaMallocAsync"}]});
+    let mut files = BTreeMap::new();
+    files.insert(
+        "unet_gguf".to_string(),
+        vec!["qwen-image-2.1-turbo-Q4_K_M.gguf".to_string()],
+    );
+    let p = parse_comfyui("s".into(), &stats, files, 1);
+    assert_eq!(p.version.as_deref(), Some("ComfyUI 0.39.0"));
+    assert!(p.device.as_deref().unwrap().contains("V100"));
+    let role = crate::control::schema::component_role("diffusion").unwrap();
+    // nothing probed on that server yet: unknown
+    assert_eq!(
+        component_present(&c, role, "qwen-image-2.1-turbo-Q4_K_M.gguf", "media-test"),
+        None
+    );
+    record_media_probe("comfyui", "media-test", p);
+    assert_eq!(
+        component_present(&c, role, "x/qwen-image-2.1-turbo-Q4_K_M.gguf", "media-test"),
+        Some(true)
+    );
+    assert_eq!(
+        component_present(&c, role, "other.safetensors", "media-test"),
+        Some(false)
+    );
+    let sa = parse_sa3(
+        "s".into(),
+        &json!({"ok": true, "model": "stable-audio-3-medium (tflite, cpu)"}),
+        1,
+    );
+    assert_eq!(sa.device.as_deref(), Some("cpu"));
+    assert_eq!(sa.kinds_seen, vec![ModelKind::Music]);
+}
+
+#[tokio::test]
+async fn a_media_probe_reads_static_endpoints_and_skips_a_busy_comfyui() {
+    use axum::{Router, routing::get};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let busy = std::sync::Arc::new(AtomicBool::new(true));
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(String, bool)>::new()));
+    let (b2, s2) = (busy.clone(), seen.clone());
+    let app = Router::new().route(
+        "/{*p}",
+        get(
+            move |axum::extract::Path(p): axum::extract::Path<String>, h: axum::http::HeaderMap| {
+                let (b2, s2) = (b2.clone(), s2.clone());
+                async move {
+                    s2.lock()
+                        .unwrap()
+                        .push((p.clone(), h.contains_key("x-abhoth-no-switch")));
+                    axum::Json(match p.as_str() {
+                        "queue" if b2.load(Ordering::SeqCst) => {
+                            json!({"queue_running": [[1]], "queue_pending": []})
+                        }
+                        "queue" => json!({"queue_running": [], "queue_pending": []}),
+                        "system_stats" => json!({"system": {"comfyui_version": "0.39.0"}}),
+                        "models" => json!(["loras", "unet_gguf", "custom_nodes"]),
+                        "models/loras" => json!(["a.safetensors"]),
+                        "models/unet_gguf" => json!(["q.gguf"]),
+                        _ => json!([]),
+                    })
+                }
+            },
+        ),
+    );
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = l.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(l, app).await.ok() });
+    let http = reqwest::Client::new();
+    let base = format!("http://{addr}");
+    assert!(
+        probe_media(&http, &base, "comfyui", "s".into())
+            .await
+            .is_none()
+    );
+    busy.store(false, Ordering::SeqCst);
+    let p = probe_media(&http, &base, "comfyui", "s".into())
+        .await
+        .unwrap();
+    assert_eq!(p.files["loras"], vec!["a.safetensors".to_string()]);
+    assert_eq!(p.files["unet_gguf"], vec!["q.gguf".to_string()]);
+    assert!(!p.files.contains_key("custom_nodes"));
+    let seen = seen.lock().unwrap().clone();
+    assert!(seen.iter().all(|(_, h)| *h), "every read says no-switch");
+    assert!(
+        seen.iter()
+            .all(|(p, _)| p == "queue" || p == "system_stats" || p.starts_with("models"))
+    );
+}
+
+#[test]
+fn cpu_info_is_parsed() {
+    let ci = "processor\t: 0\nmodel name\t: AMD EPYC 7K62 48-Core Processor\nphysical id\t: 0\ncore id\t\t: 0\nflags\t\t: fpu avx avx2 fma f16c\n\nprocessor\t: 1\nmodel name\t: AMD EPYC 7K62 48-Core Processor\nphysical id\t: 0\ncore id\t\t: 0\nflags\t\t: fpu avx avx2 fma f16c\n\nprocessor\t: 2\nphysical id\t: 0\ncore id\t\t: 1\n";
+    let mi = "MemTotal:       263179472 kB\nMemFree:        117000000 kB\nMemAvailable:   221000000 kB\n";
+    let v = crate::control::builtins::parse_cpu_info(ci, mi, 3);
+    assert_eq!(v["model"], "AMD EPYC 7K62 48-Core Processor");
+    assert_eq!(v["threads"], 3);
+    assert_eq!(v["cores"], 2);
+    assert_eq!(v["ramGib"], 251.0);
+    assert_eq!(v["availableGib"], 210.8);
+    assert_eq!(v["simd"], json!(["avx", "avx2", "fma", "f16c"]));
+}

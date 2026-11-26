@@ -318,6 +318,10 @@ pub struct Server {
     /// /dev, /run and /boot). On a strict host the allowlist's read paths apply as well.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub browse_roots: Vec<String>,
+    /// The ComfyUI model root on this server (D153): component files go to
+    /// `<comfy_root>/<role folder>/`. Unset: `<model_dir>/comfyui`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comfy_root: Option<String>,
 }
 
 fn d_ready_timeout() -> u64 {
@@ -406,8 +410,20 @@ pub struct Hook {
 #[serde(deny_unknown_fields)]
 pub struct Card {
     pub server: String,
-    /// Pinned by UUID, never by index (index order is not stable).
+    /// A GPU (the default) or the server's CPU (D153: engines that run on the CPU, such as
+    /// Stable Audio's tflite build, are placed on a CPU card like any other).
+    #[serde(default, skip_serializing_if = "DeviceKind::is_gpu")]
+    pub device: DeviceKind,
+    /// Pinned by UUID, never by index (index order is not stable). Empty for a CPU card.
+    #[serde(default)]
     pub gpu_uuid: String,
+    /// CPU cards: the cores engines on it may use (informational; `cpus` pins them).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cores: Option<u32>,
+    /// CPU cards: the RAM engines on it may use, in GiB (placement fits against it, less
+    /// `reserve_gib`, the way a GPU card fits against its VRAM).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ram_gib: Option<f64>,
     #[serde(default)]
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -430,6 +446,35 @@ pub struct Card {
     /// (the behaviour before the inventory model).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engines: Option<IndexMap<String, Vec<String>>>,
+}
+
+/// What a card is (D153).
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceKind {
+    #[default]
+    Gpu,
+    Cpu,
+}
+
+impl DeviceKind {
+    pub fn is_gpu(&self) -> bool {
+        *self == DeviceKind::Gpu
+    }
+}
+
+impl Card {
+    pub fn is_cpu(&self) -> bool {
+        self.device == DeviceKind::Cpu
+    }
+    /// The memory engines on it fit against: VRAM for a GPU, the RAM budget for a CPU card.
+    pub fn memory_gib(&self) -> Option<f64> {
+        if self.is_cpu() {
+            self.ram_gib
+        } else {
+            self.vram_gib
+        }
+    }
 }
 
 fn d_reserve() -> f64 {
@@ -487,6 +532,9 @@ pub enum DriverKind {
     Systemd,
     Process,
     Template,
+    /// Started outside the router (an endpoint that is already running, D153): the router
+    /// probes and (later) routes to it, never starts, stops or observes it.
+    External,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -1039,12 +1087,27 @@ pub struct Model {
     /// Where it came from (a Hugging Face repo and the files picked).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<ModelSource>,
+    /// What part of a workflow this file is (D153), for image and video models that are
+    /// components rather than something to ask for: `diffusion`, `text_encoder`, `vae`,
+    /// `lora`… It decides the ComfyUI folder the file lives in ([`ComponentRole`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// The component models (by id) this model needs on a server to run there (D153).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub needs: Vec<String>,
+    /// Other names clients may ask for it by (D153).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
     /// Engine id -> the artifact that engine loads.
     #[serde(default)]
     pub artifacts: IndexMap<String, Artifact>,
 }
 
 impl Model {
+    /// A part of a workflow (it has a role), not something clients ask for.
+    pub fn is_component(&self) -> bool {
+        self.role.is_some()
+    }
     pub fn kind(&self) -> ModelKind {
         self.kind.unwrap_or_default()
     }
@@ -1069,16 +1132,19 @@ pub enum ModelKind {
     Image,
     Music,
     Embedding,
+    /// Video generation (ComfyUI workflows such as Wan or LTXV; D153).
+    Video,
 }
 
 impl ModelKind {
-    pub const ALL: [ModelKind; 6] = [
+    pub const ALL: [ModelKind; 7] = [
         ModelKind::Llm,
         ModelKind::Tts,
         ModelKind::Stt,
         ModelKind::Image,
         ModelKind::Music,
         ModelKind::Embedding,
+        ModelKind::Video,
     ];
     pub fn as_str(self) -> &'static str {
         match self {
@@ -1088,11 +1154,103 @@ impl ModelKind {
             ModelKind::Image => "image",
             ModelKind::Music => "music",
             ModelKind::Embedding => "embedding",
+            ModelKind::Video => "video",
         }
     }
     pub fn parse(s: &str) -> Option<ModelKind> {
         ModelKind::ALL.into_iter().find(|k| k.as_str() == s)
     }
+}
+
+/// A component's role and the ComfyUI folder its files live in (D153).
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentRole {
+    pub id: &'static str,
+    pub title: &'static str,
+    /// The folder under the ComfyUI model root (the modern name).
+    pub folder: &'static str,
+    /// Older folder names ComfyUI also reads for it (`unet`, `clip`).
+    pub legacy: &'static [&'static str],
+}
+
+pub const COMPONENT_ROLES: &[ComponentRole] = &[
+    ComponentRole {
+        id: "checkpoint",
+        title: "Checkpoint (all in one)",
+        folder: "checkpoints",
+        legacy: &[],
+    },
+    ComponentRole {
+        id: "diffusion",
+        title: "Diffusion model",
+        folder: "diffusion_models",
+        legacy: &["unet"],
+    },
+    ComponentRole {
+        id: "text_encoder",
+        title: "Text encoder",
+        folder: "text_encoders",
+        legacy: &["clip"],
+    },
+    ComponentRole {
+        id: "vae",
+        title: "VAE",
+        folder: "vae",
+        legacy: &[],
+    },
+    ComponentRole {
+        id: "lora",
+        title: "LoRA",
+        folder: "loras",
+        legacy: &[],
+    },
+    ComponentRole {
+        id: "controlnet",
+        title: "ControlNet",
+        folder: "controlnet",
+        legacy: &[],
+    },
+    ComponentRole {
+        id: "ipadapter",
+        title: "IP-Adapter",
+        folder: "ipadapter",
+        legacy: &[],
+    },
+    ComponentRole {
+        id: "clip_vision",
+        title: "CLIP vision",
+        folder: "clip_vision",
+        legacy: &[],
+    },
+    ComponentRole {
+        id: "upscale",
+        title: "Upscaler",
+        folder: "upscale_models",
+        legacy: &[],
+    },
+    ComponentRole {
+        id: "background_removal",
+        title: "Background removal",
+        folder: "background_removal",
+        legacy: &[],
+    },
+    ComponentRole {
+        id: "embedding",
+        title: "Textual inversion",
+        folder: "embeddings",
+        legacy: &[],
+    },
+    ComponentRole {
+        id: "audio_encoder",
+        title: "Audio encoder",
+        folder: "audio_encoders",
+        legacy: &[],
+    },
+];
+
+pub fn component_role(id: &str) -> Option<&'static ComponentRole> {
+    COMPONENT_ROLES.iter().find(|r| r.id == id)
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
@@ -1628,7 +1786,7 @@ impl ControlConfig {
     pub fn managed_cards(&self, server: &str) -> Vec<&str> {
         self.cards
             .iter()
-            .filter(|(_, c)| c.server == server && c.managed)
+            .filter(|(_, c)| c.server == server && c.managed && !c.is_cpu())
             .map(|(k, _)| k.as_str())
             .collect()
     }

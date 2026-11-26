@@ -83,7 +83,7 @@ fn instance_name(c: &ControlConfig, e: &Engine, card: &str, v: &Vars) -> Result<
             .as_ref()
             .map(|s| s.unit.clone())
             .unwrap_or_default(),
-        DriverKind::Process | DriverKind::Template => e
+        DriverKind::Process | DriverKind::Template | DriverKind::External => e
             .container
             .clone()
             .unwrap_or_else(|| "{engine}-{card_lc}".into()),

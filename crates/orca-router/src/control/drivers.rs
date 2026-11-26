@@ -18,6 +18,39 @@ pub fn for_engine(e: &Engine) -> Box<dyn EngineDriver> {
         DriverKind::Systemd => Box::new(Systemd::from(e)),
         DriverKind::Process => Box::new(Process::from(e)),
         DriverKind::Template => Box::new(Template::from(e)),
+        DriverKind::External => Box::new(External),
+    }
+}
+
+// ── external (D153) ──────────────────────────────────────────────────────────────────────────
+
+/// An engine started outside the router: no commands at all.
+pub struct External;
+
+impl External {
+    fn no() -> DriverError {
+        DriverError("an external engine is started and stopped outside the router".into())
+    }
+}
+
+impl EngineDriver for External {
+    fn kind(&self) -> DriverKind {
+        DriverKind::External
+    }
+    fn start(&self, _r: &Resolved) -> Result<Vec<Cmd>, DriverError> {
+        Err(Self::no())
+    }
+    fn stop(&self, _i: &InstanceRef, _t: Duration) -> Result<Vec<Cmd>, DriverError> {
+        Err(Self::no())
+    }
+    fn status(&self, _i: &InstanceRef) -> Result<Cmd, DriverError> {
+        Err(Self::no())
+    }
+    fn parse_status(&self, _i: &InstanceRef, _o: &ExecOutput) -> Result<Observed, DriverError> {
+        Err(Self::no())
+    }
+    fn logs(&self, _i: &InstanceRef, _l: u32) -> Result<Cmd, DriverError> {
+        Err(Self::no())
     }
 }
 

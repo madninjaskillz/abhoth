@@ -988,4 +988,22 @@ files. Design: [`docs/design/ROUTER-INVENTORY.md`](docs/design/ROUTER-INVENTORY.
   folders (breadcrumbs, folders first, model files with sizes, free space, new folder, type a
   path). Optional `servers.x.browse_roots` limits it; `/proc`, `/sys`, `/dev` are always hidden.
 - **Strict hostctl hosts** need their allowlist re-exported for `download`, `download-status`,
-  `gguf-meta`, and for folder browsing `list-dir`, `path-stat` and `mkdir`. New models and routes are switchable on demand after a router restart.
+  `gguf-meta`, for folder browsing `list-dir`, `path-stat` and `mkdir`, and for CPU detection
+  `cpu-info`. New models and routes are switchable on demand after a router restart.
+
+## 16. Media engines (D153)
+
+Images, video, speech, transcription and music engines are moving under the router. Plan and
+phases: [`docs/design/ROUTER-MEDIA-PLAN.md`](docs/design/ROUTER-MEDIA-PLAN.md). Phase 1 (0.16.17)
+is inventory only:
+
+- **CPU cards**: `[cards.X] device = "cpu"`, `cores`, `ram_gib` (no `gpu_uuid`). Engines on it
+  fit against its RAM; it is never part of a layout switch. Find GPUs also offers the CPU.
+- **Components**: an image or video model with a `role` (diffusion, text_encoder, vae, lora,
+  controlnet, upscale…) is a file in that ComfyUI folder; a model's `needs` lists the components
+  it runs with, `aliases` other names for it. Downloads of components go to
+  `<comfy_root>/<folder>/` (`servers.x.comfy_root`, default `<model_dir>/comfyui`).
+- **External engines**: `driver = "external"` is an engine started outside the router (a TrueNAS
+  app, say). The router probes it (ComfyUI lists its files per folder, Stable Audio its health)
+  and shows where each component is; it never starts, stops or observes it.
+- The `video` kind exists for cards and models; no video engine yet.

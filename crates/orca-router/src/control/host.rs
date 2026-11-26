@@ -323,7 +323,11 @@ impl HostOps for ExecHost {
         let mut ours: Vec<String> = Vec::new();
         for card in &cards {
             let mut found: Option<CardSpec> = None;
-            for engine in c.engines.keys() {
+            for (engine, e) in &c.engines {
+                // D153: only engines that can run on this card (a port here), never external ones
+                if e.port.get(card).is_none() || e.driver == schema::DriverKind::External {
+                    continue;
+                }
                 let (o, name) = self.status(&c, card, engine).await?;
                 ours.push(name.clone());
                 if !o.running {

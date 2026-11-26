@@ -3,7 +3,7 @@
 // Hugging Face results. Pure functions only (tested with plain node): the edits each form sends.
 import type { FormEdit } from "./formModel";
 
-export type ModelKind = "llm" | "tts" | "stt" | "image" | "music" | "embedding";
+export type ModelKind = "llm" | "tts" | "stt" | "image" | "music" | "embedding" | "video";
 
 export interface KindInfo { id: ModelKind; label: string }
 
@@ -23,7 +23,12 @@ export interface InvCard {
   id: string;
   label?: string | null;
   gpuUuid: string;
+  /** D153: a GPU (default) or the server's CPU. */
+  device?: "gpu" | "cpu";
   vramGib?: number | null;
+  /** CPU cards: the RAM engines may use, and the cores. */
+  ramGib?: number | null;
+  cores?: number | null;
   reserveGib: number;
   managed: boolean;
   onDemand: boolean;
@@ -38,6 +43,8 @@ export interface InvServer {
   host?: string | null;
   exec: "local" | "ssh";
   modelDir?: string | null;
+  /** D153: the ComfyUI model root (component downloads go to its role folders). */
+  comfyRoot?: string | null;
   cards: InvCard[];
 }
 
@@ -110,7 +117,19 @@ export interface InvModel {
   source?: { hf?: string | null; revision?: string | null; files?: string[]; gated?: boolean } | null;
   routes: { name: string; onDemand: boolean; auto: boolean; pin?: { engine: string; profile?: string } | null }[];
   placement: CardOption[];
+  /** D153: a component's role (diffusion, text_encoder, vae, lora…). */
+  role?: string | null;
+  needs?: string[];
+  aliases?: string[];
+  /** Components: per server, is the file there (null: not probed). */
+  present?: Record<string, boolean | null>;
+  /** Models that need components: per server, what is missing. */
+  needsMet?: Record<string, { ok: boolean; missing: string[] }>;
 }
+
+export interface ComponentRole { id: string; title: string; folder: string; legacy: string[] }
+
+export interface DetectedCpu { model?: string | null; threads?: number; cores?: number | null; ramGib?: number | null; availableGib?: number | null; simd?: string[]; card?: string | null }
 
 export interface Inventory {
   migrated: boolean;
@@ -121,6 +140,7 @@ export interface Inventory {
   servers: InvServer[];
   engines: InvEngine[];
   models: InvModel[];
+  roles?: ComponentRole[];
 }
 
 export interface DetectedGpu { index: number; uuid: string; name: string; vramGib?: number | null; card?: string | null }
@@ -171,6 +191,7 @@ export const KIND_LABELS: Record<ModelKind, string> = {
   image: "Images",
   music: "Music",
   embedding: "Embeddings",
+  video: "Video",
 };
 
 /** Engines that can run a type at all (by their capabilities). */
@@ -204,6 +225,29 @@ export function newCardEdits(id: string, server: string, gpu: DetectedGpu, engin
   const v: Record<string, unknown> = { server, gpu_uuid: gpu.uuid, label: gpu.name, managed: true, on_demand: true, engines };
   if (gpu.vramGib) v.vram_gib = gpu.vramGib;
   return [{ path: ["cards", id], value: v as FormEdit["value"] }];
+}
+
+/** D153: the server's CPU as a card (not managed, never switched; RAM is what fits). */
+export function newCpuCardEdits(id: string, server: string, cpu: DetectedCpu, engines: Record<string, string[]> = {}): FormEdit[] {
+  const v: Record<string, unknown> = { server, device: "cpu", label: cpu.model || "CPU", managed: false, on_demand: false, engines };
+  if (cpu.cores) v.cores = cpu.cores;
+  // leave the host a quarter of its RAM (and at least 8 GiB)
+  if (cpu.ramGib) v.ram_gib = Math.max(0, Math.round((cpu.ramGib - Math.max(8, cpu.ramGib / 4)) * 10) / 10);
+  return [{ path: ["cards", id], value: v as FormEdit["value"] }];
+}
+
+/** Plain words for where a component's file is: "deepthought ✓ · pc ✗ · lab ?". */
+export function presenceLine(m: InvModel): string {
+  const p = Object.entries(m.present ?? {});
+  if (p.length === 0) return "";
+  return p.map(([s, v]) => `${s} ${v === true ? "✓" : v === false ? "✗" : "?"}`).join(" · ");
+}
+
+/** A server-by-server line for a model that needs components. */
+export function needsLine(m: InvModel): string {
+  const n = Object.entries(m.needsMet ?? {});
+  if (n.length === 0) return "";
+  return n.map(([s, v]) => (v.ok ? `${s}: ready` : `${s}: missing ${v.missing.join(", ")}`)).join(" · ");
 }
 
 /** A new server (step one of the guided flow). */
