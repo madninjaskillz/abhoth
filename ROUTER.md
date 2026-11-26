@@ -21,8 +21,8 @@ AI tree), `$LITELLM_CONFIG_DIR`, `$TRUENAS_APP_CONFIGS`, `$HA_BRIDGE_DIR`.
   to sit in the request path, and in LiteLLM that means more Python plugin code on top of the
   hacks we already carry.
 - **Size:** about 3.3k lines of Rust code plus about 2.5k of tests, in a new crate
-  `orca-router`. That is about 8-9 agent-days across three phases (MUST alone: about 4), plus
-  1-2 weeks of shadow/switch calendar time.
+  `orca-router`. That is about 8-9 agent-days across three phases (MUST alone: about 4). No
+  multi-week shadow: tests, a short smoke check, then switch with a ready rollback.
 - **Top risks:**
   - wire details that clients rely on without knowing it (the `/v1/models` shape that makes
     OpenOrca treat us as a gateway, error shapes, the `x-litellm-model-name` header);
@@ -499,7 +499,7 @@ mode, as well as) LiteLLM's `config.yaml` and nginx.conf:
      `/v1/model/info` golden files (captured from today's LiteLLM), SSE passthrough with a fake
      ninfer from `orca-testkit`, failover, and the `decide()` port.
    - Add `render_router` to layoutctl behind `gateway.json "router": {"enabled": false}`.
-1. **Shadow on `:8020`.**
+1. **Smoke check on `:8020`** (minutes, not days).
    - Run the router container next to LiteLLM, with the same generated config and the same
      upstreams.
    - Compare with read-only GETs (`/v1/models`, `/v1/model/info`, health).
@@ -508,25 +508,27 @@ mode, as well as) LiteLLM's `config.yaml` and nginx.conf:
      equivalent upstream bodies (the router's debug log of the rewritten body against an echo
      upstream).
    - The router takes no production traffic yet.
-2. **Switch clients one by one.** Each step is a single URL change and can be reverted at once.
+2. **Switch the clients** in one session. Each is a single URL change and can be reverted at
+   once.
    1. `layoutctl gateway_test` and the dash (internal, lowest risk).
    2. The bench kit and the user's Abhoth CLI on HeyEmDee (`lmStudio.baseUrl` to `:8020`):
       the most features (tools, streaming, effort, images).
    3. OpenOrca web container config.
    4. Jarvis (HA options: base URL). Do it in the evening, not at the morning briefing.
-   5. Video pipelines (`config.json research_llm_url`). Do it last, after a full day's run on
-      the router, and never during a run or the quiet window.
+   5. Video pipelines (`config.json research_llm_url`). Never during a run or the quiet
+      window.
 
-   Watch each for a day: error rate, TTFT and the request log, against LiteLLM's numbers.
+   After each, a quick check (a request through it, the request log, the dash row); roll that
+   client back at once if anything is off. No day-long watch per client.
 3. **Cut over the LiteLLM port.**
    - Stop LiteLLM and move the router to `:8010`; clients revert their URLs to `:8010`.
    - layoutctl stops rendering LiteLLM (`gateway.json router.enabled = true,
      litellm.enabled = false`), but **keeps rendering qfn-lb's nginx.conf**: qfn-lb stays up,
      untouched, as part of the rollback.
-   - pig-slots can follow (router compat listener `--slots-port 8099`) once the registry has
-     run in shadow; separately from qfn-lb.
-3b. **Retire qfn-lb (`:8092`) last**, as its own step, only after every client has been on the
-   router and things have been stable for a while (a week or more with no router rollbacks).
+   - pig-slots can follow (router compat listener `--slots-port 8099`) once the lease replay
+     tests pass (`tests/leases_compat.rs`); separately from qfn-lb.
+3b. **Retire qfn-lb (`:8092`)** as its own step, once every client is on the router and its
+   smoke check passed (no timed wait).
    - The end state on DeepThought is NPM (TLS for the public names only) -> `abhoth router` ->
      the engines. Nothing talks to `:8092` any more.
    - Until then qfn-lb is not touched: it is the rollback for anything that still reaches the
@@ -552,7 +554,8 @@ mode, as well as) LiteLLM's `config.yaml` and nginx.conf:
    the default. Then on-demand in the router, with the profiles relay as fallback.
 5. **Rollback.**
    - LiteLLM's app definition, `config.yaml`, `effort_hook.py` and nginx.conf stay in place,
-     stopped rather than deleted, for 30 days (qfn-lb: running until step 3b, then 30 days).
+     stopped rather than deleted, until no longer needed as rollback material (qfn-lb: running
+     until step 3b, then kept stopped the same way).
    - Rollback means: stop the router, start `litellm` and `qfn-lb` / `pig-slots`, and set
      `gateway.json router.enabled=false` so layoutctl renders the old configs again.
    - Client URLs never change in the final state, so nothing else is needed.
@@ -572,8 +575,8 @@ mode, as well as) LiteLLM's `config.yaml` and nginx.conf:
 | Metrics, `/status`, dash row | 250 + 100 | 0.5 |
 | **Total** | **~3.3k code + ~2.5k tests** | **~8-9 (MUST alone: ~4)** |
 
-Calendar time on top: shadow plus client-by-client switching, about 1-2 weeks of light
-attention; benches for the SHOULD features about 3 hours (3 short runs).
+Calendar time on top: one switch-over session (smoke check and client switches, with a
+ready rollback); benches for the SHOULD features about 3 hours (3 short runs).
 
 ## 7. Risks
 
@@ -704,7 +707,10 @@ LiteLLM routes to the card pool (no relay names were configured; on-demand is of
   own in-flight count; it cannot see bench traffic that reaches the cards directly. Turning on
   lease-aware placement (or busy polling) before switch-over addresses that.
 
-### 11.2 Shadow trial with placement on (from 2026-11-25 18:52 UTC, about 3 days)
+### 11.2 Shadow trial with placement on (from 2026-11-25 18:52 UTC)
+
+Not a gate for the switch-over (user decision: no multi-day trials); its findings are input,
+and it can stop whenever the switch-over happens.
 
 Clients stay on LiteLLM, and qfn-lb logs nothing, so the trial is **decision-only**
 (`observe` in router.json, `src/observe.rs`):
