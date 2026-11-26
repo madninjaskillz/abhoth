@@ -40,9 +40,15 @@ impl GitTokenStore {
     }
 
     pub fn link_app(&self, project_id: &str) {
+        self.link(project_id, APP_LINK);
+    }
+
+    /// Store a link (`@github-app`, `@github-user:<id>`) instead of a token: git gets the
+    /// linked credentials when it runs.
+    pub fn link(&self, project_id: &str, link: &str) {
         let _g = self.lock.lock().unwrap();
         let mut all = self.load();
-        all.insert(project_id.into(), APP_LINK.into());
+        all.insert(project_id.into(), link.into());
         self.save(&all);
     }
 

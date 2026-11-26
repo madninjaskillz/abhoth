@@ -1,7 +1,7 @@
 // The "Clone from GitHub" wizard's helpers (cloneHelpers.ts has no imports, so plain node runs it).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deviceEndMessage, pageCount, pageRange, pollDelayMs, repoFolderName, timeAgo } from "../src/features/projects/cloneHelpers.ts";
+import { deviceEndMessage, ownerRepo, pageCount, pageRange, pollDelayMs, repoFolderName, timeAgo } from "../src/features/projects/cloneHelpers.ts";
 
 test("the folder name is the repository's name", () => {
   assert.equal(repoFolderName("acme/my-repo"), "my-repo");
@@ -44,4 +44,17 @@ test("messages when the device flow ends without a sign-in", () => {
   assert.match(deviceEndMessage("denied"), /cancelled/);
   assert.equal(deviceEndMessage("error", "Device flow isn't enabled"), "Device flow isn't enabled");
   assert.equal(deviceEndMessage("pending"), "");
+});
+
+test("a repository typed by name or address", () => {
+  assert.equal(ownerRepo("acme/tool"), "acme/tool");
+  assert.equal(ownerRepo(" acme/tool.git "), "acme/tool");
+  assert.equal(ownerRepo("https://github.com/acme/tool"), "acme/tool");
+  assert.equal(ownerRepo("https://github.com/acme/tool.git/"), "acme/tool");
+  assert.equal(ownerRepo("git@github.com:acme/tool.git"), "acme/tool");
+  assert.equal(ownerRepo("acme"), null);
+  assert.equal(ownerRepo("../etc/passwd"), null);
+  assert.equal(ownerRepo("-x/y"), null);
+  assert.equal(ownerRepo("https://gitlab.com/acme/tool"), null);
+  assert.equal(ownerRepo("search words"), null);
 });

@@ -55,3 +55,15 @@ export function deviceEndMessage(state: DeviceState, error?: string | null): str
   if (state === "error") return error || "GitHub sign-in failed.";
   return "";
 }
+
+/**
+ * "owner/repo" from what was typed: owner/repo, owner/repo.git, or a github.com address
+ * (https://github.com/owner/repo, git@github.com:owner/repo.git); `null` when it isn't one.
+ */
+export function ownerRepo(typed: string): string | null {
+  let t = typed.trim().replace(/\/+$/, "").replace(/\.git$/i, "");
+  const url = /^(?:https?:\/\/(?:www\.)?github\.com\/|git@github\.com:)([^/]+\/[^/]+)$/i.exec(t);
+  if (url) t = url[1];
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/.test(t) || t.includes("..")) return null;
+  return t;
+}

@@ -38,7 +38,7 @@ fn caller(addr: SocketAddr) -> Caller {
 }
 
 /// 409, not 401, for a GitHub sign-in problem: a 401 means the web UI's own session ended.
-fn guard(e: GitHubAppError) -> Response {
+pub(crate) fn guard(e: GitHubAppError) -> Response {
     match e {
         GitHubAppError::Auth(m) => (
             StatusCode::CONFLICT,
