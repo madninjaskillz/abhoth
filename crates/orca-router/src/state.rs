@@ -36,6 +36,9 @@ pub struct AppState {
     pub ext: crate::Extensions,
     /// The control plane's admin API (`control.enabled`); unset = data plane only.
     pub control: std::sync::OnceLock<Arc<crate::control_api::ControlPlane>>,
+    /// Ends a card's idle clock-down before a request goes to it (hostd `wake`, SUPERVISOR.md
+    /// 6.3); unset = no host daemon.
+    pub wake: std::sync::OnceLock<Arc<dyn crate::control::hostd::CardWake>>,
 }
 
 impl AppState {
@@ -61,6 +64,7 @@ impl AppState {
             log,
             ext,
             control: std::sync::OnceLock::new(),
+            wake: std::sync::OnceLock::new(),
         })
     }
 
@@ -163,6 +167,10 @@ impl AppState {
 
     /// Count a request on `card` until the guard drops.
     pub fn begin(self: &Arc<Self>, card: &str) -> CardGuard {
+        // Every request to a card starts here: wake its clocks first (non-blocking, debounced).
+        if let Some(w) = self.wake.get() {
+            w.wake(card);
+        }
         let mut m = self.cards.lock().unwrap();
         let c = m.entry(card.to_string()).or_default();
         c.inflight += 1;

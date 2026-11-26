@@ -36,6 +36,9 @@ USAGE:
                 [--key-delivery file_flag|wrapper|argv] [--enable-on-demand] [--server ID]
                 (router.toml for the control plane from a copy of the GPU host's layout files)
   abhoth router config-check --config router.toml
+  abhoth router hostctl serve --allowlist FILE        (the SSH forced command on a GPU host)
+  abhoth router hostctl exec-root --allowlist FILE    (its single sudo entry)
+  abhoth router hostctl export --config router.toml --server ID [--out FILE]
 ";
 
 fn take(args: &[String], i: &mut usize, flag: &str) -> Result<String> {
@@ -54,6 +57,7 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
         }
         Some("import-litellm") => import_cmd(&args[1..]).await,
         Some("import") => control_import_cmd(&args[1..]),
+        Some("hostctl") => hostctl_cmd(&args[1..]).await,
         Some("config-check") => {
             let mut config = None;
             let mut i = 1;
@@ -456,4 +460,37 @@ fn control_check(path: &std::path::Path) -> Result<i32> {
     }
     println!("ok: rev {}, {} warnings", loaded.rev, issues.len());
     Ok(0)
+}
+
+async fn hostctl_cmd(args: &[String]) -> Result<i32> {
+    use crate::control::hostctl;
+    let sub = args.first().map(String::as_str).unwrap_or("");
+    let (mut allowlist, mut config, mut server, mut out) = (None, None, None, None);
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--allowlist" => allowlist = Some(PathBuf::from(take(args, &mut i, "--allowlist")?)),
+            "--config" => config = Some(PathBuf::from(take(args, &mut i, "--config")?)),
+            "--server" => server = Some(take(args, &mut i, "--server")?),
+            "--out" => out = Some(PathBuf::from(take(args, &mut i, "--out")?)),
+            a => bail!("unknown argument {a}"),
+        }
+        i += 1;
+    }
+    match sub {
+        "serve" | "exec-root" => {
+            let al = allowlist.ok_or_else(|| anyhow!("--allowlist is required"))?;
+            Ok(hostctl::serve_stdio(&al, sub == "exec-root").await)
+        }
+        "export" => {
+            let config = config.ok_or_else(|| anyhow!("--config is required"))?;
+            let server = server.ok_or_else(|| anyhow!("--server is required"))?;
+            let text = hostctl::export_cli(&config, &server, out.as_ref()).map_err(|e| anyhow!(e))?;
+            if out.is_none() {
+                print!("{text}");
+            }
+            Ok(0)
+        }
+        other => bail!("hostctl {other}: serve, exec-root or export"),
+    }
 }
