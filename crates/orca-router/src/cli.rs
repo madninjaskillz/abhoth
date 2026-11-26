@@ -22,10 +22,13 @@ pub const HELP: &str = "abhoth router: the OpenAI-compatible gateway (replaces L
 
 USAGE:
   abhoth router --config router.json [--port P | --listen ADDR] [--host H] [--lb-port P] [--slots-port P]
+                [--control router.toml]   (the admin API, when its control.enabled is on)
   abhoth router observe-summary --dir DIR [--date YYYY-MM-DD]   (the decision-only shadow's day)
   abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
                 [--key-file PATH] [--base router.json] --out router.json [--watch SECONDS]
   abhoth router check --config router.json
+  abhoth router admin-demo --listen 127.0.0.1:8010 --link-token-file FILE [--accounts-url URL]
+                (the admin API on an in-memory demo host, for the web UI's admin pages)
 ";
 
 fn take(args: &[String], i: &mut usize, flag: &str) -> Result<String> {
@@ -78,8 +81,49 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
             );
             Ok(0)
         }
+        Some("admin-demo") => admin_demo(&args[1..]).await,
         _ => serve_cmd(&args).await,
     }
+}
+
+/// The admin API over [`crate::control_api::demo::DemoControl`]: no engines, no commands.
+async fn admin_demo(args: &[String]) -> Result<i32> {
+    let (mut listen, mut token_file, mut accounts) =
+        ("127.0.0.1:8010".to_string(), None, None);
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--listen" => listen = take(args, &mut i, "--listen")?,
+            "--link-token-file" => token_file = Some(take(args, &mut i, "--link-token-file")?),
+            "--accounts-url" => accounts = Some(take(args, &mut i, "--accounts-url")?),
+            a => bail!("unknown argument {a}"),
+        }
+        i += 1;
+    }
+    let token = match &token_file {
+        Some(f) => Some(std::fs::read(f).with_context(|| format!("reading {f}"))?),
+        None => None,
+    };
+    let snap = Snapshot::build(RouterConfig::default(), None).map_err(|e| anyhow!(e))?;
+    let st = AppState::new(snap, None);
+    let demo = crate::control_api::demo::DemoControl::new();
+    demo.spawn_ticker();
+    let settings = crate::access::AccessSettings {
+        accounts_token: accounts.as_ref().map(|_| "secret:accounts_token".to_string()),
+        accounts_url: accounts,
+        loopback_admin: false,
+        ..Default::default()
+    };
+    let _ = st.control.set(Arc::new(crate::control_api::ControlPlane {
+        access: crate::access::Access::new(settings, token),
+        backend: demo,
+    }));
+    let l = tokio::net::TcpListener::bind(&listen)
+        .await
+        .with_context(|| format!("binding {listen}"))?;
+    eprintln!("abhoth router admin-demo on {listen}");
+    server::serve(l, st, Mode::Gateway, shutdown_signal()).await?;
+    Ok(0)
 }
 
 async fn serve_cmd(args: &[String]) -> Result<i32> {
@@ -89,12 +133,14 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     let mut port: Option<u16> = None;
     let mut lb_port: Option<u16> = None;
     let mut slots_port: Option<u16> = None;
+    let mut control: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--config" => config = Some(take(args, &mut i, "--config")?),
             "--port" => port = Some(take(args, &mut i, "--port")?.parse().context("--port")?),
             "--host" => host = take(args, &mut i, "--host")?,
+            "--control" => control = Some(take(args, &mut i, "--control")?),
             "--listen" => listen = Some(take(args, &mut i, "--listen")?),
             "--lb-port" => {
                 lb_port = Some(
@@ -120,6 +166,11 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     let snap = Snapshot::load(&path).map_err(|e| anyhow!(e))?;
     let addr = listen.unwrap_or_else(|| format!("{host}:{}", port.unwrap_or(8010)));
     let st = AppState::new(snap, Some(path));
+    if let Some(c) = &control {
+        let msg = crate::control_api::install_from_toml(&st, std::path::Path::new(c))
+            .map_err(|e| anyhow!("--control {c}: {e}"))?;
+        eprintln!("abhoth router: {msg}");
+    }
     let mut tasks = Vec::new();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let mut bind = |addr: String, mode: Mode| -> Result<()> {

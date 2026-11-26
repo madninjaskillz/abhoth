@@ -34,6 +34,8 @@ pub struct AppState {
     pub metrics: Metrics,
     pub log: RequestLog,
     pub ext: crate::Extensions,
+    /// The control plane's admin API (`control.enabled`); unset = data plane only.
+    pub control: std::sync::OnceLock<Arc<crate::control_api::ControlPlane>>,
 }
 
 impl AppState {
@@ -58,6 +60,7 @@ impl AppState {
             metrics: Metrics::default(),
             log,
             ext,
+            control: std::sync::OnceLock::new(),
         })
     }
 
