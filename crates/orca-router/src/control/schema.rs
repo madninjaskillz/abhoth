@@ -122,6 +122,11 @@ pub struct RouterSection {
     pub request_log: Option<String>,
     pub timezone: String,
     pub limits: Limits,
+    /// layoutctl's state directory: after each switch the router writes `live.json` and
+    /// `offline.json` there in layoutctl's shape, so a rollback to layoutctl (and older tools)
+    /// sees what runs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legacy_state_dir: Option<String>,
 }
 
 impl Default for RouterSection {
@@ -134,6 +139,7 @@ impl Default for RouterSection {
             request_log: None,
             timezone: "Europe/London".into(),
             limits: Limits::default(),
+            legacy_state_dir: None,
         }
     }
 }

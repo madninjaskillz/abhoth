@@ -66,11 +66,29 @@ fn error_of(body: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// `Authorization: Bearer <key>` from the file `ABHOTH_PROFILES_KEY_FILE` names (a router
+/// service key with the switch scope: the abhoth router's :8098 refuses keyless switches).
+fn key_headers() -> reqwest::header::HeaderMap {
+    let mut h = reqwest::header::HeaderMap::new();
+    let key = crate::brand::env_var("PROFILES_KEY_FILE")
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty());
+    if let Some(k) = key
+        && let Ok(mut v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {k}"))
+    {
+        v.set_sensitive(true);
+        h.insert(reqwest::header::AUTHORIZATION, v);
+    }
+    h
+}
+
 impl ProfileService {
     pub fn new(base_url: Option<&str>, cache_file: Option<PathBuf>, timeout: Duration) -> Self {
         Self {
             http: reqwest::Client::builder()
                 .timeout(timeout)
+                .default_headers(key_headers())
                 .build()
                 .expect("reqwest client builds with static settings"),
             base_url: base_url.map(|u| u.trim_end_matches('/').to_string()),

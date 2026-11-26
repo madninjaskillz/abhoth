@@ -40,6 +40,10 @@ pub async fn wait_ready(
         .get(server)
         .ok_or_else(|| format!("no server {server}"))?;
     let end = std::time::Instant::now() + Duration::from_secs(s.ready_timeout_seconds);
+    // A hook that keeps failing is retried less often (doubling, at most 2 minutes), so one
+    // stuck check does not fill the host's audit log; it is logged when its text changes.
+    let mut wait = every;
+    let mut last = String::new();
     loop {
         let mut failing = Vec::new();
         for h in &s.ready {
@@ -85,10 +89,17 @@ pub async fn wait_ready(
         if std::time::Instant::now() >= end || cancel.is_cancelled() {
             return Err(format!("{server} not ready: {}", failing.join("; ")));
         }
+        let now = failing.join("; ");
+        if now != last {
+            tracing::info!("{server} not ready yet: {now}");
+            last = now;
+        }
+        let left = end.saturating_duration_since(std::time::Instant::now());
         tokio::select! {
-            _ = tokio::time::sleep(every) => {}
+            _ = tokio::time::sleep(wait.min(left)) => {}
             _ = cancel.cancelled() => return Err("cancelled".into()),
         }
+        wait = (wait * 2).min(Duration::from_secs(120).max(every));
     }
 }
 

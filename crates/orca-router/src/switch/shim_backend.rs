@@ -3,8 +3,9 @@
 //!
 //! The JSON keeps `profiles_api.py`'s shapes (`/live`, `/cards`, `/jobs`, `/jobs/<id>`,
 //! `/plan`, `POST /switch`, `POST /cards/X/offline|online`), recorded read-only from the live
-//! API. Profiles (`/profiles`, `/compose`, `/profiles/save|delete`) are config edits now: the
-//! shim answers 503/501 and points at the admin UI.
+//! API. `GET /profiles` is built from the router config's layouts, engine profiles and models
+//! (a profile is a layout now); `/compose` and `/profiles/save|delete` are config edits: the
+//! shim answers 501 and points at the admin UI.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -17,6 +18,7 @@ use serde_json::{Map, Value, json};
 
 use super::callers::CallerResolver;
 use super::profiles_shim::{ShimBackend, handle};
+use crate::control::schema::{ControlConfig, LayoutCard};
 use crate::control_api::ControlBackend;
 use crate::control_api::model::{Job, StateView};
 use crate::guards::Caller;
@@ -24,6 +26,97 @@ use crate::guards::Caller;
 pub struct ControlShim {
     pub backend: Arc<dyn ControlBackend>,
     pub server: String,
+    /// The config the router runs (for `/profiles`, profile names and `/plan`).
+    pub config: Option<Arc<ControlConfig>>,
+}
+
+fn pick(c: &LayoutCard) -> Value {
+    match c {
+        LayoutCard::Word(w) => Value::from(w.as_str()),
+        LayoutCard::Spec(s) => {
+            json!({"engine": s.engine, "engineProfile": s.profile, "model": s.model})
+        }
+    }
+}
+
+/// The catalog in `profiles_api.py`'s shape: every layout is also a profile of the same name.
+pub fn catalog(c: &ControlConfig) -> Value {
+    let mut profiles = Map::new();
+    let mut layouts = Map::new();
+    let mut aliases = Map::new();
+    for (name, l) in &c.layouts {
+        let cards: Map<String, Value> = l.cards.iter().map(|(k, v)| (k.clone(), pick(v))).collect();
+        let mut p = Map::new();
+        for (k, v) in &l.extra {
+            p.insert(k.clone(), v.clone());
+        }
+        p.insert("title".into(), json!(l.title));
+        p.insert("description".into(), json!(l.description));
+        p.insert("mode".into(), json!(l.mode));
+        p.insert("layout".into(), json!(name));
+        p.insert("cards".into(), Value::Object(cards.clone()));
+        p.insert(
+            "source".into(),
+            json!(l.source.as_deref().unwrap_or("file")),
+        );
+        if !l.client.is_empty() {
+            p.insert("tuning".into(), json!(l.client));
+        }
+        if !l.hidden {
+            profiles.insert(name.clone(), Value::Object(p));
+        }
+        layouts.insert(
+            name.clone(),
+            json!({"title": l.title, "description": l.description, "cards": cards,
+                "picks": cards, "hidden": l.hidden}),
+        );
+        for a in &l.aliases {
+            aliases.insert(a.clone(), json!(name));
+        }
+    }
+    let mut engines = Map::new();
+    let mut eps = Map::new();
+    for (en, e) in &c.engines {
+        engines.insert(en.clone(), json!({"title": e.title}));
+        for (pn, p) in &e.profiles {
+            eps.insert(
+                pn.clone(),
+                json!({"engine": en, "title": p.title, "description": p.description,
+                    "slots": p.lanes, "ctx": p.ctx, "vramGiB": p.vram_gib, "build": p.build}),
+            );
+        }
+    }
+    let models: Map<String, Value> = c
+        .models
+        .iter()
+        .map(|(n, m)| {
+            let arts: Map<String, Value> = m
+                .artifacts
+                .iter()
+                .map(|(e, a)| (e.clone(), json!({"file": a.file, "id": a.served_id})))
+                .collect();
+            let vram = m.artifacts.values().map(|a| a.vram_gib).fold(0.0, f64::max);
+            (
+                n.clone(),
+                json!({"title": m.title, "description": m.description, "vision": m.vision,
+                    "vramGiB": vram, "artifacts": arts}),
+            )
+        })
+        .collect();
+    json!({"version": 3, "engines": engines, "engineProfiles": eps, "models": models,
+        "profiles": profiles, "layouts": layouts, "aliases": aliases.clone(),
+        "layoutAliases": aliases})
+}
+
+/// A profile or layout name (or an alias of one) to the layout's name.
+pub fn resolve_layout(c: &ControlConfig, name: &str) -> Option<String> {
+    if c.layouts.contains_key(name) {
+        return Some(name.to_string());
+    }
+    c.layouts
+        .iter()
+        .find(|(_, l)| l.aliases.iter().any(|a| a == name))
+        .map(|(n, _)| n.clone())
 }
 
 fn iso_ms(ms: i64) -> Value {
@@ -93,7 +186,11 @@ impl ControlShim {
 #[async_trait::async_trait]
 impl ShimBackend for ControlShim {
     fn profiles(&self) -> Option<Value> {
-        None
+        let c = self.config.as_ref()?;
+        let mut v = catalog(c);
+        v["live"] = self.live();
+        v["etag"] = json!(self.backend.config().rev);
+        Some(v)
     }
 
     fn live(&self) -> Value {
@@ -183,11 +280,63 @@ impl ShimBackend for ControlShim {
         self.backend.job(id).map(|j| job_record(&j))
     }
 
-    fn plan(&self, _layout: Option<&str>, _profile: Option<&str>) -> (u16, Value) {
-        // the admin API's plan is async; the shim's GET /plan answers from the layout list
+    async fn plan(&self, layout: Option<&str>, profile: Option<&str>) -> (u16, Value) {
+        let Some(c) = self.config.as_ref() else {
+            return (503, json!({"error": "the catalog is not available yet"}));
+        };
+        let asked = profile.or(layout).unwrap_or_default();
+        let Some(l) = resolve_layout(c, asked) else {
+            let what = if profile.is_some() {
+                "profile"
+            } else {
+                "layout"
+            };
+            return (404, json!({"error": format!("unknown {what} '{asked}'")}));
+        };
+        let p = match self.backend.plan(&self.server, &l).await {
+            Ok(p) => p,
+            Err(e) => return api(e),
+        };
+        let fits = p.note.as_deref() == Some("already live");
+        let changes: Map<String, Value> = p
+            .cards
+            .iter()
+            .filter(|x| x.action != "keep")
+            .map(|x| {
+                (
+                    x.card.clone(),
+                    json!({"from": x.before, "to": x.after, "action": x.action}),
+                )
+            })
+            .collect();
+        let mut refusals: Vec<String> = p
+            .blockers
+            .iter()
+            .map(|b| match &b.holder {
+                Some(h) => format!("{} ({h})", b.reason),
+                None => b.reason.clone(),
+            })
+            .collect();
+        refusals.extend(
+            p.preconditions
+                .iter()
+                .filter(|x| x.status == "fail")
+                .map(|x| x.reason.clone().unwrap_or_else(|| x.name.clone())),
+        );
+        if fits {
+            refusals.clear();
+        }
+        let effect = if fits {
+            Value::Null
+        } else {
+            json!("restarts model servers, affects everything using the models")
+        };
         (
-            501,
-            json!({"error": "plans are in the admin UI now (Router > Layouts > Plan)"}),
+            200,
+            json!({"profile": profile.map(|_| l.clone()), "layout": l, "live": p.from,
+                "fits": fits, "changes": changes,
+                "estimateSeconds": if fits { 0 } else { p.estimate_seconds },
+                "restore": null, "refusals": refusals, "effect": effect}),
         )
     }
 
@@ -204,10 +353,15 @@ impl ShimBackend for ControlShim {
         _reason: &str,
         caller: &Caller,
     ) -> (u16, Value) {
-        let Some(layout) = layout else {
+        let resolved = match (&self.config, profile.or(layout)) {
+            (Some(c), Some(n)) => resolve_layout(c, n),
+            (None, _) => layout.map(str::to_string),
+            _ => None,
+        };
+        let Some(layout) = resolved.as_deref() else {
             return (
-                400,
-                json!({"error": format!("profiles are layouts now: switch by layout, not profile {profile:?}")}),
+                404,
+                json!({"error": format!("unknown profile or layout {:?}", profile.or(layout))}),
             );
         };
         let live = self
@@ -259,10 +413,17 @@ impl ShimBackend for ControlShim {
             .set_card(card, action, reason, &Self::who(caller, requested_by))
             .await
         {
+            Ok(j) if j.state == "done" => (
+                200,
+                json!({"state": "done", "already": true, "card": card, "action": action}),
+            ),
             Ok(j) => (
                 202,
                 json!({"id": j.id, "state": "queued", "card": card, "action": action}),
             ),
+            Err(e) if e.status == 409 => {
+                (409, json!({"error": e.message, "refusals": [e.message]}))
+            }
             Err(e) => api(e),
         }
     }
@@ -391,7 +552,11 @@ mod shim_backend_tests {
         let backend = crate::control_api::demo::DemoControl::new();
         let server = backend.state().servers[0].id.clone();
         let shim = Arc::new(ShimState {
-            backend: Arc::new(ControlShim { backend, server }),
+            backend: Arc::new(ControlShim {
+                backend,
+                server,
+                config: None,
+            }),
             callers: Arc::new(StaticCallers::default().with(
                 "svc-switch",
                 Resolved {

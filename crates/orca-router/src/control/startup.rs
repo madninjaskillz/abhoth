@@ -65,6 +65,73 @@ pub struct LiveRoutes {
     store: Arc<Store>,
     server: String,
     running: Arc<Mutex<Running>>,
+    /// layoutctl's state dir for the `live.json` / `offline.json` mirror.
+    legacy: Option<std::path::PathBuf>,
+}
+
+fn iso_now() -> String {
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
+/// Atomic write (temp file + rename in the same directory).
+fn write_json(path: &Path, v: &Value) -> std::io::Result<()> {
+    let tmp = path.with_extension("json.router-tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(v).unwrap_or_default())?;
+    std::fs::rename(&tmp, path)
+}
+
+/// layoutctl's `live.json` and `offline.json` for what the router committed. layoutctl's
+/// reconcile works from the layout name (it rebuilds the card specs from profiles.json).
+pub fn mirror_legacy(dir: &Path, store: &Store, layout: &str, spec: &Spec, slots: &[String]) {
+    let live = dir.join("live.json");
+    let prev: Value = std::fs::read(&live)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or(Value::Null);
+    let now = iso_now();
+    let cards: serde_json::Map<String, Value> = spec
+        .iter()
+        .map(|(c, s)| {
+            let v = if s.is_off() {
+                serde_json::json!({"engine": "off"})
+            } else {
+                serde_json::json!({"engine": s.engine, "engineProfile": s.profile,
+                    "model": s.model})
+            };
+            (c.clone(), v)
+        })
+        .collect();
+    let offline = store.offline_cards().unwrap_or_default();
+    let changed = prev.get("layout").and_then(Value::as_str) != Some(layout);
+    let last = if changed {
+        serde_json::json!({"job": null, "from": prev.get("layout"), "to": layout, "at": now,
+            "by": "abhoth-router"})
+    } else {
+        prev.get("lastSwitch").cloned().unwrap_or(Value::Null)
+    };
+    let v = serde_json::json!({
+        "layout": layout, "cards": cards,
+        "since": if changed { Value::from(now.clone()) } else {
+            prev.get("since").cloned().unwrap_or(Value::from(now.clone())) },
+        "slots": slots, "offline": offline, "lastSwitch": last, "writer": "abhoth-router"});
+    if let Err(e) = write_json(&live, &v) {
+        tracing::warn!("legacy mirror {}: {e}", live.display());
+    }
+    let mut off = serde_json::Map::new();
+    for c in &offline {
+        let row = store.card_admin(c).ok();
+        off.insert(
+            c.clone(),
+            serde_json::json!({
+                "since": row.as_ref().map(|r| r.since / 1000),
+                "by": row.as_ref().map(|r| r.by.clone()),
+                "reason": row.as_ref().map(|r| r.reason.clone())}),
+        );
+    }
+    let p = dir.join("offline.json");
+    if let Err(e) = write_json(&p, &Value::Object(off)) {
+        tracing::warn!("legacy mirror {}: {e}", p.display());
+    }
 }
 
 impl RouteSink for LiveRoutes {
@@ -109,6 +176,15 @@ impl RouteSink for LiveRoutes {
             };
             if let Err(e) = self.store.set_active_layout(&row) {
                 tracing::warn!("router.db: active layout: {e}");
+            }
+            if let Some(d) = &self.legacy {
+                let mut slots = Vec::new();
+                for (c, s) in spec {
+                    if !s.is_off() && ready.contains(c) {
+                        slots.extend((1..=s.lanes).map(|i| format!("{c}{i}")));
+                    }
+                }
+                mirror_legacy(d, &self.store, l, spec, &slots);
             }
         }
         self.st.reapply_overlay();
@@ -429,11 +505,114 @@ impl live::Actions for OrchActions {
         ))
     }
 
-    async fn set_card(&self, _card: &str, _state: &str, _r: &str, _who: &str) -> ApiResult<Job> {
-        Err(ApiError::new(
-            501,
-            "cards on/offline through the control plane is not wired yet",
-        ))
+    /// A card taken offline (its engine stopped, kept off by every switch and by reconcile) or
+    /// back online (the active layout's engine started on it again).
+    async fn set_card(&self, card: &str, state: &str, reason: &str, who: &str) -> ApiResult<Job> {
+        let want = match state {
+            "online" => super::store::CardAdmin::Online,
+            "offline" => super::store::CardAdmin::Offline,
+            _ => {
+                return Err(ApiError::new(
+                    400,
+                    format!("state {state}: online or offline"),
+                ));
+            }
+        };
+        let Some(cd) = self.c.cards.get(card).filter(|x| x.server == self.server) else {
+            return Err(ApiError::new(404, format!("unknown card {card}")));
+        };
+        if !cd.managed {
+            return Err(ApiError::new(409, format!("card {card} is not managed")));
+        }
+        let now = self.now();
+        let job = |st: &str, err: Option<String>| Job {
+            id: String::new(),
+            server: self.server.clone(),
+            kind: format!("card-{state}"),
+            from: now.layout.clone(),
+            target: card.into(),
+            requested_by: who.into(),
+            state: st.into(),
+            started: now_ms(),
+            error: err,
+            ..Job::default()
+        };
+        let current = self
+            .store
+            .card_admin(card)
+            .map(|r| r.state)
+            .unwrap_or(super::store::CardAdmin::Online);
+        let Some(layout) = now.layout.clone() else {
+            return Err(ApiError::new(409, "no active layout yet"));
+        };
+        if self.orch.busy() {
+            return Err(ApiError::new(409, "a switch is already running"));
+        }
+        // What the active layout becomes with this card's new state.
+        let mut off = self.store.offline_cards().unwrap_or_default();
+        off.retain(|c| c != card);
+        if want != super::store::CardAdmin::Online {
+            off.push(card.into());
+        }
+        let target = wiring::target_spec(&self.c, &self.server, &layout, &off)
+            .ok_or_else(|| ApiError::new(404, format!("no layout {layout}")))?;
+        let restart = restart_set(&self.orch.cfg, &now.spec, &target);
+        if current == want && restart.is_empty() {
+            return Ok(job("done", None));
+        }
+        let action = if want == super::store::CardAdmin::Online {
+            Action::Online
+        } else {
+            Action::Offline
+        };
+        let caller = Caller {
+            principal: Some(who.to_string()),
+            grants: Vec::new(),
+        };
+        let mut why: Vec<String> = self
+            .orch
+            .plane
+            .blocks(action, &restart, &caller, &layout)
+            .into_iter()
+            .map(|b| format!("{}: {}", b.source, b.reason))
+            .collect();
+        why.extend(
+            self.orch
+                .plane
+                .held_on(&restart)
+                .into_iter()
+                .map(|(k, w)| format!("lease {k}: {w}")),
+        );
+        if !why.is_empty() {
+            return Err(ApiError::new(409, why.join("; ")));
+        }
+        self.store
+            .set_card_admin(&super::store::CardAdminRow {
+                card: card.into(),
+                state: want,
+                by: who.chars().take(80).collect(),
+                reason: reason.chars().take(200).collect(),
+                since: now_ms(),
+            })
+            .map_err(|e| ApiError::new(500, e.to_string()))?;
+        if restart.is_empty() {
+            return Ok(job("done", None));
+        }
+        let req = SwitchRequest {
+            layout: layout.clone(),
+            target,
+            active: Some(layout),
+            requested_by: who.chars().take(80).collect(),
+            reason: format!("card {card} {state} by {who}"),
+            caller,
+            action,
+        };
+        let orch = self.orch.clone();
+        tokio::spawn(async move {
+            let r = orch.switch(req).await;
+            tracing::info!(job = %r.id, state = %r.state, "card change ended");
+        });
+        Ok(job("queued", None))
     }
 
     async fn release_lease(&self, key: &str, _who: &str) -> ApiResult<()> {
@@ -789,6 +968,11 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
         store: store.clone(),
         server: server.clone(),
         running: running.clone(),
+        legacy: c
+            .router
+            .legacy_state_dir
+            .as_ref()
+            .map(std::path::PathBuf::from),
     });
     // The Supervisor's calendar (flag off by default): installed before the board, which adds it.
     let calendar = crate::calendar::start(&c, main, &l.origin, store.clone())?;
@@ -905,6 +1089,7 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
         backend: Arc::new(ControlShim {
             backend,
             server: server.clone(),
+            config: Some(c.clone()),
         }),
         callers: Arc::new(ViaControl(cp)),
     });
