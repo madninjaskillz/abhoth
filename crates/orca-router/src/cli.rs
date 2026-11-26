@@ -485,7 +485,8 @@ async fn hostctl_cmd(args: &[String]) -> Result<i32> {
         "export" => {
             let config = config.ok_or_else(|| anyhow!("--config is required"))?;
             let server = server.ok_or_else(|| anyhow!("--server is required"))?;
-            let text = hostctl::export_cli(&config, &server, out.as_ref()).map_err(|e| anyhow!(e))?;
+            let text =
+                hostctl::export_cli(&config, &server, out.as_ref()).map_err(|e| anyhow!(e))?;
             if out.is_none() {
                 print!("{text}");
             }
