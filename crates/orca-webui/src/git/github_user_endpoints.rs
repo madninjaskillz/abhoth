@@ -1,4 +1,4 @@
-//! `/api/github/user/*` (D146): "Clone from GitHub" with the caller's own GitHub credentials,
+//! `/api/github/user/*` (D147): "Clone from GitHub" with the caller's own GitHub credentials,
 //! for every user (not admin-only like the shared GitHub App). Which credentials, the order
 //! and the security rules are in `github_user`. No response carries a token.
 

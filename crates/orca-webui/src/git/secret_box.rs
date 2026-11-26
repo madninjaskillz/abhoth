@@ -1,4 +1,4 @@
-//! Secrets at rest (D146): a saved GitHub token is wrapped before it is written to disk.
+//! Secrets at rest (D147): a saved GitHub token is wrapped before it is written to disk.
 //!
 //! - Windows: DPAPI, current-user scope (`CryptProtectData`), so the file is useless to another
 //!   Windows account or on another machine. Written as `dpapi:<base64>`.

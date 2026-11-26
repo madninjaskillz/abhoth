@@ -668,7 +668,7 @@ export interface GitHubAppStatus {
   setup?: string | null;
 }
 
-/** Where the caller's own GitHub credentials come from (D146). */
+/** Where the caller's own GitHub credentials come from (D147). */
 export type GitHubUserSource = "session" | "saved" | "oauth" | "gh-cli" | "git-credential" | "anonymous";
 
 export interface GitHubUserStatus {

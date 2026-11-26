@@ -1,4 +1,4 @@
-//! "Clone from GitHub" with each Abhoth user's own GitHub credentials (D146), no GitHub App
+//! "Clone from GitHub" with each Abhoth user's own GitHub credentials (D147), no GitHub App
 //! needed. The token comes from, in order:
 //!
 //! 1. a token the user pasted for this session (memory only);

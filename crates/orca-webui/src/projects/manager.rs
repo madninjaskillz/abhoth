@@ -152,7 +152,7 @@ pub struct ProjectManager {
     /// The GitHub sign-in (the "Clone from GitHub" wizard), whose access token projects linked
     /// to it use (unset: not set up).
     pub github_app: OnceLock<Arc<GitHubAppService>>,
-    /// Each user's own GitHub credentials (D146), for projects linked with `@github-user:<id>`.
+    /// Each user's own GitHub credentials (D147), for projects linked with `@github-user:<id>`.
     pub github_user: OnceLock<Arc<crate::git::github_user::GitHubUserService>>,
 }
 

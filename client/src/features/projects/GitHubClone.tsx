@@ -35,7 +35,7 @@ const userOps: RepoOps = { key: "github-user", app: false, repos: api.githubUser
 type Panel = "none" | "token" | "device";
 
 /**
- * "Clone from GitHub" (D146): with the user's own GitHub credentials, no GitHub App needed. In the
+ * "Clone from GitHub" (D147): with the user's own GitHub credentials, no GitHub App needed. In the
  * desktop app (or a local server) an admin's machine sign-ins are used as they are (the GitHub
  * CLI, then Git Credential Manager); anyone can paste a token (for the session, or saved) or sign
  * in with GitHub (device flow, when the server has an OAuth client ID); with nothing, public

@@ -861,7 +861,7 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   normalisation and reasoning mapping are adapter chains with a golden corpus; only admins
   (D140) see and edit the config. Supersedes ROUTER.md's WON'T items for switching, cloud
   providers, budgets and the admin UI. About 41 agent-days (cutover set about 32).
-- **D146** (user decision 2026-11-26) "Clone from GitHub" without a GitHub App: each Abhoth user's
+- **D147** (user decision 2026-11-26) "Clone from GitHub" without a GitHub App: each Abhoth user's
   own GitHub credentials. The shared GitHub App sign-in (admin-only since D140) stays as an
   option for admins.
   - **Sources, in order** (`orca_webui::git::github_user`): a token the user pasted for this

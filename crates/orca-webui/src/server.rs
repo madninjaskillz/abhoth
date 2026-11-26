@@ -72,7 +72,7 @@ pub struct WebUiOptions {
     /// The clock the GitHub sign-in reads (`None`: the system clock; tests).
     pub github_clock: Option<Arc<dyn crate::git::github_app::Clock>>,
     /// The OAuth app for "Sign in with GitHub" with each user's own account (`None`:
-    /// `github.oauthClientId` in config.json, asked on each use; D146).
+    /// `github.oauthClientId` in config.json, asked on each use; D147).
     pub github_oauth_client_id: Option<crate::git::github_user::ClientIdFn>,
     /// How this machine's `gh` / `git credential` are run (`None`: the real ones; tests).
     pub github_machine: Option<crate::git::github_user::MachineCredentials>,
@@ -154,7 +154,7 @@ pub struct AppState {
     pub clones: crate::projects::clone::CloneService,
     /// The GitHub sign-in ("Clone from GitHub").
     pub github_app: Arc<crate::git::github_app::GitHubAppService>,
-    /// Each user's own GitHub credentials ("Clone from GitHub" without an app, D146).
+    /// Each user's own GitHub credentials ("Clone from GitHub" without an app, D147).
     pub github_user: Arc<crate::git::github_user::GitHubUserService>,
     /// The accounts.
     pub login: Arc<crate::login::LoginAuth>,

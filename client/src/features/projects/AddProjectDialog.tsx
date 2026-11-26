@@ -16,7 +16,7 @@ import type { GitHubCheck } from "@/lib/api";
 /**
  * The [+] tab's wizard: (a) a folder on the machine Abhoth runs on (picked by browsing that
  * machine's folders), (b) a repository from the user's own GitHub account (this machine's gh or
- * Git Credential Manager sign-in on the desktop, a pasted token, or Sign in with GitHub; D146),
+ * Git Credential Manager sign-in on the desktop, a pasted token, or Sign in with GitHub; D147),
  * or (c) any repository by URL, with an optional pasted token or the machine's
  * own git credentials.
  */

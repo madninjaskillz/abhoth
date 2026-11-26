@@ -1,4 +1,4 @@
-//! "Clone from GitHub" with each user's own credentials (D146), against a fake github.com on
+//! "Clone from GitHub" with each user's own credentials (D147), against a fake github.com on
 //! 127.0.0.1 (API, device flow, git smart HTTP through `git http-backend`) and fake `gh` /
 //! credential helpers. No real GitHub calls and no real machine credentials are read.
 //!
