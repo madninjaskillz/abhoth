@@ -7,6 +7,8 @@
 //! data-plane behaviour (no keys needed).
 
 pub mod keys;
+pub mod local_keys;
+pub mod sessions;
 
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -18,6 +20,8 @@ use orca_core::router_link::{
 use serde::{Deserialize, Serialize};
 
 pub use keys::{Identity, KeyCache, KeyError};
+pub use local_keys::LocalKeys;
+pub use sessions::{KeySource, Sessions};
 
 /// `[access]` in `router.toml`.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -248,6 +252,9 @@ impl Principal {
             Principal::Anonymous { lan: true } => "anonymous-lan".into(),
             Principal::Anonymous { lan: false } => "anonymous".into(),
             Principal::Loopback => "loopback".into(),
+            Principal::Key(i) if i.scopes.iter().any(|s| s == local_keys::LOCAL_SCOPE) => {
+                format!("router-key:{}#{}", i.key_name, i.key_id)
+            }
             Principal::Key(i) => match i.role {
                 Role::Service => format!("service:{}#{}", i.key_name, i.key_id),
                 _ => format!("user:{}#{}", i.name, i.key_id),
@@ -285,6 +292,10 @@ pub struct Access {
     pub key_requests: Option<Arc<dyn crate::key_requests::KeyRequestLink>>,
     /// Per-IP limits on key requests and polls.
     pub key_request_limits: crate::key_requests::Limiter,
+    /// The router's own admin keys (D151), when it has a `router.db`.
+    pub local_keys: Option<LocalKeys>,
+    /// Signed-in browser sessions of the router's own admin pages (D151).
+    pub sessions: Sessions,
     now_unix: Arc<dyn Fn() -> i64 + Send + Sync>,
 }
 
@@ -359,8 +370,16 @@ impl Access {
             keys,
             key_requests: None,
             key_request_limits: Default::default(),
+            local_keys: None,
+            sessions: Sessions::default(),
             now_unix,
         }
+    }
+
+    /// With the router's own admin keys (`router.db`).
+    pub fn with_local_keys(mut self, keys: LocalKeys) -> Self {
+        self.local_keys = Some(keys);
+        self
     }
 
     fn in_lan(&self, ip: Option<IpAddr>) -> bool {
@@ -376,6 +395,22 @@ impl Access {
         method: &str,
         path: &str,
     ) -> Result<Principal, AuthError> {
+        self.authenticate_session(headers, peer, method, path)
+            .await
+            .map(|(p, _)| p)
+    }
+
+    /// [`Self::authenticate`], plus the CSRF token when the caller is a signed-in browser
+    /// session (D151). In order: the web server's signed acting user, a bearer key (the
+    /// router's own admin keys first, then the web server's), the session cookie, loopback,
+    /// anonymous. A session's state-changing calls need its CSRF token in `x-router-csrf`.
+    pub async fn authenticate_session(
+        &self,
+        headers: &HeaderMap,
+        peer: Option<IpAddr>,
+        method: &str,
+        path: &str,
+    ) -> Result<(Principal, Option<String>), AuthError> {
         if let Some(h) = headers
             .get(ACTING_USER_HEADER)
             .and_then(|v| v.to_str().ok())
@@ -384,32 +419,158 @@ impl Access {
                 return Err(AuthError::Unauthorized("no link token is configured"));
             };
             return match verify_acting_user(token, h, (self.now_unix)(), method, path) {
-                Ok(u) => Ok(Principal::Acting(u)),
+                Ok(u) => Ok((Principal::Acting(u), None)),
                 Err(ActingError::Expired) => Err(AuthError::Unauthorized("acting user expired")),
                 Err(_) => Err(AuthError::Unauthorized("acting user not signed")),
             };
         }
         if let Some(key) = bearer(headers) {
+            if let Some(i) = self.local_keys.as_ref().and_then(|l| l.check(key)) {
+                return Ok((Principal::Key(i), None));
+            }
             let Some(cache) = &self.keys else {
-                return Err(AuthError::Unauthorized("keys are not checked here"));
+                return Err(AuthError::Unauthorized(if self.local_keys.is_some() {
+                    "not a valid API key"
+                } else {
+                    "keys are not checked here"
+                }));
             };
             return match cache.check(key).await {
-                Ok(i) => Ok(Principal::Key(i)),
+                Ok(i) => Ok((Principal::Key(i), None)),
                 Err(KeyError::Invalid) => Err(AuthError::Unauthorized("not a valid API key")),
                 Err(KeyError::Unavailable(_)) => Err(AuthError::Unavailable),
             };
         }
-        if self.settings.loopback_admin && peer.is_some_and(|p| p.is_loopback()) {
-            return Ok(Principal::Loopback);
+        if let Some(id) = sessions::cookie(headers)
+            && let Some(s) = self.sessions.get(id)
+        {
+            // The key behind the session must still be good.
+            let still = match &s.source {
+                KeySource::Local(d) => self
+                    .local_keys
+                    .as_ref()
+                    .and_then(|l| l.check_digest(d))
+                    .is_some(),
+                KeySource::Remote(d) => match &self.keys {
+                    Some(c) => match c.check_digest(d).await {
+                        Ok(i) => i.role == Role::Admin,
+                        Err(KeyError::Invalid) => false,
+                        Err(KeyError::Unavailable(_)) => return Err(AuthError::Unavailable),
+                    },
+                    None => false,
+                },
+            };
+            if !still {
+                self.sessions.remove(id);
+                return Err(AuthError::Unauthorized(
+                    "the key you signed in with no longer works; sign in again",
+                ));
+            }
+            if !matches!(method, "GET" | "HEAD" | "OPTIONS") {
+                let sent = headers
+                    .get(sessions::CSRF_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                if !orca_core::router_link::fixed_time_eq(sent.as_bytes(), s.csrf.as_bytes()) {
+                    return Err(AuthError::Unauthorized("missing or wrong CSRF token"));
+                }
+            }
+            return Ok((s.principal, Some(s.csrf)));
         }
-        Ok(Principal::Anonymous {
-            lan: self.in_lan(peer),
-        })
+        // A request a proxy passed on is not local, whatever its TCP peer (a reverse proxy on
+        // the same host would otherwise make every visitor an admin).
+        if self.settings.loopback_admin
+            && peer.is_some_and(|p| p.is_loopback())
+            && !forwarded(headers)
+        {
+            return Ok((Principal::Loopback, None));
+        }
+        Ok((
+            Principal::Anonymous {
+                lan: self.in_lan(peer),
+            },
+            None,
+        ))
+    }
+
+    /// Check a key for the admin pages' sign-in (D151): the router's own admin keys first, then
+    /// the web server's (its admins only). Rate limited per address and in total.
+    pub async fn sign_in(
+        &self,
+        key: &str,
+        peer: Option<IpAddr>,
+    ) -> Result<(Identity, KeySource), SignInError> {
+        if !self.sessions.may_try(peer) {
+            return Err(SignInError::TooMany);
+        }
+        let key = key.trim();
+        let digest = orca_core::router_link::key_digest(key);
+        if let Some(i) = self.local_keys.as_ref().and_then(|l| l.check(key)) {
+            return Ok((i, KeySource::Local(digest)));
+        }
+        let answer = match &self.keys {
+            Some(c) => c.check(key).await,
+            None => Err(KeyError::Invalid),
+        };
+        match answer {
+            Ok(i) if i.role == Role::Admin => Ok((i, KeySource::Remote(digest))),
+            Ok(_) => {
+                self.sessions.failed(peer);
+                Err(SignInError::NotAdmin)
+            }
+            Err(KeyError::Invalid) => {
+                self.sessions.failed(peer);
+                Err(SignInError::Invalid)
+            }
+            Err(KeyError::Unavailable(_)) => Err(SignInError::Unavailable),
+        }
     }
 
     pub fn allows(&self, p: &Principal, perm: Perm) -> bool {
         p.allows(perm, self.settings.model_info_lan)
     }
+}
+
+/// Why a sign-in was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignInError {
+    /// 401
+    Invalid,
+    /// 403: a good key, but not an admin's.
+    NotAdmin,
+    /// 429
+    TooMany,
+    /// 503: the web server can't vouch for keys right now.
+    Unavailable,
+}
+
+impl SignInError {
+    pub fn status(self) -> u16 {
+        match self {
+            SignInError::Invalid => 401,
+            SignInError::NotAdmin => 403,
+            SignInError::TooMany => 429,
+            SignInError::Unavailable => 503,
+        }
+    }
+
+    pub fn message(self) -> &'static str {
+        match self {
+            SignInError::Invalid => "That is not a valid admin key.",
+            SignInError::NotAdmin => "That key works, but it is not an admin key.",
+            SignInError::TooMany => "Too many failed sign-ins; wait a few minutes.",
+            SignInError::Unavailable => {
+                "The accounts server can't vouch for keys right now; try again soon."
+            }
+        }
+    }
+}
+
+/// Did a proxy pass this request on (`X-Forwarded-For`, `Forwarded`, `X-Real-IP`)?
+pub fn forwarded(headers: &HeaderMap) -> bool {
+    ["x-forwarded-for", "forwarded", "x-real-ip"]
+        .iter()
+        .any(|h| headers.contains_key(*h))
 }
 
 /// The bearer token of a request (`Authorization: Bearer x` or `x-api-key: x`).

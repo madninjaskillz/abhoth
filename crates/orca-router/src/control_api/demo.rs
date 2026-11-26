@@ -1240,6 +1240,24 @@ impl ControlBackend for DemoControl {
         Ok(())
     }
 
+    fn record(
+        &self,
+        who: &str,
+        action: &str,
+        target: &str,
+        old_rev: &str,
+        new_rev: &str,
+        diff: &str,
+        reason: &str,
+    ) {
+        self.audit(who, action, target, |r| {
+            r.rev_from = (!old_rev.is_empty()).then(|| old_rev.to_string());
+            r.rev_to = (!new_rev.is_empty()).then(|| new_rev.to_string());
+            r.diff = (!diff.is_empty()).then(|| diff.to_string());
+            r.reason = (!reason.is_empty()).then(|| reason.to_string());
+        });
+    }
+
     async fn edit_route(&self, name: &str, edit: &RouteEdit, who: &str) -> ApiResult<RouteView> {
         if let Some(c) = &edit.cold
             && !["reject", "fallback", "on_demand"].contains(&c.as_str())

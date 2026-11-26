@@ -936,3 +936,31 @@ Design and the per-setting table: [`docs/design/ROUTER-MODE.md`](docs/design/ROU
 
 The app's settings (Models → Connection) use them for "router mode": the router then supplies
 everything model-specific, and the client's failover, slots and inference profiles are off.
+
+## 14. The admin pages (D151)
+
+The router serves its own admin UI at **`http://<router>:8010/admin/`** (the gateway's port),
+so a router running without the Abhoth web app can still be set up and watched in a browser.
+Design: [`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md).
+
+- **Start the router with `--control router.toml`.** A router with no GPU control yet needs only
+  a minimal file: `version = 1`, `[router] state_dir = "/data/router/state"`,
+  `[control] enabled = false`; the forms then add servers, cards, engines and layouts.
+- **Make an admin key** (shown once; only its hash is kept):
+  `abhoth router admin-key create <name> --control router.toml [--out FILE]`
+  (`--out` writes it to a new file with mode 600). `admin-key list`, `admin-key revoke <id|name>`.
+  In Docker: `docker exec <container> /app/abhoth router admin-key create …`.
+- **Sign in** at `/admin/` with that key (or a web-server admin's `abk_` key). The session is a
+  cookie (HttpOnly, SameSite=Strict, Secure over HTTPS) for 8 hours, 2 hours idle. Ten wrong
+  keys from one address in 15 minutes lock that address out for the rest of the window.
+- **What you can edit:** servers and cards, engines and their profiles (lanes), layouts
+  (`router.toml`); the model list, upstreams, the Claude block and slots (`router.json`); plus
+  both files as text under Advanced. Every save shows the diff and the router's own check first,
+  keeps a backup (`router.toml`: the control plane's backups; `router.json`:
+  `<dir>/backups/`), writes atomically, is audited and is reloaded. Saving never switches a
+  layout: switching is still the Overview's plan and confirm.
+- **Behind a reverse proxy:** any prefix works (the page uses relative URLs). Send
+  `X-Forwarded-Proto: https` so the cookie is marked Secure. A request with forwarding headers
+  is never treated as a loopback admin.
+- **From the Abhoth app:** in router mode with an admin key, Settings → Models → Connection →
+  Router admin.

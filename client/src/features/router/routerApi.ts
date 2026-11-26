@@ -1,12 +1,32 @@
-// Calls to the router's admin API through the web server (/api/admin/router/* -> /admin/api/*,
-// signed as the acting admin), the service keys, and the live stream hook shared by the admin
-// pages, the supervisor dashboard and the app's status areas.
+// Calls to the router's admin API, the service keys, and the live stream hook shared by the admin
+// pages, the supervisor dashboard and the app's status areas. In the app they go through the web
+// server (/api/admin/router/* -> /admin/api/*, signed as the acting admin); the router's own admin
+// pages (D151, router-admin-main.tsx) point the same calls at the router with setRouterTransport.
 import { useEffect, useRef, useState } from "react";
 import { csrfHeaders, sessionEnded } from "@/lib/auth";
 import {
   applyEvent, type AuditRow, type CheckResult, type ConfigDoc, type Job, type LeasesViewT, type LiveEvent, type Plan,
   type RouteEdit, type RouteView, type StateView,
 } from "./routerModel";
+import type { AdminKey, ConfigData, FormEdit, GatewayCheck, GatewayDoc, NewAdminKey } from "./forms/formModel";
+
+/** Where the admin API is and how calls authenticate. */
+export interface RouterTransport {
+  /** The admin API's base (no trailing slash): "/api/admin/router" in the app, "<page>/api" on the router. */
+  base: string;
+  /** Headers for state-changing calls (the CSRF token of whichever session the page has). */
+  headers: () => Record<string, string>;
+  /** A 401 from the admin API (the app: nothing, its own session is fine; the router page: sign in again). */
+  unauthorized: () => void;
+}
+
+const appTransport: RouterTransport = { base: "/api/admin/router", headers: csrfHeaders, unauthorized: () => {} };
+let transport: RouterTransport = appTransport;
+
+/** The router's own admin pages call the router directly (D151). */
+export function setRouterTransport(t: Partial<RouterTransport>) {
+  transport = { ...transport, ...t };
+}
 
 export class RouterApiError extends Error {
   constructor(message: string, public status: number, public data?: Record<string, unknown>) {
@@ -20,7 +40,7 @@ async function call<T>(method: string, url: string, body?: unknown, headers: Rec
     credentials: "same-origin",
     headers: {
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...(method === "GET" ? {} : csrfHeaders()),
+      ...(method === "GET" ? {} : url.startsWith(transport.base) ? transport.headers() : csrfHeaders()),
       ...headers,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -29,32 +49,45 @@ async function call<T>(method: string, url: string, body?: unknown, headers: Rec
   let data: unknown;
   try { data = text ? JSON.parse(text) : undefined; } catch { data = undefined; }
   if (!res.ok) {
-    if (res.status === 401 && url.startsWith("/api/") && !url.startsWith("/api/admin/router")) sessionEnded();
+    if (res.status === 401 && url.startsWith(transport.base)) transport.unauthorized();
+    else if (res.status === 401 && url.startsWith("/api/") && !url.startsWith("/api/admin/router")) sessionEnded();
     const d = (data ?? {}) as Record<string, unknown>;
     throw new RouterApiError((d.error as string) || res.statusText, res.status, d);
   }
   return data as T;
 }
 
-const R = "/api/admin/router";
+const R = () => transport.base;
 
 export const routerApi = {
-  state: () => call<StateView>("GET", `${R}/state`),
-  config: () => call<ConfigDoc>("GET", `${R}/config`),
-  check: (text: string) => call<CheckResult>("POST", `${R}/config/check`, { text }),
-  save: (text: string, rev: string, reason: string) => call<CheckResult>("PUT", `${R}/config`, { text, reason }, { "If-Match": `"${rev}"` }),
-  plan: (server: string, layout: string) => call<Plan>("GET", `${R}/plan?server=${encodeURIComponent(server)}&layout=${encodeURIComponent(layout)}`),
-  switchTo: (server: string, layout: string) => call<Job>("POST", `${R}/switch`, { server, layout }),
-  jobs: (limit = 50) => call<Job[]>("GET", `${R}/jobs?limit=${limit}`),
-  job: (id: string) => call<Job>("GET", `${R}/jobs/${encodeURIComponent(id)}`),
-  cancelJob: (id: string) => call<Job>("POST", `${R}/jobs/${encodeURIComponent(id)}/cancel`),
+  state: () => call<StateView>("GET", `${R()}/state`),
+  config: () => call<ConfigDoc>("GET", `${R()}/config`),
+  check: (text: string) => call<CheckResult>("POST", `${R()}/config/check`, { text }),
+  save: (text: string, rev: string, reason: string) => call<CheckResult>("PUT", `${R()}/config`, { text, reason }, { "If-Match": `"${rev}"` }),
+  plan: (server: string, layout: string) => call<Plan>("GET", `${R()}/plan?server=${encodeURIComponent(server)}&layout=${encodeURIComponent(layout)}`),
+  switchTo: (server: string, layout: string) => call<Job>("POST", `${R()}/switch`, { server, layout }),
+  jobs: (limit = 50) => call<Job[]>("GET", `${R()}/jobs?limit=${limit}`),
+  job: (id: string) => call<Job>("GET", `${R()}/jobs/${encodeURIComponent(id)}`),
+  cancelJob: (id: string) => call<Job>("POST", `${R()}/jobs/${encodeURIComponent(id)}/cancel`),
   card: (card: string, action: "offline" | "online" | "exclude" | "include", reason: string) =>
-    call<Job>("POST", `${R}/cards/${encodeURIComponent(card)}/${action}`, { reason }),
-  audit: (limit = 100) => call<AuditRow[]>("GET", `${R}/audit?limit=${limit}`),
-  leases: () => call<LeasesViewT>("GET", `${R}/leases`),
-  release: (key: string) => call<{ ok: boolean }>("DELETE", `${R}/leases/${encodeURIComponent(key)}`),
-  routes: () => call<RouteView[]>("GET", `${R}/routes`),
-  editRoute: (name: string, edit: RouteEdit) => call<RouteView>("PATCH", `${R}/routes/${encodeURIComponent(name)}`, edit),
+    call<Job>("POST", `${R()}/cards/${encodeURIComponent(card)}/${action}`, { reason }),
+  audit: (limit = 100) => call<AuditRow[]>("GET", `${R()}/audit?limit=${limit}`),
+  leases: () => call<LeasesViewT>("GET", `${R()}/leases`),
+  release: (key: string) => call<{ ok: boolean }>("DELETE", `${R()}/leases/${encodeURIComponent(key)}`),
+  routes: () => call<RouteView[]>("GET", `${R()}/routes`),
+  editRoute: (name: string, edit: RouteEdit) => call<RouteView>("PATCH", `${R()}/routes/${encodeURIComponent(name)}`, edit),
+  // D151: the config as data for the forms, and form edits turned into checked text.
+  configJson: () => call<ConfigData>("GET", `${R()}/config/json`),
+  configEdit: (edits: FormEdit[], text?: string) => call<{ text: string; check: CheckResult }>("POST", `${R()}/config/edit`, text === undefined ? { edits } : { edits, text }),
+  // router.json, the gateway's model list.
+  gateway: () => call<GatewayDoc>("GET", `${R()}/gateway`),
+  gatewayCheck: (text: string) => call<GatewayCheck>("POST", `${R()}/gateway/check`, { text }),
+  gatewaySave: (text: string, rev: string, reason: string) =>
+    call<GatewayCheck & { reloaded: boolean; reloadError?: string }>("PUT", `${R()}/gateway`, { text, reason }, { "If-Match": `"${rev}"` }),
+  // The router's own admin keys.
+  adminKeys: () => call<{ keys: AdminKey[]; local: boolean }>("GET", `${R()}/admin-keys`),
+  createAdminKey: (name: string) => call<NewAdminKey>("POST", `${R()}/admin-keys`, { name }),
+  revokeAdminKey: (id: number) => call<{ ok: boolean }>("DELETE", `${R()}/admin-keys/${id}`),
 };
 
 export interface ServiceKey {
@@ -123,7 +156,7 @@ export function followEvents(url: string, kinds: string[], on: (e: LiveEvent) =>
  * reloads applied as they come (the admin Overview, the dashboard, the Models tab). `url`
  * defaults to the admin stream; `enabled` false keeps it closed.
  */
-export function useLiveState(enabled = true, url = `${R}/events`) {
+export function useLiveState(enabled = true, url = `${R()}/events`) {
   const [state, setState] = useState<StateView | undefined>();
   const [status, setStatus] = useState<StreamStatus>("connecting");
   const [lastJob, setLastJob] = useState<Job | undefined>();

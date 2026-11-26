@@ -199,6 +199,26 @@ The parts also ship alone, for setups that split them across hosts:
 - Rollback: point the app back at the previous OpenOrca image; the state formats are shared.
   The full procedure is in [`CUTOVER.md`](CUTOVER.md), section 4.
 
+## Router
+
+`abhoth router` is an OpenAI-compatible gateway in front of your model servers (failover, slots,
+the model list) and, with `--control router.toml`, the control plane for the GPUs behind it
+(which engine and model each card runs, layouts, switching). It runs inside the single Docker
+image or on its own (`abhoth router --config router.json --port 8010 --control router.toml`).
+
+- **Its own admin pages:** `http://<router>:8010/admin/`, so a router without the Abhoth web app
+  can still be set up in a browser: forms for servers, cards, engines, layouts and the model
+  list (with the raw files under Advanced), live state, jobs and the audit. Make the first admin
+  key with `abhoth router admin-key create <name> --control router.toml --out <file>` and sign
+  in with it.
+- **From the app:** Settings → Models → Connection finds routers on the LAN and switches the app
+  to router mode; with an admin key there it also shows **Router admin**, the same pages inside
+  the app.
+- Docs: [`ROUTER.md`](ROUTER.md) (running it; section 14 for the admin pages),
+  [`ROUTER-CONFIG.md`](ROUTER-CONFIG.md) (the control plane's `router.toml`),
+  [`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md) and
+  [`docs/design/ROUTER-MODE.md`](docs/design/ROUTER-MODE.md).
+
 ## Tests and the cross-check
 
 ```sh

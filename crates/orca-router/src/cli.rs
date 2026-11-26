@@ -41,6 +41,10 @@ USAGE:
                 [--key-delivery file_flag|wrapper|argv] [--key-file-build ENGINE=BUILD]... [--enable-on-demand] [--server ID]
                 (router.toml for the control plane from a copy of the GPU host's layout files)
   abhoth router config-check --config router.toml
+  abhoth router admin-key create NAME --control router.toml [--out FILE]
+  abhoth router admin-key list|revoke ID|NAME --control router.toml
+                (the router's own admin keys, for its admin pages at /admin/; --out writes the
+                 new key to FILE (mode 600) instead of printing it)
   abhoth router calendar check|import-cron|import-ics --file calendar.toml ...   (see calendar --help)
   abhoth router hostctl serve --allowlist FILE        (the SSH forced command on a GPU host)
   abhoth router hostctl exec-root --allowlist FILE    (its single sudo entry)
@@ -64,6 +68,7 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
         Some("import-litellm") => import_cmd(&args[1..]).await,
         Some("import") => control_import_cmd(&args[1..]),
         Some("hostctl") => hostctl_cmd(&args[1..]).await,
+        Some("admin-key") => admin_key_cmd(&args[1..]),
         Some("config-check") => {
             let mut config = None;
             let mut i = 1;
@@ -547,6 +552,108 @@ fn control_import_cmd(args: &[String]) -> Result<i32> {
 }
 
 /// Load and validate a control-plane `router.toml`; exit 1 on errors.
+/// `abhoth router admin-key create|list|revoke` (D151): the router's own admin keys, in the
+/// `router.db` of the `router.toml`'s `state_dir`. Works while the router runs (SQLite, WAL).
+fn admin_key_cmd(args: &[String]) -> Result<i32> {
+    let sub = args.first().map(String::as_str).unwrap_or("");
+    let (mut control, mut out, mut name) = (None, None, None);
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--control" | "--config" => control = Some(take(args, &mut i, "--control")?),
+            "--out" => out = Some(take(args, &mut i, "--out")?),
+            a if !a.starts_with("--") && name.is_none() => name = Some(a.to_string()),
+            a => bail!("unknown argument {a}"),
+        }
+        i += 1;
+    }
+    let control = PathBuf::from(control.ok_or_else(|| {
+        anyhow!("--control router.toml is required (its state_dir holds router.db)")
+    })?);
+    let loaded = crate::control::load::load(&control).map_err(|issues| {
+        anyhow!(
+            "{}",
+            issues
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    })?;
+    let state_dir = PathBuf::from(&loaded.config.router.state_dir);
+    let store = Arc::new(
+        crate::control::store::Store::open(&state_dir.join("router.db")).map_err(|e| anyhow!(e))?,
+    );
+    let keys = crate::access::LocalKeys::open(store.clone()).map_err(|e| anyhow!(e))?;
+    let now = chrono::Utc::now().timestamp();
+    match sub {
+        "create" => {
+            let name = name.ok_or_else(|| anyhow!("admin-key create NAME"))?;
+            let k = keys.create(&name, "cli").map_err(|e| anyhow!(e))?;
+            let _ = store.audit(now, "cli", "admin-key.create", "", "", "", &k.info.name);
+            match out {
+                Some(f) => {
+                    write_secret(std::path::Path::new(&f), &k.key)
+                        .with_context(|| format!("writing {f}"))?;
+                    println!(
+                        "admin key {} ({}, id {}) written to {f}; sign in at /admin/ with it",
+                        k.info.name, k.info.prefix, k.info.id
+                    );
+                }
+                None => {
+                    println!("{}", k.key);
+                    eprintln!(
+                        "admin key {} (id {}): shown once; sign in at /admin/ with it and keep it somewhere safe",
+                        k.info.name, k.info.id
+                    );
+                }
+            }
+            Ok(0)
+        }
+        "list" => {
+            for k in keys.list().map_err(|e| anyhow!(e))? {
+                println!(
+                    "{:>4}  {:<24} {}  {}{}",
+                    k.id,
+                    k.name,
+                    k.prefix,
+                    chrono::DateTime::from_timestamp(k.created, 0)
+                        .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                        .unwrap_or_default(),
+                    if k.revoked.is_some() { "  revoked" } else { "" }
+                );
+            }
+            Ok(0)
+        }
+        "revoke" => {
+            let which = name.ok_or_else(|| anyhow!("admin-key revoke ID|NAME"))?;
+            let n = keys.revoke(&which).map_err(|e| anyhow!(e))?;
+            let _ = store.audit(now, "cli", "admin-key.revoke", "", "", "", &n);
+            println!("revoked {n} (its sessions end on their next request)");
+            Ok(0)
+        }
+        _ => bail!("admin-key create NAME | list | revoke ID|NAME, with --control router.toml"),
+    }
+}
+
+/// Write a secret to a new file readable by its owner only.
+fn write_secret(path: &std::path::Path, secret: &str) -> std::io::Result<()> {
+    if let Some(d) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(d)?;
+    }
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    use std::io::Write;
+    let mut f = o.open(path)?;
+    f.write_all(secret.as_bytes())?;
+    f.write_all(b"\n")
+}
+
 fn control_check(path: &std::path::Path) -> Result<i32> {
     use crate::control::{load, validate};
     let loaded = match load::load(path) {

@@ -9,6 +9,8 @@ import { Badge, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui
 import { cn } from "@/lib/utils";
 import { RouterApiError, keyRequestApi, routerApi, serviceKeyApi, useLiveState, type KeyRequest, type ServiceKey } from "./routerApi";
 import { accessLabel, ago, coldLabel, type Job, type LayoutView, type Plan, type RouteEdit, type RouteView } from "./routerModel";
+import { GatewayForms } from "./forms/GatewayForms";
+import { RouterSetupForms } from "./forms/SetupForms";
 import { CardTile, GuardChips, JobStateBadge, JobSteps, LayoutList, PlanView, SwitchProgress } from "./widgets";
 
 const ConfigEditor = lazy(() => import("./ConfigEditor"));
@@ -315,11 +317,24 @@ export function RouterConfigPane() {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="router-config">
       <PaneHead icon={<ServerCog className="size-4 text-muted-foreground" />} title="Router config">
-        router.toml as text, checked as you type. Saving backs up the file, writes it atomically, records who and why, and reloads it. Nothing restarts: a changed active layout shows as drift with a plan.
+        Servers, cards, engines and layouts (router.toml) and the gateway's model list (router.json), as forms or as text. Every save is checked by the router, shown as a diff, backed up, written atomically, audited and reloaded. Nothing restarts: a changed active layout shows as drift with a plan.
       </PaneHead>
-      <Suspense fallback={<div className="p-4"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>}>
-        <ConfigEditor />
-      </Suspense>
+      <Tabs defaultValue="setup" className="flex min-h-0 flex-1 flex-col">
+        <div className="border-b px-4 py-2">
+          <TabsList>
+            <TabsTrigger value="setup" data-testid="config-setup">Servers & layouts</TabsTrigger>
+            <TabsTrigger value="gateway" data-testid="config-gateway">Model list</TabsTrigger>
+            <TabsTrigger value="toml" data-testid="config-toml">Advanced: router.toml</TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="setup" className="flex min-h-0 flex-1 flex-col"><RouterSetupForms /></TabsContent>
+        <TabsContent value="gateway" className="flex min-h-0 flex-1 flex-col"><GatewayForms /></TabsContent>
+        <TabsContent value="toml" className="flex min-h-0 flex-1 flex-col">
+          <Suspense fallback={<div className="p-4"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>}>
+            <ConfigEditor />
+          </Suspense>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

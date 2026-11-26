@@ -150,6 +150,26 @@ export function savedNote(project: boolean): string {
     : "Saved to the server's config.json: new sessions use it (restart the app to update the profile picker).";
 }
 
+/** What GET /api/settings/connection/router-admin answers (D151). */
+export interface RouterAdminDoc {
+  available: boolean;
+  /** The router's own admin page ("Open in browser"). */
+  url?: string;
+  /** The page through this server (the key stays on the server). */
+  embedded?: string;
+  principal?: string;
+  reason?: string;
+}
+
+/**
+ * Whether the panel shows "Router admin" (D151): router mode, and the router says the key the
+ * server keeps for it (config.json's, whichever scope the page shows) is an admin's.
+ */
+export function routerAdminEntry(mode: ConnectionMode, doc: RouterAdminDoc | null | undefined): { show: boolean; url?: string; embedded?: string } {
+  if (mode !== "router" || !doc?.available || !doc.embedded) return { show: false };
+  return { show: true, url: doc.url, embedded: doc.embedded };
+}
+
 export type RouterPick = { kind: "adopt"; url: string } | { kind: "find" } | { kind: "none" };
 
 /**

@@ -885,14 +885,20 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
     })?;
     let c = Arc::new(l.config);
     if !c.control.enabled {
+        // The admin pages still work (D151): config forms, admin keys; nothing switches.
+        let message = match crate::control_api::install_admin_only(st, main, &c) {
+            Ok(m) => m,
+            Err(e) => format!("control plane off; admin pages off ({e})"),
+        };
         return Ok(Started {
-            message: "control plane off (control.enabled = false)".into(),
+            message,
             shim: None,
         });
     }
     let state_dir = std::path::PathBuf::from(&c.router.state_dir);
     std::fs::create_dir_all(&state_dir).map_err(|e| format!("{}: {e}", state_dir.display()))?;
     let store = Arc::new(Store::open(&state_dir.join("router.db"))?);
+    let local_keys = crate::access::LocalKeys::open(store.clone())?;
     match super::reconcile::recover_jobs(&store) {
         Ok(ids) if !ids.is_empty() => {
             tracing::warn!("router.db: jobs left running by the last process: {ids:?}")
@@ -1002,8 +1008,9 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
         st: st.clone(),
     });
     let backend = live::ConfigBackend::with_actions(main, &state_dir, store.clone(), actions);
+    crate::control_api::bootstrap_hint(&local_keys, &c, main);
     let cp = Arc::new(ControlPlane {
-        access: Access::new(c.access.clone(), token),
+        access: Access::new(c.access.clone(), token).with_local_keys(local_keys),
         backend: backend.clone(),
     });
     st.control

@@ -186,7 +186,12 @@ impl KeyCache {
             self.stats.invalid.fetch_add(1, Ordering::Relaxed);
             return Err(KeyError::Invalid);
         }
-        let digest = key_digest(key);
+        self.check_digest(&key_digest(key)).await
+    }
+
+    /// [`Self::check`] by the key's digest (a signed-in session keeps only the digest).
+    pub async fn check_digest(&self, digest: &str) -> Result<Identity, KeyError> {
+        let digest = digest.to_string();
         let now = (self.clock)();
         let cached = self.entries.lock().unwrap().get(&digest).cloned();
         if let Some(e) = &cached {

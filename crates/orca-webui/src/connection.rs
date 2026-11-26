@@ -42,6 +42,7 @@ use crate::server::AppState;
 
 pub mod discover;
 pub mod key;
+pub mod router_ui;
 
 use key::{
     PendingView, forget_key_request, pending_view, poll_key, project_forget_key_request,
@@ -59,6 +60,23 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/api/settings/connection/discover", get(discover_routers))
         .route("/api/settings/connection/models", get(models))
         .route("/api/settings/connection/use", post(use_router))
+        // D151: the router's own admin pages, when the app's router key is an admin's.
+        .route(
+            "/api/settings/connection/router-admin",
+            get(router_ui::status),
+        )
+        .route(
+            "/api/settings/connection/router-admin/ui",
+            axum::routing::any(router_ui::ui_root),
+        )
+        .route(
+            "/api/settings/connection/router-admin/ui/",
+            axum::routing::any(router_ui::ui_index),
+        )
+        .route(
+            "/api/settings/connection/router-admin/ui/{*rest}",
+            axum::routing::any(router_ui::ui),
+        )
         .route(
             "/api/settings/connection/key",
             post(save_key).delete(remove_key),

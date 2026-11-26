@@ -10,6 +10,7 @@
 //! Nothing here exists unless the control plane is on (`control.enabled`).
 
 pub mod demo;
+pub mod form;
 pub mod live;
 pub mod model;
 pub mod user_view;
@@ -87,6 +88,21 @@ pub trait ControlBackend: Send + Sync {
     async fn set_card(&self, card: &str, state: &str, reason: &str, who: &str) -> ApiResult<Job>;
     async fn release_lease(&self, key: &str, who: &str) -> ApiResult<()>;
     async fn edit_route(&self, name: &str, edit: &RouteEdit, who: &str) -> ApiResult<RouteView>;
+
+    /// Write an audit row for something done outside the backend (a sign-in, an admin key, a
+    /// `router.json` save; D151). `target`: what it was done to.
+    #[allow(clippy::too_many_arguments)]
+    fn record(
+        &self,
+        _who: &str,
+        _action: &str,
+        _target: &str,
+        _old_rev: &str,
+        _new_rev: &str,
+        _diff: &str,
+        _reason: &str,
+    ) {
+    }
 }
 
 /// The control plane as the HTTP side sees it.
@@ -193,7 +209,52 @@ fn admin_only_read(sub: &str) -> bool {
     first == "config"
         || first == "audit"
         || first == "routes"
+        || first == "admin-keys"
+        || first == "gateway"
         || (first == "calendar" && sub != "calendar/now")
+}
+
+/// Who is calling `/admin/api/<sub>` and may they? `Err` is the answer to send (401, 403, 503).
+/// `whoami` is answered here too (anyone may ask).
+#[allow(clippy::result_large_err)] // the error is the response itself, sent once
+pub async fn authorize(
+    cp: &ControlPlane,
+    method: &Method,
+    path: &str,
+    headers: &HeaderMap,
+    peer: Option<IpAddr>,
+) -> Result<Principal, Response> {
+    let principal = match cp
+        .access
+        .authenticate(headers, peer, method.as_str(), path)
+        .await
+    {
+        Ok(p) => p,
+        Err(AuthError::Unauthorized(m)) => return Err(err(401, m)),
+        Err(AuthError::Unavailable) => {
+            return Err(err(
+                503,
+                "the accounts server can't vouch for this key right now",
+            ));
+        }
+    };
+    let sub = path
+        .strip_prefix("/admin/api")
+        .unwrap_or("")
+        .trim_start_matches('/');
+    if sub == "whoami" {
+        return Err(ok(&principal.to_json()));
+    }
+    if matches!(principal, Principal::Anonymous { .. }) {
+        return Err(err(401, "an admin key or an admin session is needed"));
+    }
+    let perm = needs(method, sub);
+    let allowed =
+        cp.access.allows(&principal, perm) && (principal.is_admin() || !admin_only_read(sub));
+    if !allowed {
+        return Err(err(403, "only an admin can do that"));
+    }
+    Ok(principal)
 }
 
 /// Handle `/admin/api/<sub>[?query]`. `peer`: the TCP peer.
@@ -206,36 +267,14 @@ pub async fn handle(
     raw: &Bytes,
 ) -> Response {
     let path = path_q.split('?').next().unwrap_or("");
-    let principal = match cp
-        .access
-        .authenticate(headers, peer, method.as_str(), path)
-        .await
-    {
+    let principal = match authorize(cp, method, path, headers, peer).await {
         Ok(p) => p,
-        Err(AuthError::Unauthorized(m)) => return err(401, m),
-        Err(AuthError::Unavailable) => {
-            return err(
-                503,
-                "the accounts server can't vouch for this key right now",
-            );
-        }
+        Err(r) => return r,
     };
     let sub = path
         .strip_prefix("/admin/api")
         .unwrap_or("")
         .trim_start_matches('/');
-    if sub == "whoami" {
-        return ok(&principal.to_json());
-    }
-    if matches!(principal, Principal::Anonymous { .. }) {
-        return err(401, "an admin key or an admin session is needed");
-    }
-    let perm = needs(method, sub);
-    let allowed =
-        cp.access.allows(&principal, perm) && (principal.is_admin() || !admin_only_read(sub));
-    if !allowed {
-        return err(403, "only an admin can do that");
-    }
     let who = principal.label();
     let qs = query(path_q);
     let body: Value = if raw.is_empty() {
@@ -261,6 +300,56 @@ pub async fn handle(
             r
         }
         (Method::POST, ["config", "check"]) => ok(&b.check_config(&s(&body, "text")).await),
+        // D151: the config as data (the forms), and form edits applied to the text.
+        (Method::GET, ["config", "json"]) => {
+            let doc = b.config();
+            ok(&form::config_json(&doc))
+        }
+        (Method::POST, ["config", "edit"]) => {
+            let base = match body.get("text").and_then(Value::as_str) {
+                Some(t) => t.to_string(),
+                None => b.config().text,
+            };
+            let edits = match form::parse_edits(&body) {
+                Ok(e) => e,
+                Err(m) => return err(400, &m),
+            };
+            match form::apply_edits(&base, &edits) {
+                Ok(text) => {
+                    let check = b.check_config(&text).await;
+                    ok(&json!({"text": text, "check": check}))
+                }
+                Err(m) => err(422, &m),
+            }
+        }
+        (Method::GET, ["admin-keys"]) => admin_keys_list(cp),
+        (Method::POST, ["admin-keys"]) => {
+            let Some(keys) = &cp.access.local_keys else {
+                return err(404, "this router keeps no admin keys of its own");
+            };
+            match keys.create(&s(&body, "name"), &who) {
+                Ok(k) => {
+                    b.record(&who, "admin-key.create", &k.info.name, "", "", "", "");
+                    ok(&k)
+                }
+                Err(m) => err(422, &m),
+            }
+        }
+        (Method::DELETE, ["admin-keys", id]) => {
+            let Some(keys) = &cp.access.local_keys else {
+                return err(404, "this router keeps no admin keys of its own");
+            };
+            match keys.revoke(id) {
+                Ok(name) => {
+                    if let Ok(n) = id.parse::<i64>() {
+                        cp.access.sessions.remove_local_id(n);
+                    }
+                    b.record(&who, "admin-key.revoke", &name, "", "", "", "");
+                    ok(&json!({"ok": true}))
+                }
+                Err(m) => err(404, &m),
+            }
+        }
         (Method::PUT, ["config"]) => {
             let if_match = headers
                 .get(header::IF_MATCH)
@@ -356,6 +445,16 @@ pub async fn handle(
             None => err(404, "the calendar is off (calendar.enabled = false)"),
         },
         _ => err(404, "no such admin call"),
+    }
+}
+
+fn admin_keys_list(cp: &ControlPlane) -> Response {
+    match &cp.access.local_keys {
+        None => ok(&json!({"keys": [], "local": false})),
+        Some(k) => match k.list() {
+            Ok(keys) => ok(&json!({"keys": keys, "local": true})),
+            Err(m) => err(500, &m),
+        },
     }
 }
 
@@ -652,6 +751,56 @@ pub fn resolve_secret(c: &crate::control::schema::ControlConfig, r: &str) -> Opt
         .map(String::into_bytes)
 }
 
+/// Say once at start-up how to get the first admin key when there is none (D151).
+pub fn bootstrap_hint(
+    keys: &crate::access::LocalKeys,
+    c: &crate::control::schema::ControlConfig,
+    main: &std::path::Path,
+) {
+    if keys.active_count() > 0 {
+        return;
+    }
+    let linked = if c.access.accounts_url.is_some() {
+        " (or sign in with an admin key from the linked Abhoth web server)"
+    } else {
+        ""
+    };
+    eprintln!(
+        "abhoth router: no router admin keys yet; make one with `abhoth router admin-key create <name> --control {}` and sign in at /admin/{linked}",
+        main.display()
+    );
+}
+
+/// The admin pages without a control plane (`control.enabled = false`, D151): `router.toml`
+/// editing and checking, `router.json` forms, admin keys and sign-in; switching answers 501.
+pub fn install_admin_only(
+    st: &Arc<crate::state::AppState>,
+    main: &std::path::Path,
+    c: &crate::control::schema::ControlConfig,
+) -> Result<String, String> {
+    let state_dir = std::path::PathBuf::from(&c.router.state_dir);
+    std::fs::create_dir_all(&state_dir).map_err(|e| format!("{}: {e}", state_dir.display()))?;
+    let store = Arc::new(crate::control::store::Store::open(
+        &state_dir.join("router.db"),
+    )?);
+    let keys = crate::access::LocalKeys::open(store.clone())?;
+    let token = c
+        .access
+        .accounts_token
+        .as_deref()
+        .and_then(|r| resolve_secret(c, r));
+    if c.access.accounts_token.is_some() && token.is_none() {
+        return Err("access.accounts_token: the secret could not be read".into());
+    }
+    bootstrap_hint(&keys, c, main);
+    let access = Access::new(c.access.clone(), token).with_local_keys(keys);
+    let backend = live::ConfigBackend::new(main, &state_dir, store);
+    st.admin_only
+        .set(Arc::new(ControlPlane { access, backend }))
+        .map_err(|_| "the admin pages are already on".to_string())?;
+    Ok("control plane off (control.enabled = false); admin pages on at /admin/".into())
+}
+
 /// Turn the admin API on from `router.toml` when `control.enabled` (`--control FILE`).
 /// Returns what it did, for the start-up line.
 pub fn install_from_toml(
@@ -682,7 +831,8 @@ pub fn install_from_toml(
     if c.access.accounts_token.is_some() && token.is_none() {
         return Err("access.accounts_token: the secret could not be read".into());
     }
-    let access = Access::new(c.access.clone(), token);
+    let access = Access::new(c.access.clone(), token)
+        .with_local_keys(crate::access::LocalKeys::open(store.clone())?);
     // The Supervisor's calendar (SUPERVISOR.md 8), with its own flag.
     let calendar = crate::calendar::start(c, main, &l.origin, store.clone())?;
     let backend = live::ConfigBackend::new(main, &state_dir, store);

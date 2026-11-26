@@ -1,7 +1,7 @@
 // REST calls to the server. Auth is the session's HttpOnly cookie, plus its CSRF header on
 // state-changing requests.
 import { csrfHeaders, sessionEnded } from "@/lib/auth";
-import { connectionPath } from "@/features/settings/connection";
+import { connectionPath, type RouterAdminDoc } from "@/features/settings/connection";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -260,6 +260,8 @@ export const connectionApi = {
   requestKey: (pid: string | null) => request<KeyRequestPollResult>("POST", `${connectionPath(pid)}/key-request`),
   pollKey: (pid: string | null) => request<KeyRequestPollResult>("GET", `${connectionPath(pid)}/key-request`),
   forgetKeyRequest: (pid: string | null) => request<{ ok: boolean }>("DELETE", `${connectionPath(pid)}/key-request`),
+  /** Is the app's router key an admin's? Then the router's admin pages open here (D151). */
+  routerAdmin: () => request<RouterAdminDoc>("GET", "/api/settings/connection/router-admin"),
 };
 
 export interface SettingResult {

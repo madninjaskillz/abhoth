@@ -213,3 +213,11 @@ treated as an OpenAI-compatible server (as today) until it is updated.
 
 See the D149 entry in PORTING.md for the result of the first deployment (router in a
 Docker container with host networking on TrueNAS SCALE).
+
+## 6. Router admin (D151)
+
+When the app's router key is an admin key (a router admin key from `abhoth router admin-key
+create`, or an admin's key from the linked web server), the Connection panel shows **Router
+admin**: the router's own admin pages (servers, cards, engines, layouts, the model list, admin
+keys) in a dialog, through the app's server, which adds the key (it never reaches the browser),
+and an "Open in browser" link to `<router>/admin/`. Other keys and server mode do not show it. Design: [`ROUTER-ADMIN.md`](ROUTER-ADMIN.md).

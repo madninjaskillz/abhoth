@@ -974,3 +974,24 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     unavailable or failed, iteration limit), plus the turn's denied permissions and notice levels.
   - Cache busting: the brand images are Vite-hashed assets (`/assets/abhoth-…-<hash>`), so the
     OpenOrca build's cached orca at `/brand/mascot-256.webp` can no longer show.
+- **D151** (user request 2026-11-26) **The router's own admin pages**: "you might run the router
+  without abhoth on the server, so it should have its own webui — but that should be accessible
+  if you are connected to the router and have admin." Design in
+  [`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md).
+  - **Where:** `http://<router>:8010/admin/` (the gateway's port), the client's second Vite
+    bundle (`client/dist-router`, checked in like `dist`) embedded in the router; relative URLs,
+    so it works behind any proxy prefix. Needs `--control router.toml`; with
+    `control.enabled = false` an admin-only plane (editing, keys, sign-in; no switching).
+  - **Auth:** router admin keys in `router.db` (hash only; `abhoth router admin-key
+    create|list|revoke`), or a web-server admin's key; sign-in gives an HttpOnly SameSite=Strict
+    session cookie (Secure over HTTPS, 8 h / 2 h idle) with a CSRF header for changes; 10 failed
+    sign-ins per address per 15 min; audited, keys never logged. Bearer keys, the signed acting
+    user and loopback still work; loopback with forwarding headers is no longer admin.
+  - **Forms:** `router.toml` servers, cards, engines (profiles = lanes), layouts as edits applied
+    with `toml_edit` (comments kept) and checked by the router; `router.json` model list,
+    upstreams, Claude block, slots, checked with the router's loader, backed up, written
+    atomically, audited and hot reloaded. Diff and problems shown before every save; an invalid
+    file is never written; nothing switches. The raw editors stay under Advanced.
+  - **App:** in router mode with an admin key, Settings → Models → Connection shows "Router
+    admin" (the pages in a dialog through the app's server, which adds the key; or "Open in
+    browser"). The built-in router's Router config tab has the same forms.

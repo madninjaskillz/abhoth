@@ -36,6 +36,9 @@ pub struct AppState {
     pub ext: crate::Extensions,
     /// The control plane's admin API (`control.enabled`); unset = data plane only.
     pub control: std::sync::OnceLock<Arc<crate::control_api::ControlPlane>>,
+    /// The admin pages and API without a running control plane (`--control` with
+    /// `control.enabled = false`, D151): config editing, admin keys, sign-in; no switching.
+    pub admin_only: std::sync::OnceLock<Arc<crate::control_api::ControlPlane>>,
     /// Ends a card's idle clock-down before a request goes to it (hostd `wake`, SUPERVISOR.md
     /// 6.3); unset = no host daemon.
     pub wake: std::sync::OnceLock<Arc<dyn crate::control::hostd::CardWake>>,
@@ -75,11 +78,18 @@ impl AppState {
             log,
             ext,
             control: std::sync::OnceLock::new(),
+            admin_only: std::sync::OnceLock::new(),
             discovery: std::sync::OnceLock::new(),
             engine_caps: Default::default(),
             wake: std::sync::OnceLock::new(),
             overlay: std::sync::OnceLock::new(),
         })
+    }
+
+    /// What serves `/admin/api` and the admin pages: the control plane, or the admin-only
+    /// plane (D151).
+    pub fn admin_plane(&self) -> Option<&Arc<crate::control_api::ControlPlane>> {
+        self.control.get().or_else(|| self.admin_only.get())
     }
 
     pub fn snapshot(&self) -> Arc<Snapshot> {

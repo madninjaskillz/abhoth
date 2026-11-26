@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ExternalLink, KeyRound, Loader2, Network, Radar, Router as RouterIcon, Server } from "lucide-react";
+import { CheckCircle2, ExternalLink, KeyRound, Loader2, Network, Radar, Router as RouterIcon, Server, ShieldCheck } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { connectionApi, settingsApi, type DiscoveredRouter, type KeyRequestPollResult, type RouterInfo, type RouterModel, type Setting } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, howToGetKey, keyHint, normalizeUrl, pickerOrder, routerPick, savedNote, statusLine, waitLeft, type ConnectionMode, type KeyKind } from "./connection";
+import { CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, howToGetKey, keyHint, normalizeUrl, pickerOrder, routerAdminEntry, routerPick, savedNote, statusLine, waitLeft, type ConnectionMode, type KeyKind } from "./connection";
 
 const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
 
@@ -98,6 +99,7 @@ export function ConnectionPanel({ pid, mode, sections }: { pid: string | null; m
           {status.data?.router && <RouterSummary info={status.data.router} baseUrl={status.data.baseUrl} />}
           {status.data?.router && <KeyBox pid={pid} info={status.data.router} keyKind={status.data.apiKey} pending={status.data.keyRequest ?? null} onChanged={refresh} />}
           <RouterModels pid={pid} needsKey={!!status.data?.router?.auth.required && status.data?.apiKey !== "abhoth"} />
+          {status.data?.router && <RouterAdmin />}
           {hidden.length > 0 && (
             <p className="text-xs text-muted-foreground" data-testid="connection-hidden">
               The router takes care of {hidden.length} settings here ({hidden.map((h) => h.label).join(", ")}), and of inference profiles, slots and GPU layouts.
@@ -210,6 +212,43 @@ function Found({ r, busy, onUse }: { r: DiscoveredRouter; busy: boolean; onUse: 
       <Button size="sm" className="ml-auto h-6" disabled={busy || !r.verified} onClick={() => onUse(r.url)} data-testid="connection-use">
         Use it
       </Button>
+    </div>
+  );
+}
+
+/**
+ * "Router admin" (D151): when the app's router key is an admin's, the router's own admin pages
+ * (servers, cards, layouts, the model list, keys), inside the app through this server (the key
+ * never reaches the page), or in the browser at the router (sign in there with an admin key).
+ */
+function RouterAdmin() {
+  const doc = useQuery({ queryKey: ["connection-router-admin"], queryFn: connectionApi.routerAdmin, staleTime: 30000, retry: false });
+  const [open, setOpen] = useState(false);
+  const entry = routerAdminEntry("router", doc.data);
+  if (!entry.show) return null;
+  return (
+    <div className="space-y-1.5 rounded-md border p-3" data-testid="connection-router-admin">
+      <div className="flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4 text-success" /> Router admin</div>
+      <p className="text-xs text-muted-foreground">
+        This app's key is an admin key on the router ({doc.data?.principal}). Its servers, cards, engines, layouts and model list are edited on the router's own admin pages.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={() => setOpen(true)} data-testid="connection-router-admin-open">Open router admin</Button>
+        {entry.url && (
+          <Button size="sm" variant="ghost" asChild>
+            <a href={entry.url} target="_blank" rel="noreferrer noopener" data-testid="connection-router-admin-browser"><ExternalLink /> Open in browser</a>
+          </Button>
+        )}
+      </div>
+      {open && entry.embedded && (
+        <Dialog open onOpenChange={(o) => !o && setOpen(false)}>
+          <DialogContent className="flex h-[90vh] max-w-[min(1400px,95vw)] flex-col gap-2 p-3" data-testid="router-admin-dialog">
+            <DialogTitle className="text-sm">Router admin</DialogTitle>
+            <DialogDescription className="sr-only">The router's own admin pages, through this server.</DialogDescription>
+            <iframe src={entry.embedded} title="Router admin" className="min-h-0 w-full flex-1 rounded border bg-background" data-testid="router-admin-frame" />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

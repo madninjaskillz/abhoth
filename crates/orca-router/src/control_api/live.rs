@@ -673,6 +673,38 @@ impl ControlBackend for ConfigBackend {
         }
     }
 
+    fn record(
+        &self,
+        who: &str,
+        action: &str,
+        target: &str,
+        old_rev: &str,
+        new_rev: &str,
+        diff: &str,
+        reason: &str,
+    ) {
+        let reason = if target.is_empty() {
+            reason.to_string()
+        } else if reason.is_empty() {
+            target.to_string()
+        } else {
+            format!("{target}: {reason}")
+        };
+        let _ = self.store.audit(
+            chrono::Utc::now().timestamp(),
+            who,
+            action,
+            old_rev,
+            new_rev,
+            diff,
+            &reason,
+        );
+        self.publish(Event {
+            kind: "audit",
+            data: json!({"who": who, "action": action}),
+        });
+    }
+
     /// Edits one route in the file with `toml_edit` (comments and order kept), through the same
     /// check, backup and audit as a full save.
     async fn edit_route(&self, name: &str, edit: &RouteEdit, who: &str) -> ApiResult<RouteView> {

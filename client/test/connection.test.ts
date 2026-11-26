@@ -147,3 +147,13 @@ test("clicking the router card switches when a router is known, and asks for one
   assert.deepEqual(routerPick("server", lm, [{ url: "http://a:8010", verified: true }, { url: "http://b:8010", verified: true }]), { kind: "find" });
   assert.deepEqual(routerPick("server", undefined, []), { kind: "find" });
 });
+
+test("Router admin shows only in router mode, for an admin key (D151)", async () => {
+  const { routerAdminEntry } = await import("../src/features/settings/connection.ts");
+  const doc = { available: true, url: "http://router:8010/admin/", embedded: "/api/settings/connection/router-admin/ui/", principal: "router-key:ops#1" };
+  assert.deepEqual(routerAdminEntry("router", doc), { show: true, url: doc.url, embedded: doc.embedded });
+  assert.equal(routerAdminEntry("server", doc).show, false, "server mode");
+  assert.equal(routerAdminEntry("router", { available: false, reason: "not an admin key" }).show, false, "not an admin");
+  assert.equal(routerAdminEntry("router", { available: true }).show, false, "nowhere to open it");
+  assert.equal(routerAdminEntry("router", undefined).show, false, "not known yet");
+});
