@@ -342,7 +342,7 @@ impl ControlBackend for ConfigBackend {
         for (gid, g) in &c.guards {
             st.guards.push(GuardView {
                 id: gid.clone(),
-                kind: serde_json::to_value(&g.kind)
+                kind: serde_json::to_value(g.kind)
                     .ok()
                     .and_then(|v| v.as_str().map(str::to_string))
                     .unwrap_or_default(),

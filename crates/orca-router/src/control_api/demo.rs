@@ -631,7 +631,7 @@ impl ControlBackend for DemoControl {
     fn jobs(&self, limit: usize) -> Vec<Job> {
         let g = self.inner.lock().unwrap();
         let mut v = g.jobs.clone();
-        v.sort_by(|a, b| b.started.cmp(&a.started));
+        v.sort_by_key(|j| std::cmp::Reverse(j.started));
         v.truncate(limit);
         v
     }
@@ -959,21 +959,21 @@ impl ControlBackend for DemoControl {
                     }
                     if i == 7 {
                         for c in g.state.servers.iter_mut().flat_map(|s| s.cards.iter_mut()) {
-                            if moving.contains(&c.id) {
-                                if let Some(e) = c.engine.as_mut() {
-                                    e.state = "stopping".into();
-                                    e.since = now_ms();
-                                }
+                            if moving.contains(&c.id)
+                                && let Some(e) = c.engine.as_mut()
+                            {
+                                e.state = "stopping".into();
+                                e.since = now_ms();
                             }
                         }
                     }
                     if i == 8 {
                         for c in g.state.servers.iter_mut().flat_map(|s| s.cards.iter_mut()) {
-                            if moving.contains(&c.id) {
-                                if let Some(e) = c.engine.as_mut() {
-                                    e.state = "starting".into();
-                                    e.since = now_ms();
-                                }
+                            if moving.contains(&c.id)
+                                && let Some(e) = c.engine.as_mut()
+                            {
+                                e.state = "starting".into();
+                                e.since = now_ms();
                             }
                         }
                     }
