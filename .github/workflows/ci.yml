@@ -6,7 +6,8 @@
 #   clippy and tests (default features and the desktop feature), the React client, and
 #   `package`, which cross-compiles abhoth.exe / abhoth-desktop.exe with cargo-xwin, runs
 #   clippy for the Windows target, and packs a Velopack Setup.exe and a Linux AppImage
-#   (kept on deepthought; an artifact on workflow_dispatch and tags; a Release on tags).
+#   (kept on deepthought; an artifact on workflow_dispatch and tags; a Release on tags), only
+#   after rust-linux, rust-windows and client pass.
 # - Windows (GitHub-hosted): the tests only, because they exercise Windows behaviour
 #   (ConPTY, paths, the shell tool); clippy for Windows is the cross job's.
 # - macOS (GitHub-hosted, 10x minutes): the desktop feature only on workflow_dispatch or a tag.
@@ -171,8 +172,10 @@ jobs:
   # The Windows exes cross-compiled on Linux (cargo-xwin, x86_64-pc-windows-msvc), clippy for
   # the Windows target, the Linux release build, and Velopack packages of both: a Windows
   # Setup.exe and a Linux AppImage. Kept on deepthought (builds/); an artifact by hand or on
-  # a tag; a GitHub Release on a tag.
+  # a tag; a GitHub Release on a tag. Only after the tests pass, so a failing test never
+  # publishes a release.
   package:
+    needs: [rust-linux, rust-windows, client]
     # Never on a pull request from a fork (the runner's job-started hook refuses those too).
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, abhoth]
