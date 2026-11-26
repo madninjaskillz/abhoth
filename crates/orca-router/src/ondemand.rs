@@ -624,6 +624,25 @@ async fn progress(st: &AppState, snap: &Snapshot, now: f64) {
 }
 
 /// One decision for `target` (Coordinator.ensure): may start a switch (not in dry-run).
+/// The control plane's gate before a switch starts: `Ok(principal)` to go ahead. With
+/// `control_gate` off it always says yes, exactly as before the control plane.
+pub fn gate(
+    od: &OnDemandConfig,
+    adm: &crate::switch::gate::ChatAdmission,
+    limiter: &crate::switch::gate::RateLimiter,
+    now: f64,
+) -> Result<Option<String>, (String, u64)> {
+    if !od.control_gate {
+        return Ok(None);
+    }
+    let rules = crate::switch::gate::GateRules {
+        require_key: od.require_key,
+        per_hour: od.max_switches_per_hour,
+        per_principal_per_hour: od.max_switches_per_principal_per_hour,
+    };
+    crate::switch::gate::admit(adm, &rules, limiter, now).map(|t| t.caller.principal)
+}
+
 pub async fn ensure(
     st: &AppState,
     snap: &Snapshot,
@@ -671,29 +690,24 @@ pub async fn ensure(
             reason: format!("dry run: would switch card {card} to {target} ({reason})"),
             retry: 60,
         },
-        Decision::Switch { card, .. } => {
-            let rules = crate::switch::gate::GateRules {
-                require_key: od.require_key,
-                per_hour: od.max_switches_per_hour,
-                per_principal_per_hour: od.max_switches_per_principal_per_hour,
-            };
-            match crate::switch::gate::admit(adm, &rules, &co.limiter, now) {
-                Err((reason, retry)) => Decision::Block { reason, retry },
-                Ok(t) => {
-                    let d = start(st, snap, target, &card, who, &inp.cards, now).await;
-                    if matches!(
+        Decision::Switch { card, .. } => match gate(od, adm, &co.limiter, now) {
+            Err((reason, retry)) => Decision::Block { reason, retry },
+            Ok(principal) => {
+                let d = start(st, snap, target, &card, who, &inp.cards, now).await;
+                if od.control_gate
+                    && matches!(
                         d,
                         Decision::Wait {
                             switching: true,
                             ..
                         }
-                    ) {
-                        co.limiter.record(t.caller.principal.as_deref(), now);
-                    }
-                    d
+                    )
+                {
+                    co.limiter.record(principal.as_deref(), now);
                 }
+                d
             }
-        }
+        },
         other => other,
     };
     co.note(target, &d, who, od.dry_run);

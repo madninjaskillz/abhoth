@@ -5,8 +5,9 @@
 //! fake profiles API records every call. Every probe-like path, with every method and a chat
 //! body naming the cold model, on every listener (gateway, qfn-lb, pig-slots), must leave the
 //! profiles API untouched: not even a read, because only a chat admission reaches `ensure`.
-//! A positive control shows the same router does switch for a real chat, and that
-//! `x-abhoth-no-switch: 1` and a missing key stop it.
+//! A positive control shows the same router does switch for a real chat; with the control
+//! plane's gate on, `x-abhoth-no-switch: 1` and a missing key stop it, and with it off
+//! (today's data plane) they change nothing.
 
 mod common;
 
@@ -200,7 +201,7 @@ async fn a_real_chat_switches_unless_forbidden() {
     real_chat(&r, &[]).await;
     assert_eq!(switches(&api), 1);
 
-    // x-abhoth-no-switch: 1 (another router, the canary, an internal caller): none
+    // control flag off (today's data plane): the header and a missing key change nothing
     let api = Fake::start(profiles_api()).await;
     let r = start_router(
         cfg(&a.url(), &b.url(), &relay.url(), &api.url(), dir.path()),
@@ -208,13 +209,23 @@ async fn a_real_chat_switches_unless_forbidden() {
         Mode::Gateway,
     )
     .await;
+    real_chat(&r, &[("x-abhoth-no-switch", "1")]).await;
+    assert_eq!(switches(&api), 1);
+
+    // the control plane's gate on (control.enabled):
+    // x-abhoth-no-switch: 1 (another router, the canary, an internal caller): none
+    let api = Fake::start(profiles_api()).await;
+    let mut c = cfg(&a.url(), &b.url(), &relay.url(), &api.url(), dir.path());
+    c.on_demand.control_gate = true;
+    c.on_demand.require_key = false;
+    let r = start_router(c, None, Mode::Gateway).await;
     assert_eq!(real_chat(&r, &[("x-abhoth-no-switch", "1")]).await, 503);
     assert_eq!(switches(&api), 0);
 
-    // keys required (the control plane's setting): an anonymous chat never switches
+    // keys required: an anonymous chat never switches
     let api = Fake::start(profiles_api()).await;
     let mut c = cfg(&a.url(), &b.url(), &relay.url(), &api.url(), dir.path());
-    c.on_demand.require_key = true;
+    c.on_demand.control_gate = true;
     let r = start_router(c, None, Mode::Gateway).await;
     assert_eq!(real_chat(&r, &[]).await, 503);
     assert_eq!(switches(&api), 0);

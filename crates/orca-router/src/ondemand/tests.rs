@@ -465,3 +465,24 @@ fn guard_data_is_fresh_for_45_seconds() {
     assert_eq!(run(TARGET, at(45.0)).action(), "switch");
     assert_eq!(run(TARGET, at(46.0)).action(), "wait");
 }
+
+#[test]
+fn gate_off_is_todays_behaviour() {
+    use crate::guards::Caller;
+    use crate::switch::gate::{ChatAdmission, RateLimiter};
+    let anon = Caller {
+        principal: None,
+        grants: vec![],
+    };
+    // no-switch header, no key, and a limiter far past its limits
+    let adm = ChatAdmission::for_test(TARGET, anon, true);
+    let lim = RateLimiter::default();
+    for i in 0..50 {
+        lim.record(None, NOW - i as f64);
+    }
+    let mut od = cfg();
+    assert!(!od.control_gate, "off by default");
+    assert_eq!(crate::ondemand::gate(&od, &adm, &lim, NOW), Ok(None));
+    od.control_gate = true;
+    assert!(crate::ondemand::gate(&od, &adm, &lim, NOW).is_err());
+}

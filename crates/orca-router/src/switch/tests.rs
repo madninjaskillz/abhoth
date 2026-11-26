@@ -720,3 +720,18 @@ fn leases_persist_in_router_db() {
     assert_eq!(back, t);
     assert_eq!(back.leases["A1"].principal.as_deref(), Some("user:7"));
 }
+
+#[test]
+fn on_demand_settings_follow_the_flag() {
+    let mut cfg = sample();
+    let mut od = crate::config::OnDemandConfig::default();
+    let before = od.clone();
+    cfg.control.enabled = false;
+    wiring::apply_on_demand(&cfg, "gpu", &mut od);
+    assert_eq!(od, before); // flag off: untouched
+    cfg.control.enabled = true;
+    wiring::apply_on_demand(&cfg, "gpu", &mut od);
+    assert!(od.control_gate && od.require_key);
+    assert_eq!(od.max_switches_per_principal_per_hour, 2);
+    assert_eq!(od.exclude_cards, ["C"]); // unmanaged
+}
