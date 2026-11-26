@@ -15,6 +15,7 @@ pub mod driver;
 pub mod drivers;
 pub mod exec;
 pub mod hostctl;
+pub mod hostd;
 pub mod import;
 pub mod lifecycle;
 pub mod load;
