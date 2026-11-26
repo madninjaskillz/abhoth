@@ -3214,6 +3214,7 @@ dependencies = [
  "orca-abstractions",
  "orca-core",
  "orca-router",
+ "orca-supervisor",
  "orca-testkit",
  "orca-tools-agent",
  "orca-tools-archive",

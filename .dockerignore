@@ -1,2 +1,5 @@
 target/
 **/__pycache__/
+.git/
+client/node_modules/
+site/

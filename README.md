@@ -134,16 +134,58 @@ The web UI (`--hostui`, `--desktop`, Docker) has accounts, kept in SQLite at
   so agents can't list or stop each other's. Give accounts only to people you would trust with
   a shell on the server.
 
-## Docker (web UI)
+## Docker
 
-`deploy/docker/` holds the Linux image for the web UI: a headless release build of `abhoth`
-on a runtime with the .NET SDK, Node and the Claude Code / Codex CLIs.
+The simplest way to run Abhoth on a server is **one image, one container**: the root
+`Dockerfile` builds `abhoth` with the web UI, the router (gateway and control plane) and the
+supervisor (telemetry hub, Home Assistant, the Glance page's feed). They run in one process, each
+on its own thread pool, ports and config; only the web UI is on unless you configure the other
+two (D148).
+
+### Getting started
 
 ```sh
-docker build -f deploy/docker/Dockerfile -t local/abhoth-web:<n> .
-docker compose -f deploy/docker/compose.yaml up -d   # adapt volumes, ports and secrets first
+git clone https://github.com/madninjaskillz/abhoth && cd abhoth
+mkdir -p abhoth-data/{web,router,supervisor,projects,secrets} && sudo chown -R 568:568 abhoth-data
+docker compose up -d --build                                  # docker-compose.yml
+docker compose exec abhoth /app/entrypoint.sh admin create <user>   # the first admin
 ```
 
+Open `http://<host>:8093` and sign in. The model server is set in the web UI's settings; a key
+it needs goes in `abhoth-data/secrets/strata-api-key`.
+
+- **Networking:** on Linux the compose file uses host networking (the router's ports and the
+  model servers on your LAN work without a port list). On Docker Desktop, remove
+  `network_mode: host` and publish the ports instead (`8093`, and the router's `8010`, `8092`,
+  `8098`, `8099` if you use it).
+- **Volumes:** `/data/web` (accounts, sessions, Claude/Codex logins), `/data/router`,
+  `/data/supervisor`, `/data/projects` (or one volume at `/data`) and read-only `/run/secrets`. Everything runs as uid 568 on a
+  read-only root filesystem.
+- **The router:** set `ROUTER_ARGS` to its flags, as for `abhoth router`, e.g.
+  `--config /data/router/router.json --port 8010 --control /data/router/router.toml`.
+  [`ROUTER.md`](ROUTER.md) and [`ROUTER-CONFIG.md`](ROUTER-CONFIG.md) describe the config;
+  `abhoth router import` writes a `router.toml` from existing layout files.
+- **The supervisor:** set `SUPERVISOR_CONFIG` to its file (example:
+  `crates/orca-supervisor/deploy/supervisor.example.toml`). The Glance page then follows its
+  feed (`ABHOTH_SUPERVISOR_URL`, default `http://127.0.0.1:9890`; `GLANCE=0` turns it off).
+- **Health:** the image's health check asks every part that is on (`deploy/abhoth/healthcheck.sh`).
+  If any part stops with an error, the container exits and its restart policy restarts all of
+  them.
+- **Fans and clocks (optional):** `abhoth-hostd` needs root, so it is installed on the host, not
+  in the container: [`crates/orca-hostd/deploy/install.sh`](crates/orca-hostd/deploy). Mount
+  `/run/abhoth` into the container and add the socket's group (`group_add`) so the supervisor can
+  reach it.
+- **Build options:** `--build-arg FEATURES=claude-engine` adds the router's Claude engine
+  ([`ROUTER.md`](ROUTER.md) 12); `CLAUDE_CODE_VERSION` and `CODEX_VERSION` pin the CLIs.
+
+### The separate images (advanced)
+
+The parts also ship alone, for setups that split them across hosts:
+
+- `deploy/docker/` is the web UI image: `docker build -f deploy/docker/Dockerfile -t local/abhoth-web:<n> .`
+  and `deploy/docker/compose.yaml`. Its state is under `/state`.
+- `deploy/router/` is the router-only image (`abhoth-router`).
+- The supervisor runs from the `abhoth-supervisor` binary or as `abhoth supervisor run --config FILE`.
 - The entrypoint runs `abhoth --hostui=0.0.0.0:$PORT --hostui-login`; `/app/openorca` is a
   symlink to `/app/abhoth`, so `docker exec <c> /app/openorca --hostui-set-password <user>` still
   works (it now sets that account's password in `abhoth.db`; `abhoth admin ...` is the new form).

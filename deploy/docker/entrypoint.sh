@@ -5,11 +5,19 @@
 #   git-credentials  optional: a git credential-store file (https://user:token@host)
 #   admin-password   optional: with ADMIN_USER set, creates that admin on the first start
 #                    (ABHOTH_ADMIN_USER / ABHOTH_ADMIN_PASSWORD_FILE; ignored once accounts exist)
+# The single image (deploy/abhoth, D148) also runs the router and the supervisor in the same
+# process when these are set:
+#   ROUTER_ARGS        the router's flags (what follows `abhoth router`), e.g.
+#                      "--config /data/router/router.json --port 8010 --control /data/router/router.toml"
+#   SUPERVISOR_CONFIG  the supervisor's config file (its [supervisor] listen serves the feed)
+#   ABHOTH_SUPERVISOR_URL  the feed the Glance page follows; defaults to http://127.0.0.1:9890
+#                      when SUPERVISOR_CONFIG is set (GLANCE=0 turns the page off)
+# STATE_DIR (default /state) holds bench/ for BENCH=1.
 # Nothing here prints a secret.
 set -euo pipefail
 umask 077
 BIN=${BIN:-/app/abhoth}
-mkdir -p "$HOME/.ssh" "$OPENORCA_HOME" "${OPENORCA_WORKDIR:=/projects/workspace}"
+mkdir -p "$HOME/.ssh" "${ABHOTH_HOME:-${OPENORCA_HOME:-$HOME/.abhoth}}" "${OPENORCA_WORKDIR:=/projects/workspace}"
 
 # Claude Code / Codex homes (persistent, in $HOME on the state dataset): the progress-bar rule
 # and tool, written once (a file the user changed is left alone).
@@ -49,9 +57,22 @@ cd "$OPENORCA_WORKDIR"
 args=(--hostui="${BIND:-0.0.0.0}:${PORT}" --hostui-login)
 [[ -n "${TRUSTED_PROXIES:-}" ]] && args+=(--hostui-trust-proxy="$TRUSTED_PROXIES")
 [[ "${REQUIRE_2FA:-0}" == 1 ]] && args+=(--hostui-require-2fa)
+STATE_DIR=${STATE_DIR:-/state}
 if [[ "${BENCH:-0}" == 1 ]]; then
-  args+=(--hostui-bench=/state/bench --hostui-bench-kit=/state/bench/kit)
+  args+=(--hostui-bench="$STATE_DIR/bench" --hostui-bench-kit="$STATE_DIR/bench/kit")
   [[ -r /run/secrets/ha.env ]] && args+=(--hostui-bench-power=/run/secrets/ha.env)
-  [[ -d /state/bench/kit/openorca.git ]] && export REALTASKS_REPO=/state/bench/kit/openorca.git
+  [[ -d "$STATE_DIR/bench/kit/openorca.git" ]] && export REALTASKS_REPO="$STATE_DIR/bench/kit/openorca.git"
+fi
+[[ -n "${ROUTER_ARGS:-}" ]] && args+=(--with-router "$ROUTER_ARGS")
+if [[ -n "${SUPERVISOR_CONFIG:-}" ]]; then
+  args+=(--with-supervisor "$SUPERVISOR_CONFIG")
+  if [[ "${GLANCE:-1}" == 1 ]]; then
+    export ABHOTH_SUPERVISOR_URL="${ABHOTH_SUPERVISOR_URL:-http://127.0.0.1:9890}"
+  fi
+fi
+[[ "${GLANCE:-1}" == 0 ]] && unset ABHOTH_SUPERVISOR_URL
+# Router and supervisor logs on stderr (docker logs), like their own images.
+if [[ -n "${ROUTER_ARGS:-}${SUPERVISOR_CONFIG:-}" ]]; then
+  export RUST_LOG="${RUST_LOG:-info}"
 fi
 exec "$BIN" "${args[@]}" "$@"

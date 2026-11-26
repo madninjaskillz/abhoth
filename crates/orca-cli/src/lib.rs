@@ -20,6 +20,7 @@ pub mod prompter;
 pub mod render;
 pub mod repl;
 pub mod sessions;
+pub mod together;
 pub mod ui;
 #[cfg(feature = "desktop")]
 pub mod updater;
@@ -645,6 +646,10 @@ Usage:
   {bin} --hostui[=host:port]     the web UI (--hostui-open, --hostui-login, --hostui-token <t>)
   {bin} --desktop                the web UI in its own window (desktop builds)
   {bin} admin create <user>      web UI accounts (also reset-password, reset-2fa, list)
+  {bin} router ...              the OpenAI-compatible gateway (router --help)
+  {bin} supervisor run --config F the supervisor (telemetry hub, Home Assistant)
+  {bin} --hostui ... --with-router \"<router flags>\" --with-supervisor <config>
+                                 the web UI, router and supervisor in one process (the Docker image)
 
 Common options:
   -c, --continue                 continue the last session
@@ -666,12 +671,25 @@ Settings and sessions live in ~/.abhoth (ABHOTH_HOME; OPENORCA_HOME is read too)
 }
 
 /// The whole program; returns the process exit code.
-pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
+pub async fn main_with_args(mut raw: Vec<String>) -> Result<i32> {
     // `abhoth router ...`: the gateway (ROUTER.md); no config, sessions or tools.
     #[cfg(feature = "router")]
     if raw.first().map(String::as_str) == Some("router") {
         return orca_router::cli::run(raw[1..].to_vec()).await;
     }
+    // `abhoth supervisor run|check --config FILE` (docs/design/SUPERVISOR.md).
+    #[cfg(feature = "supervisor")]
+    if raw.first().map(String::as_str) == Some("supervisor") {
+        return Ok(orca_supervisor::run::main(&raw[1..]).await);
+    }
+    // --with-router / --with-supervisor: the single-container mode (together.rs, D148).
+    let parts = match together::take(&mut raw) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("abhoth: {e}");
+            return Ok(2);
+        }
+    };
     let cwd = std::env::current_dir().context("reading the current directory")?;
     // `abhoth admin ...` (and the old --hostui-set-password / --hostui-reset-2fa): the web UI's
     // accounts, then exit.
@@ -704,6 +722,17 @@ pub async fn main_with_args(raw: Vec<String>) -> Result<i32> {
         eprintln!("abhoth: {e}");
         return Ok(2);
     }
+    if parts.any() && hostui_args.is_none() {
+        eprintln!(
+            "abhoth: {} and {} run alongside the web UI; add --hostui.",
+            together::ROUTER_FLAG,
+            together::SUPERVISOR_FLAG
+        );
+        return Ok(2);
+    }
+    // Started before the web UI's config is read: the gateway does not wait on it. With
+    // --hostui, SIGTERM (docker stop) stops the process cleanly, extra parts or not.
+    let _parts = hostui_args.is_some().then(|| together::start(&parts));
     let mut manager = ConfigManager::new(None);
     manager
         .load()

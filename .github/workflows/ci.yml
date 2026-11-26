@@ -123,6 +123,48 @@ jobs:
       - name: dist is up to date
         run: git diff --exit-code --stat -- dist
 
+  # The single image (root Dockerfile, D148): builds, and the container starts healthy with
+  # the web UI on; a router with a bad config stops the whole container (all parts restart).
+  # GitHub-hosted: the self-hosted runners have no Docker. Not pushed anywhere (yet).
+  image:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build
+        run: docker build -t abhoth:ci .
+      - name: The binary's parts
+        run: |
+          docker run --rm --entrypoint /app/abhoth abhoth:ci --version
+          docker run --rm --entrypoint /app/abhoth abhoth:ci router --help >/dev/null
+          docker run --rm --entrypoint /app/abhoth abhoth:ci supervisor 2>&1 | grep -q usage
+      - name: Starts healthy (web UI)
+        run: |
+          mkdir -p data && sudo chown 568:568 data
+          docker run -d --name abhoth --network host --read-only --tmpfs /tmp             -e PORT=18093 -v "$PWD/data:/data" abhoth:ci
+          for i in $(seq 1 60); do
+            s=$(docker inspect -f '{{.State.Health.Status}}' abhoth)
+            [ "$s" = healthy ] && break
+            sleep 5
+          done
+          docker logs abhoth 2>&1 | tail -20
+          [ "$(docker inspect -f '{{.State.Health.Status}}' abhoth)" = healthy ]
+          curl -fsS http://127.0.0.1:18093/api/auth/state
+          docker stop -t 15 abhoth
+          [ "$(docker inspect -f '{{.State.ExitCode}}' abhoth)" = 0 ]
+      - name: A failed part stops the container
+        run: |
+          docker rm -f abhoth
+          docker run -d --name abhoth2 --network host --read-only --tmpfs /tmp             -e PORT=18094 -e ROUTER_ARGS="--config /data/router/missing.json --port 18010"             -v "$PWD/data:/data" abhoth:ci
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Running}}' abhoth2)" = false ] && break
+            sleep 2
+          done
+          docker logs abhoth2 2>&1 | tail -5
+          [ "$(docker inspect -f '{{.State.Running}}' abhoth2)" = false ]
+          [ "$(docker inspect -f '{{.State.ExitCode}}' abhoth2)" != 0 ]
+
   # The Windows exes cross-compiled on Linux (cargo-xwin, x86_64-pc-windows-msvc), clippy for
   # the Windows target, the Linux release build, and Velopack packages of both: a Windows
   # Setup.exe and a Linux AppImage. Kept on deepthought (builds/); an artifact by hand or on

@@ -902,3 +902,28 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     fetch with the gh token, no machine reads on a non-local server, per-user isolation of
     pasted, saved and device-flow tokens, and no token in responses, the audit log, git URLs,
     `.git/config` or the project token file.
+- **D148** (user decision 2026-11-26) **One image, one container**: "for ease we'd suggest users
+  do a single docker, so we should do the same." The root `Dockerfile` builds `abhoth` (web UI,
+  router, supervisor) and `docker-compose.yml` runs it as one service.
+  - **One process, not an init:** `abhoth --hostui ... --with-router "<router flags>"
+    --with-supervisor <config>` (`orca_cli::together`). The router and the supervisor run the
+    same code as `abhoth router` / `abhoth supervisor run`, each on its own OS thread and tokio
+    runtime, so agent work on the web UI's runtime cannot starve the gateway, and each keeps its
+    own ports and config. A part that stops with a non-zero code (bad config, port in use,
+    panic) exits the process with that code, so the restart policy restarts all three; a restart
+    of one is a restart of all (accepted). With `--hostui`, SIGTERM now stops the process
+    cleanly (the web UI only listened for Ctrl-C), after the other parts have had up to 10 s.
+    `abhoth supervisor run|check` is new (feature `supervisor`, on by default).
+  - **The image:** tini as PID 1 (reaps orphaned tool processes); `/data/web`, `/data/router`,
+    `/data/supervisor`, `/data/projects` (one `/data` volume is enough) and read-only `/run/secrets`; `ROUTER_ARGS`,
+    `SUPERVISOR_CONFIG`, `ABHOTH_SUPERVISOR_URL` (the Glance feed, defaulted when the supervisor
+    is on), `STATE_DIR` (the web state, `/state` in the old image) in the shared
+    `deploy/docker/entrypoint.sh`; a health check over every part that is on
+    (`deploy/abhoth/healthcheck.sh`); `FEATURES=claude-engine` kept. hostd stays on the host
+    (root, fans and clocks); the container reaches its socket through a `/run/abhoth` mount.
+  - **The separate images stay** (`deploy/docker`, `deploy/router`, the `abhoth-supervisor`
+    binary) for split setups.
+  - **CI:** the `image` job builds the image on a GitHub-hosted runner (the self-hosted ones have
+    no Docker), checks it starts healthy and that a failing part stops the container. Releases
+    do not push images yet; the proposal is a tag-only step pushing `ghcr.io/<owner>/abhoth:<version>`
+    with the job's `GITHUB_TOKEN` (`packages: write`).

@@ -1,0 +1,60 @@
+# Abhoth in one container (D148): the web UI, and optionally the router and the supervisor.
+#   docker compose up -d --build
+#   docker compose exec abhoth /app/entrypoint.sh admin create <user>   # the first admin
+# Then open http://<host>:8093. See README.md, "Docker".
+#
+# Everything lives under ./abhoth-data (bind mounts; change the left-hand paths as you like):
+#   abhoth-data/web         web UI state (accounts, sessions, Claude/Codex logins)
+#   abhoth-data/router      router.json / router.toml and the router's own state
+#   abhoth-data/supervisor  supervisor.toml (and the secret files it names)
+#   abhoth-data/projects    the projects the agent works in
+#   abhoth-data/secrets     read-only secrets (strata-api-key, git-deploy-key, ...)
+# The folders must be writable by uid 568 (e.g. `sudo chown -R 568:568 abhoth-data`).
+services:
+  abhoth:
+    build: .
+    image: abhoth:latest
+    restart: unless-stopped
+    init: false                       # the image runs tini itself
+    # Linux: host networking (the router's ports and the model servers on the LAN, no port
+    # list to keep in step). Elsewhere (Docker Desktop), delete this line and use `ports:`.
+    network_mode: host
+    # ports: ["8093:8093", "8010:8010", "8092:8092", "8098:8098", "8099:8099"]
+    user: "568:568"
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 10g
+    pids_limit: 4096
+    environment:
+      PORT: "8093"
+      REQUIRE_2FA: "0"                # 1 = an authenticator code at every sign-in
+      # TRUSTED_PROXIES: "10.0.0.2"   # a reverse proxy in front: X-Forwarded-* only from it
+      # BENCH: "1"                    # the Benchmarks page (in /data/web/bench)
+      #
+      # The router (gateway + control plane, ROUTER.md and ROUTER-CONFIG.md). Its flags, as
+      # for `abhoth router`; whitespace-separated, no quoting:
+      # ROUTER_ARGS: "--config /data/router/router.json --port 8010 --control /data/router/router.toml"
+      # ROUTER_HEALTH_URL: "http://127.0.0.1:8010/health/liveliness"
+      #
+      # The supervisor (telemetry hub, Home Assistant, the Glance page's feed;
+      # docs/design/SUPERVISOR.md). It talks to hostd on the host for fans and clocks (optional,
+      # crates/orca-hostd/deploy): mount /run/abhoth below.
+      # SUPERVISOR_CONFIG: "/data/supervisor/supervisor.toml"
+      # ABHOTH_SUPERVISOR_URL: "http://127.0.0.1:9890"   # its [supervisor] listen
+      #
+      # The Glance page's card buttons and calendar: the router's admin API.
+      # ABHOTH_ROUTER_URL: "http://127.0.0.1:8010"
+      # ABHOTH_ROUTER_TOKEN_FILE: "/run/secrets/router-link-token"
+    volumes:
+      - ./abhoth-data/web:/data/web
+      - ./abhoth-data/router:/data/router
+      - ./abhoth-data/supervisor:/data/supervisor
+      - ./abhoth-data/projects:/data/projects
+      - ./abhoth-data/secrets:/run/secrets:ro
+      # hostd's socket (fans, clocks, GPU telemetry), when it is installed on the host; add
+      # group_add: ["<the socket's group id>"] above so uid 568 may connect.
+      # - /run/abhoth:/run/abhoth:ro
