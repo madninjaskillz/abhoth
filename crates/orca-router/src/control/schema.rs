@@ -314,6 +314,10 @@ pub struct Server {
     /// Where models downloaded for this server go (D152: Hugging Face downloads).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_dir: Option<String>,
+    /// Folders the admin pages may browse on this server (default: everything but /proc, /sys,
+    /// /dev, /run and /boot). On a strict host the allowlist's read paths apply as well.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub browse_roots: Vec<String>,
 }
 
 fn d_ready_timeout() -> u64 {

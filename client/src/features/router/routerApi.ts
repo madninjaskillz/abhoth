@@ -9,7 +9,7 @@ import {
   type RouteEdit, type RouteView, type StateView,
 } from "./routerModel";
 import type { AdminKey, ConfigData, FormEdit, GatewayCheck, GatewayDoc, NewAdminKey } from "./forms/formModel";
-import type { CardOption, CatalogKind, DetectedGpu, DownloadJob, HfDetails, HfFile, HfRow, Inventory } from "./forms/inventoryModel";
+import type { CardOption, CatalogKind, DetectedGpu, DirListing, DownloadJob, HfDetails, HfFile, HfRow, Inventory, PathStat } from "./forms/inventoryModel";
 
 /** Where the admin API is and how calls authenticate. */
 export interface RouterTransport {
@@ -94,6 +94,10 @@ export const routerApi = {
   catalog: () => call<CatalogKind[]>("GET", `${R()}/catalog`),
   detect: (server: string) => call<{ server: string; gpus: DetectedGpu[] }>("POST", `${R()}/inventory/detect`, { server }),
   ggufMeta: (server: string, path: string) => call<Record<string, string>>("POST", `${R()}/inventory/gguf`, { server, path }),
+  browse: (server: string, path: string, offset = 0) =>
+    call<DirListing>("GET", `${R()}/inventory/browse?server=${encodeURIComponent(server)}&path=${encodeURIComponent(path)}&offset=${offset}&limit=200`),
+  pathStat: (server: string, path: string) => call<PathStat>("GET", `${R()}/inventory/stat?server=${encodeURIComponent(server)}&path=${encodeURIComponent(path)}`),
+  mkdir: (server: string, path: string) => call<PathStat>("POST", `${R()}/inventory/mkdir`, { server, path }),
   place: (model: string) => call<{ placement: CardOption[] }>("POST", `${R()}/inventory/place`, { model }),
   hfSearch: (q: string, kind?: string) => call<HfRow[]>("GET", `${R()}/hf/search?q=${encodeURIComponent(q)}${kind ? `&kind=${encodeURIComponent(kind)}` : ""}`),
   hfModel: (repo: string) => call<HfDetails>("GET", `${R()}/hf/model?repo=${encodeURIComponent(repo)}`),
@@ -101,7 +105,7 @@ export const routerApi = {
   hfSetToken: (token: string) => call<{ set: boolean; from: string }>("PUT", `${R()}/hf/token`, { token }),
   hfRemoveToken: () => call<{ set: boolean; from: string }>("DELETE", `${R()}/hf/token`),
   downloads: () => call<DownloadJob[]>("GET", `${R()}/downloads`),
-  startDownload: (r: { server: string; repo: string; revision?: string | null; files: HfFile[]; model?: string; gated?: boolean }) =>
+  startDownload: (r: { server: string; repo: string; revision?: string | null; files: HfFile[]; model?: string; gated?: boolean; dir?: string }) =>
     call<DownloadJob>("POST", `${R()}/downloads`, r),
   cancelDownload: (id: string) => call<DownloadJob>("POST", `${R()}/downloads/${encodeURIComponent(id)}/cancel`),
   resumeDownload: (id: string) => call<DownloadJob>("POST", `${R()}/downloads/${encodeURIComponent(id)}/resume`),

@@ -70,6 +70,9 @@ pub struct StartReq {
     pub model: Option<String>,
     #[serde(default)]
     pub gated: bool,
+    /// Download into this folder instead of `<model_dir>/<owner>/<name>` (absolute, no `..`).
+    #[serde(default)]
+    pub dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -122,11 +125,21 @@ pub fn installed_for(main: &Path) -> Option<Arc<Service>> {
 
 /// Install the service for the admin API (once per main file).
 pub fn install(main: &Path, state_dir: &Path, backend: Arc<dyn ControlBackend>) -> Arc<Service> {
+    install_with(main, state_dir, backend, default_exec_for())
+}
+
+/// As [`install`], with the executors given (tests install a fake before the router starts).
+pub fn install_with(
+    main: &Path,
+    state_dir: &Path,
+    backend: Arc<dyn ControlBackend>,
+    exec_for: ExecFor,
+) -> Arc<Service> {
     let mut r = registry().lock().unwrap();
     if let Some(s) = r.get(main) {
         return s.clone();
     }
-    let s = Arc::new(Service::new(main, state_dir, backend, default_exec_for()));
+    let s = Arc::new(Service::new(main, state_dir, backend, exec_for));
     s.load_jobs();
     super::caps::load_cache(state_dir);
     r.insert(main.to_path_buf(), s.clone());
@@ -319,6 +332,95 @@ impl Service {
         Ok(json!({"server": server, "gpus": gpus}))
     }
 
+    // ── folder browsing ────────────────────────────────────────────────────────────────────
+
+    /// Run a browse builtin on a server (`list-dir`, `path-stat`, `mkdir`). `Err(None)`: the
+    /// server does not offer it (a strict host whose allowlist lacks it).
+    async fn browse_call(
+        &self,
+        server: &str,
+        name: &str,
+        args: Value,
+    ) -> Result<Value, Option<String>> {
+        let c = self.config().map_err(Some)?;
+        let s = c
+            .servers
+            .get(server)
+            .ok_or_else(|| Some(format!("no server `{server}`")))?;
+        let mut args = args;
+        args["roots"] = json!(s.browse_roots);
+        let ex = (self.exec_for)(&c, server).map_err(Some)?;
+        let o = ex
+            .run(
+                ExecRequest::builtin(server, name, args, Duration::from_secs(15)),
+                &Cancel::new(),
+            )
+            .await;
+        match o {
+            Err(super::exec::ExecError::Refused(m))
+                if m.contains("is not allowed")
+                    || m.contains("unknown builtin")
+                    || m.contains("not in the allowlist") =>
+            {
+                Err(None)
+            }
+            Err(e) => Err(Some(e.to_string())),
+            Ok(o) if o.ok() => serde_json::from_str(&o.stdout).map_err(|e| Some(e.to_string())),
+            Ok(o) if o.timed_out => Err(Some("the server took too long to answer".into())),
+            Ok(o) => Err(Some(o.stderr.trim().to_string())
+                .filter(|x| !x.is_empty())
+                .or_else(|| Some(o.summary()))),
+        }
+    }
+
+    pub async fn browse(
+        &self,
+        server: &str,
+        path: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Value, Option<String>> {
+        let p = super::browse::clean(path).map_err(Some)?;
+        self.browse_call(
+            server,
+            "list-dir",
+            json!({"path": p, "offset": offset, "limit": limit}),
+        )
+        .await
+    }
+
+    pub async fn path_stat(&self, server: &str, path: &str) -> Result<Value, Option<String>> {
+        let p = super::browse::clean(path).map_err(Some)?;
+        self.browse_call(server, "path-stat", json!({"path": p}))
+            .await
+    }
+
+    /// Create one folder (audited).
+    pub async fn mkdir(
+        &self,
+        server: &str,
+        path: &str,
+        who: &str,
+    ) -> Result<Value, Option<String>> {
+        let p = super::browse::clean(path).map_err(Some)?;
+        let r = self.browse_call(server, "mkdir", json!({"path": p})).await;
+        let outcome = match &r {
+            Ok(_) => "ok".to_string(),
+            Err(None) => "not enabled".to_string(),
+            Err(Some(e)) => e.clone(),
+        };
+        self.backend.record(
+            who,
+            "folder.create",
+            &format!("{server}:{p}"),
+            "",
+            "",
+            "",
+            &outcome,
+        );
+        r
+    }
+
     /// `general.architecture` and friends from a GGUF file on a server.
     pub async fn gguf(&self, server: &str, path: &str) -> Result<Value, String> {
         let c = self.config()?;
@@ -420,7 +522,15 @@ impl Service {
         if req.gated && self.token(&c).is_none() {
             return Err("this model is gated: accept its licence on huggingface.co and set a Hugging Face token first".into());
         }
-        let dir = Self::dir_for(&c, &req.server, &req.repo)?;
+        let dir = match req.dir.as_deref().filter(|d| !d.trim().is_empty()) {
+            Some(d) => {
+                if !c.servers.contains_key(&req.server) {
+                    return Err(format!("no server `{}`", req.server));
+                }
+                super::browse::clean(d)?
+            }
+            None => Self::dir_for(&c, &req.server, &req.repo)?,
+        };
         if let Some(m) = &req.model
             && !c.models.contains_key(m)
         {

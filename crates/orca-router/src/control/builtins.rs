@@ -36,6 +36,9 @@ pub const NAMES: &[&str] = &[
     "download",
     "download-status",
     "gguf-meta",
+    "list-dir",
+    "path-stat",
+    "mkdir",
 ];
 
 /// Builtins that change the host (root on a strict host, logged as writes).
@@ -47,6 +50,7 @@ pub const WRITES: &[&str] = &[
     "secret-put",
     "docker-rm-robust",
     "download",
+    "mkdir",
 ];
 
 /// Argument keys that name host paths (checked against the allowlist's path rules).
@@ -63,6 +67,9 @@ pub const PATH_ARGS: &[(&str, &str, bool)] = &[
     ("download", "dest", true),
     ("download-status", "dest", false),
     ("gguf-meta", "path", false),
+    ("list-dir", "path", false),
+    ("path-stat", "path", false),
+    ("mkdir", "path", true),
 ];
 
 pub fn known(name: &str) -> bool {
@@ -186,6 +193,27 @@ pub async fn run(
             let a: super::fetch::DownloadStatusArgs = args_of(name, args)?;
             clean_path(&a.dest).map_err(|e| bad(name, e))?;
             ExecOutput::ok_with(&super::fetch::status(&a.dest).to_string())
+        }
+        // folder browsing (control/browse.rs): the path is an argument, never shell text
+        "list-dir" | "path-stat" | "mkdir" => {
+            let a: BrowseArg = args_of(name, args)?;
+            let roots = super::browse::Roots {
+                roots: a.roots.clone(),
+            };
+            let r = match name {
+                "list-dir" => super::browse::list(
+                    &a.path,
+                    &roots,
+                    a.offset.unwrap_or(0),
+                    a.limit.unwrap_or(200),
+                ),
+                "path-stat" => super::browse::stat(&a.path, &roots),
+                _ => super::browse::mkdir(&a.path, &roots),
+            };
+            match r {
+                Ok(v) => ExecOutput::ok_with(&v.to_string()),
+                Err(e) => ExecOutput::fail(2, &e),
+            }
         }
         "gguf-meta" => {
             let a: PathArg = args_of(name, args)?;
@@ -398,6 +426,17 @@ pub async fn run(
         other => return Err(ExecError::Refused(format!("unknown builtin `{other}`"))),
     };
     Ok(done(t0, out))
+}
+
+#[derive(Deserialize)]
+struct BrowseArg {
+    path: String,
+    #[serde(default)]
+    offset: Option<usize>,
+    #[serde(default)]
+    limit: Option<usize>,
+    #[serde(default)]
+    roots: Vec<String>,
 }
 
 #[derive(Deserialize)]

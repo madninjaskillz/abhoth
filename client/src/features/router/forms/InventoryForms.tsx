@@ -14,9 +14,10 @@ import { routerApi } from "../routerApi";
 import { obj, type FormEdit, type Obj } from "./formModel";
 import { Check2, Field, FormDialog, Grid, ReviewDialog, Select, Text, errText } from "./formKit";
 import { useEditFlow } from "./SetupForms";
+import { PathField } from "./FolderBrowser";
 import {
   KIND_LABELS, cardEnginesEdit, enginesFor, enginesForKind, fitSummary, fmtGib, modelEngineEdits, modelIdFromRepo, moved, newCardEdits, newModelEdits,
-  newServerEdits, nextCardId, nextStep, pct, placementLine, repoDir, toggled, validModelDir, validateServerId,
+  cleanPath, newServerEdits, nextCardId, nextStep, pct, placementLine, repoDir, toggled, validModelDir, validateServerId,
   type DetectedGpu, type DownloadJob, type HfChoice, type HfDetails, type InvCard, type InvEngine, type InvModel, type InvServer, type Inventory, type ModelKind,
 } from "./inventoryModel";
 
@@ -184,7 +185,7 @@ function AddServerDialog({ inv, busy, onClose, submit }: { inv: Inventory; busy:
         <Field label="Name" hint="short, lower case: used in the config"><Text value={f.id} onChange={set("id")} placeholder="gpu1" mono testid="inv-server-id" /></Field>
         <Field label="Title"><Text value={f.title} onChange={set("title")} placeholder="GPU box" /></Field>
         <Field label="How the router reaches it"><Select value={f.exec} onChange={(v) => setF({ ...f, exec: v as "ssh" | "local" })} options={[["ssh", "SSH (a forced-command account)"], ["local", "Locally (same machine)"]]} /></Field>
-        <Field label="Model folder" hint="where model files live and downloads go"><Text value={f.modelDir} onChange={set("modelDir")} mono testid="inv-server-dir" /></Field>
+        <Field label="Model folder" hint="where model files live and downloads go"><PathField value={f.modelDir} onChange={set("modelDir")} testid="inv-server-dir" /></Field>
         {f.exec === "ssh" && (
           <>
             <Field label="Host"><Text value={f.host} onChange={set("host")} placeholder="gpu-host.lan" mono testid="inv-server-host" /></Field>
@@ -204,7 +205,7 @@ function FolderDialog({ server, busy, onClose, submit }: { server: InvServer; bu
   return (
     <FormDialog title={`Model folder on ${server.title || server.id}`} description="Downloads go to <folder>/<owner>/<name>/ on this server." onClose={onClose} busy={busy} error={err}
       onSubmit={() => !err && submit([{ path: ["servers", server.id, "model_dir"], value: dir || null }], onClose)}>
-      <Field label="Folder"><Text value={dir} onChange={setDir} placeholder="/srv/models" mono testid="inv-folder-input" /></Field>
+      <Field label="Folder"><PathField server={server.id} value={dir} onChange={setDir} placeholder="/srv/models" testid="inv-folder-input" /></Field>
     </FormDialog>
   );
 }
@@ -459,12 +460,15 @@ function ModelEnginesDialog({ m, inv, busy, onClose, submit }: { m: InvModel; in
   const [prefer, setPrefer] = useState<string[]>(() => m.order.filter((e) => e !== (m.primaryChoice ?? m.primary)));
   const [allow, setAllow] = useState<string[]>(m.allow);
   const [deny, setDeny] = useState<string[]>(m.deny);
+  const [files, setFiles] = useState<Record<string, string>>(() => Object.fromEntries(m.files.map((f) => [f.key, f.file ?? ""])));
+  const fileServer = m.servers?.[0] ?? inv.servers[0]?.id;
+  const fileEdits = (): FormEdit[] => m.files.filter((f) => (files[f.key] ?? "") !== (f.file ?? "")).map((f) => ({ path: ["models", m.id, "artifacts", f.key, "file"], value: files[f.key] }));
   const ok = new Set(m.supported.filter((s) => s.ok).map((s) => s.engine));
   const rows = m.supported;
   const flip = (list: string[], set: (v: string[]) => void, e: string) => set(list.includes(e) ? list.filter((x) => x !== e) : [...list, e]);
   return (
     <FormDialog title={m.title || m.id} description="The engines that can run this model, and why. Pick the primary; the rest are tried in order when the primary cannot be placed." onClose={onClose} busy={busy}
-      onSubmit={() => submit(modelEngineEdits(m.id, { primary, prefer: prefer.filter((e) => ok.has(e) || allow.includes(e)), allow, deny }), onClose)} testid="inv-model-dialog">
+      onSubmit={() => submit([...modelEngineEdits(m.id, { primary, prefer: prefer.filter((e) => ok.has(e) || allow.includes(e)), allow, deny }), ...fileEdits()], onClose)} testid="inv-model-dialog">
       <div className="flex flex-wrap gap-1 text-[11px]">
         <Badge variant="secondary">{KIND_LABELS[m.kind]}</Badge>
         {m.files.map((f) => <Badge key={f.key} variant="outline">{f.key}: {[f.format, f.arch, f.quant].filter(Boolean).join(" · ") || "file"}</Badge>)}
@@ -498,6 +502,18 @@ function ModelEnginesDialog({ m, inv, busy, onClose, submit }: { m: InvModel; in
           );
         })}
       </div>
+      {m.files.some((f) => f.file) && (
+        <details className="rounded-md border p-2" data-testid="inv-model-files">
+          <summary className="cursor-pointer text-xs font-medium">Files{fileServer ? ` on ${fileServer}` : ""}</summary>
+          <div className="space-y-2 pt-2">
+            {m.files.filter((f) => f.file).map((f) => (
+              <Field key={f.key} label={`${f.key}`} hint="the file this engine loads">
+                <PathField server={fileServer} mode="file" value={files[f.key] ?? ""} onChange={(v) => setFiles({ ...files, [f.key]: v })} testid={`inv-model-file-${f.key}`} />
+              </Field>
+            ))}
+          </div>
+        </details>
+      )}
       <details className="rounded-md border p-2">
         <summary className="cursor-pointer text-xs font-medium">Where it runs now</summary>
         <div className="space-y-1 pt-2 text-[11px]" data-testid="inv-model-placement">
@@ -577,8 +593,10 @@ function HfModel({ d, inv, busy, submit, onBack, onStarted }: { d: HfDetails; in
   const eng = engine || engines[0]?.id || "";
   const [id, setId] = useState(() => modelIdFromRepo(d.repo, inv.models.map((m) => m.id)));
   const [err, setErr] = useState<string | null>(null);
+  const defaultDir = (sid: string) => { const s = servers.find((x) => x.id === sid); return s?.modelDir ? repoDir(s.modelDir, d.repo) : ""; };
+  const [dir, setDir] = useState(() => defaultDir(server));
   const start = useMutation({
-    mutationFn: () => routerApi.startDownload({ server, repo: d.repo, revision: d.revision, files: choice!.files, model: id, gated: d.gated }),
+    mutationFn: () => routerApi.startDownload({ server, repo: d.repo, revision: d.revision, files: choice!.files, model: id, gated: d.gated, dir: dir !== defaultDir(server) ? dir : undefined }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ["router-downloads"] }); onStarted(); },
     onError: (e) => setErr(errText(e)),
   });
@@ -588,8 +606,9 @@ function HfModel({ d, inv, busy, submit, onBack, onStarted }: { d: HfDetails; in
     if (!server) return setErr("set a model folder on a server first (Servers & cards → Model folder)");
     if (!eng) return setErr(`no engine here runs ${choice.format} ${KIND_LABELS[kind].toLowerCase()}${d.arch ? ` (${d.arch})` : ""}: add or fork one under Engines`);
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id) || inv.models.some((m) => m.id === id)) return setErr("pick another model name");
-    const dir = repoDir(servers.find((s) => s.id === server)!.modelDir!, d.repo);
-    submit(newModelEdits(id, d, choice, eng, [], dir), () => start.mutate());
+    const c = cleanPath(dir);
+    if (!c.ok) return setErr(`download folder: ${c.error}`);
+    submit(newModelEdits(id, d, choice, eng, [], c.path), () => start.mutate());
   };
   return (
     <div className="space-y-3 rounded-md border p-3" data-testid="inv-hf-model">
@@ -622,12 +641,15 @@ function HfModel({ d, inv, busy, submit, onBack, onStarted }: { d: HfDetails; in
       </div>
       <Grid>
         <Field label="Download to" hint={servers.length ? undefined : "no server has a model folder yet"}>
-          <Select value={server} onChange={setServer} options={servers.length ? servers.map((s) => [s.id, `${s.title || s.id} (${s.modelDir})`] as [string, string]) : [["", "none"]]} testid="inv-hf-server" />
+          <Select value={server} onChange={(v) => { setServer(v); setDir(defaultDir(v)); }} options={servers.length ? servers.map((s) => [s.id, `${s.title || s.id} (${s.modelDir})`] as [string, string]) : [["", "none"]]} testid="inv-hf-server" />
         </Field>
         <Field label="Primary engine" hint={engines.length ? `${engines.length} engine${engines.length === 1 ? "" : "s"} can run it` : "none can run this file"}>
           <Select value={eng} onChange={setEngine} options={engines.length ? engines.map((e) => [e.id, e.title || e.id] as [string, string]) : [["", "none"]]} testid="inv-hf-engine" />
         </Field>
         <Field label="Model name" hint="the id in the catalog"><Text value={id} onChange={setId} mono testid="inv-hf-id" /></Field>
+        <Field label="Folder" hint="where the files go on that server" wide>
+          <PathField server={server || undefined} value={dir} onChange={setDir} testid="inv-hf-dir" />
+        </Field>
       </Grid>
       {err && <div className="text-xs text-destructive" data-testid="inv-hf-error">{err}</div>}
       <Button size="sm" onClick={go} disabled={busy || start.isPending || !choice} data-testid="inv-hf-add">

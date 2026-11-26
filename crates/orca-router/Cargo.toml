@@ -51,6 +51,9 @@ rust-embed = { workspace = true, features = ["interpolate-folder-path"] }
 toml.workspace = true
 toml_edit.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile.workspace = true
 # the hostd protocol types, to check the router speaks them (not linked into the router)

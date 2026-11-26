@@ -359,3 +359,89 @@ export function nextStep(inv: Inventory): "server" | "cards" | "engines" | "mode
   if (inv.models.length === 0) return "models";
   return null;
 }
+
+// ── folder browsing (the server's filesystem, through the router) ─────────────────────────────
+
+export interface DirEntry { name: string; path: string; dir: boolean; link: boolean; outside: boolean; size?: number | null; model: boolean }
+export interface DirListing {
+  path: string;
+  real: string;
+  parent?: string | null;
+  entries: DirEntry[];
+  offset: number;
+  total: number;
+  truncated: boolean;
+  more: boolean;
+  free?: number | null;
+  writable: boolean;
+  roots: string[];
+}
+export interface PathStat {
+  path: string;
+  allowed: boolean;
+  exists: boolean;
+  dir?: boolean;
+  size?: number | null;
+  writable?: boolean;
+  free?: number | null;
+  parentExists?: string | null;
+  parentWritable?: boolean;
+}
+
+/** The client's copy of the router's path rule: absolute, no `..`, normalised. */
+export function cleanPath(p: string): { ok: true; path: string } | { ok: false; error: string } {
+  const t = p.trim();
+  if (!t) return { ok: false, error: "a path is needed" };
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(t)) return { ok: false, error: "not a plain path" };
+  if (!t.startsWith("/")) return { ok: false, error: "an absolute path, starting with /" };
+  if (t.includes("\\")) return { ok: false, error: "no backslashes" };
+  const parts = t.split("/").filter((x) => x && x !== ".");
+  if (parts.includes("..")) return { ok: false, error: "no .. in a path" };
+  return { ok: true, path: `/${parts.join("/")}` };
+}
+
+/** Breadcrumbs for a clean path: `/`, `/srv`, `/srv/models`. */
+export function crumbs(path: string): { label: string; path: string }[] {
+  const parts = path.split("/").filter(Boolean);
+  const out = [{ label: "/", path: "/" }];
+  parts.forEach((p, i) => out.push({ label: p, path: `/${parts.slice(0, i + 1).join("/")}` }));
+  return out;
+}
+
+/** A new folder's name: one plain component. */
+export function validFolderName(n: string): string | null {
+  const t = n.trim();
+  if (!t) return "a name is needed";
+  if (t.includes("/") || t.includes("\\")) return "one folder at a time (no /)";
+  if (t === "." || t === ".." || t.startsWith(".")) return "not starting with a dot";
+  if (t.length > 255) return "too long";
+  return null;
+}
+
+export function joinPath(dir: string, name: string): string {
+  return `${dir.replace(/\/+$/, "")}/${name.trim()}`;
+}
+
+export function fmtBytes(n?: number | null): string {
+  if (n == null) return "";
+  if (n < 1024) return `${n} B`;
+  const u = ["KiB", "MiB", "GiB", "TiB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
+}
+
+/** What a typed path's check says, in a line (and whether "use it" is fine). */
+export function statLine(s: PathStat, mode: "folder" | "file"): { ok: boolean; text: string } {
+  if (!s.allowed) return { ok: false, text: "outside the folders this server allows" };
+  if (!s.exists) {
+    if (mode === "file") return { ok: false, text: "no such file" };
+    return s.parentWritable ? { ok: true, text: "does not exist yet (it can be created)" } : { ok: false, text: "does not exist, and its parent is not writable" };
+  }
+  if (mode === "folder" && !s.dir) return { ok: false, text: "a file, not a folder" };
+  if (mode === "file" && s.dir) return { ok: false, text: "a folder, not a file" };
+  if (mode === "folder" && !s.writable) return { ok: true, text: "exists, read only for the engine user" };
+  return { ok: true, text: `${mode === "file" ? `file${s.size != null ? `, ${fmtBytes(s.size)}` : ""}` : "folder, writable"}${s.free != null ? ` · ${fmtBytes(s.free)} free` : ""}` };
+}

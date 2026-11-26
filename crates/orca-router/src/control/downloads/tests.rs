@@ -68,6 +68,7 @@ async fn a_download_lands_in_the_servers_model_folder_and_marks_the_model() {
         }],
         model: Some("small".into()),
         gated: false,
+        dir: None,
     };
     let dl = s.start(req.clone(), "admin").unwrap();
     assert!(
@@ -105,6 +106,7 @@ async fn gated_needs_a_token_and_bad_requests_are_refused() {
         }],
         model: None,
         gated,
+        dir: None,
     };
     assert!(
         s.start(mk("example/voice-1", "model.safetensors", true), "a")
@@ -154,6 +156,7 @@ async fn cancel_keeps_the_part_and_resume_finishes() {
         }],
         model: None,
         gated: false,
+        dir: None,
     };
     let dl = s.start(req, "admin").unwrap();
     s.cancel(&dl.id, "admin").unwrap();

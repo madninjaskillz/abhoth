@@ -625,6 +625,10 @@ pub fn suggested_paths(c: &ControlConfig, server: &str) -> PathRules {
             write.insert(expand(md));
             read.insert(expand(md));
         }
+        // Folder browsing reads its roots (new folders go under the model folder's write rule).
+        for r in &s.browse_roots {
+            read.insert(r.clone());
+        }
     }
     for e in c.engines.values() {
         for h in e.before_start.iter().chain(&e.prepare) {

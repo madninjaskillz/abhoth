@@ -735,7 +735,7 @@ stream_note = "reasoning"
 
 | Entity | Key | Holds | Notes |
 |---|---|---|---|
-| `servers.<id>` | short id | host, exec (local/ssh), SSH settings, vars, locks, readiness, post-check, templates, `model_dir` (D152: where downloads go) | one orchestrator lock per server |
+| `servers.<id>` | short id | host, exec (local/ssh), SSH settings, vars, locks, readiness, post-check, templates, `model_dir` (D152: where downloads go), `browse_roots` (folders the folder browser may show) | one orchestrator lock per server |
 | `cards.<id>` | letter or name | server, `gpu_uuid` (required), label, VRAM, reserve, CPU set, clock expectation, `managed`, `on_demand`, `engines` (D152: engines allowed per kind of model) | `admin_state` (online/offline/excluded, with who and why) is runtime, in `router.db` |
 | `engines.<id>` | engine kind | API kind, driver and its inputs, ports per card, key ref, health, verify, stop, ordering, coupling group, hooks, defaults, builds, request params, `caps` (D152: inherits, add/remove, probe) | the lifecycle unit is (card, engine) |
 | `engines.<id>.profiles.<id>` | profile | lanes, ctx, VRAM, build, options, env, NUMA mems | profiles.json `engineProfiles` |

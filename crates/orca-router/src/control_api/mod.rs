@@ -498,6 +498,26 @@ async fn inventory_api(
             Ok(v) => ok(&v),
             Err(e) => fail(e),
         },
+        (Method::GET, "inventory", ["browse"]) => {
+            let off = q(qs, "offset").and_then(|x| x.parse().ok()).unwrap_or(0);
+            let lim = q(qs, "limit").and_then(|x| x.parse().ok()).unwrap_or(200);
+            browse_answer(
+                svc.browse(
+                    q(qs, "server").unwrap_or(""),
+                    q(qs, "path").unwrap_or("/"),
+                    off,
+                    lim,
+                )
+                .await,
+            )
+        }
+        (Method::GET, "inventory", ["stat"]) => browse_answer(
+            svc.path_stat(q(qs, "server").unwrap_or(""), q(qs, "path").unwrap_or(""))
+                .await,
+        ),
+        (Method::POST, "inventory", ["mkdir"]) => {
+            browse_answer(svc.mkdir(&s("server"), &s("path"), who).await)
+        }
         (Method::POST, "inventory", ["place"]) => {
             // where a model would run (the forms' preview): {model}
             let pin = inventory::Pin::default();
@@ -559,6 +579,19 @@ async fn inventory_api(
             Err(e) => fail(e),
         },
         _ => err(404, "no such admin call"),
+    }
+}
+
+/// A folder-browsing answer: the listing, a refusal (422), or "not enabled here" (501 with
+/// `enabled: false`, so the page keeps a plain text box).
+fn browse_answer(r: Result<Value, Option<String>>) -> Response {
+    match r {
+        Ok(v) => ok(&v),
+        Err(None) => json_resp(
+            501,
+            &json!({"enabled": false, "error": "Folder browsing isn't enabled on this server (its hostctl allowlist needs list-dir, path-stat and mkdir)."}),
+        ),
+        Err(Some(e)) => err(422, &e),
     }
 }
 

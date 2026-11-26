@@ -113,16 +113,34 @@ struct Router {
 }
 
 async fn start() -> Router {
+    start_with(|t| t, None).await
+}
+
+/// `edit` changes the config text; `exec` installs these executors before the router starts.
+async fn start_with(
+    edit: impl Fn(String) -> String,
+    exec: Option<orca_router::control::downloads::ExecFor>,
+) -> Router {
     let hf = mock_hf().await;
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state");
     let toml = dir.path().join("router.toml");
     std::fs::write(
         &toml,
-        TOML.replace("STATE", &state.display().to_string().replace('\\', "/"))
-            .replace("\"HF\"", &format!("\"{hf}\"")),
+        edit(
+            TOML.replace("STATE", &state.display().to_string().replace('\\', "/"))
+                .replace("\"HF\"", &format!("\"{hf}\"")),
+        ),
     )
     .unwrap();
+    if let Some(exec) = exec {
+        std::fs::create_dir_all(&state).unwrap();
+        let store = std::sync::Arc::new(
+            orca_router::control::store::Store::open(&state.join("router.db")).unwrap(),
+        );
+        let backend = orca_router::control_api::live::ConfigBackend::new(&toml, &state, store);
+        orca_router::control::downloads::install_with(&toml, &state, backend, exec);
+    }
     let json = dir.path().join("router.json");
     std::fs::write(&json, JSON).unwrap();
     let st = AppState::new(Snapshot::load(&json).unwrap(), Some(json.clone()));
@@ -388,4 +406,123 @@ async fn the_forms_edits_check_clean() {
     assert_eq!(v["check"]["ok"], true, "{v}");
     let text = v["text"].as_str().unwrap();
     assert!(text.contains("[models.tiny-chat]") && text.contains("inherits = \"llamacpp\""));
+}
+
+/// Folder browsing on a local server: listing, stat, new folder (audited), refusals.
+#[tokio::test]
+async fn folders_are_browsed_on_the_server() {
+    let models = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(models.path())
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    let root = root.strip_prefix("//?/").unwrap_or(&root).to_string();
+    std::fs::write(format!("{root}/m-Q4_K_M.gguf"), vec![0u8; 10]).unwrap();
+    std::fs::create_dir(format!("{root}/sub")).unwrap();
+    let r2 = root.clone();
+    let r = start_with(
+        move |t| {
+            let ssh = t
+                .lines()
+                .find(|l| l.starts_with("ssh = {"))
+                .unwrap()
+                .to_string();
+            t.replace("exec = \"ssh\"", "exec = \"local\"")
+                .replace(&ssh, &format!("browse_roots = [\"{r2}\"]"))
+        },
+        None,
+    )
+    .await;
+    let h = admin(&r).await;
+    let c = reqwest::Client::new();
+    let url = |p: &str| format!("{}/admin/api/inventory/{p}", r.url);
+    let v: Value = c
+        .get(url(&format!("browse?server=gpu&path={root}")))
+        .headers(h.clone())
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["entries"][0]["name"], "sub", "{v}");
+    assert_eq!(v["entries"][1]["model"], true);
+    let out = c
+        .get(url(&format!("browse?server=gpu&path={root}/../")))
+        .headers(h.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(out.status(), 422);
+    let s: Value = c
+        .get(url(&format!("stat?server=gpu&path={root}/sub")))
+        .headers(h.clone())
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(s["dir"], true);
+    let m = c
+        .post(url("mkdir"))
+        .headers(h.clone())
+        .json(&json!({"server": "gpu", "path": format!("{root}/new-folder")}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(m.status(), 200);
+    assert!(std::path::Path::new(&format!("{root}/new-folder")).is_dir());
+    let audit: Value = c
+        .get(format!("{}/admin/api/audit", r.url))
+        .headers(h.clone())
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(audit.to_string().contains("folder.create"));
+    let anon = c
+        .get(url(&format!("browse?server=gpu&path={root}")))
+        .header("x-forwarded-for", "10.0.0.5")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(anon.status(), 401);
+}
+
+/// A strict host whose allowlist lacks the builtins: "not enabled", not an error page.
+#[tokio::test]
+async fn a_host_without_browsing_says_so() {
+    use orca_router::control::exec::{ExecError, Executor, FakeExecutor};
+    use std::sync::Arc;
+    let fake = Arc::new(FakeExecutor::new());
+    fake.on(
+        "list-dir",
+        vec![Err(ExecError::Refused(
+            "builtin list-dir is not allowed".into(),
+        ))],
+    );
+    let f2 = fake.clone();
+    let exec: orca_router::control::downloads::ExecFor =
+        Arc::new(move |_c, _s| Ok(f2.clone() as Arc<dyn Executor>));
+    let r = start_with(|t| t, Some(exec)).await;
+    let h = admin(&r).await;
+    let resp = reqwest::Client::new()
+        .get(format!(
+            "{}/admin/api/inventory/browse?server=gpu&path=/srv//models/",
+            r.url
+        ))
+        .headers(h)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 501);
+    let v: Value = resp.json().await.unwrap();
+    assert_eq!(v["enabled"], false);
+    assert!(v["error"].as_str().unwrap().contains("isn't enabled"));
+    // the path went as a normalised argument, never as shell text
+    let req = serde_json::to_value(&fake.requests()[0]).unwrap();
+    assert_eq!(req["args"]["path"], "/srv/models", "{req}");
 }

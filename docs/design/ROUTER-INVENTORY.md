@@ -208,6 +208,33 @@ problems, the same five on-demand models with the same engines and profiles).
 **Rolling back to an older router** needs the backed-up file: `router.toml`'s schema denies
 unknown fields, so 0.16.13 refuses `[inventory]`, `engines`, `kind` and friends.
 
+## 6a. Folder browsing
+
+Every model-folder field (a server's model folder, a model's files, a download's target folder)
+has a **Browse** button in `/admin/` and in the app's Router config. The router lists the
+*server's* filesystem through that server's executor (ssh to `hostctl`, or local when the server
+is this machine); nothing is read from the router's own disk unless the server is local.
+
+- **API (admin only):** `GET /admin/api/inventory/browse?server&path&offset&limit` (folders first,
+  model files flagged with sizes, free space, writable, 200 entries a page, at most 5000 read),
+  `GET inventory/stat?server&path` (exists, folder or file, writable, free; for a missing path the
+  nearest existing parent and whether it is writable), `POST inventory/mkdir {server, path}` (one
+  folder, the only write; audited as `folder.create`). A server that does not offer the builtins
+  answers **501** `{"enabled": false}`; the page then keeps the plain text box and says
+  "Folder browsing isn't enabled on this server".
+- **Builtins:** `list-dir`, `path-stat` (read) and `mkdir` (write; never as root). The path is a
+  JSON argument, never shell text. Paths are normalised (absolute, no `..`, no control
+  characters, no backslashes); `/proc`, `/sys`, `/dev`, `/run`, `/boot` are hidden; symlinks are
+  resolved and anything that leads out of the roots is refused (listed greyed as "outside").
+  15 s timeout per call.
+- **Roots:** `servers.x.browse_roots = ["/srv/models", "/mnt/data"]` limits browsing on that
+  server (default: the whole filesystem minus the hidden trees). On a strict `hostctl` host its
+  allowlist's read paths limit it as well; `hostctl export` adds the browse roots as read paths
+  and the model folder as a write path.
+- **Strict hosts** need `list-dir`, `path-stat` and `mkdir` in the allowlist's `builtins.allow`
+  (with `download`, `download-status` and `gguf-meta` from D152), read paths for the folders to
+  browse, and a write path for where new folders go.
+
 ## 7. Limits
 
 - New models and on-demand routes need a **router restart** to be switchable on demand (the
@@ -218,3 +245,7 @@ unknown fields, so 0.16.13 refuses `[inventory]`, `engines`, `kind` and friends.
   and overrides alone.
 - VRAM fit is an estimate (weights × 1.1 plus the profile's VRAM); the engine's real use wins.
 - No live Hugging Face calls in tests: everything runs against mocks.
+- Folder browsing's "writable" means writable by the **executor's user** (the SSH user that runs
+  `hostctl`, or the router's user locally), which is usually but not always the engine's user.
+  Free space is reported on Unix hosts only. Rolling back to 0.16.14 needs `browse_roots` removed
+  from `router.toml` if it was set (the older router refuses unknown fields).

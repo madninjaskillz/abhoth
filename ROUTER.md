@@ -984,5 +984,8 @@ files. Design: [`docs/design/ROUTER-INVENTORY.md`](docs/design/ROUTER-INVENTORY.
 - **Routes may let the router pick the card**: `on_demand = { layout_from = "auto" }` places the
   model on a card that has its files, allows the engine and has room (primary engine first). A
   route's `pick` still pins an engine and profile.
-- **Strict hostctl hosts** need their allowlist re-exported for `download`, `download-status` and
-  `gguf-meta`. New models and routes are switchable on demand after a router restart.
+- **Browse for folders**: every model-folder field has a Browse button that lists the server's own
+  folders (breadcrumbs, folders first, model files with sizes, free space, new folder, type a
+  path). Optional `servers.x.browse_roots` limits it; `/proc`, `/sys`, `/dev` are always hidden.
+- **Strict hostctl hosts** need their allowlist re-exported for `download`, `download-status`,
+  `gguf-meta`, and for folder browsing `list-dir`, `path-stat` and `mkdir`. New models and routes are switchable on demand after a router restart.

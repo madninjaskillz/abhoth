@@ -10,6 +10,7 @@
 //! - [`driver`], [`drivers`], [`resolve`], [`lifecycle`], [`manager`]: engines (C4).
 //! - [`import`]: the importer from DeepThought's files (C2).
 
+pub mod browse;
 pub mod builtins;
 pub mod caps;
 pub mod downloads;

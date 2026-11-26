@@ -152,6 +152,14 @@ fn servers(c: &ControlConfig, v: &mut Vec<Issue>) {
                 "the model folder must be an absolute path (no `..`)",
             ));
         }
+        for (i, r) in s.browse_roots.iter().enumerate() {
+            if !r.starts_with('/') || super::browse::clean(r).is_err() {
+                v.push(Issue::err(
+                    format!("servers.{}.browse_roots[{i}]", key(id)),
+                    "a folder to browse must be an absolute path (no `..`)",
+                ));
+            }
+        }
     }
     for (id, s) in &c.secrets {
         let p = format!("secrets.{}", key(id));
