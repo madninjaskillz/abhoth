@@ -7,7 +7,7 @@
 //! - [`commands`]: HA commands, checked and passed to a [`commands::ControlPort`] as the MQTT
 //!   service principal; guards and audit live behind that port (D-SV12);
 //! - [`rest`]: the HA REST client (state reads such as the EcoFlow AC output, service calls);
-//! - [`notify`]: the alert sinks (HA mobile notify, MQTT alert JSON and event entity).
+//! - [`notify`]: the MQTT alert payloads (alert JSON and the event entity); the `ha` notify sink is orca-alerts'.
 //!
 //! Everything is off unless `[mqtt].enabled` / `[homeassistant].enabled` is set, and nothing
 //! here is wired into the binary yet (the supervisor umbrella does that, SV9/SV15).

@@ -393,8 +393,25 @@ pub async fn run_shell(
             out.cancelled = matches!(end, End::Cancel);
         }
     }
-    let (o, t1) = read_out.await.unwrap_or_default();
-    let (e, t2) = read_err.await.unwrap_or_default();
+    // After a kill, a grandchild that escaped the group could hold the pipes open: take what
+    // was read within a second and stop waiting.
+    let killed = out.timed_out || out.cancelled;
+    let collect = |h: tokio::task::JoinHandle<(String, bool)>| async move {
+        if killed {
+            let abort = h.abort_handle();
+            match tokio::time::timeout(Duration::from_secs(1), h).await {
+                Ok(r) => r.unwrap_or_default(),
+                Err(_) => {
+                    abort.abort();
+                    (String::new(), false)
+                }
+            }
+        } else {
+            h.await.unwrap_or_default()
+        }
+    };
+    let (o, t1) = collect(read_out).await;
+    let (e, t2) = collect(read_err).await;
     out.stdout = o;
     out.stderr = e;
     out.truncated = t1 || t2;
@@ -429,9 +446,10 @@ async fn read_capped<R: tokio::io::AsyncRead + Unpin>(r: Option<&mut R>) -> (Str
 #[cfg(unix)]
 fn kill_group(pid: Option<u32>) {
     if let Some(p) = pid {
+        // `-s KILL -- -<pgid>`: without `--`, procps reads `-<pgid>` as an option and the
+        // group (the shell's children holding the pipes) survives.
         let _ = std::process::Command::new("kill")
-            .arg("-KILL")
-            .arg(format!("-{p}"))
+            .args(["-s", "KILL", "--", &format!("-{p}")])
             .status();
     }
 }

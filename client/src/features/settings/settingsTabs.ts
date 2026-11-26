@@ -131,6 +131,14 @@ export const SETTINGS_TABS: TabDef[] = [
     visible: routerAdmins,
   },
   {
+    id: "calendar",
+    label: "Calendar",
+    kind: "pane",
+    blurb: "Events that reserve or block cards (pipelines, benches, maintenance), with live detection and event keys.",
+    keywords: ["calendar", "schedule", "events", "pipelines", "bench", "maintenance", "reserve", "event keys", "cron", "ical"],
+    visible: routerAdmins,
+  },
+  {
     id: "service-keys",
     label: "Service keys",
     kind: "pane",

@@ -66,6 +66,9 @@ impl RouterPlane {
     /// Adds the guard-lease guard to `board`.
     pub fn new(st: Arc<AppState>, board: Arc<GuardBoard>, routes: Arc<dyn RouteSink>) -> Self {
         board.add_guard(Arc::new(LeaseGuard { st: st.clone() }));
+        if let Some(cal) = crate::calendar::installed() {
+            board.add_guard(cal.clone());
+        }
         RouterPlane { st, board, routes }
     }
 

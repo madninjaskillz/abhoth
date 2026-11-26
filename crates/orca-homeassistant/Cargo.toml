@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 orca-sensors.workspace = true
+orca-alerts.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 chrono.workspace = true

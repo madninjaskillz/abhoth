@@ -1,0 +1,170 @@
+[
+ {
+  "id": 6,
+  "enabled": false,
+  "user": "admin",
+  "description": "one-shot overnight KV A-B-A bench",
+  "schedule": {
+   "minute": "0",
+   "hour": "19",
+   "dom": "*",
+   "month": "*",
+   "dow": "*"
+  },
+  "command": "bash /home/ops/kvab_night.sh"
+ },
+ {
+  "id": 7,
+  "enabled": false,
+  "user": "root",
+  "description": "ipmi probe oneshot",
+  "schedule": {
+   "minute": "0",
+   "hour": "5",
+   "dom": "1",
+   "month": "1",
+   "dow": "*"
+  },
+  "command": "bash /home/ops/ipmi_probe.sh"
+ },
+ {
+  "id": 48,
+  "enabled": true,
+  "user": "admin",
+  "description": "AI News Daily (videoPipeline run_daily.sh)",
+  "schedule": {
+   "minute": "0",
+   "hour": "7",
+   "dom": "*",
+   "month": "*",
+   "dow": "*"
+  },
+  "command": "/srv/ai/videoPipeline/run_daily.sh >> /srv/ai/videoPipeline/logs/cron.log 2>&1"
+ },
+ {
+  "id": 49,
+  "enabled": true,
+  "user": "root",
+  "description": "GPU-app boot safety net (qfn-llm + CRASHED GPU apps), log sharedarena/watchdog.log",
+  "schedule": {
+   "minute": "*/2",
+   "hour": "*",
+   "dom": "*",
+   "month": "*",
+   "dow": "*"
+  },
+  "command": "sh /srv/ai/qwen-flash-next/sharedarena/qfn-llm-watchdog.sh"
+ },
+ {
+  "id": 50,
+  "enabled": false,
+  "user": "root",
+  "description": "cpu-lead oneshot (jarvis-brain CPU Lead work)",
+  "schedule": {
+   "minute": "0",
+   "hour": "0",
+   "dom": "1",
+   "month": "1",
+   "dow": "*"
+  },
+  "command": "sh /home/ops/cpulead/root.sh"
+ },
+ {
+  "id": 51,
+  "enabled": true,
+  "user": "root",
+  "description": "deepthought-dash host collector (containers, GPU procs, pools, OOM) -> /srv/ai/dash/state/host.json",
+  "schedule": {
+   "minute": "*",
+   "hour": "*",
+   "dom": "*",
+   "month": "*",
+   "dow": "*"
+  },
+  "command": "/usr/bin/python3 /srv/ai/dash/collector/hoststat.py --loop 4"
+ },
+ {
+  "id": 52,
+  "enabled": true,
+  "user": "root",
+  "description": "inference layouts runner (OpenOrca profiles; /srv/ai/layouts)",
+  "schedule": {
+   "minute": "*",
+   "hour": "*",
+   "dom": "*",
+   "month": "*",
+   "dow": "*"
+  },
+  "command": "python3 /srv/ai/layouts/layoutctl.py runner --seconds 58 >> /srv/ai/layouts/state/runner.log 2>&1"
+ },
+ {
+  "id": 53,
+  "enabled": true,
+  "user": "root",
+  "description": "gpu-power dead-man: reset GPU clocks if the daemon died with cards lowered",
+  "schedule": {
+   "minute": "*",
+   "hour": "*",
+   "dom": "*",
+   "month": "*",
+   "dow": "*"
+  },
+  "command": "sh /home/ops/gpu-power/failsafe.sh"
+ },
+ {
+  "id": 54,
+  "enabled": true,
+  "user": "root",
+  "description": "deepthought-dash BMC collector (read-only ipmitool sdr every 10 s -> state/bmc.json)",
+  "schedule": {
+   "minute": "*",
+   "hour": "*",
+   "dom": "*",
+   "month": "*",
+   "dow": "*"
+  },
+  "command": "/usr/bin/python3 /srv/ai/dash/collector/bmcstat.py --loop 6"
+ },
+ {
+  "id": 55,
+  "enabled": true,
+  "user": "admin",
+  "description": "AI AI Video Game News daily (waits for AI News to finish)",
+  "schedule": {
+   "minute": "0",
+   "hour": "7",
+   "dom": "*",
+   "month": "*",
+   "dow": "*"
+  },
+  "command": "/srv/ai/videoPipeline/run_daily.sh --channel game-news --wait-lock 43200 >> /srv/ai/videoPipeline/channels/game-news/logs/cron.log 2>&1"
+ },
+ {
+  "id": 56,
+  "enabled": true,
+  "user": "admin",
+  "description": "AI AI Car News WEEKLY, Sundays (queues after AI News and Game News via the run lock + --after)",
+  "schedule": {
+   "minute": "0",
+   "hour": "7",
+   "dom": "*",
+   "month": "*",
+   "dow": "0"
+  },
+  "command": "/srv/ai/videoPipeline/run_daily.sh --channel car-news --wait-lock 43200 --after game-news >> /srv/ai/videoPipeline/channels/car-news/logs/cron.log 2>&1"
+ },
+ {
+  "id": 57,
+  "enabled": true,
+  "user": "admin",
+  "description": "videoPipeline upload retry: queued Shorts after uploadLimitExceeded, all channels (pipeline/upload_retry.py; skips 06:30-07:30 and while any run_daily.sh runs)",
+  "schedule": {
+   "minute": "*/10",
+   "hour": "*",
+   "dom": "*",
+   "month": "*",
+   "dow": "*"
+  },
+  "command": "cd /srv/ai/videoPipeline && PATH=/usr/local/bin:/usr/bin:/bin .venv/bin/python pipeline/upload_retry.py >/dev/null 2>>logs/upload_retry.err"
+ }
+]

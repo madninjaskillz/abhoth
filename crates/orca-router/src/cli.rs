@@ -114,13 +114,16 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
 
 /// The admin API over [`crate::control_api::demo::DemoControl`]: no engines, no commands.
 async fn admin_demo(args: &[String]) -> Result<i32> {
-    let (mut listen, mut token_file, mut accounts) = ("127.0.0.1:8010".to_string(), None, None);
+    let (mut listen, mut token_file, mut accounts, mut calendar) =
+        ("127.0.0.1:8010".to_string(), None, None, None::<String>);
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--listen" => listen = take(args, &mut i, "--listen")?,
             "--link-token-file" => token_file = Some(take(args, &mut i, "--link-token-file")?),
             "--accounts-url" => accounts = Some(take(args, &mut i, "--accounts-url")?),
+            // A calendar.toml for the calendar page (in-memory store, the demo's cards A-D).
+            "--calendar" => calendar = Some(take(args, &mut i, "--calendar")?),
             a => bail!("unknown argument {a}"),
         }
         i += 1;
@@ -129,6 +132,25 @@ async fn admin_demo(args: &[String]) -> Result<i32> {
         Some(f) => Some(std::fs::read(f).with_context(|| format!("reading {f}"))?),
         None => None,
     };
+    if let Some(f) = &calendar {
+        let file = PathBuf::from(f);
+        let dir = file
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let store = Arc::new(crate::control::store::Store::memory().map_err(|e| anyhow!("{e}"))?);
+        let svc = crate::calendar::CalendarService::open(
+            "deepthought",
+            "Europe/London",
+            &file,
+            &dir,
+            store,
+            Default::default(),
+        )
+        .map_err(|e| anyhow!(e))?;
+        eprintln!("calendar: {} entries from {f}", svc.entries().len());
+        crate::calendar::install(svc).map_err(|e| anyhow!(e))?;
+    }
     let snap = Snapshot::build(RouterConfig::default(), None).map_err(|e| anyhow!(e))?;
     let st = AppState::new(snap, None);
     let demo = crate::control_api::demo::DemoControl::new();

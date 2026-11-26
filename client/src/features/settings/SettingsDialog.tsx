@@ -5,6 +5,7 @@ import { api, settingsApi, type Project, type Setting, type SettingsDoc } from "
 import { ProfilePicker, useProfiles } from "@/features/profiles/Profiles";
 import { AccountPane } from "@/features/auth/AccountDialog";
 import { UsersPane } from "@/features/auth/UsersDialog";
+import { CalendarPane } from "@/features/calendar/CalendarPane";
 import { RouterActivityPane, RouterConfigPane, RouterOverviewPane, RouterRoutesPane, ServiceKeysPane } from "@/features/router/RouterPanes";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -279,6 +280,7 @@ function Pane({ id }: { id: string }) {
   if (id === "routes") return <div className="flex h-full flex-col"><RouterRoutesPane /></div>;
   if (id === "router-config") return <div className="flex h-full flex-col"><RouterConfigPane /></div>;
   if (id === "router-activity") return <div className="flex h-full flex-col"><RouterActivityPane /></div>;
+  if (id === "calendar") return <div className="flex h-full flex-col"><CalendarPane /></div>;
   if (id === "service-keys") return <div className="flex h-full flex-col"><ServiceKeysPane /></div>;
   return null;
 }

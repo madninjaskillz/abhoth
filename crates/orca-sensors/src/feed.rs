@@ -34,14 +34,23 @@ pub mod sections {
     pub const HWMON: &str = "hwmon";
     /// `{ "<fan id>": FanSample + policy state, … }` (orca-fans).
     pub const FANS: &str = "fans";
-    /// `{ "<card>": clocks/power/idle state, … }` (orca-gpuctl).
+    /// `{ "<card>": { "state": "serving"|"low", "locked": bool, "cap_mhz": u32?,
+    /// "pinned": bool, "serving": …, "low_secs", "saved_wh", "wakes": {…} }, … }` (orca-gpuctl
+    /// `CardStatus`; `cap_mhz` only while a cap override is in force).
     pub const CLOCKS: &str = "clocks";
-    /// Engines, layouts, slots (router control plane).
+    /// Router control plane: `{ "layout", "layout_title", "layouts": [id…], "switch_state",
+    /// "last_switch", "on_demand", "slots_busy", "slots_total", "fan_mode",
+    /// "cards": { "<card>": { "online", "engine", "state", "model", "model_title", "summary",
+    /// "tok_s", "running", "queued" } }, "engines": { "<engine id>": { "title", "kind",
+    /// "cards": [card…], "state", "healthy" } } }`.
     pub const ENGINES: &str = "engines";
+    /// `[ { "id", "holder", "cards", "until", … } ]`: the leases held (an array; a merge patch
+    /// replaces it whole).
     pub const LEASES: &str = "leases";
-    /// Active and upcoming calendar entries (orca-calendar).
+    /// `{ "active_event": id?, "block": bool, "bench_running": bool, "entries": [ … ] }`
+    /// (orca-calendar).
     pub const CALENDAR: &str = "calendar";
-    /// Open alerts (orca-alerts).
+    /// `[ { "identity": "hot_card/A", "severity", "text", "since" } ]`: open alerts (orca-alerts).
     pub const ALERTS: &str = "alerts";
     /// Host facts: containers, GPU processes, zpools, OOM kills (hostd).
     pub const FACTS: &str = "facts";

@@ -500,6 +500,180 @@ impl CallerResolver for ViaControl {
     }
 }
 
+/// `router.db` as found at startup: the active layout (when none is recorded yet) and an
+/// adopted instance per card, so the admin API and the `:8098` shim show what runs.
+fn seed_store(store: &Store, server: &str, run: &Running) {
+    let now = chrono::Utc::now().timestamp();
+    let schema_of = |s: &CardSpec| schema::CardSpec {
+        engine: s.engine.clone(),
+        profile: s.profile.clone(),
+        model: s.model.clone(),
+    };
+    if store.active_layout(server).ok().flatten().is_none()
+        && let Some(l) = &run.layout
+    {
+        let cards = run
+            .spec
+            .iter()
+            .map(|(c, s)| (c.clone(), (!s.is_off()).then(|| schema_of(s))))
+            .collect();
+        let row = ActiveLayout {
+            server: server.into(),
+            layout: l.clone(),
+            cards,
+            since: now_ms(),
+            set_by: "router (adopted at start)".into(),
+            job_id: None,
+        };
+        if let Err(e) = store.set_active_layout(&row) {
+            tracing::warn!("router.db: active layout: {e}");
+        }
+    }
+    for (card, s) in &run.spec {
+        let i = if s.is_off() {
+            super::lifecycle::Instance::off(server, card)
+        } else {
+            super::lifecycle::Instance {
+                server: server.into(),
+                card: card.clone(),
+                engine: s.engine.clone(),
+                spec: Some(schema_of(s)),
+                state: super::lifecycle::InstanceState::Ready,
+                since: now,
+                detail: "adopted".into(),
+                ..Default::default()
+            }
+        };
+        if let Err(e) = store.put_instance(&i) {
+            tracing::warn!("router.db: instance {card}: {e}");
+        }
+    }
+}
+
+/// `{var:x}` from the server's vars.
+fn expand_vars(c: &ControlConfig, server: &str, t: &str) -> String {
+    let mut s = t.to_string();
+    if let Some(sv) = c.servers.get(server) {
+        for (k, v) in &sv.vars {
+            s = s.replace(&format!("{{var:{k}}}"), v);
+        }
+    }
+    s
+}
+
+fn truthy(x: &Value) -> bool {
+    match x {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(m) => !m.is_empty(),
+        Value::String(s) => !s.is_empty(),
+        Value::Number(n) => n.as_f64() != Some(0.0),
+    }
+}
+
+/// One reading of a detector guard (`process`, `json_file`, `file_exists`) through the
+/// host's builtins: `Some(detail)` when active; `Err` = no reading (the guard goes stale and
+/// counts as active).
+async fn read_guard(
+    c: &ControlConfig,
+    server: &str,
+    exec: &dyn super::exec::Executor,
+    g: &schema::Guard,
+) -> Result<Option<String>, String> {
+    let t = Duration::from_secs(10);
+    let req = |name: &str, args: Value| super::exec::ExecRequest {
+        server: server.into(),
+        op: super::exec::Op::Builtin {
+            name: name.into(),
+            args,
+        },
+        timeout: t,
+        root: false,
+        stdin: None,
+    };
+    let cancel = Cancel::new();
+    let path = expand_vars(c, server, g.path.as_deref().unwrap_or_default());
+    match g.kind {
+        schema::GuardKind::FileExists => {
+            let o = exec
+                .run(
+                    req("file-exists", serde_json::json!({"path": path})),
+                    &cancel,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(o.ok().then(|| format!("{path} exists")))
+        }
+        schema::GuardKind::JsonFile => {
+            let o = exec
+                .run(req("read-json", serde_json::json!({"path": path})), &cancel)
+                .await
+                .map_err(|e| e.to_string())?;
+            if o.exit_code == Some(1) {
+                return Ok(None); // no file: nothing queued
+            }
+            if !o.ok() {
+                return Err(o.summary());
+            }
+            let v: Value = serde_json::from_str(&o.stdout).map_err(|e| e.to_string())?;
+            Ok(g.active_when
+                .iter()
+                .find(|k| v.get(k.as_str()).is_some_and(truthy))
+                .map(|k| format!("{path}: {k}")))
+        }
+        schema::GuardKind::Process => {
+            let Some(m) = &g.matcher else {
+                return Ok(None);
+            };
+            let args = serde_json::to_value(m).map_err(|e| e.to_string())?;
+            let o = exec
+                .run(req("proc-scan", args), &cancel)
+                .await
+                .map_err(|e| e.to_string())?;
+            if !o.ok() {
+                return Err(o.summary());
+            }
+            let found: Vec<(u32, String)> =
+                serde_json::from_str(&o.stdout).map_err(|e| e.to_string())?;
+            Ok((!found.is_empty()).then(|| {
+                let labels: Vec<&str> = found.iter().map(|(_, l)| l.as_str()).collect();
+                format!("running: {}", labels.join(", "))
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Feed the detector guards every 15 s (a guard not read for `stale_seconds` counts as
+/// active, so a broken channel blocks switches rather than allowing them).
+async fn poll_guards(
+    c: Arc<ControlConfig>,
+    server: String,
+    exec: Arc<dyn super::exec::Executor>,
+    board: Arc<crate::guards::GuardBoard>,
+) {
+    loop {
+        for (id, g) in &c.guards {
+            if g.server.as_deref().is_some_and(|s| s != server)
+                || !matches!(
+                    g.kind,
+                    schema::GuardKind::FileExists
+                        | schema::GuardKind::JsonFile
+                        | schema::GuardKind::Process
+                )
+            {
+                continue;
+            }
+            match read_guard(&c, &server, exec.as_ref(), g).await {
+                Ok(active) => board.report(id, crate::proxy::now_epoch(), active),
+                Err(e) => tracing::warn!("guard {id}: no reading: {e}"),
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(15)).await;
+    }
+}
+
 /// What [`start`] set up.
 pub struct Started {
     pub message: String,
@@ -594,6 +768,7 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
                 .collect();
             running.spec = o.spec;
             running.known = true;
+            seed_store(&store, &server, &running);
         }
         Err(e) => tracing::warn!("control: first look at {server} failed: {}", e.0),
     }
@@ -615,8 +790,17 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
         server: server.clone(),
         running: running.clone(),
     });
+    // The Supervisor's calendar (flag off by default): installed before the board, which adds it.
+    let calendar = crate::calendar::start(&c, main, &l.origin, store.clone())?;
     let (board, _cal) = wiring::guard_board(&c, &server);
-    let plane = RouterPlane::new(st.clone(), Arc::new(board), routes);
+    let board = Arc::new(board);
+    tokio::spawn(poll_guards(
+        c.clone(),
+        server.clone(),
+        exec.clone(),
+        board.clone(),
+    ));
+    let plane = RouterPlane::new(st.clone(), board, routes);
     let jobs = Arc::new(StoreJobSink::new(store.clone(), &server, None));
     let orch = Arc::new(Orchestrator::new(
         wiring::switch_config(&c, &server),
@@ -727,7 +911,7 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
     let n = running.lock().unwrap_or_else(|e| e.into_inner()).spec.len();
     Ok(Started {
         message: format!(
-            "control plane on (rev {}, server {server}, {n} cards seen, mode {:?})",
+            "control plane on (rev {}, server {server}, {n} cards seen, mode {:?}){calendar}",
             l.rev, c.control.mode
         ),
         shim: Some(shim),

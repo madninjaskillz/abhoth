@@ -40,6 +40,11 @@ pub struct GpuSample {
     pub mem_mhz: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_sm_mhz: Option<f64>,
+    /// Application clocks (`-ac`): SM and memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_sm_mhz: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_mem_mhz: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub util_pct: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

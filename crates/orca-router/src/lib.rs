@@ -2,6 +2,7 @@
 //! (`:8010`), qfn-lb (`:8092`), pig-slots (`:8099`) and the profiles API's on-demand relay.
 
 pub mod access;
+pub mod calendar;
 pub mod cli;
 pub mod config;
 pub mod control;
