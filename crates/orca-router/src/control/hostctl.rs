@@ -633,6 +633,25 @@ pub fn suggested_paths(c: &ControlConfig, server: &str) -> PathRules {
     {
         read.insert(d);
     }
+    // What the ready hooks and the guards read (file_exists, json_file).
+    if let Some(s) = c.servers.get(server) {
+        for h in &s.ready {
+            if let Some(p) = h.params.get("path").and_then(Value::as_str) {
+                read.insert(expand(p));
+            }
+        }
+    }
+    for g in c.guards.values() {
+        if g.server.as_deref().is_some_and(|s| s != server) {
+            continue;
+        }
+        if let Some(p) = &g.path {
+            let p = expand(p);
+            if !p.contains('{') {
+                read.insert(p);
+            }
+        }
+    }
     read.insert("/run".into());
     PathRules {
         read: read.into_iter().collect(),
