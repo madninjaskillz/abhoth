@@ -8,8 +8,8 @@ binary: an interactive terminal session, one-shot `--print` runs with sub-agents
 (`--hostui`, React client in `client/`) and a desktop window (`--desktop`).
 
 This repo was split out of `openorca` (the `rust/` folder and the web client, with their
-history). The C# build in the `openorca` repo stays the parity reference and the rollback for
-about two weeks after the cutover; see [`CUTOVER.md`](CUTOVER.md).
+history). The C# build in the `openorca` repo stays the parity reference and the rollback until it
+is no longer needed; see [`CUTOVER.md`](CUTOVER.md).
 
 Developed with AI assistance (Claude).
 
