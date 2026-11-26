@@ -98,6 +98,9 @@ qrcode = { version = "=0.14.1", default-features = false }
 rusqlite = { version = "=0.43.0", features = ["bundled"] }
 argon2 = { version = "=0.5.3", default-features = false, features = ["alloc", "password-hash"] }
 tempfile = "=3.27.0"
+# The router control plane's config (ROUTER-CONFIG.md D-RC1): parse, and edit keeping comments.
+toml = "=1.2.3"
+toml_edit = "=0.25.21"
 tokio-tungstenite = "=0.29.0"
 thiserror = "=2.0.21"
 tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "process", "fs", "io-util", "time", "sync", "net"] }

@@ -3,6 +3,7 @@
 
 pub mod cli;
 pub mod config;
+pub mod control;
 pub mod effort;
 pub mod import;
 pub mod metrics;

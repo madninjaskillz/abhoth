@@ -1,0 +1,169 @@
+# A small control-plane config used by the unit tests (placeholders only: no real hosts, keys or paths).
+version = 1
+
+[router]
+listen = "0.0.0.0:8010"
+state_dir = "/state"
+
+[control]
+enabled = false
+
+[secrets]
+engine_key = { file = "/run/secrets/engine-key" }
+ssh_gpu    = { file = "/run/secrets/ssh-gpu" }
+
+[servers.gpu]
+title = "GPU host"
+host = "gpu-host"
+exec = "ssh"
+ssh = { user = "abhoth-exec", key = "secret:ssh_gpu", host_key = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }
+vars = { ai_root = "/srv/ai", ninfer = "/srv/ai/ninfer", models = "/srv/ai/ninfer/models" }
+locks = ["/run/watchdog.lock"]
+ready = [{ builtin = "docker-up" }, { builtin = "gpus-visible" }]
+
+[servers.gpu.state]
+initial_layout = "dense-x2"
+
+[cards.A]
+server = "gpu"
+gpu_uuid = "GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+label = "fast card"
+vram_gib = 32.0
+cpus = "0-23"
+on_demand = true
+
+[cards.B]
+server = "gpu"
+gpu_uuid = "GPU-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+vram_gib = 32.0
+cpus = "24-47"
+on_demand = true
+
+[cards.C]
+server = "gpu"
+gpu_uuid = "GPU-cccccccc-cccc-cccc-cccc-cccccccccccc"
+managed = false
+
+[engines.ninfer]
+title = "ninfer"
+driver = "docker"
+image = "local/ninfer:test"
+container = "ninfer-{card_lc}"
+port = { A = 8094, B = 8096 }
+key = "secret:engine_key"
+served_id = "dense-27b"
+max_context = 131072
+model_dir = "{var:models}"
+health = { path = "/health", expect_body = "ok" }
+restart_if_peer_starts = ["strata"]
+labels = { "layouts.managed" = "1", "layouts.card" = "{card}", "layouts.spec" = "{spec_json}" }
+spec_label = { keys = ["engine", "slots", "model", "build", "options", "env", "mems"], omit_build = "stock" }
+default_build = "stock"
+
+[engines.ninfer.builds]
+stock = "{var:ninfer}/stock"
+merged = "{var:ninfer}/builds/merged"
+
+[engines.ninfer.run]
+docker = ["--restart", "no", "--runtime=nvidia", "--cpuset-cpus={cpus}", "-e", "NVIDIA_VISIBLE_DEVICES={gpu_uuid}",
+          "{env_args}", "{mems_args}", "-p", "{port}:{port}", "{label_args}", "{key_mount_args}",
+          "-v", "{build_dir}:/app:ro", "-v", "{model_dir}:/models:ro",
+          "{image}", "/app/ninfer-serve", "/models/{model_file}", "--port", "{port}", "{key_args}",
+          "--model-id", "{served_id}", "{options}"]
+fixed = ["port", "api-key", "api-key-file", "model-id", "max-concurrency"]
+pop = ["alias"]
+
+[engines.ninfer.defaults]
+max-context = 131072
+max-concurrency = "{lanes}"
+kv-dtype = "int8"
+lm-head-draft = true
+
+[engines.ninfer.profiles.4lane]
+title = "4 lanes"
+lanes = 4
+ctx = 131072
+vram_gib = 7.5
+build = "merged"
+mems = "1"
+options = { vision = true, kv-dtype = false }
+env = { NINFER_SHARED_PREFIX = "structural" }
+
+[engines.ninfer.profiles.2lane]
+lanes = 2
+vram_gib = 5.0
+
+[engines.strata]
+title = "Strata"
+driver = "compose"
+port = { A = 8080, B = 8091 }
+served_id = "moe-flash"
+max_context = 262144
+compose = { project = "ix-moe", file = "/srv/compose.yaml", service = { A = "strata-a", B = "strata-b" }, container = { A = "moe-a", B = "moe-b" } }
+health = { path = "/health", expect_body = '"loaded": true' }
+stop = { mode = "stop", timeout_seconds = 30 }
+start_order = "sequential"
+share = "expert-arena"
+spec_label = { keys = ["engine", "slots"] }
+before_start = [ { builtin = "numa-room", node = 0, need_gib = 64, drop_caches = true },
+                 { builtin = "json-set", file = "{var:ai_root}/strata-{card_lc}.json", key = "parallel", value = "{lanes}" } ]
+
+[engines.strata.profiles.2slot]
+lanes = 2
+vram_gib = 5.0
+
+[models.dense]
+title = "Dense 27B"
+vision = true
+[models.dense.artifacts.ninfer]
+file = "dense.ninfer"
+vram_gib = 22.5
+profiles = ["4lane", "2lane"]
+
+[models.small]
+title = "Small model"
+[models.small.artifacts.ninfer]
+file = "small.ninfer"
+served_id = "small-model"
+vram_gib = 12.0
+
+[models.flash]
+title = "MoE Flash"
+artifacts.strata = { file = "", vram_gib = 20.0 }
+
+[layouts.dense-x2]
+title = "Dense on both"
+cards.A = { engine = "ninfer", profile = "4lane", model = "dense" }
+cards.B = "same"
+
+[layouts.flash-x2]
+title = "Flash on both"
+cards.A = { engine = "strata", profile = "2slot", model = "flash" }
+cards.B = "same"
+aliases = ["flash2"]
+
+[layouts.dense-a-small-b]
+cards.A = { engine = "ninfer", profile = "4lane", model = "dense" }
+cards.B = { engine = "ninfer", profile = "2lane", model = "small" }
+
+[routes.dense-27b]
+targets = [{ pool = "live" }]
+
+[routes.dense-27b-a]
+targets = [{ card = "A" }, { card = "B", fallback = true }]
+
+[routes.small-model]
+targets = [{ model = "small" }]
+cold = "on_demand"
+on_demand = { pick = { engine = "ninfer", profile = "2lane" }, cards = ["A", "B"], access = "keys:switchers" }
+
+[guards.quiet]
+kind = "schedule"
+windows = ["06:45-07:30"]
+blocks = ["switch", "on_demand"]
+
+[guards.music]
+kind = "file_exists"
+server = "gpu"
+path = "/run/music.state"
+blocks = ["switch", "on_demand", "ensure"]
