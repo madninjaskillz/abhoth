@@ -187,8 +187,13 @@ fn needs(method: &Method, sub: &str) -> Perm {
 }
 
 /// Reads that hold config text or the audit: admins only, even for `read` service keys.
+/// `leases` and `calendar/now` (what holds or blocks now) are open to `read` keys (HA).
 fn admin_only_read(sub: &str) -> bool {
-    sub == "config" || sub == "audit" || sub == "leases" || sub == "routes" || sub == "calendar"
+    let first = sub.split('/').next().unwrap_or("");
+    first == "config"
+        || first == "audit"
+        || first == "routes"
+        || (first == "calendar" && sub != "calendar/now")
 }
 
 /// Handle `/admin/api/<sub>[?query]`. `peer`: the TCP peer.
@@ -226,8 +231,8 @@ pub async fn handle(
         return err(401, "an admin key or an admin session is needed");
     }
     let perm = needs(method, sub);
-    let allowed = cp.access.allows(&principal, perm)
-        && (principal.is_admin() || !admin_only_read(sub.split('/').next().unwrap_or("")));
+    let allowed =
+        cp.access.allows(&principal, perm) && (principal.is_admin() || !admin_only_read(sub));
     if !allowed {
         return err(403, "only an admin can do that");
     }

@@ -185,6 +185,19 @@ async fn service_keys_get_exactly_their_scopes() {
             .0,
         403
     );
+    // what holds now is open to read keys (HA shows leases)
+    assert_eq!(
+        call(
+            &cp,
+            Method::GET,
+            "/admin/api/leases",
+            &hk(DASH),
+            Value::Null
+        )
+        .await
+        .0,
+        200
+    );
     assert_eq!(
         call(
             &cp,
