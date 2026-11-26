@@ -1431,6 +1431,11 @@ impl AgentSession {
             return;
         }
         self.max_tokens_negotiated = true;
+        // Router mode (D149): the router said the model's limits; a negotiation would send real
+        // chat requests, which must never be what wakes a cold model.
+        if self.config.lm_studio.is_router() {
+            return;
+        }
         if let Some(n) =
             crate::client::max_tokens_negotiator::negotiate(&self.config, &self.probe_http).await
         {

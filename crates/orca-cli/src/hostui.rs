@@ -78,7 +78,8 @@ async fn config_for(
     let dir = orca_core::config::default_config_dir();
     let mut manager = orca_core::config::ConfigManager::new(Some(&dir));
     manager.load().map_err(|e| e.to_string())?;
-    if let Some(name) = profile.filter(|p| !p.is_empty()) {
+    let router_mode = manager.config.lm_studio.is_router();
+    if let Some(name) = profile.filter(|p| !p.is_empty() && !router_mode) {
         let mut notices = Vec::new();
         if let Some(e) =
             orca_core::profiles::apply_at_startup(&mut manager, &dir, name, &mut notices).await
@@ -88,6 +89,15 @@ async fn config_for(
     }
     if let Some(m) = mode.filter(|m| !m.is_empty()) {
         manager.apply_mode(m)?;
+    }
+    // Router mode (D149): the router's model metadata, like a profile (never saved).
+    if router_mode && !base.demo_mode {
+        for n in
+            orca_core::router_mode::apply(&mut manager, &orca_core::router_mode::probe_client())
+                .await
+        {
+            tracing::info!("{n}");
+        }
     }
     let overlay = ProfileOverlay::of(&manager);
     let mut config = manager.config.clone();
@@ -375,7 +385,12 @@ pub async fn run_with(
     };
     options.port = args.endpoint.port;
     options.session_factory = Some(factory);
-    options.profiles_url = orca_core::profiles::resolve_server_url(&config);
+    // Router mode (D149): the router owns the layouts, so there are no inference profiles.
+    options.profiles_url = if config.lm_studio.is_router() {
+        None
+    } else {
+        orca_core::profiles::resolve_server_url(&config)
+    };
     // The router's control plane (ROUTER-CONFIG.md 11): ABHOTH_ROUTER_URL + ABHOTH_ROUTER_TOKEN_FILE.
     options.router = match orca_webui::router_admin::RouterLink::from_env() {
         Ok(link) => link,

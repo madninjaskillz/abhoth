@@ -261,6 +261,12 @@ pub struct LmStudioConfig {
     pub backup_min_response_length: i32,
     pub backup_on_refusal: bool,
     pub pair_model_programming: bool,
+    /// Rust-only (D149): what `baseUrl` is. "router": an `abhoth router`, which owns the model
+    /// list's metadata (context window, vision, tools), backups, slots and layouts; absent or
+    /// "server": an OpenAI-compatible server configured here (LM Studio, llama.cpp, vLLM...).
+    /// Written only when set, so a C# config stays byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection: Option<String>,
 }
 
 impl Default for LmStudioConfig {
@@ -285,6 +291,7 @@ impl Default for LmStudioConfig {
             backup_min_response_length: 0,
             backup_on_refusal: false,
             pair_model_programming: false,
+            connection: None,
         }
     }
 }
@@ -295,6 +302,13 @@ impl LmStudioConfig {
         self.provider
             .as_deref()
             .is_some_and(|p| p.eq_ignore_ascii_case("anthropic"))
+    }
+
+    /// True when `baseUrl` is an `abhoth router` (`connection: "router"`, D149).
+    pub fn is_router(&self) -> bool {
+        self.connection
+            .as_deref()
+            .is_some_and(|c| c.trim().eq_ignore_ascii_case("router"))
     }
 
     /// True when tool-result images go into the conversation.

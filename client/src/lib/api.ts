@@ -152,6 +152,10 @@ export interface Setting {
   blankMeans?: string | null;
   /** The profile that sets this key (project scope: the running session's; server scope: the default profile). */
   profile?: string | null;
+  /** Text settings: the only values allowed. */
+  choices?: string[] | null;
+  /** What it does when the connection is an Abhoth router (D149): shown, hidden, or taken from the router's model metadata. */
+  routerMode?: "shown" | "hidden" | "router";
 }
 
 export interface SettingsDoc {
@@ -159,7 +163,71 @@ export interface SettingsDoc {
   configFile?: string;
   /** Project scope: the profile the running session has; server scope: the default profile, when its keys are known. */
   profile?: string | null;
+  /** What lmStudio.baseUrl is (D149). */
+  connection?: "server" | "router";
 }
+
+/** `GET /.well-known/abhoth-router` (D149): what a router says about itself. */
+export interface RouterInfo {
+  service: string;
+  api: number;
+  name: string;
+  version: string;
+  capabilities: string[];
+  auth: { required: boolean; keys: boolean; keyPrefix?: string; keyUrl?: string };
+  paths: { openai: string; models: string; view?: string };
+}
+
+export interface RouterModel {
+  id: string;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  vision?: boolean;
+  tools?: boolean;
+  reasoning?: boolean;
+  effortLevels?: string[];
+  engine?: string;
+  kind: string;
+  status?: string;
+  cold?: string;
+  sampling?: Record<string, number>;
+}
+
+export interface RouterModelsDoc {
+  principal: string;
+  models: RouterModel[];
+  claude: boolean;
+  cards?: { id: string; engine?: string; model?: string; online: boolean }[];
+  rev?: string;
+  /** The model this config uses. */
+  chosen?: string | null;
+}
+
+export interface ConnectionStatus {
+  connection: "server" | "router";
+  baseUrl: string;
+  router: RouterInfo | null;
+  error: string | null;
+  suggestRouter: boolean;
+}
+
+export interface DiscoveredRouter {
+  name: string;
+  url: string;
+  baseUrl: string;
+  version?: string | null;
+  verified: boolean;
+  info?: RouterInfo | null;
+}
+
+/** The settings' connection panel (admins; D149). Every probe the server makes is a read-only GET with x-abhoth-no-switch. */
+export const connectionApi = {
+  status: () => request<ConnectionStatus>("GET", "/api/settings/connection"),
+  identify: (url: string) => request<{ url: string; baseUrl: string; router: RouterInfo | null; error: string | null }>("POST", "/api/settings/connection/identify", { url }),
+  discover: () => request<{ routers: DiscoveredRouter[]; error?: string }>("GET", "/api/settings/connection/discover"),
+  models: () => request<RouterModelsDoc>("GET", "/api/settings/connection/models"),
+  use: (url: string, model?: string) => request<{ ok: boolean; baseUrl: string; router: RouterInfo }>("POST", "/api/settings/connection/use", { url, model }),
+};
 
 export interface SettingResult {
   ok: boolean;

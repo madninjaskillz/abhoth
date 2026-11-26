@@ -745,7 +745,14 @@ pub async fn main_with_args(mut raw: Vec<String>) -> Result<i32> {
         .profile
         .clone()
         .or_else(|| manager.config.profiles.active.clone());
-    if let Some(name) = profile_name.filter(|_| !args.demo_mode)
+    // Router mode (D149): the router owns the layouts, so no inference profile is applied.
+    let router_mode = manager.config.lm_studio.is_router();
+    if router_mode && args.profile.is_some() {
+        eprintln!(
+            "--profile is ignored: the connection is an Abhoth router, which owns the GPU layouts."
+        );
+    }
+    if let Some(name) = profile_name.filter(|_| !args.demo_mode && !router_mode)
         && let Some(error) = orca_core::profiles::apply_at_startup(
             &mut manager,
             &config_dir,
@@ -776,6 +783,13 @@ pub async fn main_with_args(mut raw: Vec<String>) -> Result<i32> {
             eprintln!("{e}");
             return Ok(2);
         }
+    }
+    // Router mode: the router's metadata for the chosen model, over config.json (never saved).
+    if router_mode && !args.demo_mode {
+        let notices =
+            orca_core::router_mode::apply(&mut manager, &orca_core::router_mode::probe_client())
+                .await;
+        profile_notices.extend(notices);
     }
     let mut config = manager.config.clone();
     if let Err(e) = args.apply_to(&mut config) {

@@ -28,6 +28,9 @@ USAGE:
   abhoth router --config router.json [--port P | --listen ADDR] [--host H] [--lb-port P] [--slots-port P]
                 [--control router.toml]   (the control plane, when its control.enabled is on)
                 [--profiles-port N]       (the profiles API shim, :8098; needs --control)
+                [--name NAME] [--key-url URL] [--mdns auto|on|off]
+                                          (how clients see it: /.well-known/abhoth-router and
+                                           mDNS _abhoth-router._tcp; auto = on unless loopback)
   abhoth router observe-summary --dir DIR [--date YYYY-MM-DD]   (the decision-only shadow's day)
   abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
                 [--key-file PATH] [--base router.json] --out router.json [--watch SECONDS]
@@ -187,6 +190,8 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     let mut slots_port: Option<u16> = None;
     let mut profiles_port: Option<u16> = None;
     let mut control: Option<String> = None;
+    let mut discovery = crate::discovery::Discovery::default();
+    let mut mdns = crate::discovery::mdns::MdnsMode::Auto;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -194,6 +199,13 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
             "--port" => port = Some(take(args, &mut i, "--port")?.parse().context("--port")?),
             "--host" => host = take(args, &mut i, "--host")?,
             "--control" => control = Some(take(args, &mut i, "--control")?),
+            "--name" => discovery.name = take(args, &mut i, "--name")?,
+            "--key-url" => discovery.key_url = Some(take(args, &mut i, "--key-url")?),
+            "--mdns" => {
+                let v = take(args, &mut i, "--mdns")?;
+                mdns = crate::discovery::mdns::MdnsMode::parse(&v)
+                    .ok_or_else(|| anyhow!("--mdns takes auto, on or off (not {v})"))?;
+            }
             "--listen" => listen = Some(take(args, &mut i, "--listen")?),
             "--lb-port" => {
                 lb_port = Some(
@@ -254,7 +266,28 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
         }));
         Ok(())
     };
-    bind(addr, Mode::Gateway)?;
+    bind(addr.clone(), Mode::Gateway)?;
+    // D149: advertise on the LAN (mDNS) unless the gateway is loopback-only or --mdns off.
+    let (gw_host, gw_port) = split_host_port(&addr);
+    let mut _advert = None;
+    if mdns.wanted(&gw_host) {
+        let name = crate::discovery::display_name(Some(&discovery));
+        let ip = gw_host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .parse::<std::net::IpAddr>()
+            .ok()
+            .filter(|ip| !ip.is_unspecified());
+        match crate::discovery::mdns::advertise(&name, gw_port, ip) {
+            Ok(a) => {
+                eprintln!("abhoth router: mDNS {}", a.fullname());
+                discovery.mdns = true;
+                _advert = Some(a);
+            }
+            Err(e) => eprintln!("abhoth router: not advertised on the LAN: {e}"),
+        }
+    }
+    let _ = st.discovery.set(discovery);
     if let Some(p) = lb_port {
         bind(format!("{host}:{p}"), Mode::Lb)?;
     }
@@ -300,6 +333,16 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
         let _ = tokio::time::timeout(Duration::from_secs(10), t).await;
     }
     Ok(0)
+}
+
+/// `host:port` (or `[v6]:port`) -> (host, port); no port = 8010.
+fn split_host_port(addr: &str) -> (String, u16) {
+    match addr.rsplit_once(':') {
+        Some((h, p)) if !h.is_empty() && !h.ends_with(':') => {
+            (h.to_string(), p.parse().unwrap_or(8010))
+        }
+        _ => (addr.to_string(), 8010),
+    }
 }
 
 async fn shutdown_signal() {

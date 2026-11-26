@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { isAdmin } from "@/lib/auth";
 import { inDesktop, windowCommands } from "@/lib/desktop";
 import { openSettings, useSettingsNav } from "./settingsNav";
+import { ConnectionPanel } from "./ConnectionPanel";
+import { modeOf, visibleInMode } from "./connection";
 import { nextTabIndex, pickTab, searchTabs, sectionsOfTab, unsavedByTab, visibleTabs, type SearchHit, type TabDef } from "./settingsTabs";
 
 const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
@@ -84,7 +86,13 @@ export function SettingsDialog({ project, requested, onClose }: { project: Proje
   }, [requested, active, show]);
 
   // The default profile is picked in the profile slot (server scope); a project picks its own there.
-  const hide = useCallback((x: { key: string }) => x.key === PROFILES_ACTIVE && (scope === "project" || haveProfiles), [scope, haveProfiles]);
+  // Router mode (D149): the rows the router owns are left out (the connection panel shows what it says).
+  const mode = modeOf(doc.data);
+  const hide = useCallback(
+    (x: { key: string; routerMode?: "shown" | "hidden" | "router" }) =>
+      !visibleInMode(x, mode) || (x.key === PROFILES_ACTIVE && (scope === "project" || haveProfiles)),
+    [scope, haveProfiles, mode],
+  );
   const q = query.trim();
   const hits = useMemo(() => (q ? searchTabs(tabs, all, q, hide) : []), [tabs, all, q, hide]);
   const modified = all.reduce((n, s) => n + s.settings.filter((x) => x.modified).length, 0);
@@ -156,6 +164,7 @@ export function SettingsDialog({ project, requested, onClose }: { project: Proje
                   <p className="pt-2 text-xs text-muted-foreground">{activeTab.blurb}</p>
                   {doc.isLoading && <div className="py-6 text-sm text-muted-foreground">Loading…</div>}
                   {doc.isError && <div className="py-6 text-sm text-destructive">{(doc.error as Error).message}</div>}
+                  {activeTab.id === "models" && doc.isSuccess && <ConnectionPanel mode={mode} sections={all} />}
                   {sectionsOfTab(activeTab, all).map((s) => (
                     <section key={s.name} className="py-2" data-testid="settings-section">
                       <h3 className="sticky top-0 z-10 bg-panel py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{s.name}</h3>

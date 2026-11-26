@@ -84,6 +84,8 @@ globset = "=0.4.22"
 hyper = { version = "=1.13.0", default-features = false, features = ["http1", "client"] }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
 mime_guess = "=2.0.5"
+# LAN discovery of routers (D149): DNS-SD over mDNS, no async runtime, no logging.
+mdns-sd = { version = "=0.21.7", default-features = false }
 percent-encoding = "=2.3.2"
 # PTY: the web UI terminal panel and the cross-check's interactive scenarios (ConPTY on Windows).
 portable-pty = "=0.9.0"

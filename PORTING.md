@@ -939,3 +939,22 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     no Docker), checks it starts healthy and that a failing part stops the container. Releases
     do not push images yet; the proposal is a tag-only step pushing `ghcr.io/<owner>/abhoth:<version>`
     with the job's `GITHUB_TOKEN` (`packages: write`).
+- **D149** (user request 2026-11-26) **Router mode**: "a lot of settings make sense when using
+  LM Studio or similar, but when using a router, that's managed differently … even better if
+  there is router autodiscovery." Design and the per-setting table in
+  [`docs/design/ROUTER-MODE.md`](docs/design/ROUTER-MODE.md).
+  - **Connection** (`lmStudio.connection`: `"router"`, or absent / `"server"`, the default;
+    written only when set, so existing configs are byte-identical): in router mode the router
+    supplies the chosen model's context window, vision, tool calling and sampling defaults
+    (`orca_core::router_mode`), and client-side backups, pair mode, slots, the LM Studio /
+    Ollama window probes, the `max_tokens` negotiation (it sends real chats) and inference
+    profiles are off. Applied over config.json like a profile, never saved (overlay `router`).
+  - **Router:** `GET /.well-known/abhoth-router` (identify; unauthenticated, no secrets),
+    `GET /v1/abhoth/models` (per-model metadata for this caller, Claude availability, the cards
+    when visible), mDNS `_abhoth-router._tcp` (`--mdns auto|on|off`, `--name`, `--key-url`;
+    `mdns-sd` 0.21.7, no default features). Both paths are in `probe_safety.rs`'s sweep: no
+    method on any listener can switch.
+  - **App:** Settings → Models → Connection (find routers on the LAN, check a URL, "Use router
+    mode" when the configured URL is a router, the default model picker, the router's models
+    and capabilities); the rows the router owns are left out (schema `routerMode`). Admin
+    endpoints `/api/settings/connection[/identify|/discover|/models|/use]`.

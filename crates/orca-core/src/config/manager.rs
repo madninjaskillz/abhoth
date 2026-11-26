@@ -68,6 +68,8 @@ pub struct ConfigManager {
     base_json: serde_json::Value,
     /// Dotted paths a profile or mode overrides (kept out of config.json).
     overlay_paths: Vec<String>,
+    /// The ones router mode overrides (D149; also in `overlay_paths`).
+    router_paths: Vec<String>,
 }
 
 impl ConfigManager {
@@ -83,12 +85,18 @@ impl ConfigManager {
             config: OrcaConfig::default(),
             base_json: serde_json::Value::Object(Default::default()),
             overlay_paths: Vec::new(),
+            router_paths: Vec::new(),
         }
     }
 
     /// The paths the applied profile and mode override.
     pub fn overlay_paths(&self) -> &[String] {
         &self.overlay_paths
+    }
+
+    /// The paths router mode overrides ([`Self::apply_router`]).
+    pub fn router_paths(&self) -> &[String] {
+        &self.router_paths
     }
 
     /// `ApplyProfile`: apply a profile's client settings over the loaded config. Runtime-only
@@ -126,6 +134,29 @@ impl ConfigManager {
         for (k, _) in overrides {
             if !self.overlay_paths.contains(&k) {
                 self.overlay_paths.push(k);
+            }
+        }
+        Ok(())
+    }
+
+    /// Router mode (D149): put [`crate::router_mode::overrides`] over the config and any
+    /// profile or mode already applied; like them, it never reaches config.json.
+    pub fn apply_router(
+        &mut self,
+        overrides: &[(String, serde_json::Value)],
+    ) -> Result<(), String> {
+        if overrides.is_empty() {
+            return Ok(());
+        }
+        let profile = self.config.active_profile.clone();
+        self.apply_overlay(overrides, profile)
+            .map_err(|e| e.to_string())?;
+        for (k, _) in overrides {
+            if !self.overlay_paths.contains(k) {
+                self.overlay_paths.push(k.clone());
+            }
+            if !self.router_paths.contains(k) {
+                self.router_paths.push(k.clone());
             }
         }
         Ok(())
@@ -194,6 +225,7 @@ impl ConfigManager {
             .filter(serde_json::Value::is_object)
             .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
         self.overlay_paths.clear();
+        self.router_paths.clear();
         Ok(migrated)
     }
 

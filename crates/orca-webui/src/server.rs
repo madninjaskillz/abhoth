@@ -496,6 +496,7 @@ fn router(state: Arc<AppState>) -> Router {
         .merge(crate::git::github_app_endpoints::routes())
         .merge(crate::git::github_user_endpoints::routes())
         .merge(crate::settings::routes())
+        .merge(crate::connection::routes())
         .merge(crate::files::attachments::routes())
         .merge(crate::files::preview::routes())
         .merge(crate::pty::routes());

@@ -42,6 +42,9 @@ pub struct AppState {
     /// The control plane's changes to every loaded `router.json` (on-demand settings, what
     /// the cards run now); unset = the file as it is.
     pub overlay: std::sync::OnceLock<ConfigOverlay>,
+    /// How the router names itself to clients (`/.well-known/abhoth-router`, mDNS; D149);
+    /// unset = the defaults.
+    pub discovery: std::sync::OnceLock<crate::discovery::Discovery>,
 }
 
 /// Applied to each snapshot's config before it is swapped in.
@@ -70,6 +73,7 @@ impl AppState {
             log,
             ext,
             control: std::sync::OnceLock::new(),
+            discovery: std::sync::OnceLock::new(),
             wake: std::sync::OnceLock::new(),
             overlay: std::sync::OnceLock::new(),
         })

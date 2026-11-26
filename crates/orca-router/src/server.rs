@@ -112,6 +112,13 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
         }
         (Method::GET, "/v1/models" | "/models") => json_response(200, &models(&snap)),
         (Method::GET, "/v1/model/info" | "/model/info") => json_response(200, &model_info(&snap)),
+        // D149: what this server is, and the models with their metadata (read-only).
+        (Method::GET, orca_core::router_mode::WELL_KNOWN_PATH) => {
+            crate::discovery::well_known(&st, peer.map(|p| p.ip())).await
+        }
+        (Method::GET, orca_core::router_mode::MODELS_PATH) => {
+            crate::discovery::models(&st, &headers, peer.map(|p| p.ip())).await
+        }
         (Method::GET, "/health/liveliness" | "/health/liveness") => {
             json_response(200, &Value::String("I'm alive!".into()))
         }

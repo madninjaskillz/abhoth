@@ -88,6 +88,9 @@ const PATHS: &[&str] = &[
     "/v1/models/flash-next",
     "/v1/model/info",
     "/model/info",
+    // D149: the identification document and the model metadata.
+    "/.well-known/abhoth-router",
+    "/v1/abhoth/models",
     "/status",
     "/metrics",
     "/observe",

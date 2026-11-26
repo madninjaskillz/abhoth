@@ -39,6 +39,30 @@ impl SettingType {
     }
 }
 
+/// What a setting does when `baseUrl` is an `abhoth router` (`lmStudio.connection: "router"`,
+/// D149; the table is in `docs/design/ROUTER-MODE.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InRouterMode {
+    /// Unchanged: still this client's choice.
+    Shown,
+    /// Not shown: the router owns it (backups, slots, layouts) or it has no meaning there.
+    Hidden,
+    /// Not shown as a setting: the value comes from the router's per-model metadata
+    /// (`/v1/abhoth/models`) and is shown read-only with the router's models.
+    Router,
+}
+
+impl InRouterMode {
+    /// The name the web UI gets.
+    pub fn name(self) -> &'static str {
+        match self {
+            InRouterMode::Shown => "shown",
+            InRouterMode::Hidden => "hidden",
+            InRouterMode::Router => "router",
+        }
+    }
+}
+
 /// A setting's value (C#'s boxed `object?`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingValue {
@@ -123,6 +147,11 @@ pub struct SettingDef {
     pub live: bool,
     /// Ask before turning it on (it changes what runs without asking).
     pub dangerous: bool,
+    /// Text settings: the only values allowed (compared ignoring case; blank is allowed when
+    /// `blank_means` is set).
+    pub choices: Option<&'static [&'static str]>,
+    /// What it does in router mode (D149).
+    pub in_router: InRouterMode,
 }
 
 impl std::fmt::Debug for SettingDef {
@@ -159,7 +188,19 @@ impl SettingDef {
             blank_value: None,
             live: true,
             dangerous: false,
+            choices: None,
+            in_router: InRouterMode::Shown,
         }
+    }
+
+    fn choices(mut self, choices: &'static [&'static str]) -> Self {
+        self.choices = Some(choices);
+        self
+    }
+
+    fn in_router(mut self, mode: InRouterMode) -> Self {
+        self.in_router = mode;
+        self
     }
 
     fn not_live(mut self) -> Self {
@@ -395,6 +436,17 @@ impl SettingDef {
             },
             SettingType::Text | SettingType::Secret => match value.as_str() {
                 Some(s) if s.contains(['\r', '\n', '\0']) => Some("Must be a single line".into()),
+                Some(s)
+                    if !s.trim().is_empty()
+                        && self.choices.is_some_and(|c| {
+                            !c.iter().any(|x| x.eq_ignore_ascii_case(s.trim()))
+                        }) =>
+                {
+                    Some(format!(
+                        "Must be one of: {}",
+                        self.choices.unwrap_or_default().join(", ")
+                    ))
+                }
                 _ => None,
             },
             _ => None,
@@ -490,6 +542,10 @@ pub const SECTIONS: [&str; 6] = [
 
 /// The default-profile setting (the web shows it as a profile picker).
 pub const PROFILES_ACTIVE_KEY: &str = "profiles.active";
+/// The overlay name router mode's values show under (D149).
+pub const ROUTER_OVERLAY: &str = "router";
+/// What `lmStudio.baseUrl` is (D149): the web shows it as the connection picker.
+pub const CONNECTION_KEY: &str = "lmStudio.connection";
 
 fn blank_to_none(v: SettingValue) -> Option<String> {
     v.into_string()
@@ -504,10 +560,26 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
         // ---- LLM Server ----
         SettingDef::new(
             LLM_SERVER,
+            CONNECTION_KEY,
+            "Connection",
+            T::Text,
+            "What the Base URL is: \"router\" (an Abhoth router: it supplies the models and their context window, vision and tools) or \"server\" (an OpenAI-compatible server set up here: LM Studio, llama.cpp, vLLM…).",
+            |c| V::text(&c.lm_studio.connection),
+            |c, v| {
+                c.lm_studio.connection = blank_to_none(v)
+                    .map(|s| s.to_ascii_lowercase())
+                    .filter(|s| s != "server");
+            },
+        )
+        .not_live()
+        .choices(&["server", "router"])
+        .blank("server", None),
+        SettingDef::new(
+            LLM_SERVER,
             "lmStudio.baseUrl",
             "Base URL",
             T::Url,
-            "The OpenAI-compatible server the models run on (LM Studio, llama.cpp, vLLM…).",
+            "The server the models run on: an Abhoth router, or an OpenAI-compatible server (LM Studio, llama.cpp, vLLM…).",
             |c| V::Text(c.lm_studio.base_url.clone()),
             |c, v| c.lm_studio.base_url = v.into_string().unwrap_or_default(),
         )
@@ -532,7 +604,8 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
             |c, v| c.lm_studio.models = v.into_list(),
         )
         .not_live()
-        .blank("none", None),
+        .blank("none", None)
+        .in_router(InRouterMode::Router),
         SettingDef::new(
             LLM_SERVER,
             "lmStudio.backupMinResponseLength",
@@ -543,7 +616,8 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
             |c, v| c.lm_studio.backup_min_response_length = v.as_int().unwrap_or_default(),
         )
         .range(Some(0.0), None, false, "Must be 0 or positive")
-        .blank("disabled", Some(0.0)),
+        .blank("disabled", Some(0.0))
+        .in_router(InRouterMode::Hidden),
         SettingDef::new(
             LLM_SERVER,
             "lmStudio.backupOnRefusal",
@@ -552,7 +626,8 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
             "Switch to next model on refusal/apology patterns.",
             |c| V::Bool(c.lm_studio.backup_on_refusal),
             |c, v| c.lm_studio.backup_on_refusal = v.as_bool(),
-        ),
+        )
+        .in_router(InRouterMode::Hidden),
         SettingDef::new(
             LLM_SERVER,
             "lmStudio.pairModelProgramming",
@@ -561,7 +636,8 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
             "Pair model programming (all models run in parallel and vote on the best response).",
             |c| V::Bool(c.lm_studio.pair_model_programming),
             |c, v| c.lm_studio.pair_model_programming = v.as_bool(),
-        ),
+        )
+        .in_router(InRouterMode::Hidden),
         SettingDef::new(
             LLM_SERVER,
             "lmStudio.temperature",
@@ -608,7 +684,8 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
             "Native tool calling (only enable if your model supports OpenAI function calling).",
             |c| V::Bool(c.lm_studio.native_tool_calling),
             |c, v| c.lm_studio.native_tool_calling = v.as_bool(),
-        ),
+        )
+        .in_router(InRouterMode::Router),
         // ---- Image Generation ----
         SettingDef::new(
             IMAGE_GENERATION,
@@ -768,7 +845,8 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
             |c, v| c.profiles.active = blank_to_none(v),
         )
         .not_live()
-        .blank("none", None),
+        .blank("none", None)
+        .in_router(InRouterMode::Hidden),
         // ---- Context ----
         SettingDef::new(
             CONTEXT,
@@ -779,7 +857,8 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
             |c| V::Int(c.context.context_window_size),
             |c, v| c.context.context_window_size = v.as_int().unwrap_or_default(),
         )
-        .range(Some(100.0), None, true, "Must be > 100"),
+        .range(Some(100.0), None, true, "Must be > 100")
+        .in_router(InRouterMode::Router),
         SettingDef::new(
             CONTEXT,
             "context.charsPerToken",
@@ -995,6 +1074,10 @@ pub fn describe(config: &OrcaConfig, overlay: Option<&ProfileOverlay>) -> Value 
                     o.insert("max".into(), opt(s.max));
                     o.insert("minExclusive".into(), json!(s.min_exclusive));
                     o.insert("blankMeans".into(), json!(s.blank_means));
+                    if let Some(c) = s.choices {
+                        o.insert("choices".into(), json!(c));
+                    }
+                    o.insert("routerMode".into(), json!(s.in_router.name()));
                     o.insert(
                         "profile".into(),
                         match overlay.filter(|o| o.covers(s.key)) {
@@ -1008,7 +1091,11 @@ pub fn describe(config: &OrcaConfig, overlay: Option<&ProfileOverlay>) -> Value 
             json!({"name": section, "settings": settings})
         })
         .collect();
-    json!({"sections": sections, "profile": overlay.map(|o| o.profile.clone())})
+    json!({
+        "sections": sections,
+        "profile": overlay.map(|o| o.profile.clone()),
+        "connection": if config.lm_studio.is_router() { "router" } else { "server" },
+    })
 }
 
 /// A profile's client overrides (dotted config paths): the settings under them come from the
@@ -1036,13 +1123,19 @@ impl ProfileOverlay {
         })
     }
 
-    /// The overlay of a profile applied by [`ConfigManager::apply_profile`], or `None`.
+    /// The overlay of a profile applied by [`ConfigManager::apply_profile`], or `None`. With no
+    /// profile, router mode's (D149) under the name [`ROUTER_OVERLAY`], so a session's saves
+    /// keep the router's values out of config.json.
     pub fn of(manager: &ConfigManager) -> Option<Self> {
-        let name = manager
+        let Some(name) = manager
             .config
             .active_profile
             .as_deref()
-            .filter(|n| !n.is_empty())?;
+            .filter(|n| !n.is_empty())
+        else {
+            return (!manager.router_paths().is_empty())
+                .then(|| Self::new(ROUTER_OVERLAY, manager.router_paths().to_vec()));
+        };
         if manager.overlay_paths().is_empty() {
             return None;
         }
@@ -1484,5 +1577,88 @@ mod tests {
         assert_eq!(format_float(1.25), "1.25");
         assert_eq!(format_float(0.12345), "0.123");
         assert_eq!(format_float(4.0), "4.0");
+    }
+
+    #[test]
+    fn router_mode_hides_what_the_router_owns_and_keeps_the_rest() {
+        let mode = |k: &str| find(k).unwrap().in_router;
+        use InRouterMode::*;
+        for k in [
+            "lmStudio.models",
+            "lmStudio.nativeToolCalling",
+            "context.contextWindowSize",
+        ] {
+            assert_eq!(mode(k), Router, "{k}");
+        }
+        for k in [
+            "lmStudio.backupMinResponseLength",
+            "lmStudio.backupOnRefusal",
+            "lmStudio.pairModelProgramming",
+            PROFILES_ACTIVE_KEY,
+        ] {
+            assert_eq!(mode(k), Hidden, "{k}");
+        }
+        // The router's URL and key, and everything about the agent, stay.
+        for k in [
+            CONNECTION_KEY,
+            "lmStudio.baseUrl",
+            "lmStudio.apiKey",
+            "lmStudio.temperature",
+            "lmStudio.timeoutSeconds",
+            "permissions.autoApproveAll",
+            "context.autoCompactEnabled",
+            "imageGen.enabled",
+        ] {
+            assert_eq!(mode(k), Shown, "{k}");
+        }
+        let d = describe(&OrcaConfig::default(), None);
+        assert_eq!(d["connection"], json!("server"));
+        let all = sections_settings(&d);
+        let models = all.iter().find(|s| s["key"] == "lmStudio.models").unwrap();
+        assert_eq!(models["routerMode"], json!("router"));
+        let conn = all.iter().find(|s| s["key"] == CONNECTION_KEY).unwrap();
+        assert_eq!(conn["choices"], json!(["server", "router"]));
+        assert_eq!(conn["display"], json!("(server)"));
+    }
+
+    #[test]
+    fn the_connection_takes_server_or_router_only() {
+        let mut config = OrcaConfig::default();
+        assert!(
+            apply(
+                &mut config,
+                CONNECTION_KEY,
+                Some(&json!("Router")),
+                false,
+                None
+            )
+            .ok
+        );
+        assert!(config.lm_studio.is_router());
+        assert_eq!(config.lm_studio.connection.as_deref(), Some("router"));
+        assert_eq!(describe(&config, None)["connection"], json!("router"));
+        let bad = apply(
+            &mut config,
+            CONNECTION_KEY,
+            Some(&json!("gateway")),
+            false,
+            None,
+        );
+        assert!(!bad.ok);
+        assert!(bad.error.unwrap().contains("server, router"));
+        // "server" (or blank) is the default and is not written to config.json.
+        assert!(
+            apply(
+                &mut config,
+                CONNECTION_KEY,
+                Some(&json!("server")),
+                false,
+                None
+            )
+            .ok
+        );
+        assert_eq!(config.lm_studio.connection, None);
+        let text = crate::config::manager::serialize_config(&config).unwrap();
+        assert!(!text.contains("connection"), "{text}");
     }
 }

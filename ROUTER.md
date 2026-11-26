@@ -912,3 +912,21 @@ Measured on the operator's PC (2026-11-26, CLI 2.1.332, haiku): 2.1 s to the fir
 2.2 s in all for a short streamed answer, 3.8 s for a tool call, 1.7 s for the follow-up turn
 with the tool result; the very first request after the router started took 51 s (the CLI's
 first start in a new working directory).
+
+## 13. How clients find and understand the router (D149)
+
+Design and the per-setting table: [`docs/design/ROUTER-MODE.md`](docs/design/ROUTER-MODE.md).
+
+- `GET /.well-known/abhoth-router`: unauthenticated identification (name, version,
+  capabilities, whether this caller needs a key). No secrets; read-only.
+- `GET /v1/abhoth/models`: the models this caller may use with their context window, output
+  limit, vision, tool calling, reasoning levels, state and sampling defaults (from the
+  deployments' `model_info` and `params`; LiteLLM's `supports_vision`,
+  `supports_function_calling` and `supports_reasoning` keys win), whether Claude is among them
+  and, for callers that may see them, the cards. Authenticated like `/v1/abhoth/view`.
+- mDNS / DNS-SD `_abhoth-router._tcp` (TXT `v`, `api`, `path`, `name`): `--mdns auto|on|off`
+  (auto: on unless the gateway is loopback-only), `--name NAME` (default "Abhoth router on
+  <host>"), `--key-url URL` (where users make API keys).
+
+The app's settings (Models → Connection) use them for "router mode": the router then supplies
+everything model-specific, and the client's failover, slots and inference profiles are off.

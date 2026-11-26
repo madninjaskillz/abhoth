@@ -35,6 +35,7 @@ axum.workspace = true
 chrono.workspace = true
 futures-util.workspace = true
 indexmap.workspace = true
+mdns-sd.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

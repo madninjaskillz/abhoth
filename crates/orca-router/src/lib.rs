@@ -8,6 +8,7 @@ pub mod cli;
 pub mod config;
 pub mod control;
 pub mod control_api;
+pub mod discovery;
 pub mod effort;
 pub mod guards;
 pub mod import;
