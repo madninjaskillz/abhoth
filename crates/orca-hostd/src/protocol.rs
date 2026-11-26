@@ -266,6 +266,10 @@ pub struct HostdStatus {
     pub holds: Vec<String>,
     #[serde(default)]
     pub overrides: Vec<String>,
+    /// Per card (label): orca-gpuctl's `CardStatus` plus `locked` (clock locked low or capped),
+    /// the `clocks.<card>` feed section.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub clocks: BTreeMap<String, serde_json::Value>,
 }
 
 /// One GPU process (for "which container uses this card").

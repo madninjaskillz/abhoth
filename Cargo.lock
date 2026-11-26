@@ -3402,10 +3402,20 @@ dependencies = [
 name = "orca-supervisor"
 version = "0.16.8"
 dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "futures-util",
+ "orca-gpuctl",
+ "orca-homeassistant",
+ "orca-hostd",
  "orca-sensors",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
+ "toml 1.2.3+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -360,6 +360,17 @@ impl Shared {
             loops,
             holds,
             overrides,
+            clocks: cards
+                .iter()
+                .filter_map(|c| {
+                    let mut v = serde_json::to_value(c).ok()?;
+                    let locked = c.applied_low || c.cap_mhz.is_some() || c.serving != "unlocked";
+                    v["locked"] = Value::Bool(locked);
+                    v["pinned"] = Value::Bool(c.serving == "pin");
+                    strip_nulls(&mut v);
+                    Some((c.card.clone(), v))
+                })
+                .collect(),
         }
     }
 
@@ -464,6 +475,18 @@ pub fn ingest(store: &mut SensorStore, batch: &TelemetryBatch) {
         }
     }
     store.extend(batch_readings(batch));
+}
+
+/// The feed holds no nulls (absent = missing).
+fn strip_nulls(v: &mut Value) {
+    match v {
+        Value::Object(m) => {
+            m.retain(|_, x| !x.is_null());
+            m.values_mut().for_each(strip_nulls);
+        }
+        Value::Array(a) => a.iter_mut().for_each(strip_nulls),
+        _ => {}
+    }
 }
 
 fn paths_secrets(p: &Option<Paths>) -> std::path::PathBuf {

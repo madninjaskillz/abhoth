@@ -1,0 +1,27 @@
+# abhoth-supervisor config: `abhoth-supervisor check --config FILE`, then `run`.
+[supervisor]
+server = "gpu-host"                       # slug for MQTT topics / unique ids
+name = "GPU host"
+hostd_socket = "/run/abhoth/hostd.sock"   # or hostd_command = ["ssh", …] (forced-command relay)
+push_policy = false                       # true: send the tables below to hostd as policy.put
+router_url = "http://127.0.0.1:8099"
+router_key = { file = "/mnt/Apps/abhoth/etc/secrets/router_ha_key" }
+listen = "127.0.0.1:9890"                 # /api/v1/supervisor/snapshot and /stream
+
+# The policy tables (the same as hostd's policy-put TOML).
+[cards.A]
+uuid = "GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+bus = "21:00.0"
+[power.A]
+serving = "unlocked"
+allow_cap = false
+
+[mqtt]
+enabled = false
+url = "mqtt://broker.lan:1883"
+client_id = "abhoth-supervisor-gpu-host"
+username = { file = "/mnt/Apps/abhoth/etc/secrets/mqtt_user" }
+password = { file = "/mnt/Apps/abhoth/etc/secrets/mqtt_password" }
+legacy_ids = false          # true only once ha-bridge is stopped (CUTOVER.md)
+clear_legacy_topics = false
+legacy_card = "B"

@@ -64,6 +64,8 @@ orca-fans = { path = "crates/orca-fans" }
 orca-gpuctl = { path = "crates/orca-gpuctl" }
 orca-calendar = { path = "crates/orca-calendar" }
 orca-alerts = { path = "crates/orca-alerts" }
+orca-hostd = { path = "crates/orca-hostd" }
+orca-homeassistant = { path = "crates/orca-homeassistant" }
 
 anyhow = "=1.0.105"
 async-trait = "=0.1.92"
