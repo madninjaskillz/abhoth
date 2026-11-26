@@ -29,6 +29,10 @@ pub struct ControlConfig {
     pub control: ControlSection,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub secrets: IndexMap<String, SecretRef>,
+    /// Who may do what (11.1): the accounts link, anonymous LAN, loopback (owned by
+    /// [`crate::access`]).
+    #[serde(default)]
+    pub access: crate::access::AccessSettings,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub servers: IndexMap<String, Server>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]

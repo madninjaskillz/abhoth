@@ -22,6 +22,7 @@ pub const HELP: &str = "abhoth router: the OpenAI-compatible gateway (replaces L
 
 USAGE:
   abhoth router --config router.json [--port P | --listen ADDR] [--host H] [--lb-port P] [--slots-port P]
+                [--control router.toml]   (the admin API, when its control.enabled is on)
   abhoth router observe-summary --dir DIR [--date YYYY-MM-DD]   (the decision-only shadow's day)
   abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
                 [--key-file PATH] [--base router.json] --out router.json [--watch SECONDS]
@@ -132,12 +133,14 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     let mut port: Option<u16> = None;
     let mut lb_port: Option<u16> = None;
     let mut slots_port: Option<u16> = None;
+    let mut control: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--config" => config = Some(take(args, &mut i, "--config")?),
             "--port" => port = Some(take(args, &mut i, "--port")?.parse().context("--port")?),
             "--host" => host = take(args, &mut i, "--host")?,
+            "--control" => control = Some(take(args, &mut i, "--control")?),
             "--listen" => listen = Some(take(args, &mut i, "--listen")?),
             "--lb-port" => {
                 lb_port = Some(
@@ -163,6 +166,11 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     let snap = Snapshot::load(&path).map_err(|e| anyhow!(e))?;
     let addr = listen.unwrap_or_else(|| format!("{host}:{}", port.unwrap_or(8010)));
     let st = AppState::new(snap, Some(path));
+    if let Some(c) = &control {
+        let msg = crate::control_api::install_from_toml(&st, std::path::Path::new(c))
+            .map_err(|e| anyhow!("--control {c}: {e}"))?;
+        eprintln!("abhoth router: {msg}");
+    }
     let mut tasks = Vec::new();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let mut bind = |addr: String, mode: Mode| -> Result<()> {

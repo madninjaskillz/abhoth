@@ -10,6 +10,7 @@
 //! Nothing here exists unless the control plane is on (`control.enabled`).
 
 pub mod demo;
+pub mod live;
 pub mod model;
 pub mod user_view;
 
@@ -562,3 +563,52 @@ pub fn metrics_text(cp: &ControlPlane) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// Resolve a `secret:<id>` reference from `[secrets]` (file or env); never logged.
+pub fn resolve_secret(c: &crate::control::schema::ControlConfig, r: &str) -> Option<Vec<u8>> {
+    let id = r.strip_prefix("secret:")?;
+    let s = c.secrets.get(id)?;
+    if let Some(f) = &s.file {
+        return std::fs::read(f).ok();
+    }
+    s.env
+        .as_ref()
+        .and_then(|e| std::env::var(e).ok())
+        .map(String::into_bytes)
+}
+
+/// Turn the admin API on from `router.toml` when `control.enabled` (`--control FILE`).
+/// Returns what it did, for the start-up line.
+pub fn install_from_toml(
+    st: &crate::state::AppState,
+    main: &std::path::Path,
+) -> Result<String, String> {
+    let l = crate::control::load::load(main).map_err(|issues| {
+        issues
+            .iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    })?;
+    let c = &l.config;
+    if !c.control.enabled {
+        return Ok("control plane off (control.enabled = false)".into());
+    }
+    let state_dir = std::path::PathBuf::from(&c.router.state_dir);
+    std::fs::create_dir_all(&state_dir).map_err(|e| format!("{}: {e}", state_dir.display()))?;
+    let store = Arc::new(crate::control::store::Store::open(&state_dir.join("router.db"))?);
+    let token = c
+        .access
+        .accounts_token
+        .as_deref()
+        .and_then(|r| resolve_secret(c, r));
+    if c.access.accounts_token.is_some() && token.is_none() {
+        return Err("access.accounts_token: the secret could not be read".into());
+    }
+    let access = Access::new(c.access.clone(), token);
+    let backend = live::ConfigBackend::new(main, &state_dir, store);
+    st.control
+        .set(Arc::new(ControlPlane { access, backend }))
+        .map_err(|_| "the control plane is already installed".to_string())?;
+    Ok(format!("control plane on (rev {})", l.rev))
+}

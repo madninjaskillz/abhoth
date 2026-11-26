@@ -208,6 +208,9 @@ impl Principal {
             return true;
         }
         let access = access.trim();
+        if access == "anonymous" {
+            return true;
+        }
         if access.is_empty() || access == "users" {
             return match self {
                 Principal::Key(i) if i.role == Role::Service => {
