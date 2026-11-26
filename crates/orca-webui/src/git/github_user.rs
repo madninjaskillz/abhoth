@@ -35,9 +35,9 @@ use crate::git::{secret_box, tokens};
 /// `@github-user:<user id>` (no real token contains '@' or ':').
 pub const USER_LINK_PREFIX: &str = "@github-user:";
 
-/// The OAuth app's client ID shipped with the build ("" = none; `github.oauthClientId` in
-/// config.json or `ABHOTH_GITHUB_OAUTH_CLIENT_ID` set one).
-pub const DEFAULT_OAUTH_CLIENT_ID: &str = "";
+/// The Abhoth OAuth app's client ID (device flow enabled; client IDs are public), used unless
+/// `github.oauthClientId` in config.json or `ABHOTH_GITHUB_OAUTH_CLIENT_ID` says otherwise.
+pub const DEFAULT_OAUTH_CLIENT_ID: &str = "Ov23ligHW3OttCm4Osgc";
 
 /// The scopes the device-flow sign-in asks for: private repositories (clone, fetch, push) and
 /// the user's organizations (to list their repositories).
@@ -1054,7 +1054,16 @@ mod tests {
             r#"{"github": {"oauthClientId": "bad id/../"}}"#,
         )
         .unwrap();
+        // A malformed value turns the sign-in off rather than going into a URL.
         assert_eq!(load_client_id(Some(dir.path())), None);
+        // No value: the environment's, else the shipped default.
+        std::fs::write(dir.path().join("config.json"), "{}").unwrap();
+        if orca_core::brand::env_var("GITHUB_OAUTH_CLIENT_ID").is_none() {
+            assert_eq!(
+                load_client_id(Some(dir.path())).as_deref(),
+                Some(DEFAULT_OAUTH_CLIENT_ID)
+            );
+        }
     }
 
     #[test]
