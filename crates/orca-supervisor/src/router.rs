@@ -119,6 +119,27 @@ impl Router {
     }
 }
 
+/// A field by its snake_case name, or the camelCase spelling the live router sends.
+fn field<'a>(v: &'a Value, snake: &str) -> &'a Value {
+    let x = &v[snake];
+    if !x.is_null() {
+        return x;
+    }
+    let mut camel = String::new();
+    let mut up = false;
+    for ch in snake.chars() {
+        if ch == '_' {
+            up = true;
+        } else if up {
+            camel.extend(ch.to_uppercase());
+            up = false;
+        } else {
+            camel.push(ch);
+        }
+    }
+    &v[camel.as_str()]
+}
+
 fn strip_nulls(mut v: Value) -> Value {
     fn go(v: &mut Value) {
         match v {
@@ -146,7 +167,7 @@ pub fn engines_section(st: &Value, server: &str) -> (Value, BTreeMap<String, Str
         .unwrap_or(Value::Null);
     let sid = srv["id"].as_str().unwrap_or(server).to_string();
     let mut out = Map::new();
-    let active = srv["active_layout"].as_str().map(String::from);
+    let active = field(&srv, "active_layout").as_str().map(String::from);
     let layouts: Vec<&Value> = st["layouts"]
         .as_array()
         .map(|a| a.iter().filter(|l| l["server"] == sid.as_str()).collect())
@@ -182,9 +203,12 @@ pub fn engines_section(st: &Value, server: &str) -> (Value, BTreeMap<String, Str
     let mut ids = BTreeMap::new();
     let (mut busy, mut total) = (0u64, 0u64);
     for c in srv["cards"].as_array().cloned().unwrap_or_default() {
-        let label = c["label"]
+        // The card's short name: the router id without a "server/" prefix ("A"), else the label.
+        let label = c["id"]
             .as_str()
-            .or(c["id"].as_str())
+            .map(|id| id.rsplit('/').next().unwrap_or(id))
+            .filter(|s| !s.is_empty())
+            .or(c["label"].as_str())
             .unwrap_or("")
             .to_string();
         if label.is_empty() {
@@ -196,9 +220,12 @@ pub fn engines_section(st: &Value, server: &str) -> (Value, BTreeMap<String, Str
         );
         let e = &c["engine"];
         let mut m = Map::new();
+        if let Some(t) = c["label"].as_str() {
+            m.insert("title".into(), json!(t));
+        }
         m.insert(
             "online".into(),
-            json!(c["admin_state"].as_str().unwrap_or("online") == "online"),
+            json!(field(&c, "admin_state").as_str().unwrap_or("online") == "online"),
         );
         if e.is_object() {
             m.insert("engine".into(), e["engine"].clone());
@@ -215,7 +242,7 @@ pub fn engines_section(st: &Value, server: &str) -> (Value, BTreeMap<String, Str
                     .trim()
                 ),
             );
-            let eid = e["served_id"]
+            let eid = field(e, "served_id")
                 .as_str()
                 .filter(|s| !s.is_empty())
                 .map(String::from)
@@ -400,5 +427,24 @@ mod tests {
         );
         assert_eq!(snap.control.layout.as_deref(), Some("flash-x2"));
         assert_eq!(snap.card("B").unwrap().engine.as_deref(), Some("strata"));
+    }
+
+    #[test]
+    fn live_router_camel_case_and_bare_ids() {
+        let st = json!({"rev": "r", "mode": "act", "guards": [], "updated": 1,
+            "servers": [{"id": "gpu-host", "activeLayout": "two", "hostctlOk": true, "cards": [
+                {"id": "A", "label": "V100 (fast)", "managed": true, "adminState": "offline",
+                 "engine": {"engine": "ninfer", "model": "m", "servedId": "", "state": "ready", "healthy": true},
+                 "lanes": 4, "inflight": 2, "queued": 0},
+                {"id": "X1", "label": "Quadro", "managed": false, "adminState": "unmanaged", "engine": null,
+                 "lanes": 0, "inflight": 0, "queued": 0}]}],
+            "layouts": [{"id": "two", "title": "Two", "server": "gpu-host", "active": true}]});
+        let (e, ids) = engines_section(&st, "gpu-host");
+        assert_eq!(e["layout"], "two");
+        assert_eq!(e["cards"]["A"]["online"], false);
+        assert_eq!(e["cards"]["A"]["title"], "V100 (fast)");
+        assert_eq!(e["engines"]["ninfer-a"]["cards"], json!(["A"]));
+        assert_eq!(e["cards"]["X1"]["engine"], "off");
+        assert_eq!(ids["A"], "A");
     }
 }

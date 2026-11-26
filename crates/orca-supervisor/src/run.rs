@@ -120,8 +120,14 @@ pub async fn run(cfg: Config) -> Result<(), String> {
                 allow_cap: *cap,
             })
             .collect();
-        let (snap_tx, snap_rx) = watch::channel(Default::default());
         let feed: Arc<dyn TelemetryFeed> = hub.clone();
+        // Seeded with a real snapshot (server id set): mqtt::run reads it before `follow`'s
+        // first send and refuses an empty server id.
+        let (snap_tx, snap_rx) = watch::channel(orca_homeassistant::feed::snapshot_from_state(
+            &feed.snapshot().state,
+            &server,
+            &cards,
+        ));
         tokio::spawn(orca_homeassistant::feed::follow(
             feed, server, cards, snap_tx,
         ));
