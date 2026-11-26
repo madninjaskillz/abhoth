@@ -15,6 +15,8 @@
 //! Off unless `[calendar] enabled = true` *and* the control plane is on.
 
 pub mod api;
+pub mod cli;
+pub mod reserve;
 pub mod store;
 
 use std::path::{Path, PathBuf};
@@ -44,8 +46,10 @@ pub fn installed() -> Option<&'static Arc<CalendarService>> {
 
 pub fn install(s: Arc<CalendarService>) -> Result<(), String> {
     INSTALLED
-        .set(s)
-        .map_err(|_| "the calendar is already installed".to_string())
+        .set(s.clone())
+        .map_err(|_| "the calendar is already installed".to_string())?;
+    reserve::spawn_preempt_ticker(s);
+    Ok(())
 }
 
 /// Opens and installs the calendar when `[calendar] enabled = true` (both control-plane
@@ -834,6 +838,31 @@ impl CalendarService {
         let (_, secret) = self.issue_key(&id, who)?;
         self.audit(who, "calendar.bench.begin", &id);
         Ok((id, secret))
+    }
+
+    /// A bench run that goes on longer than planned: its one-off now ends `seconds` from now
+    /// (plus the usual 30 min margin). The key keeps working (its window follows the entry).
+    pub fn bench_extend(&self, id: &str, seconds: i64, who: &str) -> Result<i64, String> {
+        let now = now_epoch();
+        let st = CalStore(&self.store);
+        let (_, j, source, _) = st
+            .dynamic(now)?
+            .into_iter()
+            .find(|d| d.0 == id && d.2 == "bench")
+            .ok_or_else(|| format!("no bench entry {id}"))?;
+        let mut e: EntryConfig = serde_json::from_str(&j).map_err(|x| x.to_string())?;
+        let at =
+            e.at.as_deref()
+                .and_then(|a| orca_calendar::recur::parse_local(a).ok())
+                .map(|l| orca_calendar::recur::to_utc(self.tz(), l))
+                .ok_or("the bench entry has no start")?;
+        let end = now + seconds.max(60) + 1800;
+        e.duration = Some(orca_calendar::dur::format((end - at).max(60)));
+        let j = serde_json::to_string(&e).map_err(|x| x.to_string())?;
+        st.put_dynamic(id, &j, &source, at, end + 3600)?;
+        self.refresh()?;
+        self.audit(who, "calendar.bench.extend", id);
+        Ok(end)
     }
 
     /// The bench run ended: its occurrence ends now and its keys are revoked.

@@ -43,6 +43,37 @@ pub struct RouterLink {
 }
 
 impl RouterLink {
+    /// A signed call to the router's admin API from the web server itself (no browser), as
+    /// `acting` (e.g. the bench queue). Returns the status and the JSON body.
+    pub async fn call(
+        &self,
+        method: &str,
+        rest: &str,
+        acting: &ActingUser,
+        body: &Value,
+    ) -> Result<(u16, Value), String> {
+        let path = format!("/admin/api/{rest}");
+        let sig = sign_acting_user(
+            &self.token,
+            acting,
+            chrono::Utc::now().timestamp(),
+            method,
+            &path,
+        );
+        let m = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
+        let r = http_client()
+            .request(m, format!("{}{path}", self.url))
+            .header(router_link::ACTING_USER_HEADER, sig)
+            .header("x-abhoth-no-switch", "1")
+            .timeout(Duration::from_secs(15))
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| format!("router: {}", e.without_url()))?;
+        let st = r.status().as_u16();
+        Ok((st, r.json().await.unwrap_or(Value::Null)))
+    }
+
     /// From `ABHOTH_ROUTER_URL` and `ABHOTH_ROUTER_TOKEN_FILE` (both needed; the token file must
     /// hold at least 32 characters).
     pub fn from_env() -> Result<Option<Self>, String> {
@@ -451,6 +482,74 @@ async fn forward(State(state): State<Arc<AppState>>, rest: String, req: Request<
         .header("x-accel-buffering", "no")
         .body(Body::from_stream(stream))
         .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
+}
+
+/// Bench protection through the router's calendar (SUPERVISOR.md 9, Q10): a run of the bench
+/// queue is a one-off calendar entry that blocks on-demand switches (and shows on the
+/// calendar) until the queue ends.
+pub struct RouterBenchProtect {
+    pub link: RouterLink,
+}
+
+fn bench_queue_user() -> ActingUser {
+    ActingUser {
+        user_id: 0,
+        name: "bench-queue".into(),
+        admin: true,
+    }
+}
+
+fn router_error(st: u16, v: &Value) -> String {
+    format!(
+        "router {st}: {}",
+        v.get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("no detail")
+    )
+}
+
+#[async_trait::async_trait]
+impl crate::bench::queue::BenchProtect for RouterBenchProtect {
+    async fn begin(&self, run: &str, seconds: i64) -> Result<(String, i64), String> {
+        let body = json!({"run": run, "seconds": seconds});
+        match self
+            .link
+            .call("POST", "calendar/bench", &bench_queue_user(), &body)
+            .await?
+        {
+            // The event key in the reply is dropped: the queue's runs use no reserved card.
+            (200 | 201, v) => Ok((
+                v["id"].as_str().unwrap_or_default().to_string(),
+                chrono::Utc::now().timestamp() + seconds + 1800,
+            )),
+            (st, v) => Err(router_error(st, &v)),
+        }
+    }
+
+    async fn extend(&self, id: &str, seconds: i64) -> Result<i64, String> {
+        let body = json!({"seconds": seconds});
+        let path = format!("calendar/bench/{id}/extend");
+        match self
+            .link
+            .call("POST", &path, &bench_queue_user(), &body)
+            .await?
+        {
+            (200, v) => Ok(v["until"].as_i64().unwrap_or_default()),
+            (st, v) => Err(router_error(st, &v)),
+        }
+    }
+
+    async fn end(&self, id: &str) -> Result<(), String> {
+        let path = format!("calendar/bench/{id}/end");
+        match self
+            .link
+            .call("POST", &path, &bench_queue_user(), &Value::Null)
+            .await?
+        {
+            (200 | 404, _) => Ok(()),
+            (st, v) => Err(router_error(st, &v)),
+        }
+    }
 }
 
 #[cfg(test)]

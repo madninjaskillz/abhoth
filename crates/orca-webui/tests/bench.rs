@@ -19,7 +19,7 @@ use common::{FakeSession, Host};
 use orca_core::live::{LiveEventBus, LiveSnapshot};
 use orca_core::profiles::service::ProfileService;
 use orca_webui::audit::AuditLog;
-use orca_webui::bench::queue::NewItem;
+use orca_webui::bench::queue::{BenchProtect, NewItem};
 use orca_webui::bench::{
     BenchArm, BenchOptions, BenchQueue, BenchResultRow, BenchRunner, BenchSuite, BenchTarget,
     CancelToken, result_row, summary, time,
@@ -611,6 +611,8 @@ async fn queue_runs_grouped_by_layout_on_one_confirmation_switches_back_and_surv
     let dir = env.path().join("bench");
     {
         let queue = BenchQueue::new(runner.clone(), dir.clone(), Some(profiles.clone()), true);
+        let protect = Arc::new(FakeProtect::default());
+        queue.set_protect(protect.clone());
         let (added, skipped) = queue
             .add(vec![
                 NewItem::new("demo", Some("dense2"), Some("peer"), 1),
@@ -651,6 +653,21 @@ async fn queue_runs_grouped_by_layout_on_one_confirmation_switches_back_and_surv
         assert_eq!(col("arm"), ["hands-on", "peer", "peer"]);
         assert_eq!(api.switches(), 2); // to dense2 once for both of its items, and back
         assert_eq!(api.live(), "flash2");
+        // Bench protection: one calendar entry for the whole run of the queue, ended after it.
+        until("the protection to end", 30, || {
+            protect.calls.lock().unwrap().last().map(String::as_str) == Some("end bench-q")
+        })
+        .await;
+        assert_eq!(
+            protect
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|c| c.starts_with("begin"))
+                .count(),
+            1
+        );
         queue.stop().await;
     }
     // queue.json: the items and their outcome are still there for a new process.
@@ -1980,4 +1997,31 @@ async fn http_queue_endpoints_add_move_requeue_clear_and_refuse_an_unconfirmed_s
     )
     .unwrap();
     assert!(file["items"].as_array().unwrap().is_empty());
+}
+
+/// Records the bench queue's protection calls (the router calendar in production).
+#[derive(Default)]
+struct FakeProtect {
+    calls: Mutex<Vec<String>>,
+}
+
+#[async_trait]
+impl BenchProtect for FakeProtect {
+    async fn begin(&self, run: &str, seconds: i64) -> Result<(String, i64), String> {
+        assert!(run.starts_with("queue "));
+        self.calls.lock().unwrap().push(format!("begin {seconds}"));
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        Ok(("bench-q".into(), now + seconds))
+    }
+    async fn extend(&self, id: &str, seconds: i64) -> Result<i64, String> {
+        self.calls.lock().unwrap().push(format!("extend {id}"));
+        Ok(seconds)
+    }
+    async fn end(&self, id: &str) -> Result<(), String> {
+        self.calls.lock().unwrap().push(format!("end {id}"));
+        Ok(())
+    }
 }

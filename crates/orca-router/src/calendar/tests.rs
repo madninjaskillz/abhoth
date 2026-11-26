@@ -349,6 +349,16 @@ fn the_bench_queue_gets_a_protected_one_off_with_its_own_key() {
         s.save_entry(&id, None, None, "admin", "").unwrap_err().0,
         409
     );
+    // A queue that runs long moves its end.
+    let until = s.bench_extend(&id, 4 * 3600, "bench-queue").unwrap();
+    assert!(until >= now_epoch() + 4 * 3600);
+    let occ = s.occurrences(now_epoch() - 60, now_epoch() + 86_400, now_epoch());
+    assert!(
+        occ.iter()
+            .any(|o| o.entry == id && o.block_end >= until - 1),
+        "{occ:?}"
+    );
+    assert!(s.bench_extend("bench-nope", 60, "bench-queue").is_err());
     s.bench_end(&id, "bench-queue").unwrap();
     assert!(!s.now_state(now_epoch()).holders.contains_key("B"));
     assert!(matches!(
@@ -452,5 +462,181 @@ fn edit_entry_replaces_only_its_table() {
     assert_eq!(
         out.trim_start(),
         "[calendar.entries.new]\ntitle = \"a2\"\nat = \"2026-12-02T10:00\"\n"
+    );
+}
+
+#[test]
+fn others_leases_on_a_waiting_reservation_are_not_extended_and_a_drain_revokes_them() {
+    use crate::calendar::reserve::LeaseHold;
+    use crate::leases::{LeaseTable, SlotView};
+    use orca_calendar::effects::OnReserve;
+    let view = SlotView {
+        slots: vec!["A1".into(), "B1".into(), "B2".into()],
+        ..Default::default()
+    };
+    let mut t = LeaseTable::default();
+    let claim = |t: &mut LeaseTable, key: &str, copy: &str, who: Option<&str>| {
+        let b = json!({"key": key, "kind": "agent", "copy": copy});
+        t.claim(&view, b.as_object().unwrap(), 100.0, 90.0, who);
+    };
+    claim(&mut t, "theirs", "B", None);
+    claim(&mut t, "mine", "B", Some("event:pipe key 7"));
+    claim(&mut t, "free", "A", None);
+    let hold = |on: OnReserve| LeaseHold {
+        card: "B".into(),
+        entry: "pipe".into(),
+        until_local: "08:30".into(),
+        on_reserve: on,
+    };
+    let before: indexmap::IndexMap<String, f64> = t
+        .leases
+        .iter()
+        .map(|(s, l)| (s.clone(), l.renewed))
+        .collect();
+    let keys = json!({"keys": ["theirs", "mine", "free"]});
+    t.renew(keys.as_object().unwrap(), 150.0, 90.0);
+    let (held, revoked) = t.apply_holds(&[hold(OnReserve::Wait)], &before);
+    assert_eq!(
+        held,
+        vec![(
+            "theirs".to_string(),
+            "reserved by pipe until ~08:30".to_string()
+        )]
+    );
+    assert!(revoked.is_empty());
+    let renewed = |t: &LeaseTable, k: &str| t.leases.values().find(|l| l.key == k).unwrap().renewed;
+    assert_eq!(renewed(&t, "theirs"), 100.0, "not past its TTL");
+    assert_eq!(renewed(&t, "mine"), 150.0);
+    assert_eq!(renewed(&t, "free"), 150.0);
+    let (_, revoked) = t.apply_holds(&[hold(OnReserve::Drain)], &before);
+    assert_eq!(revoked.len(), 1);
+    assert!(revoked[0].1.starts_with("lease revoked: reserved by pipe"));
+    assert!(t.leases.values().all(|l| l.key != "theirs"));
+}
+
+#[test]
+fn chat_access_names_the_holds_and_checks_the_key() {
+    use crate::calendar::reserve::ChatAccess;
+    let (_d, s) = svc(FILE);
+    let e = entry(
+        json!({"title": "res", "at": local_now(&s, -60), "duration": "30m",
+        "effects": [{"reserve_card": "B"}], "key": {"scopes": ["chat", "use_reserved"]}}),
+    );
+    s.save_entry("res", Some(&e), None, "admin", "").unwrap();
+    let (_, key) = s.issue_key("res", "admin").unwrap();
+    let cands = vec!["A".to_string(), "B".to_string()];
+    match s.chat_access(None, "qwen", &cands) {
+        ChatAccess::Holds(h) => {
+            assert_eq!(h.len(), 1);
+            assert!(!h[0].allowed);
+            assert!(h[0].message().starts_with("card B reserved by res until ~"));
+        }
+        x => panic!("{x:?}"),
+    }
+    match s.chat_access(Some(&key), "qwen", &cands) {
+        ChatAccess::Holds(h) => assert!(h[0].allowed),
+        x => panic!("{x:?}"),
+    }
+    assert!(matches!(
+        s.chat_access(Some("abe_notarealkeynotarealkeynotarealk"), "qwen", &cands),
+        ChatAccess::Denied(401, _)
+    ));
+    // Another bearer (a user's key) is an ordinary caller here.
+    assert!(matches!(
+        s.chat_access(Some("sk-user"), "qwen", &cands),
+        ChatAccess::Holds(_)
+    ));
+}
+
+#[test]
+fn the_cli_checks_a_file_and_imports_cron_jobs() {
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("calendar.toml");
+    std::fs::write(&file, FILE).unwrap();
+    let f = file.to_string_lossy().to_string();
+    let run = |args: &[&str]| {
+        let a: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        cli::run(&a)
+    };
+    assert_eq!(run(&["check", "--file", &f]).unwrap(), 0);
+    // 07:10 on a weekday: ai-news blocks switches; 12:00 is free.
+    assert_eq!(
+        run(&[
+            "check",
+            "--file",
+            &f,
+            "--effect",
+            "block_switch",
+            "--at",
+            "2026-12-02T07:10"
+        ])
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        run(&[
+            "check",
+            "--file",
+            &f,
+            "--effect",
+            "block_switch",
+            "--at",
+            "2026-12-02T12:00"
+        ])
+        .unwrap(),
+        0
+    );
+    assert!(run(&["check", "--file", &f, "--effect", "nope"]).is_err());
+    assert!(run(&["frobnicate"]).is_err());
+    // A broken file exits 1.
+    let bad = d.path().join("bad.toml");
+    std::fs::write(
+        &bad,
+        "[calendar.entries.x]\ntitle = \"x\"\nat = \"2026-12-01T10:00\"\nafter = \"nobody\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        run(&["check", "--file", &bad.to_string_lossy()]).unwrap(),
+        1
+    );
+    // import-cron: a dry run writes nothing, --apply writes once.
+    let jobs = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../orca-calendar/tests/fixtures/truenas-cronjobs.json"
+    );
+    let before = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(
+        run(&["import-cron", "--file", &f, "--jobs", jobs]).unwrap(),
+        0
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
+    assert_eq!(
+        run(&["import-cron", "--file", &f, "--jobs", jobs, "--apply"]).unwrap(),
+        0
+    );
+    let after = std::fs::read_to_string(&file).unwrap();
+    assert!(after.starts_with("# The pipelines"));
+    assert!(after.contains("[calendar.entries.game-news]"));
+    // ics
+    let ics = d.path().join("m.ics");
+    std::fs::write(&ics, "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:m1\r\nSUMMARY:Maintenance\r\nDTSTART:20261205T200000Z\r\nDTEND:20261205T220000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").unwrap();
+    assert_eq!(
+        run(&[
+            "import-ics",
+            "--file",
+            &f,
+            "--ics",
+            &ics.to_string_lossy(),
+            "--effects",
+            r#"[{"block_switch":"all"}]"#,
+            "--apply"
+        ])
+        .unwrap(),
+        0
+    );
+    assert!(
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .contains("Maintenance")
     );
 }

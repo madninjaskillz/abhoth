@@ -8,7 +8,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
-use orca_hostd::protocol::{Envelope, FromHostd, PROTOCOL_VERSION, PolicyDoc, Rates, TelemetryBatch, ToHostd, read_frame, write_frame};
+use orca_hostd::protocol::{
+    Envelope, FromHostd, PROTOCOL_VERSION, PolicyDoc, Rates, TelemetryBatch, ToHostd, read_frame,
+    write_frame,
+};
 use orca_sensors::feed::{FeedEvent, Severity, TelemetrySink, sections};
 use orca_sensors::{Namespace, Reading, SensorId, Unit};
 use serde_json::{Value, json};
@@ -33,7 +36,10 @@ pub struct HostdClient {
 impl HostdClient {
     pub async fn call(&self, m: ToHostd) -> Result<FromHostd, String> {
         let (tx, rx) = oneshot::channel();
-        self.tx.send((m, tx)).await.map_err(|_| "hostd client stopped".to_string())?;
+        self.tx
+            .send((m, tx))
+            .await
+            .map_err(|_| "hostd client stopped".to_string())?;
         tokio::time::timeout(Duration::from_secs(10), rx)
             .await
             .map_err(|_| "hostd did not answer in 10 s".to_string())?
@@ -60,10 +66,18 @@ pub fn spawn(ep: Endpoint, sink: Arc<dyn TelemetrySink>, policy: Option<PolicyDo
                     if why.is_none() {
                         return; // every handle dropped
                     }
-                    sink.event(FeedEvent { kind: "hostd.disconnected".into(), severity: Severity::Warning, text: why.unwrap_or_default(), data: Value::Null });
+                    sink.event(FeedEvent {
+                        kind: "hostd.disconnected".into(),
+                        severity: Severity::Warning,
+                        text: why.unwrap_or_default(),
+                        data: Value::Null,
+                    });
                 }
                 Err(e) => {
-                    sink.set_section(sections::HEALTH, json!({"hostd": {"status": "down", "error": e}}));
+                    sink.set_section(
+                        sections::HEALTH,
+                        json!({"hostd": {"status": "down", "error": e}}),
+                    );
                 }
             }
             sink.set_section(sections::HEALTH, json!({"hostd": {"status": "down"}}));
@@ -74,11 +88,17 @@ pub fn spawn(ep: Endpoint, sink: Arc<dyn TelemetrySink>, policy: Option<PolicyDo
     HostdClient { tx }
 }
 
-type Conn = (Box<dyn AsyncBufRead + Unpin + Send>, Box<dyn AsyncWrite + Unpin + Send>, Option<tokio::process::Child>);
+type Conn = (
+    Box<dyn AsyncBufRead + Unpin + Send>,
+    Box<dyn AsyncWrite + Unpin + Send>,
+    Option<tokio::process::Child>,
+);
 
 #[cfg(unix)]
 async fn connect_socket(p: &std::path::Path) -> Result<Conn, String> {
-    let s = tokio::net::UnixStream::connect(p).await.map_err(|e| format!("{}: {e}", p.display()))?;
+    let s = tokio::net::UnixStream::connect(p)
+        .await
+        .map_err(|e| format!("{}: {e}", p.display()))?;
     let (r, w) = s.into_split();
     Ok((Box::new(tokio::io::BufReader::new(r)), Box::new(w), None))
 }
@@ -99,7 +119,11 @@ fn connect_command(c: &[String]) -> Result<Conn, String> {
         .map_err(|e| format!("{prog}: {e}"))?;
     let r = child.stdout.take().ok_or("no stdout")?;
     let w = child.stdin.take().ok_or("no stdin")?;
-    Ok((Box::new(tokio::io::BufReader::new(r)), Box::new(w), Some(child)))
+    Ok((
+        Box::new(tokio::io::BufReader::new(r)),
+        Box::new(w),
+        Some(child),
+    ))
 }
 
 /// One connection. Returns `None` when every client handle is gone (stop), else why it ended.
@@ -116,7 +140,14 @@ async fn session(
         *next += 1;
         Envelope::new(Some(*next), m)
     };
-    let hello = send(ToHostd::Hello { proto: PROTOCOL_VERSION, version: env!("CARGO_PKG_VERSION").into(), client: "supervisor".into() }, &mut next);
+    let hello = send(
+        ToHostd::Hello {
+            proto: PROTOCOL_VERSION,
+            version: env!("CARGO_PKG_VERSION").into(),
+            client: "supervisor".into(),
+        },
+        &mut next,
+    );
     if write_frame(&mut w, &hello).await.is_err() {
         return Some("write failed".into());
     }
@@ -201,7 +232,10 @@ impl Ingest {
     pub fn apply(&mut self, sink: &dyn TelemetrySink, b: &TelemetryBatch) {
         let mut r = orca_hostd::sample::batch_readings(b);
         for (name, v) in &b.sensors {
-            r.push((SensorId::of(Namespace::Sensor, &[name.as_str()]), Reading::new(*v, Unit::Unknown, b.ts, "hostd")));
+            r.push((
+                SensorId::of(Namespace::Sensor, &[name.as_str()]),
+                Reading::new(*v, Unit::Unknown, b.ts, "hostd"),
+            ));
         }
         let now: BTreeSet<SensorId> = r
             .iter()
@@ -213,7 +247,10 @@ impl Ingest {
             .iter()
             .filter(|i| !now.contains(*i))
             // Only for cards in this batch (GPU sampling every tick) and for sensor.*.
-            .filter(|i| i.namespace() == Namespace::Sensor || i.segments().first().is_some_and(|c| b.gpus.contains_key(c)))
+            .filter(|i| {
+                i.namespace() == Namespace::Sensor
+                    || i.segments().first().is_some_and(|c| b.gpus.contains_key(c))
+            })
             .cloned()
             .collect();
         if !gone.is_empty() {
@@ -222,7 +259,10 @@ impl Ingest {
         self.last = now;
         sink.put_readings(&r);
         if !b.gpus.is_empty() {
-            sink.set_section(sections::GPUS, serde_json::to_value(&b.gpus).unwrap_or_default());
+            sink.set_section(
+                sections::GPUS,
+                serde_json::to_value(&b.gpus).unwrap_or_default(),
+            );
         }
         if let Some(h) = &b.host {
             sink.set_section(sections::HOST, serde_json::to_value(h).unwrap_or_default());
@@ -234,7 +274,11 @@ impl Ingest {
             sink.set_section(sections::BMC, serde_json::to_value(h).unwrap_or_default());
         }
         if !b.fans.is_empty() {
-            let m: BTreeMap<&str, Value> = b.fans.iter().map(|f| (f.fan.as_str(), serde_json::to_value(f).unwrap_or_default())).collect();
+            let m: BTreeMap<&str, Value> = b
+                .fans
+                .iter()
+                .map(|f| (f.fan.as_str(), serde_json::to_value(f).unwrap_or_default()))
+                .collect();
             sink.set_section(sections::FANS, serde_json::to_value(m).unwrap_or_default());
         }
         if let Some(f) = &b.facts {
@@ -261,18 +305,33 @@ mod tests {
             let mut sent_batch = false;
             while let Ok(Some(env)) = read_frame::<_, ToHostd>(&mut hr, &mut buf).await {
                 let reply = match env.msg {
-                    ToHostd::Hello { .. } => FromHostd::Hello { proto: 1, version: "t".into(), limits_hash: "h".into(), policy_rev: None },
+                    ToHostd::Hello { .. } => FromHostd::Hello {
+                        proto: 1,
+                        version: "t".into(),
+                        limits_hash: "h".into(),
+                        policy_rev: None,
+                    },
                     ToHostd::TelemetrySubscribe(_) => FromHostd::Ack,
                     ToHostd::Status => FromHostd::Status(Default::default()),
                     ToHostd::Wake { .. } => FromHostd::Ack,
                     _ => FromHostd::Ack,
                 };
-                write_frame(&mut hw, &Envelope::new(env.id, reply)).await.unwrap();
+                write_frame(&mut hw, &Envelope::new(env.id, reply))
+                    .await
+                    .unwrap();
                 if !sent_batch {
                     sent_batch = true;
-                    let mut bt = TelemetryBatch { ts: 1_000, ..Default::default() };
+                    let mut bt = TelemetryBatch {
+                        ts: 1_000,
+                        ..Default::default()
+                    };
                     bt.sensors.insert("ctrl_A".into(), 55.0);
-                    write_frame(&mut hw, &Envelope::new(None, FromHostd::Telemetry(Box::new(bt)))).await.unwrap();
+                    write_frame(
+                        &mut hw,
+                        &Envelope::new(None, FromHostd::Telemetry(Box::new(bt))),
+                    )
+                    .await
+                    .unwrap();
                 }
             }
         });
@@ -280,11 +339,29 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(4);
         let client = HostdClient { tx };
         let h2 = hub.clone();
-        let s = tokio::spawn(async move { session(Box::new(tokio::io::BufReader::new(ar)), Box::new(aw), h2.as_ref(), None, &mut rx).await });
-        assert!(matches!(client.call(ToHostd::Wake { card: "A".into() }).await.unwrap(), FromHostd::Ack));
+        let s = tokio::spawn(async move {
+            session(
+                Box::new(tokio::io::BufReader::new(ar)),
+                Box::new(aw),
+                h2.as_ref(),
+                None,
+                &mut rx,
+            )
+            .await
+        });
+        assert!(matches!(
+            client
+                .call(ToHostd::Wake { card: "A".into() })
+                .await
+                .unwrap(),
+            FromHostd::Ack
+        ));
         for _ in 0..50 {
             hub.flush(2_000);
-            if hub.snapshot().state["sensors"].get("sensor.ctrl_A").is_some() {
+            if hub.snapshot().state["sensors"]
+                .get("sensor.ctrl_A")
+                .is_some()
+            {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;

@@ -362,3 +362,49 @@ async fn behind_a_proxy_the_link_needs_https() {
     // and a LAN router URL in plain http is refused at start
     assert!(orca_webui::router_admin::RouterLink::new("http://192.168.1.5:8010", LINK).is_err());
 }
+
+#[tokio::test]
+async fn the_bench_queue_protects_its_run_through_the_routers_calendar() {
+    use orca_webui::bench::queue::BenchProtect;
+    let p = pair().await;
+    let cal = tempfile::tempdir().unwrap();
+    let file = cal.path().join("calendar.toml");
+    std::fs::write(&file, "[calendar]\nenabled = true\n").unwrap();
+    let store = Arc::new(orca_router::control::store::Store::memory().unwrap());
+    let svc = orca_router::calendar::CalendarService::open(
+        "gpu",
+        "Europe/London",
+        &file,
+        cal.path(),
+        store,
+        Default::default(),
+    )
+    .unwrap();
+    // Process-wide: other tests in this binary don't use the calendar.
+    let _ = orca_router::calendar::install(svc.clone());
+    let prot = orca_webui::router_admin::RouterBenchProtect {
+        link: orca_webui::router_admin::RouterLink::new(&p.router, LINK).unwrap(),
+    };
+    let (id, _) = prot.begin("queue 20261126-2200", 3600).await.unwrap();
+    assert_eq!(id, "bench-queue-20261126-2200");
+    let now = chrono::Utc::now().timestamp();
+    assert!(
+        svc.check(orca_calendar::now::BlockAction::OnDemand, None, now)
+            .iter()
+            .any(|r| r.contains("Bench run")),
+        "on-demand is blocked while the bench runs"
+    );
+    let until = prot.extend(&id, 4 * 3600).await.unwrap();
+    assert!(until >= now + 4 * 3600);
+    prot.end(&id).await.unwrap();
+    assert!(
+        svc.check(
+            orca_calendar::now::BlockAction::OnDemand,
+            None,
+            chrono::Utc::now().timestamp() + 1
+        )
+        .is_empty()
+    );
+    // An unknown entry is refused.
+    assert!(prot.extend("bench-nope", 60).await.is_err());
+}

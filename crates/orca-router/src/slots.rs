@@ -227,11 +227,83 @@ impl Registry {
         b: &Map<String, Value>,
         principal: Option<&str>,
     ) -> (u16, Value) {
-        self.run(snap, |t, v, now, ttl| t.claim(v, b, now, ttl, principal))
+        let holds = card_holds();
+        if holds.is_empty() {
+            return self.run(snap, |t, v, now, ttl| t.claim(v, b, now, ttl, principal));
+        }
+        // Reserved cards (SUPERVISOR.md 9.4): an explicit one is refused, the rest avoided.
+        let theirs: Vec<&crate::calendar::reserve::LeaseHold> =
+            holds.iter().filter(|h| !h.owns(principal)).collect();
+        let named = b
+            .get("copy")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| b.get("slot").and_then(Value::as_str).map(copy_of));
+        if let Some(c) = named
+            && let Some(h) = theirs.iter().find(|h| h.card == c)
+        {
+            return (200, json!({"ok": false, "reason": h.reason()}));
+        }
+        let mut b = b.clone();
+        let mut avoid: Vec<Value> = b
+            .get("avoid")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for h in &theirs {
+            avoid.push(Value::String(h.card.clone()));
+        }
+        b.insert("avoid".into(), Value::Array(avoid));
+        let (code, v) = self.run(snap, |t, v, now, ttl| t.claim(v, &b, now, ttl, principal));
+        // `avoid` is a preference: a claim that still landed on a held card is given back.
+        if let Some(s) = v.get("slot").and_then(Value::as_str)
+            && v.get("existing").is_none()
+            && let Some(h) = theirs.iter().find(|h| h.card == copy_of(s))
+        {
+            let key = b.get("key").cloned().unwrap_or(Value::Null);
+            let mut rel = Map::new();
+            rel.insert("key".into(), key);
+            self.run(snap, |t, _, _, _| t.release(&rel));
+            return (200, json!({"ok": false, "reason": h.reason()}));
+        }
+        (code, v)
     }
 
     pub fn renew(&self, snap: &Snapshot, b: &Map<String, Value>) -> (u16, Value) {
-        self.run(snap, |t, _, now, ttl| t.renew(b, now, ttl))
+        let holds = card_holds();
+        if holds.is_empty() {
+            return self.run(snap, |t, _, now, ttl| t.renew(b, now, ttl));
+        }
+        self.run(snap, |t, _, now, ttl| {
+            let before: IndexMap<String, f64> = t
+                .leases
+                .iter()
+                .map(|(s, l)| (s.clone(), l.renewed))
+                .collect();
+            let (code, mut v, changed) = t.renew(b, now, ttl);
+            let (held, revoked) = t.apply_holds(&holds, &before);
+            let reasons = |x: &[(String, String)]| -> Value {
+                Value::Object(
+                    x.iter()
+                        .map(|(k, r)| (k.clone(), Value::String(r.clone())))
+                        .collect(),
+                )
+            };
+            if !held.is_empty() {
+                // renewed, but not past the lease's current TTL
+                v["reserved"] = reasons(&held);
+            }
+            if !revoked.is_empty() {
+                if let Some(ok) = v.get_mut("renewed").and_then(Value::as_array_mut) {
+                    ok.retain(|k| !revoked.iter().any(|(r, _)| k.as_str() == Some(r)));
+                }
+                if let Some(lost) = v.get_mut("lost").and_then(Value::as_array_mut) {
+                    lost.extend(revoked.iter().map(|(k, _)| Value::String(k.clone())));
+                }
+                v["revoked"] = reasons(&revoked);
+            }
+            (code, v, changed || !revoked.is_empty())
+        })
     }
 
     pub fn release(&self, snap: &Snapshot, b: &Map<String, Value>) -> (u16, Value) {
@@ -361,6 +433,13 @@ impl Registry {
         g.table
             .live_guards(now_epoch(), snap.config.slots.ttl_seconds)
     }
+}
+
+/// Cards held by calendar events now (none without a calendar).
+fn card_holds() -> Vec<crate::calendar::reserve::LeaseHold> {
+    crate::calendar::installed()
+        .map(|c| c.lease_holds(crate::calendar::reserve::now()))
+        .unwrap_or_default()
 }
 
 /// The pig-slots HTTP surface (on `/slots/...` of the main listener, or every path of the

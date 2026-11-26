@@ -48,6 +48,8 @@ pub struct Holder {
     pub since: i64,
     pub until: i64,
     pub on_reserve: OnReserve,
+    /// `preempt`: seconds after `since` when others' in-flight requests are cancelled
+    pub preempt_after: i64,
     /// other active events that also reserve this card (their keys get 409 here)
     pub contenders: Vec<String>,
 }
@@ -154,6 +156,7 @@ impl Calendar {
                     since: o.block_start,
                     until: o.block_end,
                     on_reserve,
+                    preempt_after: pa.max(crate::effects::MIN_PREEMPT_AFTER),
                     contenders: v[1..].iter().map(|x| x.0.entry.clone()).collect(),
                 },
             );

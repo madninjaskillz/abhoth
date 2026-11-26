@@ -126,6 +126,9 @@ fn str_list(v: Option<&Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Lease keys with a reason (held back or revoked by a reservation).
+pub type KeyReasons = Vec<(String, String)>;
+
 /// The result of one call: HTTP status, JSON body, and whether the table changed (save it).
 pub type Outcome = (u16, Value, bool);
 
@@ -253,6 +256,47 @@ impl LeaseTable {
             }
         }
         v
+    }
+
+    /// Applies card reservations (SUPERVISOR.md 9.4) after a renew or claim: others' leases on a
+    /// held card are not extended (`wait`: `renewed` goes back to `before`) or are revoked at
+    /// once (`drain`, `preempt`). Returns (held back, revoked), each as (key, reason).
+    pub fn apply_holds(
+        &mut self,
+        holds: &[crate::calendar::reserve::LeaseHold],
+        before: &IndexMap<String, f64>,
+    ) -> (KeyReasons, KeyReasons) {
+        use orca_calendar::effects::OnReserve;
+        let (mut held, mut revoked) = (Vec::new(), Vec::new());
+        let slots: Vec<String> = self.leases.keys().cloned().collect();
+        for s in slots {
+            let card = copy_of(&s);
+            let Some(h) = holds.iter().find(|h| h.card == card) else {
+                continue;
+            };
+            let Some(l) = self.leases.get_mut(&s) else {
+                continue;
+            };
+            if h.owns(l.principal.as_deref()) {
+                continue;
+            }
+            match h.on_reserve {
+                OnReserve::Wait => {
+                    if let Some(b) = before.get(&s)
+                        && l.renewed > *b
+                    {
+                        l.renewed = *b;
+                        held.push((l.key.clone(), h.reason()));
+                    }
+                }
+                OnReserve::Drain | OnReserve::Preempt => {
+                    let key = l.key.clone();
+                    self.leases.shift_remove(&s);
+                    revoked.push((key, format!("lease revoked: {}", h.reason())));
+                }
+            }
+        }
+        (held, revoked)
     }
 
     /// `POST /renew {keys}`: slot leases and guard leases alike.

@@ -8,6 +8,7 @@
 //! abhoth router import --from DIR --out router.toml [--report report.md] [--seed seed.json]
 //!               [--key-delivery file_flag|wrapper|argv] [--key-file-build ENGINE=BUILD]... [--enable-on-demand] [--server ID]
 //! abhoth router config-check --config router.toml
+//! abhoth router calendar check|import-cron|import-ics --file calendar.toml ...
 //! ```
 
 use std::path::PathBuf;
@@ -37,6 +38,7 @@ USAGE:
                 [--key-delivery file_flag|wrapper|argv] [--key-file-build ENGINE=BUILD]... [--enable-on-demand] [--server ID]
                 (router.toml for the control plane from a copy of the GPU host's layout files)
   abhoth router config-check --config router.toml
+  abhoth router calendar check|import-cron|import-ics --file calendar.toml ...   (see calendar --help)
   abhoth router hostctl serve --allowlist FILE        (the SSH forced command on a GPU host)
   abhoth router hostctl exec-root --allowlist FILE    (its single sudo entry)
   abhoth router hostctl export --config router.toml --server ID [--out FILE]
@@ -108,6 +110,7 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
             Ok(0)
         }
         Some("admin-demo") => admin_demo(&args[1..]).await,
+        Some("calendar") => crate::calendar::cli::run(&args[1..]).map_err(|e| anyhow!(e)),
         _ => serve_cmd(&args).await,
     }
 }

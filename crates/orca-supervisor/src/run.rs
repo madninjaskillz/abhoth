@@ -35,7 +35,10 @@ pub async fn main(args: &[String]) -> i32 {
         eprint!("{USAGE}");
         return 2;
     };
-    let cfg = match std::fs::read_to_string(&p).map_err(|e| format!("{p}: {e}")).and_then(|t| Config::parse(&t)) {
+    let cfg = match std::fs::read_to_string(&p)
+        .map_err(|e| format!("{p}: {e}"))
+        .and_then(|t| Config::parse(&t))
+    {
         Ok(c) => c,
         Err(e) => {
             eprintln!("abhoth supervisor: {e}");
@@ -80,7 +83,11 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         (_, Some(c)) => Endpoint::Command(c.clone()),
         _ => return Err("no hostd endpoint".into()),
     };
-    let policy = if cfg.supervisor.push_policy { Some(cfg.policy(now_ms() as u64 / 1000)?) } else { None };
+    let policy = if cfg.supervisor.push_policy {
+        Some(cfg.policy(now_ms() as u64 / 1000)?)
+    } else {
+        None
+    };
     let hostd = hostd::spawn(ep, sink.clone(), policy);
     let router = match (&cfg.supervisor.router_url, &cfg.supervisor.router_key) {
         (Some(u), Some(k)) => {
@@ -90,11 +97,14 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         }
         _ => None,
     };
-    let controls = Arc::new(Controls { router, hostd: hostd.clone() });
+    let controls = Arc::new(Controls {
+        router,
+        hostd: hostd.clone(),
+    });
     let (stop_tx, stop_rx) = watch::channel(false);
     let mut tasks = Vec::new();
-    // Kept for the alert sinks (orca-alerts is not wired yet); dropping it would close the channel.
-    let mut _ha_handle: Option<MqttHandle> = None;
+    // The HA connection's publisher, for the alerts' `mqtt` sink.
+    let mut ha_handle: Option<MqttHandle> = None;
     if let Some(m) = cfg.mqtt.clone().filter(|m| m.enabled) {
         let server = ServerInfo {
             id: cfg.supervisor.server.clone(),
@@ -102,12 +112,21 @@ pub async fn run(cfg: Config) -> Result<(), String> {
             version: Some(env!("CARGO_PKG_VERSION").into()),
             ..Default::default()
         };
-        let cards: Vec<CardConfig> = cfg.cards.iter().map(|(id, cap)| CardConfig { id: id.clone(), allow_cap: *cap }).collect();
+        let cards: Vec<CardConfig> = cfg
+            .cards
+            .iter()
+            .map(|(id, cap)| CardConfig {
+                id: id.clone(),
+                allow_cap: *cap,
+            })
+            .collect();
         let (snap_tx, snap_rx) = watch::channel(Default::default());
         let feed: Arc<dyn TelemetryFeed> = hub.clone();
-        tokio::spawn(orca_homeassistant::feed::follow(feed, server, cards, snap_tx));
+        tokio::spawn(orca_homeassistant::feed::follow(
+            feed, server, cards, snap_tx,
+        ));
         let (handle, outbound) = MqttHandle::channel(64);
-        _ha_handle = Some(handle);
+        ha_handle = Some(handle);
         let params = HaMqttParams {
             cfg: m,
             sw_version: env!("CARGO_PKG_VERSION").into(),
@@ -122,8 +141,13 @@ pub async fn run(cfg: Config) -> Result<(), String> {
             }
         }));
     }
-    if let Some(h) = cfg.homeassistant.clone().filter(|h| h.enabled && !h.reads.is_empty()) {
-        let rest = orca_homeassistant::rest::HaRest::from_config(&h).map_err(|e| format!("homeassistant: {e:#}"))?;
+    if let Some(h) = cfg
+        .homeassistant
+        .clone()
+        .filter(|h| h.enabled && !h.reads.is_empty())
+    {
+        let rest = orca_homeassistant::rest::HaRest::from_config(&h)
+            .map_err(|e| format!("homeassistant: {e:#}"))?;
         let (tx, mut rx) = tokio::sync::mpsc::channel(4);
         tokio::spawn(orca_homeassistant::rest::poll_reads(rest, h, tx));
         let s2 = sink.clone();
@@ -135,7 +159,18 @@ pub async fn run(cfg: Config) -> Result<(), String> {
                 for r in round {
                     let id = SensorId::of(Namespace::Ha, &[r.name.as_str()]);
                     match r.value {
-                        Some(v) => put.push((id, Reading::new(v, r.unit.as_deref().map(Unit::from_text).unwrap_or(Unit::Unknown), ts, "ha"))),
+                        Some(v) => put.push((
+                            id,
+                            Reading::new(
+                                v,
+                                r.unit
+                                    .as_deref()
+                                    .map(Unit::from_text)
+                                    .unwrap_or(Unit::Unknown),
+                                ts,
+                                "ha",
+                            ),
+                        )),
                         None => gone.push(id),
                     }
                 }
@@ -144,8 +179,22 @@ pub async fn run(cfg: Config) -> Result<(), String> {
             }
         });
     }
+    if let Some(a) = cfg.alerts.clone().filter(|a| a.enabled) {
+        let mut extra: Vec<Arc<dyn orca_alerts::sinks::Sink>> = Vec::new();
+        if let Some(h) = &ha_handle {
+            extra.push(Arc::new(orca_alerts::sinks::MqttSink {
+                server: cfg.supervisor.server.clone(),
+                publisher: Arc::new(h.clone()),
+            }));
+        }
+        for i in crate::alerts::spawn(a, hub.clone(), cfg.supervisor.server.clone(), extra) {
+            tracing::warn!("alerts: {i}");
+        }
+    }
     if let Some(addr) = &cfg.supervisor.listen {
-        let l = tokio::net::TcpListener::bind(addr).await.map_err(|e| format!("{addr}: {e}"))?;
+        let l = tokio::net::TcpListener::bind(addr)
+            .await
+            .map_err(|e| format!("{addr}: {e}"))?;
         tasks.push(tokio::spawn(serve_feed(l, hub.clone())));
     }
     tracing::info!("supervisor running for {}", cfg.supervisor.server);
@@ -175,21 +224,34 @@ async fn serve_feed(l: tokio::net::TcpListener, hub: Arc<TelemetryHub>) {
         axum::Json(h.snapshot()).into_response()
     }
     async fn stream(State(h): State<Arc<TelemetryHub>>, headers: HeaderMap) -> Response {
-        let last = headers.get("last-event-id").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
+        let last = headers
+            .get("last-event-id")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok());
         let sub = h.subscribe(last);
         let first: Vec<FeedMessage> = match sub.start {
             Resume::Snapshot(s) => vec![FeedMessage::Snapshot(s)],
             Resume::Replay(v) => v,
         };
-        let s = futures_util::stream::unfold((first.into_iter(), sub.rx), |(mut q, mut rx)| async move {
-            if let Some(m) = q.next() {
-                return Some((Ok::<_, std::convert::Infallible>(m.sse()), (q, rx)));
-            }
-            // A lagging client is cut; EventSource reconnects with Last-Event-ID.
-            let m = rx.recv().await.ok()?;
-            Some((Ok(m.sse()), (q, rx)))
-        });
-        ([(header::CONTENT_TYPE, "text/event-stream"), (header::CACHE_CONTROL, "no-cache")], Body::from_stream(s)).into_response()
+        let s = futures_util::stream::unfold(
+            (first.into_iter(), sub.rx),
+            |(mut q, mut rx)| async move {
+                if let Some(m) = q.next() {
+                    return Some((Ok::<_, std::convert::Infallible>(m.sse()), (q, rx)));
+                }
+                // A lagging client is cut; EventSource reconnects with Last-Event-ID.
+                let m = rx.recv().await.ok()?;
+                Some((Ok(m.sse()), (q, rx)))
+            },
+        );
+        (
+            [
+                (header::CONTENT_TYPE, "text/event-stream"),
+                (header::CACHE_CONTROL, "no-cache"),
+            ],
+            Body::from_stream(s),
+        )
+            .into_response()
     }
     let app = A::new()
         .route("/api/v1/supervisor/snapshot", get(snapshot))

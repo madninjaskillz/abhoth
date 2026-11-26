@@ -13,7 +13,7 @@
 //! | `DELETE calendar/keys/<id>` | revoke |
 //! | `GET calendar/uses/<event>` | the key's audit |
 //! | `POST calendar/import-cron` `{jobs, apply}` / `import-ics` `{text, effects, priority, apply}` | imports |
-//! | `POST calendar/bench` `{run, cards, layouts, seconds}` / `calendar/bench/<id>/end` | bench protection |
+//! | `POST calendar/bench` `{run, cards, layouts, seconds}` / `calendar/bench/<id>/extend` `{seconds}` / `calendar/bench/<id>/end` | bench protection |
 //! | `GET calendar/check?effect=block_switch&card=B` | free or blocked, with reasons |
 
 use orca_calendar::entry::EntryConfig;
@@ -199,6 +199,13 @@ pub fn handle(
             match svc.bench_begin(&s("run"), &list("cards"), &list("layouts"), secs, who) {
                 Ok((id, key)) => (201, json!({"id": id, "key": key})),
                 Err(m) => bad(400, m),
+            }
+        }
+        ("POST", ["calendar", "bench", id, "extend"]) => {
+            let secs = body.get("seconds").and_then(Value::as_i64).unwrap_or(3600);
+            match svc.bench_extend(id, secs, who) {
+                Ok(until) => (200, json!({"id": id, "until": until})),
+                Err(m) => bad(404, m),
             }
         }
         ("POST", ["calendar", "bench", id, "end"]) => match svc.bench_end(id, who) {
