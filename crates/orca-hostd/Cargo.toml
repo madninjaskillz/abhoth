@@ -1,0 +1,31 @@
+[package]
+name = "orca-hostd"
+description = "abhoth hostd: the root host daemon of the Abhoth Supervisor (SUPERVISOR.md 2.3-2.4): telemetry sampler, the hostd protocol, the limits file, last-known-good policy."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# A standalone binary for development and the read-only host check; `abhoth hostd` (orca-cli)
+# runs the same code once it is wired in.
+[[bin]]
+name = "abhoth-hostd"
+path = "src/bin/abhoth_hostd.rs"
+
+[dependencies]
+orca-sensors.workspace = true
+orca-fans.workspace = true
+orca-gpuctl.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["signal"] }
+toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

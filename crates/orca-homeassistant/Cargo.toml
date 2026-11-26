@@ -1,0 +1,13 @@
+[package]
+name = "orca-homeassistant"
+description = "Abhoth Supervisor Home Assistant over MQTT discovery (SUPERVISOR.md 11). Skeleton."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
