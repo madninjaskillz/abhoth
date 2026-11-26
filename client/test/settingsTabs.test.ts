@@ -39,6 +39,10 @@ test("admins see the settings tabs, Account and Users; Advanced only when a sect
 test("other users see only their Account (server settings and users are admin-only)", () => {
   assert.deepEqual(ids(visibleTabs(user, schema)), ["account"]);
   assert.deepEqual(ids(visibleTabs(user)), ["account"]);
+  // the router tabs: admins of a server with a linked router only
+  const routerTabs = ["inference", "routes", "router-config", "router-activity", "service-keys"];
+  assert.deepEqual(ids(visibleTabs({ ...admin, router: true })).slice(-5), routerTabs);
+  assert.deepEqual(ids(visibleTabs({ ...user, router: true })), ["account"]);
 });
 
 test("a config tab with no settings is left out", () => {

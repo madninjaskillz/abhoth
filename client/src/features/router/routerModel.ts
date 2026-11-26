@@ -384,3 +384,8 @@ export function parseSse(block: string): LiveEvent | null {
     return { kind, data: data.join("\n") };
   }
 }
+
+export interface LeasesViewT {
+  frozen: boolean;
+  leases: LeaseView[];
+}
