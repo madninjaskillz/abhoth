@@ -5,6 +5,7 @@ pub mod cli;
 pub mod config;
 pub mod control;
 pub mod effort;
+pub mod guards;
 pub mod import;
 pub mod leases;
 pub mod metrics;
