@@ -1008,7 +1008,7 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   - **Placement:** `control::inventory::place` per card: files on the server, card allows the
     engine for the kind, VRAM fit, primary first; routes with `layout_from = "auto"` get per-card
     picks (`OnDemandModel.per_card`); a route `pick` is a pin; all guards unchanged.
-  - **Folder browsing** (0.16.15): builtins `list-dir` / `path-stat` / `mkdir` (control::browse),
+  - **Folder browsing** (0.16.16; the 0.16.15 tag failed CI): builtins `list-dir` / `path-stat` / `mkdir` (control::browse),
     `inventory/browse|stat|mkdir` admin routes (501 `enabled: false` when a strict host lacks
     them), `servers.x.browse_roots`, a `PathField` + `FolderBrowser` in the client for the model
     folder, model files and the download folder (`StartReq.dir`).

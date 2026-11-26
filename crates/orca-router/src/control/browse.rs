@@ -145,12 +145,8 @@ fn real(p: &str) -> std::io::Result<String> {
 /// Free bytes for unprivileged users on the volume holding `p`.
 #[cfg(unix)]
 pub fn free_bytes(p: &str) -> Option<u64> {
-    use std::os::unix::ffi::OsStrExt;
-    let c = std::ffi::CString::new(Path::new(p).as_os_str().as_bytes()).ok()?;
-    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
-    // SAFETY: c is a valid NUL-terminated path and s a writable statvfs.
-    let r = unsafe { libc::statvfs(c.as_ptr(), &mut s) };
-    (r == 0).then(|| (s.f_bavail as u64).saturating_mul(s.f_frsize as u64))
+    let s = rustix::fs::statvfs(p).ok()?;
+    Some(s.f_bavail.saturating_mul(s.f_frsize))
 }
 
 #[cfg(not(unix))]
@@ -158,15 +154,11 @@ pub fn free_bytes(_p: &str) -> Option<u64> {
     None
 }
 
-/// Whether this process (the engine user on the host) may create files in `p`.
+/// Whether this process (the executor's user on the host) may create files in `p`.
 #[cfg(unix)]
 pub fn writable(p: &str) -> bool {
-    use std::os::unix::ffi::OsStrExt;
-    let Ok(c) = std::ffi::CString::new(Path::new(p).as_os_str().as_bytes()) else {
-        return false;
-    };
-    // SAFETY: c is a valid NUL-terminated path.
-    unsafe { libc::access(c.as_ptr(), libc::W_OK | libc::X_OK) == 0 }
+    use rustix::fs::Access;
+    rustix::fs::access(p, Access::WRITE_OK | Access::EXEC_OK).is_ok()
 }
 
 #[cfg(not(unix))]
