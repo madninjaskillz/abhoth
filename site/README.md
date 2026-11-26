@@ -27,10 +27,5 @@ Live at <https://madninjaskillz.github.io/abhoth/>.
    for links, canonical URLs, the sitemap and OpenGraph.
 4. In Settings > Pages > Custom domain, enter `abhoth.co.uk`. Once the certificate is issued, tick
    "Enforce HTTPS".
-5. Switch the old OpenOrca redirects to the new domain. In each repo it is one line, `target:` in
-   `_config.yml`:
-   - `Open-Orca-AI/openorca-uk-redirect` serves openorca.uk;
-   - `Open-Orca-AI/open-orca-ai.github.io` serves open-orca-ai.github.io.
-
-   Both are Jekyll pages, built by GitHub Pages. They carry old deep links (`/docs/...`,
-   `/openorca/docs/...`) to the matching Abhoth docs page.
+5. Point the legacy-domain redirects at the new domain: see "Old site redirects" in `CUTOVER.md`
+   (one line per repo).
