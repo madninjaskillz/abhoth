@@ -164,7 +164,7 @@ pub trait ControlPort: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct CommandContext<'a> {
     pub layouts: &'a [String],
-    pub cards: &'a [(String, bool)], // (id, pinned)
+    pub cards: &'a [(String, bool)], // (id, cap offered)
     pub clock_cap_options: &'a [u32],
     pub clock_cap_ttl: Duration,
 }
@@ -258,7 +258,7 @@ pub fn parse(
             let (card_slug, what) = rest
                 .split_once('_')
                 .ok_or_else(|| ParseError::Unknown(other.into()))?;
-            let (card, pinned) = ctx
+            let (card, cap_offered) = ctx
                 .cards
                 .iter()
                 .find(|(c, _)| slug(c) == card_slug)
@@ -274,9 +274,9 @@ pub fn parse(
                     _ => Err(ParseError::Invalid(format!("unexpected payload {p:?}"))),
                 },
                 "clock_cap" => {
-                    if pinned {
+                    if !cap_offered {
                         return Err(ParseError::Invalid(format!(
-                            "card {card} is pinned; it has no clock cap"
+                            "the clock cap is not offered for card {card} (allow_cap = false)"
                         )));
                     }
                     let mhz = if p == "none" {
@@ -375,7 +375,7 @@ mod tests {
     fn parses_and_refuses() {
         let t = Topics::new("abhoth", "homeassistant", "deepthought");
         let layouts = vec!["flash-x2".to_string(), "dense-x2".to_string()];
-        let cards = vec![("A".to_string(), true), ("B".to_string(), false)];
+        let cards = vec![("A".to_string(), false), ("B".to_string(), true)];
         let c = ctx(&layouts, &cards);
         let p = |topic: &str, pl: &str| {
             parse(
@@ -432,7 +432,7 @@ mod tests {
             })
         );
         assert!(
-            matches!(p("card_a_clock_cap", "1300"), Err(ParseError::Invalid(m)) if m.contains("pinned"))
+            matches!(p("card_a_clock_cap", "1300"), Err(ParseError::Invalid(m)) if m.contains("not offered"))
         );
         assert!(matches!(
             p("card_b_clock_cap", "900"),

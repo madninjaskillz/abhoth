@@ -341,7 +341,7 @@ impl Runtime {
         let cards: Vec<(String, bool)> = snap
             .cards
             .iter()
-            .map(|c| (c.id.clone(), c.pinned))
+            .map(|c| (c.id.clone(), c.cap_offered))
             .collect();
         let parsed = commands::parse(
             &self.t,

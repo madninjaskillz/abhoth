@@ -7,17 +7,18 @@ use async_trait::async_trait;
 use orca_homeassistant::commands::{ControlOutcome, ControlPort, FanMode, ServicePrincipal};
 use orca_homeassistant::model::*;
 
-/// DeepThought as surveyed 2026-11-26 (SUPERVISOR.md 3.1): A pinned, D has no HBM sensor.
+/// DeepThought as surveyed 2026-11-26 (SUPERVISOR.md 3.1): A has no clock cap (allow_cap = false), D has no HBM sensor.
 pub fn deepthought() -> HaSnapshot {
     let card = |id: &str, gpu: &str| CardState {
         id: id.into(),
         gpu: Some(gpu.into()),
         present: true,
         online: true,
+        cap_offered: true,
         ..Default::default()
     };
     let mut a = card("A", "V100-SXM3-32GB");
-    a.pinned = true;
+    a.cap_offered = false;
     a.core_c = Some(41.0);
     a.hbm_c = Some(44.0);
     a.power_w = Some(61.23);
@@ -37,7 +38,7 @@ pub fn deepthought() -> HaSnapshot {
     let mut b = a.clone();
     b.id = "B".into();
     b.gpu = Some("V100-PCIe-32GB".into());
-    b.pinned = false;
+    b.cap_offered = true;
     b.core_c = Some(26.0);
     b.hbm_c = Some(24.0);
     b.power_w = Some(24.27);

@@ -42,8 +42,8 @@ pub fn throttle_names(mask: u64) -> Vec<String> {
 #[derive(Debug, Clone, Default)]
 pub struct CardConfig {
     pub id: String,
-    /// Clocks pinned by policy (card A): no clock cap offered.
-    pub pinned: bool,
+    /// orca-gpuctl's `cap_offered()` for this card (`allow_cap`; false for card A).
+    pub allow_cap: bool,
 }
 
 fn obj<'a>(state: &'a Value, section: &str) -> Option<&'a Map<String, Value>> {
@@ -94,7 +94,10 @@ pub fn snapshot_from_state(state: &Value, server: &ServerInfo, cards: &[CardConf
             .get(&id)
             .and_then(Value::as_object)
             .unwrap_or(&empty);
-        let cfg_pinned = cards.iter().find(|c| c.id == id).is_some_and(|c| c.pinned);
+        let cfg_allow = cards
+            .iter()
+            .find(|c| c.id == id)
+            .is_some_and(|c| c.allow_cap);
         let mut c = CardState {
             id: id.clone(),
             present: g.is_some(),
@@ -112,7 +115,8 @@ pub fn snapshot_from_state(state: &Value, server: &ServerInfo, cards: &[CardConf
             c.vram_total_gb = g.vram_total_mib.map(|m| round1(m / 1024.0));
             c.throttle_reasons = g.throttle_reasons.map(throttle_names).unwrap_or_default();
         }
-        c.pinned = cfg_pinned || b(first(ck, &["pinned"])).unwrap_or(false);
+        // The clocks section wins when it says; a card config does not know is never offered.
+        c.cap_offered = b(first(ck, &["cap_offered", "allow_cap"])).unwrap_or(cfg_allow);
         c.clock_locked = b(first(ck, &["locked", "clock_locked"]));
         c.clock_cap_mhz = u(first(ck, &["cap_mhz", "clock_cap_mhz", "cap"]));
         c.online = b(first(ec, &["online"])).unwrap_or(c.present);
@@ -348,18 +352,18 @@ mod tests {
         let cards = vec![
             CardConfig {
                 id: "A".into(),
-                pinned: true,
+                allow_cap: false,
             },
             CardConfig {
                 id: "B".into(),
-                pinned: false,
+                allow_cap: true,
             },
         ];
         let s = snapshot_from_state(&state, &server, &cards);
         assert_eq!(s.cards.len(), 2);
         let a = &s.cards[0];
         assert!(
-            !a.present && a.pinned && a.core_c.is_none(),
+            !a.present && !a.cap_offered && a.core_c.is_none(),
             "card A has no sample: missing, not zero"
         );
         let b = &s.cards[1];

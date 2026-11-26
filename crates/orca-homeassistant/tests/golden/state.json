@@ -75,7 +75,7 @@
       "throttling": "OFF",
       "throttle_reasons": [],
       "online": "ON",
-      "pinned": true,
+      "cap_offered": false,
       "clock_cap": "none",
       "clock_cap_ttl_seconds": 3600
     }
@@ -107,7 +107,7 @@
       "throttling": "OFF",
       "throttle_reasons": [],
       "online": "ON",
-      "pinned": false,
+      "cap_offered": true,
       "clock_cap": "1300",
       "clock_cap_ttl_seconds": 3600
     }
@@ -141,7 +141,7 @@
         "sw_power_cap"
       ],
       "online": "ON",
-      "pinned": false,
+      "cap_offered": true,
       "clock_cap": "none",
       "clock_cap_ttl_seconds": 3600
     }
@@ -173,7 +173,7 @@
       "throttling": "OFF",
       "throttle_reasons": [],
       "online": "OFF",
-      "pinned": false,
+      "cap_offered": true,
       "clock_cap": "none",
       "clock_cap_ttl_seconds": 3600
     }

@@ -296,10 +296,13 @@ async fn end_to_end() {
     let r = json(&obs.wait("abhoth/deepthought/result", |_, _| true).await);
     assert_eq!(r["ok"], false);
     assert_eq!(r["message"], "card A holds a lease");
-    // Clock cap on pinned card A: refused before reaching the port.
+    // Clock cap on card A (allow_cap = false): refused before reaching the port.
     cmd("card_a_clock_cap", "1300").await;
     let r = json(&obs.wait("abhoth/deepthought/result", |_, _| true).await);
-    assert!(r["message"].as_str().unwrap().contains("pinned"), "{r}");
+    assert!(
+        r["message"].as_str().unwrap().contains("not offered"),
+        "{r}"
+    );
     cmd("card_b_clock_cap", "1400").await;
     obs.wait("abhoth/deepthought/result", |p, _| {
         json(p)["command"] == "clock_cap"

@@ -592,7 +592,7 @@ pub fn build(t: &Topics, opts: &DiscoveryOptions, snap: &HaSnapshot) -> Vec<Disc
                 true,
             );
         }
-        if opts.control("clock_cap") && !card.pinned {
+        if opts.control("clock_cap") && card.cap_offered {
             let mut options = vec!["none".to_string()];
             options.extend(opts.clock_cap_options.iter().map(|m| m.to_string()));
             b.add(

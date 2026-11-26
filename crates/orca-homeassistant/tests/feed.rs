@@ -67,7 +67,7 @@ async fn follows_snapshot_and_patches() {
         server,
         vec![CardConfig {
             id: "A".into(),
-            pinned: true,
+            allow_cap: false,
         }],
         stx,
     ));
@@ -76,7 +76,7 @@ async fn follows_snapshot_and_patches() {
     })
     .await;
     assert_eq!(s.server.id, "deepthought");
-    assert!(s.cards[0].pinned && !s.cards[0].present);
+    assert!(!s.cards[0].cap_offered && !s.cards[0].present);
 
     tx.send(FeedMessage::Patch {
         seq: 2,

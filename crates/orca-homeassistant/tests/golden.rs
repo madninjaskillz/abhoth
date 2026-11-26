@@ -162,10 +162,22 @@ fn controls_follow_scopes_and_pinning() {
     let snap = common::deepthought();
     let msgs = discovery::build(&t, &opts(false), &snap);
     let has = |uid: &str| msgs.iter().any(|m| m.unique_id == uid);
-    assert!(has("abhoth_deepthought_card_b_clock_cap"));
+    // One clock-cap select per card that allows a cap (replacing the global "GPU Max Clock").
+    for card in &snap.cards {
+        let uid = format!(
+            "abhoth_deepthought_card_{}_clock_cap",
+            card.id.to_ascii_lowercase()
+        );
+        assert_eq!(has(&uid), card.cap_offered, "{uid}");
+    }
+    assert!(
+        has("abhoth_deepthought_card_b_clock_cap")
+            && has("abhoth_deepthought_card_c_clock_cap")
+            && has("abhoth_deepthought_card_d_clock_cap")
+    );
     assert!(
         !has("abhoth_deepthought_card_a_clock_cap"),
-        "no clock cap on pinned card A"
+        "no clock cap on card A (allow_cap = false)"
     );
     assert!(has("abhoth_deepthought_card_a_online"));
     assert!(has("abhoth_deepthought_fan_mode"));

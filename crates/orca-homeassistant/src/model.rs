@@ -53,9 +53,10 @@ pub struct CardState {
     /// Online for serving (the card online/offline control).
     #[serde(default)]
     pub online: bool,
-    /// Clocks pinned by policy (card A): no clock-cap control.
+    /// The HA clock-cap select is offered (orca-gpuctl `cap_offered()`: `allow_cap`, off for
+    /// card A). The default, `false`, offers no control.
     #[serde(default)]
-    pub pinned: bool,
+    pub cap_offered: bool,
     /// The card has its own fan and no HBM sensor etc. are just `None` readings.
     #[serde(default)]
     pub core_c: Option<f64>,

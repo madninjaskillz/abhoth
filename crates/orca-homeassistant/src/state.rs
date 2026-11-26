@@ -108,7 +108,7 @@ pub fn card_state(card: &CardState, local: &LocalState) -> Value {
         "throttling": onoff(Some(!card.throttle_reasons.is_empty())),
         "throttle_reasons": card.throttle_reasons,
         "online": onoff(Some(card.online)),
-        "pinned": card.pinned,
+        "cap_offered": card.cap_offered,
         "clock_cap": card.clock_cap_mhz.map(|m| m.to_string()).unwrap_or_else(|| "none".into()),
         "clock_cap_ttl_seconds": local.clock_cap_ttl_seconds,
     })
