@@ -280,6 +280,11 @@ pub struct Access {
     lan: Vec<Cidr>,
     token: Option<Vec<u8>>,
     pub keys: Option<KeyCache>,
+    /// Key requests go to the web server over the same link (`crate::key_requests`); `None`
+    /// without the link.
+    pub key_requests: Option<Arc<dyn crate::key_requests::KeyRequestLink>>,
+    /// Per-IP limits on key requests and polls.
+    pub key_request_limits: crate::key_requests::Limiter,
     now_unix: Arc<dyn Fn() -> i64 + Send + Sync>,
 }
 
@@ -309,12 +314,30 @@ impl Access {
             )),
             _ => None,
         };
-        Self::with_parts(
+        let link: Option<Arc<dyn crate::key_requests::KeyRequestLink>> =
+            match (&settings.accounts_url, &token, &keys) {
+                (Some(url), Some(t), Some(_)) => {
+                    Some(Arc::new(crate::key_requests::HttpKeyRequestLink::new(
+                        url,
+                        String::from_utf8_lossy(t).trim().to_string(),
+                    )))
+                }
+                _ => None,
+            };
+        let mut a = Self::with_parts(
             settings,
             token,
             keys,
             Arc::new(|| chrono::Utc::now().timestamp()),
-        )
+        );
+        a.key_requests = link;
+        a
+    }
+
+    /// Tests: key requests passed on to `link`.
+    pub fn with_key_requests(mut self, link: Arc<dyn crate::key_requests::KeyRequestLink>) -> Self {
+        self.key_requests = Some(link);
+        self
     }
 
     /// Tests: a given key cache and clock.
@@ -334,6 +357,8 @@ impl Access {
             lan,
             token: token.map(|t| String::from_utf8_lossy(&t).trim().as_bytes().to_vec()),
             keys,
+            key_requests: None,
+            key_request_limits: Default::default(),
             now_unix,
         }
     }

@@ -112,6 +112,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route(INTROSPECT_PATH, post(introspect))
         .route("/api/admin/service-keys", get(list_keys).post(create_key))
         .route("/api/admin/service-keys/{id}", delete(revoke_key))
+        .merge(crate::key_requests::routes())
         .route("/api/admin/router", any(proxy_root))
         .route("/api/admin/router/{*rest}", any(proxy))
 }
@@ -119,6 +120,8 @@ pub fn routes() -> Router<Arc<AppState>> {
 /// Is this the introspection path (the login middleware lets it through to its own check)?
 pub fn is_internal(path: &str) -> bool {
     path == INTROSPECT_PATH
+        || path == router_link::KEY_REQUESTS_INTERNAL_PATH
+        || path == router_link::KEY_REQUESTS_POLL_INTERNAL_PATH
 }
 
 fn bearer(h: &HeaderMap) -> Option<&str> {
@@ -136,44 +139,58 @@ fn from_hex(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// `POST /api/internal/keys/introspect` `{key_sha256}` with `Authorization: Bearer <link token>`.
-async fn introspect(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
-    let Some(link) = state.options.router.clone() else {
-        return error(StatusCode::NOT_FOUND, "Not found.");
-    };
+/// The router's own calls (introspection, key requests): the link token, only over loopback,
+/// the container network, or HTTPS (via a trusted proxy). Refused before the token is looked at,
+/// so a LAN client learns nothing. `what`: the audit event's prefix (`router.introspect`).
+#[allow(clippy::result_large_err)]
+pub(crate) fn link_check(
+    state: &AppState,
+    req: &Request<Body>,
+    what: &str,
+) -> Result<(), Response> {
+    if state.options.router.is_none() {
+        return Err(error(StatusCode::NOT_FOUND, "Not found."));
+    }
+    let link = state.options.router.as_ref().expect("checked");
     let peer = req
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
         .map(|c| c.0.ip());
-    // The link token only over loopback, the container network, or HTTPS (via a trusted
-    // proxy): refused before the token is looked at, so a LAN client learns nothing.
     let seen = state.login.seen(peer, req.headers());
     let direct = peer.is_some_and(orca_core::router_link::link_peer_ok)
         && !peer.is_some_and(|p| state.login.options.trusted_proxies.contains(&p));
     if !(seen.https || direct) {
         state.login.record(
-            "router.introspect.rejected",
+            &format!("{what}.rejected"),
             None,
             None,
             seen.ip.map(|i| i.to_string()).as_deref(),
             json!({"why": "plain http from outside loopback and the container network"}),
         );
-        return error(
+        return Err(error(
             StatusCode::FORBIDDEN,
             "The router link needs HTTPS, loopback or the container network.",
-        );
+        ));
     }
     let ok = bearer(req.headers()).is_some_and(|t| fixed_time_eq(t.as_bytes(), &link.token));
     if !ok {
         let ip = peer.map(|i| i.to_string());
         state.login.record(
-            "router.introspect.rejected",
+            &format!("{what}.rejected"),
             None,
             None,
             ip.as_deref(),
             json!({}),
         );
-        return error(StatusCode::UNAUTHORIZED, "Not the router.");
+        return Err(error(StatusCode::UNAUTHORIZED, "Not the router."));
+    }
+    Ok(())
+}
+
+/// `POST /api/internal/keys/introspect` `{key_sha256}` with `Authorization: Bearer <link token>`.
+async fn introspect(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
+    if let Err(r) = link_check(&state, &req, "router.introspect") {
+        return r;
     }
     let body = axum::body::to_bytes(req.into_body(), 4096)
         .await

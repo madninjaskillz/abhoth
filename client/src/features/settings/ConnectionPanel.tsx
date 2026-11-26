@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, KeyRound, Network, Radar, Router as RouterIcon, Server } from "lucide-react";
-import { connectionApi, settingsApi, type DiscoveredRouter, type RouterInfo, type RouterModel, type Setting } from "@/lib/api";
+import { CheckCircle2, ExternalLink, KeyRound, Loader2, Network, Radar, Router as RouterIcon, Server } from "lucide-react";
+import { connectionApi, settingsApi, type DiscoveredRouter, type KeyRequestPollResult, type RouterInfo, type RouterModel, type Setting } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, keyHint, normalizeUrl, pickerOrder, routerPick, savedNote, statusLine, type ConnectionMode, type KeyKind } from "./connection";
+import { CONNECTION_KEY, capabilityBadges, formatTokens, hiddenInMode, howToGetKey, keyHint, normalizeUrl, pickerOrder, routerPick, savedNote, statusLine, waitLeft, type ConnectionMode, type KeyKind } from "./connection";
 
 const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
 
@@ -95,8 +95,9 @@ export function ConnectionPanel({ pid, mode, sections }: { pid: string | null; m
       )}
       {mode === "router" && (
         <>
-          {status.data?.router && <RouterSummary info={status.data.router} baseUrl={status.data.baseUrl} keyKind={status.data.apiKey} />}
-          <RouterModels pid={pid} />
+          {status.data?.router && <RouterSummary info={status.data.router} baseUrl={status.data.baseUrl} />}
+          {status.data?.router && <KeyBox pid={pid} info={status.data.router} keyKind={status.data.apiKey} pending={status.data.keyRequest ?? null} onChanged={refresh} />}
+          <RouterModels pid={pid} needsKey={!!status.data?.router?.auth.required && status.data?.apiKey !== "abhoth"} />
           {hidden.length > 0 && (
             <p className="text-xs text-muted-foreground" data-testid="connection-hidden">
               The router takes care of {hidden.length} settings here ({hidden.map((h) => h.label).join(", ")}), and of inference profiles, slots and GPU layouts.
@@ -213,28 +214,176 @@ function Found({ r, busy, onUse }: { r: DiscoveredRouter; busy: boolean; onUse: 
   );
 }
 
-function RouterSummary({ info, baseUrl, keyKind }: { info: RouterInfo; baseUrl: string; keyKind?: KeyKind }) {
-  const hint = keyHint(keyKind, info.auth, info.capabilities.includes("claude"));
+function RouterSummary({ info, baseUrl }: { info: RouterInfo; baseUrl: string }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground" data-testid="connection-router-info">
       <span>
         <b className="text-foreground">{info.name}</b> v{info.version}
       </span>
       <span className="font-mono">{baseUrl}</span>
-      <span className={cn("inline-flex items-center gap-1", hint.tone === "warn" && "text-warning")} data-testid="connection-key-hint">
-        {hint.tone !== "ok" && <KeyRound className="size-3" />} {hint.text}
-        {hint.tone !== "ok" && info.auth.keyUrl && (
-          <a className="text-primary hover:underline" href={info.auth.keyUrl} target="_blank" rel="noreferrer">
-            make one
-          </a>
-        )}
-      </span>
+    </div>
+  );
+}
+
+/**
+ * The router's key, in one place: what the configured key gives, a field to paste one (masked,
+ * never shown back), Remove, and "Request a key" (an admin approves it; this server polls the
+ * router and saves the key, which never comes to the page).
+ */
+function KeyBox({ pid, info, keyKind, pending, onChanged }: { pid: string | null; info: RouterInfo; keyKind?: KeyKind; pending: KeyRequestPollResult["request"]; onChanged: () => void }) {
+  const models = useQuery({ queryKey: ["router-models", pid ?? "server"], queryFn: () => connectionApi.models(pid), staleTime: 15000, retry: false });
+  const hasClaude = info.capabilities.includes("claude");
+  const hint = keyHint(keyKind, info.auth, hasClaude, models.data ? models.data.claude : undefined);
+  const [key, setKey] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState<KeyRequestPollResult["request"]>(pending);
+  useEffect(() => setWaiting(pending), [pending?.code]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
+  const save = useMutation({
+    mutationFn: () => connectionApi.saveKey(pid, key),
+    onSuccess: () => {
+      setKey("");
+      setError(null);
+      setNote("Key saved. The models below are what it may use.");
+      onChanged();
+    },
+    onError: fail,
+  });
+  const remove = useMutation({
+    mutationFn: () => connectionApi.removeKey(pid),
+    onSuccess: () => {
+      setError(null);
+      setNote("Key removed.");
+      onChanged();
+    },
+    onError: fail,
+  });
+  const ask = useMutation({
+    mutationFn: () => connectionApi.requestKey(pid),
+    onSuccess: (r) => {
+      setError(null);
+      setNote(null);
+      setWaiting(r.request ?? null);
+    },
+    onError: fail,
+  });
+  const cancel = useMutation({ mutationFn: () => connectionApi.forgetKeyRequest(pid), onSuccess: () => setWaiting(null) });
+  // While a request waits: ask this server every 3 s (it asks the router; an approved key is saved there).
+  const poll = useQuery({
+    queryKey: ["key-request", pid ?? "server", waiting?.code],
+    queryFn: () => connectionApi.pollKey(pid),
+    enabled: !!waiting,
+    refetchInterval: 3000,
+    retry: false,
+  });
+  useEffect(() => {
+    const r = poll.data;
+    if (!r || !waiting) return;
+    if (r.status === "pending") {
+      if (r.request) setWaiting(r.request);
+      return;
+    }
+    setWaiting(null);
+    if (r.status === "approved") {
+      setNote(`An admin approved the request: key "${r.name ?? ""}" is saved${r.claude ? " (it may use Claude)" : ""}.`);
+      onChanged();
+    } else if (r.status === "denied") setError("An admin denied the key request.");
+    else if (r.status === "expired") setError("The key request expired before an admin approved it. Request a key again.");
+  }, [poll.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const busy = save.isPending || remove.isPending || ask.isPending;
+  const canAsk = !!info.auth.keyRequests && keyKind !== "abhoth" && !waiting;
+  return (
+    <div className="space-y-2 rounded-md border p-2.5" data-testid="connection-key">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <KeyRound className="size-4 text-muted-foreground" /> Abhoth key
+        {keyKind === "abhoth" && <span className="rounded bg-success/15 px-1.5 text-[11px] font-normal text-success">saved</span>}
+      </div>
+      <div className={cn("text-xs", hint.tone === "warn" ? "text-warning" : "text-muted-foreground")} data-testid="connection-key-hint">
+        {hint.text}
+      </div>
+      {info.auth.keys && (
+        <form
+          className="flex flex-wrap gap-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (key.trim()) save.mutate();
+          }}
+        >
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            className={cn(field, "min-w-[14rem] flex-1 font-mono")}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder={keyKind === "abhoth" ? "Paste a new key to replace it" : `Paste an Abhoth key (${info.auth.keyPrefix ?? "abk_"}…)`}
+            aria-label="Abhoth key"
+            data-testid="connection-key-input"
+          />
+          <Button type="submit" size="sm" className="h-8" disabled={!key.trim() || busy} data-testid="connection-key-save">
+            Save
+          </Button>
+          {keyKind === "abhoth" && (
+            <Button type="button" size="sm" variant="outline" className="h-8" disabled={busy} onClick={() => remove.mutate()} data-testid="connection-key-remove">
+              Remove
+            </Button>
+          )}
+          {canAsk && (
+            <Button type="button" size="sm" variant="outline" className="h-8" disabled={busy} onClick={() => ask.mutate()} data-testid="connection-key-request">
+              {ask.isPending ? <Loader2 className="animate-spin" /> : null} Request a key
+            </Button>
+          )}
+        </form>
+      )}
+      {waiting && (
+        <div className="space-y-1 rounded-md border border-primary/40 bg-primary/5 p-2 text-xs" role="status" data-testid="connection-key-pending">
+          <div className="flex flex-wrap items-center gap-2">
+            <Loader2 className="size-3.5 animate-spin text-primary" />
+            <span>
+              Waiting for an admin to approve code{" "}
+              <b className="font-mono text-sm tracking-wider text-foreground" data-testid="connection-key-code">
+                {waiting.code}
+              </b>{" "}
+              ({waitLeft(waiting.expiresIn)} left).
+            </span>
+          </div>
+          <div className="text-muted-foreground">
+            An admin approves it in the router's web UI, Settings &gt; Service keys (signed in there as an admin, you can approve your own request in one click). The key is saved here by itself once it is approved.
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {waiting.keyUrl && (
+              <a className="inline-flex items-center gap-1 text-primary hover:underline" href={waiting.keyUrl} target="_blank" rel="noreferrer" data-testid="connection-key-approve-link">
+                Open the approval page <ExternalLink className="size-3" />
+              </a>
+            )}
+            <button type="button" className="text-muted-foreground hover:underline" onClick={() => cancel.mutate()}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {note && !error && (
+        <div className="text-xs text-success" data-testid="connection-key-note">
+          {note}
+        </div>
+      )}
+      {error && (
+        <div className="text-xs text-destructive" data-testid="connection-key-error">
+          {error}
+        </div>
+      )}
+      {keyKind !== "abhoth" && !waiting && (
+        <p className="text-[11px] text-muted-foreground" data-testid="connection-key-how">
+          {howToGetKey(info.auth)}
+        </p>
+      )}
     </div>
   );
 }
 
 /** The router's models as this config's key sees them; the default model is picked here. */
-function RouterModels({ pid }: { pid: string | null }) {
+function RouterModels({ pid, needsKey }: { pid: string | null; needsKey: boolean }) {
   const qc = useQueryClient();
   const models = useQuery({ queryKey: ["router-models", pid ?? "server"], queryFn: () => connectionApi.models(pid), staleTime: 15000, retry: false });
   const [error, setError] = useState<string | null>(null);
@@ -248,7 +397,12 @@ function RouterModels({ pid }: { pid: string | null }) {
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
   if (models.isLoading) return <div className="text-xs text-muted-foreground">Asking the router for its models…</div>;
-  if (models.isError) return <div className="text-xs text-destructive" data-testid="router-models-error">The router's models: {(models.error as Error).message}</div>;
+  if (models.isError)
+    return needsKey ? (
+      <div className="text-xs text-muted-foreground" data-testid="router-models-error">The router shows its models once a key is saved (above).</div>
+    ) : (
+      <div className="text-xs text-destructive" data-testid="router-models-error">The router's models: {(models.error as Error).message}</div>
+    );
   const doc = models.data;
   if (!doc) return null;
   const ordered = pickerOrder(doc.models);

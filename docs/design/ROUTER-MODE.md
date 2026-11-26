@@ -132,11 +132,16 @@ link-local last).
 
 ## 3. The client
 
-- **The API key in router mode:** the panel says what the configured key is (never the key:
-  `none`, `placeholder`, `abhoth`, `other`). LM Studio's placeholder `lm-studio` is never sent to
-  a router and reads "not sent to the router. No key needed on your LAN" (plus "add an Abhoth key
-  (`abk_…`) to use Claude" when the router has Claude); a non-`abk_` key on a router with keys
-  is flagged as one it will refuse.
+- **The API key in router mode:** only Abhoth keys (`abk_…`) are ever sent to a router
+  (`router_mode::is_router_key`). Switching to router mode keeps any other key (LM Studio's
+  `lm-studio`, a gateway's `sk-…`) with the server-mode settings (`lmStudio.serverMode`) and
+  clears it, so the LAN's anonymous access works at once instead of a 401; switching back puts it
+  back. A config already in router mode with another key is treated as having none (an override,
+  plus a gentle note), never a red error. The panel's **Abhoth key** box says what the key gives
+  (from the identification document and `/v1/abhoth/models`: "No key: LAN access to the local
+  models. Add a key for Claude and for access from outside your LAN"; "Using your Abhoth key …
+  It can use Claude"), and has a masked field (Save, Remove: `POST|DELETE
+  /api/settings/connection/key`, abk_ keys only, never shown back) and **Request a key**.
 - **Settings → Models → Connection** (`client/src/features/settings/ConnectionPanel.tsx`): the
   two modes; in server mode, routers found on the LAN (each checked with its identification
   document before "Use it" is offered) and a URL box with "Check"; when the configured URL
@@ -167,6 +172,35 @@ link-local last).
 - **Probes never switch:** every request the client makes for discovery and metadata is a GET
   with `x-abhoth-no-switch: 1`, without redirects. The `max_tokens` negotiation (real chats) is
   skipped in router mode.
+
+### 3.1 Key requests (getting a key)
+
+Device-flow style, with an admin's approval:
+
+1. **Request a key** in the panel: the app's web server asks the router
+   (`POST /v1/abhoth/key-requests {client: "Abhoth desktop on <host>"}`: unauthenticated, 5 per IP
+   per 10 minutes, `x-abhoth-no-switch`). The router passes it to the accounts web server over the
+   link (`POST /api/internal/key-requests {client, ip}`, link token). The answer: a random id, a
+   short code (`ABCD-2345`, no 0/O/1/I/L), a poll secret, 15 minutes. Nothing usable exists yet.
+2. The panel shows "Waiting for an admin to approve code ABCD-2345" and a link to `keyUrl` (the
+   router's `--key-url`: the web UI's `#settings/service-keys`). Admins see the request there
+   (**Key requests**, `GET /api/admin/key-requests`) and **Approve** (`POST …/{id}/approve
+   {name, claude}`) or **Deny**. Approving issues a service key owned by the approving admin with
+   what a user key may do (`chat`, `models`, `leases`), plus `group:claude` when "May use Claude"
+   is ticked (Claude takes it when `claude.access` lists the group: `keys:…,claude`). An admin
+   using the app approves their own request there in one click; admins can still make their own
+   key in Settings > Account > API keys and paste it.
+3. The app's web server polls every 3 s (`POST /v1/abhoth/key-requests/poll {id, poll}`, 60 per
+   IP per minute) and gets the key once: it saves it to the scope's config as the key field would
+   and refreshes the models; the page never sees it. Denied and expired requests say so. A key
+   approved but not collected before the request expires is revoked.
+
+Requests live in the web server's memory only (a restart forgets them); the database keeps only
+the key's hash, as for every key. Codes and poll secrets are random and single-use; at most 50
+requests wait at once, 3 per IP. The audit log has `keyrequest.created`, `.approved`, `.denied`,
+`.collected` and `.expired`, never a key or poll secret. The identification document says
+whether a router takes requests (`auth.keyRequests`, `paths.keyRequests`, capability
+`key-requests`): it needs the control plane and the accounts link.
 
 ## 4. Migration
 

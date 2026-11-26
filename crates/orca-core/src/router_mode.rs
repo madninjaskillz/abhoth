@@ -12,6 +12,10 @@
 //!   profile does (never written to the file): the router's metadata for the chosen model, and
 //!   the settings the router owns (backups, slots, inference profiles) turned off.
 //!
+//! - **Key requests** ([`start_key_request`], [`poll_key_request`]): a client without a key
+//!   asks the router for one (`POST /v1/abhoth/key-requests`), shows the short code it gets, and
+//!   polls until an admin approves (the new `abk_` key comes back once) or denies it.
+//!
 //! LAN discovery (mDNS, [`MDNS_SERVICE_TYPE`]) lives in the router (advertising) and the web
 //! server (browsing); the names they share are here.
 
@@ -28,6 +32,10 @@ use crate::config::OrcaConfig;
 pub const WELL_KNOWN_PATH: &str = "/.well-known/abhoth-router";
 /// The per-model metadata path.
 pub const MODELS_PATH: &str = "/v1/abhoth/models";
+/// Asking for a key (unauthenticated; an admin approves it): `POST` [`KeyRequestStart`].
+pub const KEY_REQUESTS_PATH: &str = "/v1/abhoth/key-requests";
+/// Polling a key request: `POST` [`KeyRequestPoll`] (a POST, so the poll token is never in a URL).
+pub const KEY_REQUESTS_POLL_PATH: &str = "/v1/abhoth/key-requests/poll";
 /// `service` in the identification document.
 pub const SERVICE: &str = "abhoth-router";
 /// The identification document's version.
@@ -71,9 +79,13 @@ pub struct RouterAuth {
     /// The prefix of those keys.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_prefix: Option<String>,
-    /// Where to make a key (the web UI that issues them), when the router knows a public one.
+    /// Where to make a key (the web UI that issues them), when the router knows a public one;
+    /// also where admins approve key requests.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_url: Option<String>,
+    /// A client may ask for a key here ([`KEY_REQUESTS_PATH`]); an admin approves it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub key_requests: bool,
 }
 
 /// Where things are, relative to the router's root.
@@ -85,6 +97,9 @@ pub struct RouterPaths {
     pub models: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view: Option<String>,
+    /// [`KEY_REQUESTS_PATH`], when the router takes key requests.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_requests: Option<String>,
 }
 
 impl Default for RouterPaths {
@@ -93,6 +108,7 @@ impl Default for RouterPaths {
             openai: "/v1".into(),
             models: MODELS_PATH.into(),
             view: None,
+            key_requests: None,
         }
     }
 }
@@ -249,7 +265,7 @@ pub async fn fetch_models(
         .get(format!("{root}{MODELS_PATH}"))
         .header(NO_SWITCH_HEADER, "1")
         .header("accept", "application/json");
-    if !api_key.trim().is_empty() && !is_placeholder_key(api_key) {
+    if is_router_key(api_key) {
         req = req.bearer_auth(api_key.trim());
     }
     let response = req.send().await.map_err(|e| short_error(&e))?;
@@ -275,6 +291,16 @@ pub fn is_placeholder_key(key: &str) -> bool {
     key.trim().eq_ignore_ascii_case("lm-studio")
 }
 
+/// Whether `key` is one a router takes (an Abhoth key, `abk_…`). Any other key (LM Studio's
+/// placeholder, a gateway's `sk-…`) is never sent to a router: it would refuse it with 401 where
+/// no key at all gets the LAN's anonymous access.
+pub fn is_router_key(key: &str) -> bool {
+    let k = key.trim();
+    k.starts_with(crate::router_link::API_KEY_PREFIX)
+        && k.len() > crate::router_link::API_KEY_PREFIX.len()
+        && !k.chars().any(char::is_whitespace)
+}
+
 /// What kind of key `key` (the resolved API key) is, for the connection panel (never the key):
 /// `none`, `placeholder` (LM Studio's, not sent), `abhoth` (`abk_…`) or `other`.
 pub fn key_kind(key: &str) -> &'static str {
@@ -288,6 +314,136 @@ pub fn key_kind(key: &str) -> &'static str {
     } else {
         "other"
     }
+}
+
+/// How long a key request waits for an admin.
+pub const KEY_REQUEST_TTL_SECS: u64 = 15 * 60;
+
+/// `POST /v1/abhoth/key-requests`: who is asking ("Abhoth desktop on Laptop").
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct KeyRequestStart {
+    pub client: String,
+}
+
+/// The router's answer to a key request: show `code` to the user (an admin approves the request
+/// that carries it) and poll with `id` and `poll` (a secret: only this client can collect the
+/// key) every `interval` seconds until `expires_in` runs out.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct KeyRequestTicket {
+    pub id: String,
+    /// "ABCD-2345": what the admin sees beside the request.
+    pub code: String,
+    pub poll: String,
+    pub expires_in: u64,
+    pub interval: u64,
+}
+
+/// `POST /v1/abhoth/key-requests/poll`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct KeyRequestPoll {
+    pub id: String,
+    pub poll: String,
+}
+
+/// Where a key request is: `pending`, `approved` (with `key`, given once: the request is gone
+/// after this answer), `denied` or `expired` (also: unknown, or already collected).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct KeyRequestStatus {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// The key's name (what the admin called it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The admin let this key use Claude.
+    #[serde(default)]
+    pub claude: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_in: Option<u64>,
+}
+
+impl std::fmt::Display for KeyRequestStatus {
+    /// Never the key.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.status)
+    }
+}
+
+async fn error_text(response: reqwest::Response) -> String {
+    let status = response.status().as_u16();
+    let text = response.text().await.unwrap_or_default();
+    let why = serde_json::from_str::<Value>(&text)
+        .ok()
+        .and_then(|v| {
+            v.get("error")
+                .and_then(|e| e.get("message").or(Some(e)))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_default();
+    if why.is_empty() {
+        format!("the router answered {status}")
+    } else {
+        format!("the router answered {status}: {why}")
+    }
+}
+
+/// Ask the router at `base_url` for a key, as `client` (a name the admin sees). Sent with
+/// `x-abhoth-no-switch: 1`, no key, no redirects.
+pub async fn start_key_request(
+    base_url: &str,
+    client: &str,
+    http: &reqwest::Client,
+) -> Result<KeyRequestTicket, String> {
+    let response = http
+        .post(format!("{}{KEY_REQUESTS_PATH}", root_of(base_url)))
+        .header(NO_SWITCH_HEADER, "1")
+        .json(&KeyRequestStart {
+            client: client.to_string(),
+        })
+        .send()
+        .await
+        .map_err(|e| short_error(&e))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err("this router does not take key requests (ask its admin for a key)".into());
+    }
+    if !response.status().is_success() {
+        return Err(error_text(response).await);
+    }
+    response
+        .json()
+        .await
+        .map_err(|e| format!("unreadable answer: {e}"))
+}
+
+/// Where the key request `ticket` is (see [`KeyRequestStatus`]).
+pub async fn poll_key_request(
+    base_url: &str,
+    id: &str,
+    poll: &str,
+    http: &reqwest::Client,
+) -> Result<KeyRequestStatus, String> {
+    let response = http
+        .post(format!("{}{KEY_REQUESTS_POLL_PATH}", root_of(base_url)))
+        .header(NO_SWITCH_HEADER, "1")
+        .json(&KeyRequestPoll {
+            id: id.to_string(),
+            poll: poll.to_string(),
+        })
+        .send()
+        .await
+        .map_err(|e| short_error(&e))?;
+    if !response.status().is_success() {
+        return Err(error_text(response).await);
+    }
+    response
+        .json()
+        .await
+        .map_err(|e| format!("unreadable answer: {e}"))
 }
 
 type CacheKey = (String, String);
@@ -336,18 +492,28 @@ pub fn overrides(
     if lm.provider.is_some() {
         out.push(("lmStudio.provider".into(), Value::Null));
     }
-    // LM Studio's placeholder key is no key to a router (which refuses a key it doesn't know).
-    if lm
-        .api_key_env
-        .as_deref()
-        .is_none_or(|e| e.trim().is_empty())
-        && is_placeholder_key(&lm.api_key)
-    {
-        out.push(("lmStudio.apiKey".into(), json!("")));
+    // Only an Abhoth key goes to a router: LM Studio's placeholder or another server's key
+    // would be refused (401), where no key gets the LAN's anonymous access.
+    let key = lm.resolve_api_key();
+    if !is_router_key(&key) {
+        // (an env var's other key may hide an Abhoth key in apiKey: that one is then used)
+        if !lm.api_key.is_empty() && !is_router_key(&lm.api_key) {
+            out.push(("lmStudio.apiKey".into(), json!("")));
+        }
+        if lm.api_key_env.is_some() {
+            out.push(("lmStudio.apiKeyEnv".into(), Value::Null));
+        }
+        if key_kind(&key) == "other" && !is_router_key(&lm.api_key) {
+            notices.push(
+                "The API key is not an Abhoth key (abk_...), so it is not sent to the router; add one in Settings > Models > Connection.".into(),
+            );
+        }
         for (name, p) in &config.providers {
             if !name.contains('.')
                 && root_of(&p.base_url) == root_of(&lm.base_url)
-                && p.api_key.as_deref().is_some_and(is_placeholder_key)
+                && p.api_key
+                    .as_deref()
+                    .is_some_and(|k| !k.is_empty() && !is_router_key(k))
             {
                 out.push((format!("providers.{name}.apiKey"), json!("")));
             }

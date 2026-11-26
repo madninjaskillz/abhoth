@@ -89,25 +89,53 @@ export function statusLine(s: StatusLike | undefined): { text: string; offer: bo
 /** The configured key's kind, as the web server reports it (never the key). */
 export type KeyKind = "none" | "placeholder" | "abhoth" | "other";
 
+export interface AuthLike {
+  required: boolean;
+  keys: boolean;
+  keyPrefix?: string | null;
+  keyUrl?: string | null;
+  keyRequests?: boolean;
+}
+
 /**
- * What the panel says about the API key for a router: `tone` "ok" (nothing to do), "info" (a hint)
- * or "warn" (the router will refuse it / needs one). LM Studio's placeholder (`lm-studio`) is never
- * sent to a router, so it reads as "no key", not as a problem.
+ * What the panel says about the key for a router, and what it gives: `tone` "ok" (nothing to do),
+ * "info" (a hint) or "warn" (the router needs one). Only Abhoth keys are sent to a router: LM
+ * Studio's placeholder and another server's key are kept for server mode and read as "no key",
+ * never as an error. `claudeForKey`: the router's models list says this caller may use Claude.
  */
 export function keyHint(
   kind: KeyKind | undefined,
-  auth: { required: boolean; keys: boolean; keyPrefix?: string | null },
+  auth: AuthLike,
   hasClaude: boolean,
+  claudeForKey?: boolean,
 ): { tone: "ok" | "info" | "warn"; text: string } {
   const prefix = auth.keyPrefix ?? "abk_";
-  const placeholder = kind === "placeholder" ? "LM Studio's placeholder key (lm-studio) isn't sent to the router. " : "";
-  if (kind === "abhoth") return { tone: "ok", text: `Using your Abhoth key (${prefix}…).` };
-  if (kind === "other" && auth.keys) {
-    return { tone: "warn", text: `The API Key isn't an Abhoth key (${prefix}…): the router will refuse it. Clear it, or paste an Abhoth key.` };
+  if (kind === "abhoth") {
+    const claude = !hasClaude ? "" : claudeForKey === undefined ? "" : claudeForKey ? " It can use Claude." : " It can't use Claude (an admin can allow it).";
+    return { tone: "ok", text: `Using your Abhoth key: the models this key may use, from anywhere the router is reachable.${claude}` };
   }
-  if (auth.required) return { tone: "warn", text: `${placeholder}This router needs an Abhoth key (${prefix}…) in API Key below.` };
-  const claude = hasClaude && auth.keys ? ` Add an Abhoth key (${prefix}…) to use Claude.` : "";
-  return { tone: claude || placeholder ? "info" : "ok", text: `${placeholder}No key needed on your LAN.${claude}` };
+  const before =
+    kind === "placeholder"
+      ? "LM Studio's placeholder key isn't sent to the router. "
+      : kind === "other"
+        ? `The API key from server mode isn't an Abhoth key (${prefix}…), so it isn't sent to the router. `
+        : "";
+  if (auth.required) return { tone: "warn", text: `${before}This router needs an Abhoth key (${prefix}…): request one or paste one below.` };
+  const more = !auth.keys ? "" : hasClaude ? " Add a key for Claude and for access from outside your LAN." : " Add a key for access from outside your LAN.";
+  return { tone: more || before ? "info" : "ok", text: `${before}No key: LAN access to the local models.${more}` };
+}
+
+/** One line on how to get a key from this router. */
+export function howToGetKey(auth: AuthLike): string {
+  if (!auth.keys) return "This router doesn't use keys.";
+  if (auth.keyRequests) return "Get a key: click Request a key, then an admin approves it in the router's web UI (Settings > Service keys).";
+  return "Get a key from the router's admin (its web UI: Settings > Account > API keys, or Service keys), then paste it here.";
+}
+
+/** "14 min" / "40 s": how long a key request still waits. */
+export function waitLeft(seconds: number | undefined): string {
+  const s = Math.max(0, Math.round(seconds ?? 0));
+  return s >= 90 ? `${Math.round(s / 60)} min` : `${s} s`;
 }
 
 /** The connection endpoints of a scope: a project's running session, or (null) the server's config.json. */

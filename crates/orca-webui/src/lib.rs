@@ -12,6 +12,7 @@ pub mod git;
 pub mod glance;
 pub mod hostui;
 pub mod hub;
+pub mod key_requests;
 pub mod live;
 pub mod login;
 pub mod native;

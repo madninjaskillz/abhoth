@@ -91,6 +91,9 @@ const PATHS: &[&str] = &[
     // D149: the identification document and the model metadata.
     "/.well-known/abhoth-router",
     "/v1/abhoth/models",
+    // D149: key requests (POST, unauthenticated).
+    "/v1/abhoth/key-requests",
+    "/v1/abhoth/key-requests/poll",
     "/status",
     "/metrics",
     "/observe",

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CONNECTION_KEY, capabilityBadges, connectionPath, formatTokens, hiddenInMode, modeOf, normalizeUrl, pickerOrder, routerPick, savedNote, statusLine, visibleInMode, keyHint,
+  CONNECTION_KEY, capabilityBadges, connectionPath, formatTokens, hiddenInMode, modeOf, normalizeUrl, pickerOrder, routerPick, savedNote, statusLine, visibleInMode, keyHint, howToGetKey, waitLeft,
 } from "../src/features/settings/connection.ts";
 
 const s = (key: string, routerMode?: "shown" | "hidden" | "router") => ({ key, routerMode });
@@ -90,19 +90,36 @@ test("keyHint: LM Studio's placeholder reads as no key, not a problem", () => {
   const h = keyHint("placeholder", lan, false);
   assert.equal(h.tone, "info");
   assert.match(h.text, /isn't sent to the router/);
-  assert.match(h.text, /No key needed on your LAN/);
+  assert.match(h.text, /No key: LAN access to the local models/);
 });
 
-test("keyHint: an Abhoth key is suggested for Claude", () => {
-  assert.match(keyHint("none", lan, true).text, /Add an Abhoth key \(abk_…\) to use Claude/);
-  assert.equal(keyHint("none", lan, false).tone, "ok");
+test("keyHint: says what a key adds (Claude, outside the LAN)", () => {
+  assert.match(keyHint("none", lan, true).text, /Add a key for Claude and for access from outside your LAN/);
+  assert.match(keyHint("none", lan, false).text, /Add a key for access from outside your LAN/);
+  assert.equal(keyHint("none", { ...lan, keys: false }, false).tone, "ok");
 });
 
-test("keyHint: warns when a key is needed or would be refused", () => {
+test("keyHint: another server's key is a gentle note, never an error", () => {
+  const h = keyHint("other", lan, true);
+  assert.equal(h.tone, "info");
+  assert.match(h.text, /isn't an Abhoth key \(abk_…\), so it isn't sent/);
+  assert.doesNotMatch(h.text, /refuse/);
+});
+
+test("keyHint: warns only when the router needs a key", () => {
   assert.equal(keyHint("placeholder", { ...lan, required: true }, false).tone, "warn");
-  assert.equal(keyHint("other", lan, false).tone, "warn");
-  assert.equal(keyHint("other", { ...lan, keys: false }, false).tone, "ok");
+  assert.match(keyHint("none", { ...lan, required: true }, false).text, /request one or paste one/);
   assert.equal(keyHint("abhoth", { ...lan, required: true }, true).tone, "ok");
+  assert.match(keyHint("abhoth", lan, true, true).text, /can use Claude/);
+  assert.match(keyHint("abhoth", lan, true, false).text, /can't use Claude/);
+});
+
+test("how to get a key, and how long a request waits", () => {
+  assert.match(howToGetKey({ ...lan, keyRequests: true }), /click Request a key, then an admin approves it in the router's web UI \(Settings > Service keys\)/);
+  assert.match(howToGetKey(lan), /paste it here/);
+  assert.equal(waitLeft(840), "14 min");
+  assert.equal(waitLeft(40), "40 s");
+  assert.equal(waitLeft(undefined), "0 s");
 });
 
 test("the panel talks to the scope it is in: a project's session, or the server's config.json", () => {

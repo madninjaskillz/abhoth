@@ -341,6 +341,13 @@ impl LmStudioConfig {
                 api_key_env: self.api_key_env.clone(),
                 models: self.models.clone(),
             });
+            // A router takes Abhoth keys (`abk_…`) only and refuses any other: keep the
+            // server's key with its other settings (above) and go in without one, so the LAN's
+            // anonymous access works at once instead of a 401.
+            if !crate::router_mode::is_router_key(&self.resolve_api_key()) {
+                self.api_key = String::new();
+                self.api_key_env = None;
+            }
         } else if was
             && !now
             && let Some(saved) = self.server_mode.take()

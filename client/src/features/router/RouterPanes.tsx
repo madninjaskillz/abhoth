@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Badge, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
-import { RouterApiError, routerApi, serviceKeyApi, useLiveState, type ServiceKey } from "./routerApi";
+import { RouterApiError, keyRequestApi, routerApi, serviceKeyApi, useLiveState, type KeyRequest, type ServiceKey } from "./routerApi";
 import { accessLabel, ago, coldLabel, type Job, type LayoutView, type Plan, type RouteEdit, type RouteView } from "./routerModel";
 import { CardTile, GuardChips, JobStateBadge, JobSteps, LayoutList, PlanView, SwitchProgress } from "./widgets";
 
@@ -472,6 +472,85 @@ const SCOPE_HELP: Record<string, string> = {
   read: "read state, cards and jobs (no config text, no audit)",
 };
 
+/**
+ * Key requests (D149): apps that asked the router for a key, each with the code its user sees.
+ * Approving makes a service key with what a user key may do (chat, models, leases), optionally in
+ * the `claude` group; the requesting app collects it once. Nothing is made for a denied request.
+ */
+function KeyRequests({ onApproved }: { onApproved: () => void }) {
+  const qc = useQueryClient();
+  const list = useQuery({ queryKey: ["key-requests"], queryFn: keyRequestApi.list, refetchInterval: 5000 });
+  const [done, setDone] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const refresh = () => void qc.invalidateQueries({ queryKey: ["key-requests"] });
+  const requests = list.data?.requests ?? [];
+  return (
+    <div className="space-y-2 rounded-md border p-3" data-testid="key-requests">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <KeyRound className="size-4 text-muted-foreground" /> Key requests
+        {!!requests.length && <Badge variant="warning">{requests.length} waiting</Badge>}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Someone pressed <i>Request a key</i> in the app's Settings &gt; Models &gt; Connection. Check the code they see, then approve: their app gets the key by itself (once) and it shows up below as a service key with chat, models and leases. Requests expire after 15 minutes.
+      </p>
+      {list.isLoading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+      {list.data && !requests.length && <div className="text-xs text-muted-foreground" data-testid="key-requests-none">No requests waiting.</div>}
+      {requests.map((r) => (
+        <KeyRequestRow
+          key={r.id}
+          r={r}
+          claudeGroup={list.data?.claudeGroup ?? "claude"}
+          onDone={(text) => {
+            setError(null);
+            setDone(text);
+            refresh();
+            onApproved();
+          }}
+          onError={(e) => setError(errText(e))}
+        />
+      ))}
+      {done && <div className="text-xs text-success" role="status" data-testid="key-request-done">{done}</div>}
+      {error && <div className="text-xs text-destructive" role="alert">{error}</div>}
+    </div>
+  );
+}
+
+function KeyRequestRow({ r, claudeGroup, onDone, onError }: { r: KeyRequest; claudeGroup: string; onDone: (text: string) => void; onError: (e: unknown) => void }) {
+  const [name, setName] = useState(r.suggestedName);
+  const [claude, setClaude] = useState(false);
+  const approve = useMutation({
+    mutationFn: () => keyRequestApi.approve(r.id, name, claude),
+    onSuccess: (k) => onDone(`Approved: key "${k.name}" goes to ${r.client} on its next check.`),
+    onError,
+  });
+  const deny = useMutation({ mutationFn: () => keyRequestApi.deny(r.id), onSuccess: () => onDone(`Denied the request from ${r.client}.`), onError });
+  const mins = Math.max(1, Math.round(r.expiresIn / 60));
+  return (
+    <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-2.5" data-testid="key-request-row">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+        <span className="font-mono text-base font-semibold tracking-wider" data-testid="key-request-code">{r.code}</span>
+        <span className="font-medium">{r.client}</span>
+        <span className="text-muted-foreground">from {r.ip} · {mins} min left</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input className={cn(field, "w-48")} value={name} onChange={(e) => setName(e.target.value)} aria-label="Key name" data-testid="key-request-name" />
+        <label className="flex items-center gap-1.5 text-xs" title={`Adds the key to the "${claudeGroup}" group: Claude takes it when the router's claude.access lists the group (keys:…,${claudeGroup}).`}>
+          <input type="checkbox" checked={claude} onChange={(e) => setClaude(e.target.checked)} data-testid="key-request-claude" /> May use Claude
+        </label>
+        <div className="ml-auto flex gap-1">
+          <Button size="sm" variant="outline" disabled={deny.isPending || approve.isPending} onClick={() => deny.mutate()} data-testid="key-request-deny">
+            Deny
+          </Button>
+          <Button size="sm" disabled={!name.trim() || approve.isPending || deny.isPending} onClick={() => approve.mutate()} data-testid="key-request-approve">
+            {approve.isPending ? <Loader2 className="animate-spin" /> : null} Approve
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export function ServiceKeysPane() {
   const qc = useQueryClient();
   const list = useQuery({ queryKey: ["service-keys"], queryFn: serviceKeyApi.list });
@@ -496,6 +575,7 @@ export function ServiceKeysPane() {
         Named keys for the clients that talk to the router without a person: Jarvis, the video pipelines, Home Assistant, the dash. Each has only the scopes you give it, works only at the router (never in this web UI), and stops working within a minute of being revoked.
       </PaneHead>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        <KeyRequests onApproved={refresh} />
         {list.data && !list.data.router && <div className="rounded-md border border-warning/50 p-2 text-xs text-warning">No router is linked to this server yet (ABHOTH_ROUTER_URL, ABHOTH_ROUTER_TOKEN_FILE). Keys made now work once it is.</div>}
         {made?.key && (
           <div className="space-y-1 rounded-md border border-success/50 bg-success/5 p-3 text-xs" data-testid="service-key-made" role="status">

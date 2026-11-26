@@ -490,3 +490,144 @@ async fn cold_catalog_models_use_the_catalog_and_live_ones_their_engine() {
     assert_eq!((d.status.as_deref(), d.vision), (Some("live"), Some(true)));
     assert!(relay.seen().is_empty());
 }
+
+/// The web server's side of key requests, in memory: what the router passed on.
+#[derive(Default)]
+struct FakeAccounts {
+    seen: std::sync::Mutex<Vec<String>>,
+}
+
+#[async_trait::async_trait]
+impl orca_router::key_requests::KeyRequestLink for FakeAccounts {
+    async fn create(
+        &self,
+        ask: &orca_core::router_link::KeyRequestCreate,
+    ) -> Result<(u16, serde_json::Value), String> {
+        self.seen
+            .lock()
+            .unwrap()
+            .push(format!("create {} {}", ask.client, ask.ip));
+        Ok((
+            200,
+            json!({"id": "r1", "code": "ABCD-2345", "poll": "secret-poll", "expiresIn": 900, "interval": 3}),
+        ))
+    }
+    async fn poll(
+        &self,
+        ask: &orca_core::router_mode::KeyRequestPoll,
+    ) -> Result<(u16, serde_json::Value), String> {
+        self.seen.lock().unwrap().push(format!("poll {}", ask.id));
+        Ok((200, json!({"status": "pending", "expiresIn": 800})))
+    }
+}
+
+#[tokio::test]
+async fn key_requests_go_to_the_accounts_server_rate_limited_and_never_reach_a_card() {
+    use orca_core::router_mode::{KEY_REQUESTS_PATH, KEY_REQUESTS_POLL_PATH};
+    let (a, b, relay) = (
+        Fake::ok("A").await,
+        Fake::ok("B").await,
+        Fake::ok("relay").await,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let r = start_router(
+        cfg(&a.url(), &b.url(), &relay.url(), dir.path()),
+        None,
+        Mode::Gateway,
+    )
+    .await;
+    // Without the control plane (or its accounts link): not offered, 404.
+    let info: RouterInfo = http()
+        .get(format!("{}{WELL_KNOWN_PATH}", r.url))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(!info.auth.key_requests);
+    let resp = http()
+        .post(format!("{}{KEY_REQUESTS_PATH}", r.url))
+        .json(&json!({"client": "x"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+
+    let accounts = std::sync::Arc::new(FakeAccounts::default());
+    let cp = control_plane();
+    let cp = std::sync::Arc::new(orca_router::control_api::ControlPlane {
+        access: std::sync::Arc::try_unwrap(cp)
+            .ok()
+            .unwrap()
+            .access
+            .with_key_requests(accounts.clone()),
+        backend: orca_router::control_api::demo::DemoControl::new(),
+    });
+    let _ = r.st.control.set(cp);
+    let info: RouterInfo = http()
+        .get(format!("{}{WELL_KNOWN_PATH}", r.url))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(info.auth.key_requests);
+    assert_eq!(info.paths.key_requests.as_deref(), Some(KEY_REQUESTS_PATH));
+    assert!(info.capabilities.contains(&"key-requests".to_string()));
+
+    // No key needed to ask; the answer is the accounts server's.
+    let t = orca_core::router_mode::start_key_request(
+        &format!("{}/v1", r.url),
+        "Abhoth desktop on Test",
+        &orca_core::router_mode::probe_client(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(t.code, "ABCD-2345");
+    let st = orca_core::router_mode::poll_key_request(
+        &r.url,
+        &t.id,
+        &t.poll,
+        &orca_core::router_mode::probe_client(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(st.status, "pending");
+    assert_eq!(
+        accounts.seen.lock().unwrap().clone(),
+        ["create Abhoth desktop on Test 127.0.0.1", "poll r1"]
+    );
+    // Five new requests per IP per ten minutes.
+    let mut codes = Vec::new();
+    for _ in 0..6 {
+        codes.push(
+            http()
+                .post(format!("{}{KEY_REQUESTS_PATH}", r.url))
+                .json(&json!({"client": "again"}))
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .as_u16(),
+        );
+    }
+    assert_eq!(codes, [200, 200, 200, 200, 429, 429]);
+    // A malformed poll is refused before the accounts server is asked.
+    let resp = http()
+        .post(format!("{}{KEY_REQUESTS_POLL_PATH}", r.url))
+        .body("nope")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    // GET is not a key request.
+    let resp = http()
+        .get(format!("{}{KEY_REQUESTS_PATH}", r.url))
+        .send()
+        .await
+        .unwrap();
+    assert_ne!(resp.status(), 200);
+    assert!(a.seen().is_empty() && b.seen().is_empty() && relay.seen().is_empty());
+}

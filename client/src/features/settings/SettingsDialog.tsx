@@ -81,9 +81,12 @@ export function SettingsDialog({ project, requested, onClose }: { project: Proje
   const active = pickTab(requested, tabs) ?? "account";
   const activeTab = tabs.find((t) => t.id === active) ?? tabs[0];
   // The URL says which tab is open (and the first one when it asked for none or one this user can't see).
+  // Not before the server's info says whether a router is linked: a link to a router tab
+  // (#settings/service-keys, where key requests are approved) must not fall back to the first tab.
+  const settled = !admin || info.isSuccess || info.isError;
   useEffect(() => {
-    if (requested !== active) show(active);
-  }, [requested, active, show]);
+    if (settled && requested !== active) show(active);
+  }, [requested, active, show, settled]);
 
   // The default profile is picked in the profile slot (server scope); a project picks its own there.
   // Router mode (D149): the rows the router owns are left out (the connection panel shows what it says).

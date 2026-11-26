@@ -175,8 +175,8 @@ export interface RouterInfo {
   name: string;
   version: string;
   capabilities: string[];
-  auth: { required: boolean; keys: boolean; keyPrefix?: string; keyUrl?: string };
-  paths: { openai: string; models: string; view?: string };
+  auth: { required: boolean; keys: boolean; keyPrefix?: string; keyUrl?: string; keyRequests?: boolean };
+  paths: { openai: string; models: string; view?: string; keyRequests?: string };
 }
 
 export interface RouterModel {
@@ -212,6 +212,26 @@ export interface ConnectionStatus {
   suggestRouter: boolean;
   /** The configured key's kind (never the key): none, placeholder (lm-studio), abhoth, other. */
   apiKey?: "none" | "placeholder" | "abhoth" | "other";
+  /** A key request of this scope waiting for an admin. */
+  keyRequest?: KeyRequestView | null;
+}
+
+export interface KeyRequestView {
+  /** "ABCD-2345": what the admin sees beside the request. */
+  code: string;
+  expiresIn: number;
+  /** Where admins approve it (the router's web UI). */
+  keyUrl?: string;
+}
+
+/** A key request's state as the panel polls it (the key itself never comes to the page). */
+export interface KeyRequestPollResult {
+  status: "none" | "pending" | "approved" | "denied" | "expired";
+  request?: KeyRequestView | null;
+  name?: string;
+  claude?: boolean;
+  warning?: string;
+  interval?: number;
 }
 
 export interface DiscoveredRouter {
@@ -233,6 +253,13 @@ export const connectionApi = {
   discover: () => request<{ routers: DiscoveredRouter[]; error?: string }>("GET", "/api/settings/connection/discover"),
   models: (pid: string | null) => request<RouterModelsDoc>("GET", `${connectionPath(pid)}/models`),
   use: (pid: string | null, url: string, model?: string) => request<{ ok: boolean; baseUrl: string; router: RouterInfo }>("POST", `${connectionPath(pid)}/use`, { url, model }),
+  /** Save an Abhoth key (abk_…) for the router; never shown back. */
+  saveKey: (pid: string | null, key: string) => request<{ ok: boolean }>("POST", `${connectionPath(pid)}/key`, { key }),
+  removeKey: (pid: string | null) => request<{ ok: boolean }>("DELETE", `${connectionPath(pid)}/key`),
+  /** Ask the router for a key: an admin approves it; the server polls and saves it. */
+  requestKey: (pid: string | null) => request<KeyRequestPollResult>("POST", `${connectionPath(pid)}/key-request`),
+  pollKey: (pid: string | null) => request<KeyRequestPollResult>("GET", `${connectionPath(pid)}/key-request`),
+  forgetKeyRequest: (pid: string | null) => request<{ ok: boolean }>("DELETE", `${connectionPath(pid)}/key-request`),
 };
 
 export interface SettingResult {

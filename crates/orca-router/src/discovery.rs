@@ -149,6 +149,10 @@ pub async fn info(st: &AppState, peer: Option<IpAddr>) -> RouterInfo {
     if d.is_some_and(|d| d.mdns) {
         caps.push("mdns".into());
     }
+    let key_requests = crate::key_requests::available(st);
+    if key_requests {
+        caps.push("key-requests".into());
+    }
     RouterInfo {
         service: SERVICE.into(),
         api: API_VERSION,
@@ -160,11 +164,14 @@ pub async fn info(st: &AppState, peer: Option<IpAddr>) -> RouterInfo {
             keys: control.is_some(),
             key_prefix: control.map(|_| orca_core::router_link::API_KEY_PREFIX.to_string()),
             key_url: d.and_then(|d| d.key_url.clone()),
+            key_requests,
         },
         paths: RouterPaths {
             openai: "/v1".into(),
             models: MODELS_PATH.into(),
             view: control.map(|_| "/v1/abhoth/view".to_string()),
+            key_requests: key_requests
+                .then(|| orca_core::router_mode::KEY_REQUESTS_PATH.to_string()),
         },
     }
 }

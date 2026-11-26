@@ -11,7 +11,12 @@
 //!   HMAC-SHA256 over the user, the time, the method and the path, so a header copied from one
 //!   call can't be replayed on another path or after [`ACTING_MAX_SKEW_SECS`].
 //!
-//! Neither side ever sends a key or the token in a URL, a log line or an answer.
+//! - **Key requests:** the router passes a client's request for a key on to the web server
+//!   (`POST /api/internal/key-requests`, and `/poll`), which keeps it until an admin approves or
+//!   denies it in the web UI. Only an approved request's own client collects the new key, once.
+//!
+//! Neither side ever sends a key or the token in a URL or a log line; a key is in an answer
+//! only when its own client collects it.
 
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
@@ -23,6 +28,23 @@ pub const INTROSPECT_PATH: &str = "/api/internal/keys/introspect";
 pub const ACTING_USER_HEADER: &str = "x-abhoth-acting-user";
 /// How far the signed time may be from the router's clock.
 pub const ACTING_MAX_SKEW_SECS: i64 = 60;
+/// Key requests passed on by the router (link token).
+pub const KEY_REQUESTS_INTERNAL_PATH: &str = "/api/internal/key-requests";
+/// Polling one (link token).
+pub const KEY_REQUESTS_POLL_INTERNAL_PATH: &str = "/api/internal/key-requests/poll";
+/// The key group an approved request joins when the admin lets it use Claude: the router's
+/// `claude.access` admits it when it lists the group (`keys:…,claude`).
+pub const CLAUDE_KEY_GROUP: &str = "claude";
+
+/// A key request as the router passes it on: who asks (the client's own words) and from where
+/// (the TCP peer the router saw).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct KeyRequestCreate {
+    pub client: String,
+    pub ip: String,
+}
+
 /// User API keys start with this (D140).
 pub const API_KEY_PREFIX: &str = "abk_";
 

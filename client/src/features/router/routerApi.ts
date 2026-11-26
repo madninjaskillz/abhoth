@@ -71,6 +71,25 @@ export interface ServiceKey {
   key?: string;
 }
 
+/** A key request waiting for an admin (D149): someone's app asked the router for a key. */
+export interface KeyRequest {
+  id: string;
+  /** What the person reads out ("ABCD-2345"). */
+  code: string;
+  client: string;
+  ip: string;
+  created: number;
+  expiresIn: number;
+  suggestedName: string;
+}
+
+export const keyRequestApi = {
+  list: () => call<{ requests: KeyRequest[]; router: boolean; claudeGroup: string; scopes: string[] }>("GET", "/api/admin/key-requests"),
+  approve: (id: string, name: string, claude: boolean) =>
+    call<{ ok: boolean; name: string; scopes: string[] }>("POST", `/api/admin/key-requests/${encodeURIComponent(id)}/approve`, { name, claude }),
+  deny: (id: string) => call<{ ok: boolean }>("POST", `/api/admin/key-requests/${encodeURIComponent(id)}/deny`),
+};
+
 export const serviceKeyApi = {
   list: () => call<{ keys: ServiceKey[]; scopes: string[]; router: boolean }>("GET", "/api/admin/service-keys"),
   create: (name: string, scopes: string[], note: string) => call<ServiceKey>("POST", "/api/admin/service-keys", { name, scopes, note }),

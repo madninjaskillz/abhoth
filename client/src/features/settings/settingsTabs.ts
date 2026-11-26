@@ -142,8 +142,8 @@ export const SETTINGS_TABS: TabDef[] = [
     id: "service-keys",
     label: "Service keys",
     kind: "pane",
-    blurb: "Named keys for Jarvis, pipelines, Home Assistant and the dash, with scopes.",
-    keywords: ["service keys", "jarvis", "home assistant", "pipelines", "dash", "scopes", "revoke"],
+    blurb: "Key requests to approve, and named keys for Jarvis, pipelines, Home Assistant and the dash.",
+    keywords: ["service keys", "jarvis", "home assistant", "pipelines", "dash", "scopes", "revoke", "key requests", "approve", "request a key"],
     visible: routerAdmins,
   },
 ];

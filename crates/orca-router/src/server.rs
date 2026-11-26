@@ -119,6 +119,13 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
         (Method::GET, orca_core::router_mode::MODELS_PATH) => {
             crate::discovery::models(&st, &headers, peer.map(|p| p.ip())).await
         }
+        // D149: asking for a key (an admin approves it in the web UI); never switches.
+        (Method::POST, orca_core::router_mode::KEY_REQUESTS_PATH) => {
+            crate::key_requests::start(&st, peer.map(|p| p.ip()), &raw).await
+        }
+        (Method::POST, orca_core::router_mode::KEY_REQUESTS_POLL_PATH) => {
+            crate::key_requests::poll(&st, peer.map(|p| p.ip()), &raw).await
+        }
         (Method::GET, "/health/liveliness" | "/health/liveness") => {
             json_response(200, &Value::String("I'm alive!".into()))
         }

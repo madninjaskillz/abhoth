@@ -10,6 +10,11 @@
 //!   as the configured key sees them;
 //! - `POST /api/settings/connection/use` `{url}`: router mode on that router (connection and
 //!   base URL in one save).
+//! - `POST /api/settings/connection/key` `{key}` / `DELETE …/key`: the Abhoth key (`abk_…`) the
+//!   panel's key field saves or removes (never shown back).
+//! - `POST /api/settings/connection/key-request`: ask the router for a key (an admin approves it,
+//!   see `crate::key_requests`); `GET …/key-request`: poll it once (an approved key is saved
+//!   here, as the key field would, and never reaches the page); `DELETE …/key-request`: forget it.
 //!
 //! `/api/projects/{pid}/settings/connection[/models|/use]` are the same for one project's
 //! running session (the settings page's Project scope): its config, changed as /config in its
@@ -36,6 +41,13 @@ use crate::audit::Caller;
 use crate::server::AppState;
 
 pub mod discover;
+pub mod key;
+
+use key::{
+    PendingView, forget_key_request, pending_view, poll_key, project_forget_key_request,
+    project_poll_key, project_remove_key, project_request_key, project_save_key, remove_key,
+    request_key, save_key, scope_id,
+};
 
 /// How long a LAN browse listens.
 pub const BROWSE_FOR: Duration = Duration::from_millis(2500);
@@ -48,6 +60,14 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/api/settings/connection/models", get(models))
         .route("/api/settings/connection/use", post(use_router))
         .route(
+            "/api/settings/connection/key",
+            post(save_key).delete(remove_key),
+        )
+        .route(
+            "/api/settings/connection/key-request",
+            post(request_key).get(poll_key).delete(forget_key_request),
+        )
+        .route(
             "/api/projects/{pid}/settings/connection",
             get(project_status),
         )
@@ -58,6 +78,16 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route(
             "/api/projects/{pid}/settings/connection/use",
             post(project_use),
+        )
+        .route(
+            "/api/projects/{pid}/settings/connection/key",
+            post(project_save_key).delete(project_remove_key),
+        )
+        .route(
+            "/api/projects/{pid}/settings/connection/key-request",
+            post(project_request_key)
+                .get(project_poll_key)
+                .delete(project_forget_key_request),
         )
 }
 
@@ -110,6 +140,9 @@ pub struct ConnectionStatus {
     /// The configured key's kind (`router_mode::key_kind`: none, placeholder, abhoth, other),
     /// never the key.
     pub api_key: String,
+    /// A key request waiting for an admin (its code), when this scope made one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_request: Option<PendingView>,
 }
 
 /// [`ConnectionStatus`] for a config and what identifying its URL gave.
@@ -135,29 +168,31 @@ pub fn status_of(
         api_key: router_mode::key_kind(api_key).into(),
         router,
         error,
+        key_request: None,
     }
 }
 
 async fn status(State(state): State<Arc<AppState>>) -> Response {
-    status_for(&load(&state).config.lm_studio).await
+    status_for(&load(&state).config.lm_studio, &scope_id(None)).await
 }
 
 async fn project_status(State(state): State<Arc<AppState>>, Path(pid): Path<String>) -> Response {
     match project_lm(&state, &pid).await {
-        Ok(lm) => status_for(&lm).await,
+        Ok(lm) => status_for(&lm, &scope_id(Some(&pid))).await,
         Err((code, why)) => bad(code, why),
     }
 }
 
-async fn status_for(lm: &LmStudioConfig) -> Response {
+async fn status_for(lm: &LmStudioConfig, scope: &str) -> Response {
     let identified = router_mode::identify(&lm.base_url, &router_mode::probe_client()).await;
-    axum::Json(status_of(
+    let mut s = status_of(
         lm.is_router(),
         &lm.base_url,
         &lm.resolve_api_key(),
         identified,
-    ))
-    .into_response()
+    );
+    s.key_request = pending_view(scope, &lm.base_url);
+    axum::Json(s).into_response()
 }
 
 #[derive(Deserialize)]
@@ -280,6 +315,41 @@ pub fn use_changes(base: &str, model: Option<&str>) -> Vec<(String, Value)> {
     changes
 }
 
+/// Save `changes` where `target` says: the server's config.json, or (as /config in its terminal
+/// would) a project's running session. The project's id, for the audit.
+#[allow(clippy::result_large_err)]
+async fn save_changes(
+    state: &AppState,
+    target: &Target,
+    changes: &[(String, Value)],
+) -> Result<Option<String>, Response> {
+    match target {
+        Target::Global => {
+            let mut m = load(state);
+            for (k, v) in changes {
+                let c = schema::apply(&mut m.config, k, Some(v), false, None);
+                if !c.ok {
+                    return Err(bad(StatusCode::BAD_REQUEST, c.error.unwrap_or_default()));
+                }
+            }
+            if let Err(e) = m.save() {
+                return Err(bad(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+            }
+            Ok(None)
+        }
+        Target::Project(pid, session) => {
+            for (k, v) in changes {
+                let c = session.set_setting(k, Some(v.clone()), false).await;
+                if !c.ok {
+                    let why = c.error.unwrap_or_else(|| "Refused.".into());
+                    return Err(bad(StatusCode::BAD_REQUEST, format!("{k}: {why}")));
+                }
+            }
+            Ok(Some(pid.clone()))
+        }
+    }
+}
+
 async fn adopt(
     state: &AppState,
     target: Target,
@@ -304,31 +374,9 @@ async fn adopt(
     };
     let base = router_mode::base_url_of(&root, Some(&info));
     let changes = use_changes(&base, b.model.as_deref());
-    let project = match &target {
-        Target::Global => {
-            let mut m = load(state);
-            for (k, v) in &changes {
-                let c = schema::apply(&mut m.config, k, Some(v), false, None);
-                if !c.ok {
-                    return bad(StatusCode::BAD_REQUEST, c.error.unwrap_or_default());
-                }
-            }
-            if let Err(e) = m.save() {
-                return bad(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
-            }
-            None
-        }
-        // As /config in its terminal: the session's config, saved to config.json too.
-        Target::Project(pid, session) => {
-            for (k, v) in &changes {
-                let c = session.set_setting(k, Some(v.clone()), false).await;
-                if !c.ok {
-                    let why = c.error.unwrap_or_else(|| "Refused.".into());
-                    return bad(StatusCode::BAD_REQUEST, format!("{k}: {why}"));
-                }
-            }
-            Some(pid.clone())
-        }
+    let project = match save_changes(state, &target, &changes).await {
+        Ok(p) => p,
+        Err(r) => return r,
     };
     router_mode::clear_cache();
     let caller = Caller {

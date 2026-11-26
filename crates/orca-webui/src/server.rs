@@ -163,6 +163,8 @@ pub struct AppState {
     pub github_user: Arc<crate::git::github_user::GitHubUserService>,
     /// The accounts.
     pub login: Arc<crate::login::LoginAuth>,
+    /// Key requests waiting for an admin (D149, in memory).
+    pub key_requests: crate::key_requests::KeyRequests,
 }
 
 #[derive(rust_embed::RustEmbed)]
@@ -342,6 +344,7 @@ impl WebUiServer {
             audit,
             port,
             ptys: Arc::new(crate::pty::PtyRegistry::default()),
+            key_requests: Default::default(),
             previews: crate::files::preview::PreviewKeys::new(),
             profiles,
             bench,

@@ -390,3 +390,109 @@ fn key_kinds_never_show_the_key() {
     assert_eq!(key_kind("abk_user_secretsecret"), "abhoth");
     assert_eq!(key_kind("sk-something"), "other");
 }
+
+#[test]
+fn only_abhoth_keys_go_to_a_router() {
+    assert!(is_router_key("abk_0123456789abcdef"));
+    assert!(is_router_key(" abk_0123456789abcdef "));
+    for k in [
+        "",
+        "abk_",
+        "lm-studio",
+        "sk-ant-x",
+        "sk-gateway",
+        "abk_has space",
+    ] {
+        assert!(!is_router_key(k), "{k}");
+    }
+    // A config already in router mode with another server's key: no key is sent, with a note.
+    let mut c = router_config();
+    c.lm_studio.api_key = "sk-gateway-key".into();
+    let (ov, notes) = overrides(&c, None);
+    assert_eq!(get(&ov, "lmStudio.apiKey"), Some(&json!("")));
+    assert!(
+        notes.iter().any(|n| n.contains("not an Abhoth key")),
+        "{notes:?}"
+    );
+    assert!(notes.iter().all(|n| !n.contains("sk-gateway-key")));
+    // An env var holding one is cleared too.
+    let mut c = router_config();
+    c.lm_studio.api_key = String::new();
+    c.lm_studio.api_key_env = Some("ABHOTH_TEST_NOT_SET_ANYWHERE".into());
+    let (ov, notes) = overrides(&c, None);
+    assert_eq!(get(&ov, "lmStudio.apiKeyEnv"), Some(&Value::Null));
+    assert!(
+        notes.is_empty(),
+        "no key at all is not worth a note: {notes:?}"
+    );
+}
+
+#[tokio::test]
+async fn another_servers_key_is_not_sent_for_metadata() {
+    let (root, seen) = serve_once(MODELS_PATH, json!({"models": []})).await;
+    fetch_models(&root, "sk-gateway-key", &probe_client())
+        .await
+        .unwrap();
+    assert!(
+        !seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(k, _)| k == "authorization")
+    );
+}
+
+#[tokio::test]
+async fn key_requests_post_without_a_key_and_never_switch() {
+    use axum::routing::post;
+    let seen = std::sync::Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
+    let s2 = seen.clone();
+    let s3 = seen.clone();
+    let app = axum::Router::new()
+        .route(
+            KEY_REQUESTS_PATH,
+            post(move |h: axum::http::HeaderMap, axum::Json(b): axum::Json<Value>| {
+                let s2 = s2.clone();
+                async move {
+                    assert_eq!(h[NO_SWITCH_HEADER], "1");
+                    assert!(h.get("authorization").is_none());
+                    s2.lock().unwrap().push(("start".into(), b));
+                    axum::Json(json!({"id": "r1", "code": "ABCD-2345", "poll": "p", "expiresIn": 900, "interval": 3}))
+                }
+            }),
+        )
+        .route(
+            KEY_REQUESTS_POLL_PATH,
+            post(move |axum::Json(b): axum::Json<Value>| {
+                let s3 = s3.clone();
+                async move {
+                    s3.lock().unwrap().push(("poll".into(), b));
+                    axum::Json(json!({"status": "approved", "key": "abk_new", "name": "desk"}))
+                }
+            }),
+        );
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = l.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = axum::serve(l, app).await;
+    });
+    let base = format!("http://{addr}/v1");
+    let t = start_key_request(&base, "Abhoth desktop on Test", &probe_client())
+        .await
+        .unwrap();
+    assert_eq!((t.code.as_str(), t.interval), ("ABCD-2345", 3));
+    let st = poll_key_request(&base, &t.id, &t.poll, &probe_client())
+        .await
+        .unwrap();
+    assert_eq!(st.status, "approved");
+    assert_eq!(st.to_string(), "approved", "Display never shows the key");
+    let calls = seen.lock().unwrap().clone();
+    assert_eq!(calls[0].1, json!({"client": "Abhoth desktop on Test"}));
+    assert_eq!(calls[1].1, json!({"id": "r1", "poll": "p"}));
+    // A router without the feature: a clear answer.
+    let (root, _) = serve_once("/nothing", json!({})).await;
+    let e = start_key_request(&root, "x", &probe_client())
+        .await
+        .unwrap_err();
+    assert!(e.contains("does not take key requests"), "{e}");
+}

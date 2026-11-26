@@ -185,7 +185,8 @@ async fn router_mode_in_the_project_scope_changes_that_session_and_switches_back
     let (_, st) = call(&host, Method::GET, &conn, None).await;
     assert_eq!(st["connection"], "router");
     assert_eq!(st["router"]["name"], "Test router");
-    assert_eq!(st["apiKey"], "placeholder");
+    // LM Studio's placeholder is kept for server mode, not carried into router mode.
+    assert_eq!(st["apiKey"], "none");
 
     // The default-model picker's list, as the session's key sees it: the placeholder isn't sent.
     let (code, models) = call(&host, Method::GET, &format!("{conn}/models"), None).await;

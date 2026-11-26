@@ -1702,4 +1702,36 @@ mod tests {
         set(&mut config, CONNECTION_KEY, json!("server"));
         assert_eq!(config.lm_studio.base_url, "http://other:1234/v1");
     }
+
+    #[test]
+    fn a_key_a_router_would_refuse_is_kept_for_server_mode_not_sent() {
+        let mut config = OrcaConfig::default();
+        let set = |c: &mut OrcaConfig, k: &str, v: Value| {
+            assert!(apply(c, k, Some(&v), false, None).ok, "{k}")
+        };
+        set(&mut config, "lmStudio.apiKey", json!("sk-gateway-key"));
+        set(&mut config, CONNECTION_KEY, json!("router"));
+        assert_eq!(config.lm_studio.api_key, "", "not an abk_ key: cleared");
+        assert_eq!(config.lm_studio.api_key_env, None);
+        assert_eq!(
+            config.lm_studio.server_mode.as_ref().unwrap().api_key,
+            "sk-gateway-key"
+        );
+        set(&mut config, CONNECTION_KEY, json!("server"));
+        assert_eq!(config.lm_studio.api_key, "sk-gateway-key", "put back");
+
+        // LM Studio's placeholder too; an Abhoth key stays.
+        let mut config = OrcaConfig::default();
+        set(&mut config, CONNECTION_KEY, json!("router"));
+        assert_eq!(config.lm_studio.api_key, "");
+        set(&mut config, CONNECTION_KEY, json!("server"));
+        assert_eq!(config.lm_studio.api_key, "lm-studio");
+        set(
+            &mut config,
+            "lmStudio.apiKey",
+            json!("abk_0123456789abcdef0123"),
+        );
+        set(&mut config, CONNECTION_KEY, json!("router"));
+        assert_eq!(config.lm_studio.api_key, "abk_0123456789abcdef0123");
+    }
 }
