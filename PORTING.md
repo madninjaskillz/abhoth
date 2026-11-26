@@ -890,7 +890,7 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     credential helper (`TokenFile`), never the URL, arguments or `.git/config`; git's output is
     scrubbed.
   - **Device flow** (`github.oauthClientId` in config.json, or `ABHOTH_GITHUB_OAUTH_CLIENT_ID`;
-    `DEFAULT_OAUTH_CLIENT_ID` is empty until an OAuth app is registered): `POST
+    `DEFAULT_OAUTH_CLIENT_ID` ships the Abhoth OAuth app's client ID): `POST
     /login/device/code` with scope `repo read:org`, polling `/login/oauth/access_token` at
     GitHub's interval (slow_down respected). A flow belongs to the user who started it. With no
     client ID the button is hidden and `/device` answers 400.
