@@ -63,6 +63,11 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked --no-fail-fast --features orca-cli/desktop
 
+      - name: Clippy and tests (router, Claude engine)
+        run: |
+          cargo clippy -p orca-router --all-targets --locked --features claude-engine -- -D warnings
+          cargo test -p orca-router --locked --no-fail-fast --features claude-engine
+
   # Windows: the tests (desktop feature included), on a GitHub-hosted runner.
   rust-windows:
     runs-on: windows-latest

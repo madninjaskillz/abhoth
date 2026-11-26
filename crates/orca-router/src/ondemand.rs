@@ -1289,7 +1289,12 @@ pub async fn background(st: Arc<AppState>) {
             continue;
         }
         if od.poll_slots {
-            for (c, u) in &snap.config.upstreams {
+            for (c, u) in snap
+                .config
+                .upstreams
+                .iter()
+                .filter(|(_, u)| !u.is_virtual())
+            {
                 let busy = if !u.online {
                     Some(false)
                 } else {

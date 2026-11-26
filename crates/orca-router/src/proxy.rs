@@ -195,6 +195,27 @@ pub async fn chat(st: Arc<AppState>, ctx: RequestCtx, headers: HeaderMap, raw: B
     // on demand (phase 3): a name that runs nowhere is decided by the router itself when enabled
     let card_deps: Vec<(usize, &Deployment)> =
         deps.iter().filter(|(_, d)| !d.relay).cloned().collect();
+    // The Claude engine's card is for `claude.access` callers only (admins by default): others
+    // keep the route's other cards, or get 403 when it has none.
+    let mut owned: Vec<Deployment> = card_deps.iter().map(|(_, d)| (*d).clone()).collect();
+    if owned.iter().any(|d| {
+        d.cards
+            .iter()
+            .any(|c| crate::claude::is_claude_card(&snap, c))
+    }) && !crate::claude::allowed(&st, &snap, &headers, ctx.peer).await
+    {
+        for d in &mut owned {
+            d.cards.retain(|c| !crate::claude::is_claude_card(&snap, c));
+        }
+        owned.retain(|d| !d.cards.is_empty());
+        if owned.is_empty() {
+            let msg = format!(
+                "model={model} is limited to `{}` callers on this router",
+                snap.config.claude.access
+            );
+            return finish_error(&st, rec, started, &model, 403, &msg, "forbidden", None);
+        }
+    }
     if card_deps.is_empty() {
         let (_, dep) = deps[0];
         if snap.config.on_demand.enabled {
@@ -221,7 +242,6 @@ pub async fn chat(st: Arc<AppState>, ctx: RequestCtx, headers: HeaderMap, raw: B
         return relay(&st, &snap, &headers, &body, dep, rec, started).await;
     }
 
-    let owned: Vec<Deployment> = card_deps.iter().map(|(_, d)| (*d).clone()).collect();
     forward_cards(&st, &snap, &headers, &body, &owned, &model, rec, started).await
 }
 
@@ -320,21 +340,33 @@ pub async fn forward_cards(
             .expect("candidate card comes from a deployment");
         let up = &snap.config.upstreams[&card];
         let out = rewrite::for_deployment(body, dep, &snap.config.settings);
-        let bytes = Bytes::from(serde_json::to_vec(&Value::Object(out)).unwrap_or_default());
-        let url = format!("{}/v1/chat/completions", up.url.trim_end_matches('/'));
+        let virtual_card = up.is_virtual();
         let guard = st.begin(&card);
         tried.push(card.clone());
-        match send(
-            &st,
-            &snap,
-            Method::POST,
-            &url,
-            snap.key_for(&card),
-            &headers,
-            bytes,
-        )
-        .await
-        {
+        let attempt = if virtual_card {
+            // the Claude engine: no HTTP hop; it keeps its own busy and rate-limit state
+            match crate::claude::send(&st, &snap, &card, &out).await {
+                Ok(r) => Attempt::Sent(r),
+                Err(f) => {
+                    let (why, r) = *f;
+                    Attempt::Failed(why, r)
+                }
+            }
+        } else {
+            let bytes = Bytes::from(serde_json::to_vec(&Value::Object(out)).unwrap_or_default());
+            let url = format!("{}/v1/chat/completions", up.url.trim_end_matches('/'));
+            send(
+                &st,
+                &snap,
+                Method::POST,
+                &url,
+                snap.key_for(&card),
+                &headers,
+                bytes,
+            )
+            .await
+        };
+        match attempt {
             Attempt::Sent(resp) => {
                 rec.set("card", card.clone());
                 rec.set("served", dep.served_id.clone());
@@ -358,7 +390,9 @@ pub async fn forward_cards(
             }
             Attempt::Failed(why, resp) => {
                 drop(guard);
-                st.cool(&card, snap.config.settings.cooldown_seconds);
+                if !virtual_card {
+                    st.cool(&card, snap.config.settings.cooldown_seconds);
+                }
                 tracing::warn!("router: card {card} failed for {model}: {why}");
                 last_err = format!("card {card}: {why}");
                 if tried.len() >= max_attempts || st.eligible(&snap, &candidates, &tried).is_empty()

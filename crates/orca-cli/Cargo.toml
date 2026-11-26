@@ -68,6 +68,8 @@ lsp = ["dep:orca-tools-lsp"]
 image = ["dep:orca-tools-image"]
 # `abhoth router`: the gateway that replaces LiteLLM on DeepThought (ROUTER.md).
 router = ["dep:orca-router"]
+# `abhoth router` with the Claude engine (orca-router/claude-engine).
+claude-engine = ["router", "orca-router/claude-engine"]
 # `abhoth --desktop`: the web UI in a native window (WebView2 / WKWebView / WebKitGTK).
 desktop = ["dep:wry", "dep:tao", "dep:tray-icon", "dep:rfd", "dep:image", "dep:futures-util", "dep:velopack"]
 

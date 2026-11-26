@@ -755,3 +755,150 @@ Clients stay on LiteLLM, and qfn-lb logs nothing, so the trial is **decision-onl
   (the importer and router pick it up within 10 s), or stop the shadow altogether with
   `sudo docker compose -p abhoth-router -f $AI_ROOT/router/compose.yaml down`.
   The previous config is kept as `base.json.bak-20261125-1852` and `compose.yaml.bak-...`.
+
+## 12. The Claude engine (Claude models on the operator's subscription)
+
+Claude models (Opus, Sonnet, Haiku, ...) as ordinary routes, answered by the Claude Code CLI
+under the operator's own Claude subscription (`crates/orca-router/src/claude/`). Behind the
+cargo feature `claude-engine` (off by default; `orca-cli/claude-engine` for `abhoth router`)
+and `claude.enabled` in `router.json` (off by default). A router built without the feature
+refuses a config that turns it on.
+
+### 12.1 Shape
+
+- **A virtual server with one virtual card.** `claude` adds an upstream `claude` (engine
+  `claude-cli`, url `claude-cli://local`, `lanes = maxSessions`) and one deployment per route
+  (`claude-opus` -> `--model opus`, ...). Routing, failover to other cards of the same name,
+  placement (admission, affinity, leases: the card's lanes become slots `claude1..claudeN`),
+  the request log and `/metrics` treat it like any card. It is always ready: layout switches
+  and the control plane never touch it, on-demand never picks it (`exclude_cards`), and the
+  qfn-lb paths (`/claude/...`, the plain `/` pool) never reach it.
+- **One CLI per request, no idle processes.** `claude -p --input-format stream-json
+  --output-format stream-json --include-partial-messages`, spawned when a request gets a
+  session and stopped when its answer is complete, the client goes away or `timeoutSeconds`
+  passes. At most `maxSessions` (default 32; no cap beyond the config) run at once; the rest
+  queue for `queueSeconds`, then get 429 + `Retry-After`. The limit that matters is the
+  subscription's rate limits, not hardware.
+- **A plain model, not an agent.** `--tools ""` (none of Claude Code's tools),
+  `--permission-mode dontAsk`, `--safe-mode` (none of the operator's CLAUDE.md, hooks,
+  plugins, skills or MCP servers), `--strict-mcp-config`, `--no-session-persistence`, an
+  empty working directory (`<workDir>/work`), and the caller's system and developer messages
+  as `--system-prompt-file` in place of Claude Code's prompt (`defaultSystemPrompt` when the
+  caller sends none). `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` are removed from the
+  CLI's environment so it always uses the subscription.
+- **Why not `cc-sdk`.** The crate the request pointed at (`claude-code-sdk-rs` 0.8.1, last
+  commit 2026-04-04) was read before deciding. Its default feature downloads
+  `https://claude.ai/install.sh` and runs it with `bash -c` (PowerShell `iex` on Windows) when
+  no CLI is found; it brings reqwest 0.11 next to our 0.13, `rand`, `crossbeam`, `which`,
+  `dirs` and `unsafe` libc user lookups; and its own SDK-MCP dispatch path is a placeholder.
+  What the engine needs is about 1k lines over the CLI's stream-json and control protocol, so
+  it has its own small driver and no third-party code.
+
+### 12.2 API surface
+
+| | |
+|---|---|
+| `POST /v1/chat/completions` | streaming (SSE `chat.completion.chunk`, `[DONE]`) and not; `model` is the resolved Claude model (`claude-haiku-5-5`) |
+| `GET /v1/models`, `/v1/model/info` | the routes, `max_input_tokens` = `contextTokens`, `max_output_tokens` = `maxOutputTokens` |
+| usage | `prompt_tokens` = input + cache writes + cache reads, `prompt_tokens_details.cached_tokens` = cache reads, `completion_tokens`; on the finish chunk always, plus the empty-choices chunk with `stream_options.include_usage` |
+| images | `image_url` parts (`data:` base64 or http(s) URLs) become image blocks |
+| `reasoning_effort` | `--effort` (`minimal` -> `low`; `none` = the CLI's default); thinking streams as `reasoning_content` |
+| `max_tokens` / `max_completion_tokens` | `CLAUDE_CODE_MAX_OUTPUT_TOKENS` |
+| client tools | yes (12.3) |
+| refused with 400 | `n > 1`, tool types other than `function`, tool names outside `[A-Za-z0-9_-]{1,56}`, audio and file parts |
+| ignored | `temperature`, `top_p`, `stop`, `seed`, `response_format`, `tool_choice` other than `none` (the CLI has no way to pass them) |
+| `/v1/messages` | not served: the router has no Anthropic surface yet (ROUTER-CONFIG.md 10.3) |
+
+The CLI takes user turns only. A single user message goes as it is; a conversation with
+history (earlier replies, tool calls and results) goes as one user turn holding a transcript
+of it (`<user>`, `<assistant>`, `<tool_call>`, `<tool_result>` tags) with an instruction to
+continue it.
+
+### 12.3 Client tools
+
+OpenAI `tools` reach Claude as real tool definitions: the engine passes
+`--mcp-config {"mcpServers": {"c": {"type": "sdk", "name": "c"}}}` and `--allowedTools mcp__c`,
+and answers the CLI's `mcp_message` control requests itself (`initialize`, `tools/list` with
+the client's JSON schemas). Claude answers with real `tool_use` blocks; they stream out as
+`tool_calls` deltas (`mcp__c__` stripped from the names) and the answer ends with
+`finish_reason: "tool_calls"`. The CLI is stopped at the end of that message, before it would
+call the tool, so the client runs it and sends the result in its next request (as transcript
+history). `tool_choice: "none"` offers no tools.
+
+### 12.4 Errors, rate limits, backpressure
+
+| CLI says | Answer |
+|---|---|
+| `rate_limit_event` `rejected` / `error: rate_limit` / "hit your limit" | 429 `rate_limit_error`, `Retry-After` = seconds to `resetsAt` (60 if unknown). The engine remembers the reset: until then requests wait up to `rateLimitWaitSeconds` (default 30) for it, longer waits get 429 at once without starting a CLI |
+| not logged in, token refused | 503 `upstream_auth_error` |
+| overloaded, 5xx, `API Error` | 503 |
+| ended without a result | 502 with the CLI's stderr tail (the token scrubbed) |
+| no session free within `queueSeconds` | 429, `Retry-After: 5` |
+| `timeoutSeconds` passed | 504 |
+
+429, 502 and 503 before the first byte fail over to the route's other cards (a deployment of
+the same name on a local card), like any engine; the virtual card is not put in cooldown (the
+engine keeps its own state). An error after streaming started ends the stream with an
+`{"error": ...}` event and `[DONE]`.
+
+### 12.5 Access
+
+`claude.access` (default `admins`) decides who may use the routes: `admins`, `users`,
+`anonymous` or `keys:<names>`. It is one person's subscription and Anthropic's consumer terms
+are about personal use, so it is not opened to service keys or other users unless the operator
+changes it. With the control plane on, its principals decide (`may_use_route`); without it an
+admin is a loopback caller or one sending `settings.adminKeyFile`'s key as Bearer. Callers who
+may not use it keep the route's other cards, or get 403 when it has none.
+
+### 12.6 Config
+
+```jsonc
+"claude": {
+  "enabled": true,
+  "card": "claude",                    // the virtual card's id
+  "command": "claude",                 // or a full path
+  "maxSessions": 32,                   // concurrent CLIs (lanes); spawned per request, none idle
+  "queueSeconds": 300,
+  "timeoutSeconds": 900,
+  "rateLimitWaitSeconds": 30,
+  "workDir": "/state/claude",          // default <temp>/abhoth-claude
+  "oauthTokenFile": "/run/secrets/claude-oauth-token",  // containers; none = the CLI's login
+  // admins only by default: it is the operator's personal subscription and Anthropic's
+  // consumer terms are about personal use. Change only knowingly.
+  "access": "admins",
+  "safeMode": true,
+  "routes": {"claude-opus": "opus", "claude-sonnet": "sonnet", "claude-haiku": "haiku"},
+  "contextTokens": 200000,
+  "maxOutputTokens": 32000,
+  "extraArgs": []                      // after the engine's own, e.g. ["--fallback-model", "sonnet"]
+}
+```
+
+A deployment written by hand with the same name and `cards: ["claude"]` keeps its place in
+`deployments` (put it before a local deployment of the same name to prefer Claude). The JSON
+version, with the note on `access` as a field, is `deploy/router/claude.example.json`.
+
+### 12.7 Deploying (not done yet; needs the operator)
+
+1. On a machine with a browser, the operator runs `claude setup-token` (interactive: it logs
+   in with the Claude subscription and prints a long-lived OAuth token). Nobody else can do
+   this step.
+2. Save it on the host as `$AI_ROOT/router/secrets/claude-oauth-token` (owner 568:568, mode
+   0600). Never in `router.json`, compose files or the environment.
+3. Build the image with the engine and the CLI (Node from Debian, the CLI version pinned):
+   `docker build -f deploy/router/Dockerfile --build-arg FEATURES=claude-engine
+   --build-arg CLAUDE_CLI=@anthropic-ai/claude-code@<version> -t local/abhoth-router:1 .`
+4. In `compose.yaml` (router service): mount the token read-only at
+   `/run/secrets/claude-oauth-token`, give the CLI a writable home
+   (`HOME=/state/claude-home`, inside the existing `/state` volume, 568:568), and add the
+   `claude` block of 12.6 to `$AI_ROOT/router/base.json` (the importer carries it into
+   `router.json`; the router hot-reloads it).
+5. Check: `GET :8020/v1/models` lists the routes; one `claude-haiku` chat with
+   `max_tokens: 8` (from loopback inside the container, or with the admin key) answers;
+   `/metrics` shows `abhoth_claude_sessions_started_total 1`.
+6. Rollback: `"enabled": false` in `base.json` (hot reload), or the previous image.
+
+Measured on the operator's PC (2026-11-26, CLI 2.1.332, haiku): 2.1 s to the first token and
+2.2 s in all for a short streamed answer, 3.8 s for a tool call, 1.7 s for the follow-up turn
+with the tool result; the very first request after the router started took 51 s (the CLI's
+first start in a new working directory).

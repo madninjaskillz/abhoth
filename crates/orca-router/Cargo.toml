@@ -12,6 +12,18 @@ publish.workspace = true
 name = "abhoth-router"
 path = "src/bin/abhoth_router.rs"
 
+# A stand-in for the `claude` CLI that replays recorded stream-json (the Claude engine's tests).
+[[bin]]
+name = "abhoth-fake-claude"
+path = "src/bin/fake_claude.rs"
+required-features = ["claude-engine"]
+test = false
+
+[features]
+# The Claude engine (src/claude): Claude models as routes, answered by the Claude Code CLI under
+# the operator's own subscription. Off by default; no third-party code, it spawns `claude -p`.
+claude-engine = []
+
 [dependencies]
 orca-core.workspace = true
 orca-calendar.workspace = true

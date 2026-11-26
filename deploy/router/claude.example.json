@@ -1,0 +1,19 @@
+{
+  "claude": {
+    "enabled": true,
+    "card": "claude",
+    "command": "claude",
+    "maxSessions": 32,
+    "queueSeconds": 300,
+    "timeoutSeconds": 900,
+    "rateLimitWaitSeconds": 30,
+    "workDir": "/state/claude",
+    "oauthTokenFile": "/run/secrets/claude-oauth-token",
+    "accessNote": "admins only by default: this is the operator's personal Claude subscription and Anthropic's consumer terms are about personal use, so do not open it to service keys or other users without meaning to.",
+    "access": "admins",
+    "safeMode": true,
+    "routes": { "claude-opus": "opus", "claude-sonnet": "sonnet", "claude-haiku": "haiku" },
+    "contextTokens": 200000,
+    "maxOutputTokens": 32000
+  }
+}

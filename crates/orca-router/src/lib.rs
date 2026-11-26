@@ -3,6 +3,7 @@
 
 pub mod access;
 pub mod calendar;
+pub mod claude;
 pub mod cli;
 pub mod config;
 pub mod control;
@@ -32,6 +33,9 @@ pub struct Extensions {
     pub affinity: placement::Affinity,
     pub ondemand: ondemand::Coordinator,
     pub observer: observe::Observer,
+    /// The Claude engine's sessions, queue and rate-limit state (kept across reloads).
+    #[cfg(feature = "claude-engine")]
+    pub claude: claude::engine::Engine,
 }
 
 impl Extensions {
@@ -42,6 +46,8 @@ impl Extensions {
             affinity: placement::Affinity::default(),
             ondemand: ondemand::Coordinator::default(),
             observer: observe::Observer::default(),
+            #[cfg(feature = "claude-engine")]
+            claude: claude::engine::Engine::default(),
         }
     }
 

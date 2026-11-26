@@ -128,6 +128,7 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
             if let Some(cp) = st.control.get() {
                 text.push_str(&crate::control_api::metrics_text(cp));
             }
+            text.push_str(&crate::claude::metrics_text(&st));
             let mut r = text.into_response();
             r.headers_mut().insert(
                 "content-type",
@@ -168,7 +169,7 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
 }
 
 /// An admin key file, when configured, also allows admin calls from the LAN.
-fn admin_allowed(snap: &Snapshot, headers: &axum::http::HeaderMap) -> bool {
+pub(crate) fn admin_allowed(snap: &Snapshot, headers: &axum::http::HeaderMap) -> bool {
     let Some(file) = snap.config.settings.admin_key_file.as_deref() else {
         return false;
     };

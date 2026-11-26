@@ -40,6 +40,13 @@ pub struct RouterConfig {
     pub on_demand: OnDemandConfig,
     #[serde(default)]
     pub observe: ObserveConfig,
+    /// The Claude engine's virtual card (crate::claude); off by default.
+    #[serde(default, skip_serializing_if = "claude_off")]
+    pub claude: crate::claude::ClaudeConfig,
+}
+
+fn claude_off(c: &crate::claude::ClaudeConfig) -> bool {
+    *c == crate::claude::ClaudeConfig::default()
 }
 
 /// Decision-only shadow (`observe`): follow the engines' own request logs, rebuild each card's
@@ -428,7 +435,11 @@ pub struct Snapshot {
 
 impl Snapshot {
     /// Validate and read keys. Fails on an inconsistent config or a key file that can't be read.
-    pub fn build(config: RouterConfig, base_dir: Option<&Path>) -> Result<Self, String> {
+    pub fn build(mut config: RouterConfig, base_dir: Option<&Path>) -> Result<Self, String> {
+        crate::claude::expand(&mut config)?;
+        if let Some(f) = config.claude.oauth_token_file.as_mut() {
+            *f = resolve(base_dir, f).to_string_lossy().into_owned();
+        }
         validate(&config)?;
         let mut keys = HashMap::new();
         for (card, up) in &config.upstreams {
@@ -461,7 +472,8 @@ impl Snapshot {
     }
 
     /// The same keys with another config (validated); `sig` is not carried over.
-    pub fn with_config(&self, config: RouterConfig) -> Result<Self, String> {
+    pub fn with_config(&self, mut config: RouterConfig) -> Result<Self, String> {
+        crate::claude::expand(&mut config)?;
         validate(&config)?;
         Ok(Self {
             config,
@@ -491,19 +503,20 @@ impl Snapshot {
 
     /// Cards a qfn-lb style prefix addresses: "a" / "b" = that card, an engine name = its cards.
     pub fn lb_cards(&self, prefix: &str) -> Option<Vec<String>> {
-        if let Some(card) = self
+        // the Claude engine's virtual card has no HTTP surface to pass through to
+        if let Some((card, u)) = self
             .config
             .upstreams
-            .keys()
-            .find(|c| c.eq_ignore_ascii_case(prefix))
+            .iter()
+            .find(|(c, _)| c.eq_ignore_ascii_case(prefix))
         {
-            return Some(vec![card.clone()]);
+            return (!u.is_virtual()).then(|| vec![card.clone()]);
         }
         let cards: Vec<String> = self
             .config
             .upstreams
             .iter()
-            .filter(|(_, u)| u.engine.eq_ignore_ascii_case(prefix))
+            .filter(|(_, u)| !u.is_virtual() && u.engine.eq_ignore_ascii_case(prefix))
             .map(|(c, _)| c.clone())
             .collect();
         (!cards.is_empty()).then_some(cards)
@@ -513,7 +526,7 @@ impl Snapshot {
     pub fn main_pool(&self) -> Vec<String> {
         let mut by_engine: IndexMap<&str, (u32, bool)> = IndexMap::new();
         for (c, u) in &self.config.upstreams {
-            if !u.online {
+            if !u.online || u.is_virtual() {
                 continue;
             }
             let e = by_engine.entry(u.engine.as_str()).or_default();
@@ -526,7 +539,7 @@ impl Snapshot {
         self.config
             .upstreams
             .iter()
-            .filter(|(_, u)| u.online && u.engine == *engine)
+            .filter(|(_, u)| u.online && !u.is_virtual() && u.engine == *engine)
             .map(|(c, _)| c.clone())
             .collect()
     }
@@ -544,6 +557,16 @@ pub fn validate(c: &RouterConfig) -> Result<(), String> {
     for (card, u) in &c.upstreams {
         if card.is_empty() {
             return Err("an upstream has an empty card id".into());
+        }
+        if u.is_virtual() {
+            // only the Claude engine's own card (crate::claude::expand) may be virtual
+            if !(c.claude.enabled && c.claude.card == *card) {
+                return Err(format!(
+                    "upstream {card}: {} is the Claude engine's card; set `claude` instead",
+                    u.url
+                ));
+            }
+            continue;
         }
         if !(u.url.starts_with("http://") || u.url.starts_with("https://")) {
             return Err(format!("upstream {card}: url must be http(s): {}", u.url));
