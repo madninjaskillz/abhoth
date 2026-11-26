@@ -460,6 +460,17 @@ impl Snapshot {
         Ok(s)
     }
 
+    /// The same keys with another config (validated); `sig` is not carried over.
+    pub fn with_config(&self, config: RouterConfig) -> Result<Self, String> {
+        validate(&config)?;
+        Ok(Self {
+            config,
+            keys: self.keys.clone(),
+            sig: None,
+            loaded_at: self.loaded_at,
+        })
+    }
+
     /// The Bearer key for a card's engine.
     pub fn key_for(&self, card: &str) -> Option<&str> {
         self.keys.get(card).map(String::as_str)

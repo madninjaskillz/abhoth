@@ -67,7 +67,7 @@ impl Docker {
             ));
         }
         let mut words = r.docker.clone();
-        if self.key_mode == KeyMode::Wrapper {
+        if r.key_mode.unwrap_or(self.key_mode) == KeyMode::Wrapper {
             words = wrap_key(words, r.image.as_deref(), &self.key_flag, &self.key_path)?;
         }
         let mut argv = vec![
@@ -731,6 +731,28 @@ mod tests {
             argv.iter()
                 .any(|w| w == "/run/abhoth/secrets/engine_key:/run/secrets/engine-key:ro")
         );
+    }
+
+    /// A build that reads `--api-key-file` gets the flag; the others keep the wrapper.
+    #[test]
+    fn key_file_builds_skip_the_wrapper() {
+        let mut c = sample();
+        let e = c.engines.get_mut("ninfer").unwrap();
+        e.key_delivery.mode = KeyMode::Wrapper;
+        let build = resolve::build_name(e, &e.profiles["2lane"])
+            .expect("the sample profile has a build")
+            .to_string();
+        e.key_delivery.file_flag_builds = vec![build];
+        let r = resolve::resolve(&c, "A", &spec("ninfer", "2lane", "dense")).unwrap();
+        let argv = Docker::from(&c.engines["ninfer"]).run_argv(&r).unwrap();
+        assert!(!argv.iter().any(|w| w == "/bin/sh"), "{argv:?}");
+        let i = argv.iter().position(|w| w == "--api-key-file").unwrap();
+        assert_eq!(argv[i + 1], "/run/secrets/engine-key");
+        assert!(
+            argv.iter()
+                .any(|w| w == "/run/abhoth/secrets/engine_key:/run/secrets/engine-key:ro")
+        );
+        assert!(!argv.iter().any(|w| w == "--api-key"));
     }
 
     #[test]

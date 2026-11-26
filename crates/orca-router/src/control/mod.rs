@@ -24,6 +24,7 @@ pub mod reconcile;
 pub mod resolve;
 pub mod schema;
 pub mod ssh;
+pub mod startup;
 pub mod store;
 pub mod telemetry;
 pub mod template;

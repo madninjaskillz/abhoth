@@ -33,6 +33,8 @@ toml_edit.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# the hostd protocol types, to check the router speaks them (not linked into the router)
+orca-hostd = { path = "../orca-hostd" }
 tokio = { workspace = true, features = ["signal", "test-util"] }
 
 [lints]

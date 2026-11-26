@@ -140,6 +140,9 @@ pub struct Resolved {
     pub spec_json: String,
     /// Model file on the host (for restore checks), when the engine loads a file.
     pub model_file: Option<String>,
+    /// How the key reaches this instance (per build: see `KeyDelivery::mode_for`); `None` =
+    /// the engine's mode.
+    pub key_mode: Option<super::schema::KeyMode>,
 }
 
 /// What a status command found.
