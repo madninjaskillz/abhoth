@@ -48,6 +48,28 @@ pub fn install(s: Arc<CalendarService>) -> Result<(), String> {
         .map_err(|_| "the calendar is already installed".to_string())
 }
 
+/// Opens and installs the calendar when `[calendar] enabled = true` (both control-plane
+/// starts call this before the guard board is built). Returns ", calendar on (N entries)" or "".
+pub fn start(
+    cfg: &ControlConfig,
+    main: &Path,
+    origin: &std::collections::BTreeMap<String, PathBuf>,
+    store: Arc<Store>,
+) -> Result<String, String> {
+    let file = origin
+        .get("calendar.entries")
+        .or(origin.get("calendar.enabled"))
+        .cloned();
+    match CalendarService::from_control(cfg, main, file.as_deref(), store)? {
+        Some(svc) => {
+            let n = svc.entries().len();
+            install(svc)?;
+            Ok(format!(", calendar on ({n} entries)"))
+        }
+        None => Ok(String::new()),
+    }
+}
+
 fn now_epoch() -> i64 {
     chrono::Utc::now().timestamp()
 }

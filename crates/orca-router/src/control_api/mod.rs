@@ -679,24 +679,7 @@ pub fn install_from_toml(
     }
     let access = Access::new(c.access.clone(), token);
     // The Supervisor's calendar (SUPERVISOR.md 8), with its own flag.
-    let cal_file = l
-        .origin
-        .get("calendar.entries")
-        .or(l.origin.get("calendar.enabled"))
-        .cloned();
-    let calendar = match crate::calendar::CalendarService::from_control(
-        c,
-        main,
-        cal_file.as_deref(),
-        store.clone(),
-    )? {
-        Some(svc) => {
-            let n = svc.entries().len();
-            crate::calendar::install(svc)?;
-            format!(", calendar on ({n} entries)")
-        }
-        None => String::new(),
-    };
+    let calendar = crate::calendar::start(c, main, &l.origin, store.clone())?;
     let backend = live::ConfigBackend::new(main, &state_dir, store);
     st.control
         .set(Arc::new(ControlPlane { access, backend }))

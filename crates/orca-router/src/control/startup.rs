@@ -615,6 +615,8 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
         server: server.clone(),
         running: running.clone(),
     });
+    // The Supervisor's calendar (flag off by default): installed before the board, which adds it.
+    let calendar = crate::calendar::start(&c, main, &l.origin, store.clone())?;
     let (board, _cal) = wiring::guard_board(&c, &server);
     let plane = RouterPlane::new(st.clone(), Arc::new(board), routes);
     let jobs = Arc::new(StoreJobSink::new(store.clone(), &server, None));
@@ -727,7 +729,7 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
     let n = running.lock().unwrap_or_else(|e| e.into_inner()).spec.len();
     Ok(Started {
         message: format!(
-            "control plane on (rev {}, server {server}, {n} cards seen, mode {:?})",
+            "control plane on (rev {}, server {server}, {n} cards seen, mode {:?}){calendar}",
             l.rev, c.control.mode
         ),
         shim: Some(shim),
