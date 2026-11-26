@@ -6,7 +6,8 @@ hostd_socket = "/run/abhoth/hostd.sock"   # or hostd_command = ["ssh", …] (for
 push_policy = false                       # true: send the tables below to hostd as policy.put
 router_url = "http://127.0.0.1:8099"
 router_key = { file = "/mnt/Apps/abhoth/etc/secrets/router_ha_key" }
-listen = "127.0.0.1:9890"                 # /api/v1/supervisor/snapshot and /stream
+slots_url = "http://127.0.0.1:8099/list" # the router's slots port: slot counts and slot leases
+listen = "127.0.0.1:9890"                 # /api/v1/supervisor/snapshot, /stream, /history
 
 # The policy tables (the same as hostd's policy-put TOML).
 [cards.A]
@@ -25,3 +26,14 @@ password = { file = "/mnt/Apps/abhoth/etc/secrets/mqtt_password" }
 legacy_ids = false          # true only once ha-bridge is stopped (CUTOVER.md)
 clear_legacy_topics = false
 legacy_card = "B"
+
+# Host-local sources the Python dash polled (storage, containers, ooms, models, image, services).
+[local]
+host_json = "/path/to/dash/state/host.json"   # the dash collector's output (root cron)
+image_url = "http://127.0.0.1:8189/health"
+interval_seconds = 5
+services = [
+  { name = "abhoth router", group = "LLM", kind = "tcp", port = 8010 },
+  { name = "ComfyUI", group = "Media", kind = "http", port = 8188, path = "/system_stats" },
+  { name = "GPU fan ESP32", group = "Infra", kind = "fans" },
+]

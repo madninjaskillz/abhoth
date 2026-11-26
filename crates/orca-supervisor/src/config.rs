@@ -6,7 +6,9 @@
 //!   `policy.put` when `push_policy = true`; hostd validates them against its limits);
 //! - `[mqtt]` and `[homeassistant]` (orca-homeassistant, both off unless `enabled`);
 //! - `[alerts]` (orca-alerts, off unless `enabled`); `[calendar]` is the router's and is
-//!   only accepted here.
+//!   only accepted here;
+//! - `[local]`: host-local sources the old dash polled (crate::local: host.json, ninfer
+//!   request logs, the image API, service checks).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -58,6 +60,10 @@ pub struct SupervisorSection {
     /// A router key with the HA role (plan, switch, card state).
     #[serde(default)]
     pub router_key: Option<SecretRef>,
+    /// The router's slots port list (`http://127.0.0.1:8099/list`): slot counts and slot
+    /// leases in `engines` / `leases`.
+    #[serde(default)]
+    pub slots_url: Option<String>,
     /// The router's server id for this host, if it differs from `server`.
     #[serde(default)]
     pub router_server: Option<String>,
@@ -76,6 +82,7 @@ pub struct Config {
     pub mqtt: Option<MqttConfig>,
     pub homeassistant: Option<HomeAssistantConfig>,
     pub alerts: Option<orca_alerts::AlertsConfig>,
+    pub local: Option<crate::local::LocalConfig>,
     /// Tables accepted but not wired in this build (reported by `check`).
     pub not_wired: Vec<String>,
 }
@@ -116,6 +123,11 @@ impl Config {
             .map(|v| v.try_into::<orca_alerts::AlertsConfig>())
             .transpose()
             .map_err(|e| format!("alerts: {e}"))?;
+        let local = t
+            .remove("local")
+            .map(|v| v.try_into::<crate::local::LocalConfig>())
+            .transpose()
+            .map_err(|e| format!("local: {e}"))?;
         let mut not_wired = Vec::new();
         // The calendar lives in the router (serve --control); the supervisor reads its effects.
         if t.remove("calendar").is_some() {
@@ -154,6 +166,7 @@ impl Config {
             mqtt,
             homeassistant,
             alerts,
+            local,
             not_wired,
         })
     }
@@ -192,6 +205,9 @@ impl Config {
                     .into_iter()
                     .map(|e| format!("homeassistant: {e}")),
             );
+        }
+        if let Some(l) = &self.local {
+            out.extend(l.check());
         }
         if let Some(a) = &self.alerts
             && a.enabled

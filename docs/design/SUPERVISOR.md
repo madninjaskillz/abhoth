@@ -262,6 +262,11 @@ It keeps the ring buffers for sparklines (10 minutes at 2.5 s, as today, and 24 
 minute). It publishes three things:
 
 - **`GET /api/v1/supervisor/snapshot`**: the full state, the replacement for `/api/state`.
+- **`GET /api/v1/supervisor/history?range=10m|24h&ids=…`**: the hub's rings for every
+  reading (10 minutes at 2.5 s, 24 hours at 1 minute). `ids` is a comma list of exact ids,
+  `prefix*` patterns or whole-segment prefixes (`gpu.A` matches `gpu.A.core`); without
+  `ids`, the ids that have history. Answer: `{range, step_ms, series: {id: [[ts_ms, v]…]}}`
+  (at most 400 series).
 - **`GET /api/v1/supervisor/stream`** (SSE):
   - a `snapshot` event on connect;
   - `patch` events (JSON merge patches) at most once a second for fast metrics;
@@ -420,6 +425,12 @@ younger than its source's `stale` setting. Sources are named by path:
 | `ha.<entity_id>` | `ha.sensor.ecoflow_ac_out_power` | HA REST (or the HA websocket later) |
 | `mqtt.<alias>` | `mqtt.room_temp` | topic and JSON path in config |
 | `host.<metric>` | `host.cpu`, `host.load1`, `host.mem_avail`, `host.arc`, `host.net_rx` | hostd `/proc` |
+
+**Network totals** (`host.net_rx`, `host.net_tx`) count each byte once. When the host has a
+bond (`bond*`), only the bond counts: its slave NICs (`eno1`, `eno2` on DeepThought) carry the
+same bytes. Overlay tunnels (`tailscale*`, `wg*`, `zt*`, `tun*`) never count, because their
+traffic also crosses the physical link. Per-interface rates stay available as
+`host.net.<iface>.rx|tx`.
 | `engine.<id>.<metric>` | `engine.A.tok_s`, `engine.A.running` | telemetry hub |
 | `sensor.<name>` | `sensor.duct0_temp` | virtual: a named expression (4.2) |
 

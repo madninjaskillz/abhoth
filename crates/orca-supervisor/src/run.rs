@@ -91,7 +91,12 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     let hostd = hostd::spawn(ep, sink.clone(), policy);
     let router = match (&cfg.supervisor.router_url, &cfg.supervisor.router_key) {
         (Some(u), Some(k)) => {
-            let r = Arc::new(Router::new(u, k.resolve()?, cfg.router_server()));
+            let feed: Arc<dyn TelemetryFeed> = hub.clone();
+            let r = Arc::new(
+                Router::new(u, k.resolve()?, cfg.router_server())
+                    .with_slots(cfg.supervisor.slots_url.clone())
+                    .with_feed(feed),
+            );
             r.spawn_poller(sink.clone(), Duration::from_secs(5));
             Some(r)
         }
@@ -185,6 +190,9 @@ pub async fn run(cfg: Config) -> Result<(), String> {
             }
         });
     }
+    if let Some(l) = cfg.local.clone() {
+        crate::local::spawn(l, hub.clone());
+    }
     if let Some(a) = cfg.alerts.clone().filter(|a| a.enabled) {
         let mut extra: Vec<Arc<dyn orca_alerts::sinks::Sink>> = Vec::new();
         if let Some(h) = &ha_handle {
@@ -216,8 +224,85 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     Ok(())
 }
 
-/// `GET /api/v1/supervisor/snapshot` and `GET /api/v1/supervisor/stream` (SSE with
-/// `Last-Event-ID` replay).
+/// `GET /api/v1/supervisor/history?range=10m|24h&ids=a,b*`: the hub's rings. Without `ids`,
+/// the ids that have history. Patterns: exact, `prefix*`, or a whole-segment prefix.
+pub fn history_json(hub: &TelemetryHub, query: &str) -> (u16, serde_json::Value) {
+    use crate::Resolution;
+    let mut range = "10m".to_string();
+    let mut ids: Vec<String> = Vec::new();
+    for (k, v) in query.split('&').filter_map(|kv| kv.split_once('=')) {
+        let v = percent_decode(v);
+        match k {
+            "range" | "res" => range = v,
+            "ids" => ids.extend(
+                v.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from),
+            ),
+            _ => {}
+        }
+    }
+    let res = match range.as_str() {
+        "10m" | "fine" => Resolution::Fine,
+        "24h" | "coarse" => Resolution::Coarse,
+        other => {
+            return (
+                400,
+                serde_json::json!({"error": format!("range {other:?}: use 10m or 24h")}),
+            );
+        }
+    };
+    if ids.is_empty() {
+        return (
+            200,
+            serde_json::json!({"range": range, "ids": hub.history_ids()}),
+        );
+    }
+    let series: serde_json::Map<String, serde_json::Value> = hub
+        .history_matching(&ids, res, 400)
+        .into_iter()
+        .map(|(k, pts)| {
+            (
+                k,
+                serde_json::Value::Array(
+                    pts.into_iter()
+                        .map(|(t, v)| serde_json::json!([t, v]))
+                        .collect(),
+                ),
+            )
+        })
+        .collect();
+    (
+        200,
+        serde_json::json!({"range": range, "step_ms": hub.step_ms(res), "series": series}),
+    )
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let hex = b
+            .get(i + 1..i + 3)
+            .and_then(|h| std::str::from_utf8(h).ok())
+            .and_then(|h| u8::from_str_radix(h, 16).ok());
+        match (b[i], hex) {
+            (b'+', _) => out.push(b' '),
+            (b'%', Some(x)) => {
+                out.push(x);
+                i += 2;
+            }
+            (c, _) => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// `GET /api/v1/supervisor/snapshot`, `GET /api/v1/supervisor/stream` (SSE with
+/// `Last-Event-ID` replay) and `GET /api/v1/supervisor/history`.
 async fn serve_feed(l: tokio::net::TcpListener, hub: Arc<TelemetryHub>) {
     use axum::Router as A;
     use axum::body::Body;
@@ -228,6 +313,14 @@ async fn serve_feed(l: tokio::net::TcpListener, hub: Arc<TelemetryHub>) {
 
     async fn snapshot(State(h): State<Arc<TelemetryHub>>) -> Response {
         axum::Json(h.snapshot()).into_response()
+    }
+    async fn history(State(h): State<Arc<TelemetryHub>>, uri: axum::http::Uri) -> Response {
+        let (st, v) = history_json(&h, uri.query().unwrap_or(""));
+        (
+            axum::http::StatusCode::from_u16(st).unwrap_or(axum::http::StatusCode::OK),
+            axum::Json(v),
+        )
+            .into_response()
     }
     async fn stream(State(h): State<Arc<TelemetryHub>>, headers: HeaderMap) -> Response {
         let last = headers
@@ -262,6 +355,7 @@ async fn serve_feed(l: tokio::net::TcpListener, hub: Arc<TelemetryHub>) {
     let app = A::new()
         .route("/api/v1/supervisor/snapshot", get(snapshot))
         .route("/api/v1/supervisor/stream", get(stream))
+        .route("/api/v1/supervisor/history", get(history))
         .with_state(hub);
     if let Err(e) = axum::serve(l, app).await {
         tracing::error!("feed server: {e}");
@@ -282,4 +376,32 @@ async fn wait_for_signal() {
 #[cfg(not(unix))]
 async fn wait_for_signal() {
     let _ = tokio::signal::ctrl_c().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use orca_sensors::Unit;
+
+    #[test]
+    fn history_endpoint() {
+        let hub = TelemetryHub::new(HubConfig::default());
+        let id = |s: &str| SensorId::parse(s).unwrap();
+        hub.put_readings(&[
+            (
+                id("gpu.A.core"),
+                Reading::new(40.0, Unit::Celsius, 1_000, "t"),
+            ),
+            (id("host.cpu"), Reading::new(3.0, Unit::Percent, 1_000, "t")),
+        ]);
+        let (st, v) = history_json(&hub, "");
+        assert_eq!(st, 200);
+        assert_eq!(v["ids"], serde_json::json!(["gpu.A.core", "host.cpu"]));
+        let (_, v) = history_json(&hub, "range=24h&ids=gpu.A%2A,nope");
+        assert_eq!(v["step_ms"], 60_000);
+        assert_eq!(v["series"]["gpu.A.core"], serde_json::json!([[0, 40.0]]));
+        assert!(v["series"].get("host.cpu").is_none());
+        assert_eq!(history_json(&hub, "range=1w").0, 400);
+        assert_eq!(percent_decode("a%2Cb+c%"), "a,b c%");
+    }
 }

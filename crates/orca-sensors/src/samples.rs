@@ -165,9 +165,27 @@ pub struct HostSample {
     pub net: Vec<NetSample>,
 }
 
+/// Whether an interface's traffic is in `host.net_rx` / `host.net_tx`. When any `bond*`
+/// interface is listed, only bonds count: the slave NICs under it carry the same bytes.
+/// Overlay tunnels (`tailscale*`, `wg*`, `zt*`, `tun*`) never count: their traffic also crosses
+/// the physical link.
+pub fn counts_toward_net_total(iface: &str, all: &[NetSample]) -> bool {
+    if ["tailscale", "wg", "zt", "tun"]
+        .iter()
+        .any(|p| iface.starts_with(p))
+    {
+        return false;
+    }
+    if all.iter().any(|n| n.iface.starts_with("bond")) {
+        return iface.starts_with("bond");
+    }
+    true
+}
+
 impl HostSample {
-    /// `host.cpu`, `host.load1`, `host.mem_*`, `host.arc`, `host.net_rx` / `host.net_tx` (sum of
-    /// the listed interfaces) and `host.net.<iface>.rx|tx`.
+    /// `host.cpu`, `host.load1`, `host.mem_*`, `host.arc`, `host.net_rx` / `host.net_tx` and
+    /// `host.net.<iface>.rx|tx`. The totals count each byte once ([`counts_toward_net_total`]):
+    /// with a bond, only the bond (its slave NICs carry the same bytes); tunnels never.
     pub fn readings(&self) -> Vec<(SensorId, Reading)> {
         let h = |k: &str| SensorId::of(Namespace::Host, &[k]);
         let src = "hostd/proc";
@@ -201,9 +219,11 @@ impl HostSample {
                     t,
                     Unit::BytesPerSec,
                 );
-                rx += r;
-                tx += t;
-                any = true;
+                if counts_toward_net_total(&n.iface, &self.net) {
+                    rx += r;
+                    tx += t;
+                    any = true;
+                }
             }
         }
         if any {
@@ -393,6 +413,25 @@ mod tests {
         assert_eq!(get("host.cpu"), Some(12.5));
         assert_eq!(get("host.net_rx"), Some(15.0));
         assert_eq!(get("host.net.eth1.tx"), Some(2.0));
+        // A bond: only it counts (not its slaves, nor the tunnel).
+        let mut hb = h.clone();
+        for (i, n) in ["bond0", "tailscale0"].iter().enumerate() {
+            hb.net.push(NetSample {
+                iface: (*n).into(),
+                rx_bps: Some(15.0 + i as f64 * 100.0),
+                tx_bps: Some(3.0),
+                ..Default::default()
+            });
+        }
+        let rb = hb.readings();
+        let gb = |k: &str| {
+            rb.iter()
+                .find(|(i, _)| i.to_string() == k)
+                .map(|(_, r)| r.value)
+        };
+        assert_eq!(gb("host.net_rx"), Some(15.0));
+        assert_eq!(gb("host.net_tx"), Some(3.0));
+        assert_eq!(gb("host.net.eth0.rx"), Some(10.0));
         let b = BmcSample {
             ts: 1,
             sdr: vec![

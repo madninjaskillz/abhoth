@@ -7,6 +7,8 @@
 //!   `[homeassistant]`);
 //! - [`hostd`]: the hostd client (telemetry into the hub, status → `clocks`, requests);
 //! - [`router`]: the router admin API poller (`engines`, `leases`) and the `ControlPort`;
+//! - [`local`]: host-local sources (host.json, ninfer request logs, image API, service checks)
+//!   → `storage`, `containers`, `ooms`, `models`, `image`, `services`;
 //! - [`alerts`]: orca-alerts over the hub (built-in conditions, expression rules, sinks);
 //! - [`run`]: `abhoth-supervisor run|check --config FILE`.
 //!
@@ -16,6 +18,7 @@ pub mod alerts;
 pub mod config;
 pub mod hostd;
 pub mod hub;
+pub mod local;
 pub mod router;
 pub mod run;
 

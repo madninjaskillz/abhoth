@@ -50,6 +50,25 @@ pub mod sections {
     /// `{ "active_event": id?, "block": bool, "bench_running": bool, "entries": [ … ] }`
     /// (orca-calendar).
     pub const CALENDAR: &str = "calendar";
+    /// Model servers (the engine containers), by container:
+    /// `{ "servers": { "<container>": { "engine", "port", "model", "lanes", "cards": [card…],
+    /// "tok_s", "running", "queued", "state", "since", "requests", "output_tokens",
+    /// "prompt_tokens", "prefix_reused", "decode_tok_s", "recent": [ {time, duration_s, prompt,
+    /// reused, out, tok_s, ttft_ms, finish} ] } }, "total_tok_s" }`.
+    pub const MODELS: &str = "models";
+    /// `[ { "name", "group", "kind", "port", "up", "ms" } ]`: port and health checks.
+    pub const SERVICES: &str = "services";
+    /// `{ "pools": [ { "name", "size", "alloc", "free", "cap", "health", "frag", … } ],
+    /// "age_s", "stale" }`: ZFS pools.
+    pub const STORAGE: &str = "storage";
+    /// `[ { "name", "image", "state", "health", "restarts", "ports", "started_at",
+    /// "oom_killed", "gpus": [card…] } ]`: containers.
+    pub const CONTAINERS: &str = "containers";
+    /// `[ { … } ]`: the most recent OOM kills (newest last, at most 12).
+    pub const OOMS: &str = "ooms";
+    /// `{ "status", "backends": [ { "name", "enabled", "healthy", "inflight", "served",
+    /// "failed", "queue_running", "queue_pending", … } ] }`: the image-generation API.
+    pub const IMAGE: &str = "image";
     /// `[ { "identity": "hot_card/A", "severity", "text", "since" } ]`: open alerts (orca-alerts).
     pub const ALERTS: &str = "alerts";
     /// Host facts: containers, GPU processes, zpools, OOM kills (hostd).

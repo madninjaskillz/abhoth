@@ -184,6 +184,49 @@ impl TelemetryHub {
             .unwrap_or_default()
     }
 
+    /// Every sensor id with history, sorted.
+    pub fn history_ids(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.lock().history.keys().map(|i| i.to_string()).collect();
+        v.sort();
+        v
+    }
+
+    /// History for the ids matching any pattern: an exact id, a prefix ending in `*`
+    /// (`gpu.A.*`), or a bare prefix that matches whole segments (`gpu.A` matches `gpu.A.core`).
+    /// At most `limit` series, sorted by id.
+    pub fn history_matching(
+        &self,
+        patterns: &[String],
+        res: Resolution,
+        limit: usize,
+    ) -> std::collections::BTreeMap<String, Vec<(TimestampMs, f64)>> {
+        let inner = self.lock();
+        let mut out = std::collections::BTreeMap::new();
+        for (id, (f, c)) in &inner.history {
+            let s = id.to_string();
+            if !patterns.iter().any(|p| pattern_matches(p, &s)) {
+                continue;
+            }
+            let ring = match res {
+                Resolution::Fine => f,
+                Resolution::Coarse => c,
+            };
+            out.insert(s, ring.buf.iter().copied().collect::<Vec<_>>());
+        }
+        while out.len() > limit {
+            out.pop_last();
+        }
+        out
+    }
+
+    /// The step of a resolution's ring, in ms.
+    pub fn step_ms(&self, res: Resolution) -> i64 {
+        match res {
+            Resolution::Fine => self.cfg.fine_step_ms,
+            Resolution::Coarse => self.cfg.coarse_step_ms,
+        }
+    }
+
     /// The current (unflushed) value of a section.
     pub fn section(&self, name: &str) -> Option<Value> {
         self.lock().current.get(name).cloned()
@@ -198,6 +241,14 @@ impl TelemetryHub {
             *s = Value::Object(Map::new());
         }
         s.as_object_mut().expect("object")
+    }
+}
+
+/// A history pattern: exact, `prefix*`, or a whole-segment prefix (`gpu.A` → `gpu.A.core`).
+pub fn pattern_matches(p: &str, id: &str) -> bool {
+    match p.strip_suffix('*') {
+        Some(pre) => id.starts_with(pre),
+        None => id == p || id.strip_prefix(p).is_some_and(|r| r.starts_with('.')),
     }
 }
 
@@ -420,5 +471,33 @@ mod tests {
         let fine = hub.history(&core, Resolution::Fine);
         assert_eq!(fine, vec![(2_500, 4.0), (5_000, 7.0), (7_500, 9.0)]);
         assert_eq!(hub.history(&core, Resolution::Coarse), vec![(0, 9.0)]);
+    }
+
+    #[test]
+    fn history_patterns_and_resolutions() {
+        let hub = TelemetryHub::new(HubConfig::default());
+        let put = |name: &str, ts: i64, v: f64| {
+            hub.put_readings(&[(id(name), Reading::new(v, Unit::Celsius, ts, "t"))]);
+        };
+        put("gpu.A.core", 1_000, 40.0);
+        put("gpu.A.core", 3_600, 41.0);
+        put("gpu.AB.core", 1_000, 1.0);
+        put("host.cpu", 1_000, 5.0);
+        assert_eq!(
+            hub.history_ids(),
+            vec!["gpu.A.core", "gpu.AB.core", "host.cpu"]
+        );
+        let m = hub.history_matching(&["gpu.A".into()], Resolution::Fine, 100);
+        assert_eq!(m.keys().collect::<Vec<_>>(), vec!["gpu.A.core"]);
+        assert_eq!(m["gpu.A.core"], vec![(0, 40.0), (2_500, 41.0)]);
+        let c = hub.history_matching(&["gpu.A*".into()], Resolution::Coarse, 100);
+        assert_eq!(c.len(), 2);
+        assert_eq!(c["gpu.A.core"], vec![(0, 41.0)]);
+        assert_eq!(
+            hub.history_matching(&["*".into()], Resolution::Fine, 2)
+                .len(),
+            2
+        );
+        assert_eq!(hub.step_ms(Resolution::Coarse), 60_000);
     }
 }
