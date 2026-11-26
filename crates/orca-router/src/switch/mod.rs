@@ -13,10 +13,13 @@
 
 pub mod callers;
 pub mod gate;
+pub mod host;
 mod job;
+pub mod ondemand_switch;
 pub mod plane;
 pub mod profiles_shim;
 mod run;
+pub mod shim_backend;
 pub mod wiring;
 
 #[cfg(test)]

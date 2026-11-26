@@ -308,3 +308,70 @@ async fn with_the_gate_only_a_switch_key_switches() {
         assert_eq!(switches(&api), want, "{key}");
     }
 }
+
+/// Records asks; starts a job that is done at once.
+#[derive(Default)]
+struct Switcher {
+    asks: std::sync::Mutex<Vec<(String, String, Option<String>)>>,
+}
+
+impl orca_router::switch::ondemand_switch::OnDemandSwitcher for Switcher {
+    fn ask<'a>(
+        &'a self,
+        target: &'a str,
+        card: &'a str,
+        _pick: &'a OnDemandModel,
+        _who: &'a str,
+        caller: orca_router::guards::Caller,
+        _allow_both: bool,
+    ) -> orca_router::switch::ondemand_switch::AskFuture<'a> {
+        self.asks
+            .lock()
+            .unwrap()
+            .push((target.into(), card.into(), caller.principal));
+        Box::pin(async {
+            orca_router::switch::ondemand_switch::Ask::Started {
+                job: "od-1".into(),
+                estimate: Some(5.0),
+                layout: "on-demand:x".into(),
+            }
+        })
+    }
+    fn job(&self, _id: &str) -> Option<(String, Option<String>)> {
+        Some(("running".into(), None))
+    }
+}
+
+#[tokio::test]
+async fn with_the_control_plane_on_demand_goes_to_the_orchestrator() {
+    if orca_router::ondemand::quiet(orca_router::proxy::now_epoch()).is_some() {
+        return;
+    }
+    let (a, b) = (Fake::ok("A").await, Fake::ok("B").await);
+    let relay = Fake::ok("relay").await;
+    let dir = tempfile::tempdir().unwrap();
+    let api = Fake::start(profiles_api()).await;
+    let mut c = cfg(&a.url(), &b.url(), &relay.url(), &api.url(), dir.path());
+    c.on_demand.control_gate = true;
+    let r = start_router(c, None, Mode::Gateway).await;
+    let _ = r.st.control.set(control_plane());
+    let sw = std::sync::Arc::new(Switcher::default());
+    let _ = r.st.ext.ondemand.switcher.set(sw.clone());
+    let bearer = format!("Bearer {SWITCH_KEY}");
+    real_chat(&r, &[("authorization", bearer.as_str())]).await;
+    let asks = sw.asks.lock().unwrap().clone();
+    assert_eq!(asks.len(), 1, "{asks:?}");
+    assert_eq!(asks[0].0, "flash-next");
+    assert!(asks[0].2.as_deref().unwrap().starts_with("service:"));
+    // the profiles API was read for nothing and asked for nothing
+    assert!(
+        api.seen().iter().all(|s| s.method == "GET"),
+        "{:?}",
+        api.seen()
+            .iter()
+            .map(|s| s.path.clone())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(switches(&api), 0);
+    assert_eq!(r.st.ext.ondemand.limiter.count(), 1);
+}
