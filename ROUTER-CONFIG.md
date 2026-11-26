@@ -1751,14 +1751,12 @@ and the secret mount. The same harness compares `restart_set`, `estimate`, `slot
 1. **Plans only:** `abhoth router plan <layout>` against the live host (read-only hostctl
    templates: status, telemetry). For every layout the plan must match what layoutctl's
    `plan` says (restart set, estimate within 10%).
-2. **Observe mode** (`control.mode = "observe"`, 3+ days, like ROUTER.md 11.2): the router
-   watches the host and layoutctl's jobs (`state/jobs/*.json`), and for each real switch
-   computes its own plan from the same start state and records the comparison (steps, order,
-   refusals); for each reconcile/ensure event it records what it would have done; for each
-   on-demand decision (dry-run, built) the same. Nothing is changed. Daily summary like the
-   placement shadow.
-3. **Rehearsal on the router alone** (one evening, quiet, admin present, layoutctl's cron
-   runner paused for the hour): the router runs a real B-only switch to another layout and
+2. **Observe mode** (`control.mode = "observe"`, minutes, part of the cutover session; no
+   multi-day trial): the router adopts what runs, reports drift, and its plans for a couple of
+   real layouts are compared with layoutctl's. Nothing is changed. The same tooling stays
+   available afterwards for comparing decisions if something looks off.
+3. **Rehearsal on the router alone** (the first minutes of the cutover session itself, quiet,
+   admin present, layoutctl's cron runner paused): the router runs a real B-only switch to another layout and
    back, then a both-cards switch and back, then a forced failure (a profile pointing at a
    missing build, which must refuse) and a failure after stop (a bad option, which must roll
    back). Then layoutctl's runner is re-enabled and must find the cards in the layout
@@ -1766,10 +1764,13 @@ and the secret mount. The same harness compares `restart_set`, `estimate`, `slot
 
 ### 13.3 Cutover runbook
 
-Preconditions: all tests green (14); the observe-mode summary shows no unexplained
-differences for 3 days; the rehearsal passed; the dash and Abhoth's slot client tested
-against the shims; the allowlist installed on the host; keys for HA/Jarvis issued; a quiet
-evening chosen (not 06:45-07:30, no bench, no video run). Every step is reversible on its own.
+**One cutover, as soon as the control plane is wired and tested** (no multi-day trial periods:
+a user decision). Preconditions: all tests green (14); plans for every layout match
+layoutctl's (13.2 step 1); the dash and Abhoth's slot client tested against the shims; the
+allowlist installed on the host; keys for HA/Jarvis issued (keys are required from day one,
+switching included); a quiet slot chosen (not 06:45-07:30, no bench, no video run). The
+observe-mode check and the rehearsal (13.2 steps 2-3) run at the start of the same session.
+Every step is reversible on its own, and rollback (13.4) takes minutes.
 
 | # | Step | Check |
 |---|---|---|
@@ -1782,8 +1783,8 @@ evening chosen (not 06:45-07:30, no bench, no video run). Every step is reversib
 | 6 | Stop qfn-lb; router `:8092` shim on | `chk.sh` `/health`; `/a/slots` |
 | 7 | Stop LiteLLM; router moves from `:8020` to `:8010` (compose change, ROUTER.md step 3) | the 19 client shapes from `replay.py` against `:8010`; Jarvis and the dash rows green |
 | 8 | Smoke: `post_check`; a no-op switch to the live layout ("already live"); offline B → online B via the admin UI | job states `done` |
-| 9 | Watch 24 h: error rate, TTFT, request log vs. the previous day; the morning AI News run (quiet window honoured, video guard active during the run) | dash, Grafana |
-| 10 | After 7 days without rollback: remove anonymous LAN access per client as keys roll out; after 30 days: delete the stopped apps, the legacy mirror and the old cron entries | |
+| 9 | On-demand on (a user decision: enabled at cutover, with the guards of 7.4): one real chat to a cold `on_demand` route with a switch key switches the idle card and serves; `/health`, `/v1/models` and `/health/liveliness` probes switch nothing | job `done`; probe check |
+| 10 | Done. Normal use from here; roll back (13.4) on any regression. The legacy mirror and the stopped apps stay as rollback material for 30 days, then are removed; anonymous LAN chat ends per client as keys roll out | dash, Grafana |
 
 ### 13.4 Rollback
 
@@ -1865,7 +1866,8 @@ audit row or response; leases never granted on a card that is draining or frozen
 
 ### 14.4 Soak and benches
 
-- 24 h soak against fake engines with real-time traffic shapes from the request log.
+- A short soak in CI (minutes, time-compressed) against fake engines with traffic shapes
+  from the request log.
 - Data-plane overhead must stay as measured in ROUTER.md 11.1 (a few ms); the bench rule (3
   runs, merge if no slower) applies before cutover, with the router in front of the bench's
   slot traffic.
@@ -1891,11 +1893,11 @@ today's data plane.
 | C11 | Adapters: canonical model, Responses in (with stored responses), chat ⇄ Anthropic both ways incl. streams, tool normalisation parsers, reasoning/params generalisation, recorder and golden corpus | 6 |
 | C12 | Metrics, `/status` v2, alerts, dash changes, Grafana dashboard | 1.5 |
 | C13 | Chaos suite, soak, SSH integration test in CI | 2 |
-| C14 | Observe-mode trial tooling, rehearsal, cutover and rollback scripts, docs | 1.5 |
+| C14 | Observe-mode check tooling, rehearsal, cutover and rollback scripts, docs | 1.5 |
 | **Total** | | **~41** |
 
-Calendar on top: 3+ days of observe mode, one rehearsal evening, the cutover evening and a week
-of watching. Parallel tracks: C9 (UI) and C11 (adapters) and C10 (upstreams) are independent
+Calendar on top: one cutover session (observe check, rehearsal and cutover together, a short
+smoke check of minutes; no multi-day trial). Parallel tracks: C9 (UI) and C11 (adapters) and C10 (upstreams) are independent
 of C3-C5 once C1 lands; with three agents the critical path (C1 → C3 → C4 → C5 → C6/C7 →
 C13/C14) is about 20 agent-days.
 
@@ -1916,7 +1918,7 @@ and translation and can land before or just after; nothing in the cutover depend
 | 8 | Responses API `previous_response_id`: store responses (24 h, per principal) or refuse it? | **Store for 24 h** (clients assume it works); `store: false` keeps nothing |
 | 9 | Which text tool-call formats do our local models really emit? | **Record first** (C11 recorder against each local model with tools), then implement only those parsers plus `hermes-json` |
 | 10 | On-demand for users: should non-admin users ever start a switch? | **No by default**; per route `allow_user_switch` for models the household uses on purpose |
-| 11 | Should on-demand be re-enabled at cutover? | **No.** Cutover with every route `reject`/`fallback` as today; enable `on_demand` per route a week later, after observe-mode decisions look right |
+| 11 | Should on-demand be re-enabled at cutover? | **Yes** (user decision). Enabled at cutover with strong guards: never during a bench, a video pipeline (incl. `run_daily.sh` waiting on its lock) or an active lease; guard data older than 45 s means wait; excluded cards never switch; rate limits; only real chat requests on an `on_demand` route with a key that may switch, never health checks or model listings (7.4) |
 | 12 | Cloud access for users | **Admin-only until budgets are set**; then per-user monthly budgets (start at $10) on `*cloud` |
 | 13 | Guard probes vs guard leases for the bench and video pipelines | Keep **both**: probes for parity at cutover; move the bench to a guard lease (it is ours) soon after; leave the video pipeline on the probe |
 | 14 | The qfn-llm TrueNAS app also defines `lb` and `pig-slots` services: remove them or leave them stopped? | **Leave stopped for 30 days** (rollback), then remove from the app; Strata services stay in that app (compose driver) |
