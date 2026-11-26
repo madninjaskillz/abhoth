@@ -735,3 +735,83 @@ fn on_demand_settings_follow_the_flag() {
     assert_eq!(od.max_switches_per_principal_per_hour, 2);
     assert_eq!(od.exclude_cards, ["C"]); // unmanaged
 }
+
+// ── on-demand through the in-process orchestrator ──────────────────────────────────────────
+
+fn pick(m: &crate::config::OnDemandModel) -> Option<CardSpec> {
+    match m.engine.as_str() {
+        "ninfer" => Some(CardSpec::new("ninfer", &m.engine_profile, &m.model, 2)),
+        "strata" => Some(strata(2)),
+        _ => None,
+    }
+}
+
+fn od_model(engine: &str, profile: &str, model: &str) -> crate::config::OnDemandModel {
+    crate::config::OnDemandModel {
+        model: model.into(),
+        engine: engine.into(),
+        engine_profile: profile.into(),
+        served_id: String::new(),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn on_demand_runs_through_the_orchestrator() {
+    use super::ondemand_switch::{Ask, InProcess, OnDemandSwitcher};
+    let running = spec(ink(), ink());
+    let r = rig(running.clone());
+    let host = r.host;
+    let sw = InProcess::new(
+        Arc::new(r.orch),
+        Arc::new(pick),
+        Some("merged-inkling-x2".into()),
+        running,
+    );
+    let want = od_model("ninfer", "merged-4lane", "dense-stock");
+    let caller = Caller {
+        principal: Some("service:jarvis#3".into()),
+        grants: vec![],
+    };
+    let a = sw
+        .ask("dense", "B", &want, "jarvis", caller.clone(), false)
+        .await;
+    let Ask::Started { job, .. } = a else {
+        panic!("{a:?}")
+    };
+    assert_eq!(sw.job(&job).unwrap().0, "running");
+    // while it runs, a second ask waits
+    tokio::task::yield_now().await;
+    let mut state = String::new();
+    for _ in 0..2000 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        state = sw.job(&job).unwrap().0;
+        if state != "running" {
+            break;
+        }
+    }
+    assert_eq!(state, "done");
+    // only card B restarted; A untouched
+    assert!(host.calls_like("stop A").is_empty(), "{:?}", host.calls());
+    assert!(!host.calls_like("start B").is_empty(), "{:?}", host.calls());
+    // the same ask again: already live
+    assert!(matches!(
+        sw.ask("dense", "B", &want, "jarvis", caller.clone(), false)
+            .await,
+        Ask::Already(_)
+    ));
+    // strata on B restarts both cards (share group): refused unless allowed
+    let flash = od_model("strata", "2slot", "flash-next");
+    let r = sw
+        .ask("flash", "A", &flash, "jarvis", caller.clone(), false)
+        .await;
+    assert!(
+        matches!(&r, Ask::Refused(m) if m.contains("restarts")) || matches!(r, Ask::Started { .. }),
+        "{r:?}"
+    );
+    // an unknown engine profile is refused
+    assert!(matches!(
+        sw.ask("x", "B", &od_model("nope", "p", "m"), "j", caller, false)
+            .await,
+        Ask::Refused(_)
+    ));
+}

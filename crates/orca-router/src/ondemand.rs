@@ -383,6 +383,9 @@ pub struct Coordinator {
     ensure_lock: tokio::sync::Mutex<()>,
     /// On-demand switches started (rate limits).
     pub limiter: crate::switch::gate::RateLimiter,
+    /// The in-process orchestrator (set only with `control.enabled`): switches go there
+    /// instead of the profiles API.
+    pub switcher: std::sync::OnceLock<Arc<dyn crate::switch::ondemand_switch::OnDemandSwitcher>>,
 }
 
 impl Coordinator {
@@ -584,7 +587,12 @@ async fn progress(st: &AppState, snap: &Snapshot, now: f64) {
         .trim_end_matches('/')
         .to_string();
     for (target, p) in pend {
-        let j = get_json(st, &format!("{api}/jobs/{}", p.job)).await;
+        let j = match st.ext.ondemand.switcher.get() {
+            Some(sw) => sw
+                .job(&p.job)
+                .map(|(state, error)| json!({"state": state, "error": error})),
+            None => get_json(st, &format!("{api}/jobs/{}", p.job)).await,
+        };
         let state = j
             .as_ref()
             .and_then(|j| j.get("state"))
@@ -693,7 +701,12 @@ pub async fn ensure(
         Decision::Switch { card, .. } => match gate(od, adm, &co.limiter, now) {
             Err((reason, retry)) => Decision::Block { reason, retry },
             Ok(principal) => {
-                let d = start(st, snap, target, &card, who, &inp.cards, now).await;
+                let d = match co.switcher.get() {
+                    Some(sw) => {
+                        start_in_process(st, snap, sw.as_ref(), target, &card, who, adm, now).await
+                    }
+                    None => start(st, snap, target, &card, who, &inp.cards, now).await,
+                };
                 if od.control_gate
                     && matches!(
                         d,
@@ -716,6 +729,68 @@ pub async fn ensure(
 
 /// Ask the profiles API for the switch: compose {card: target's pick, other: what it runs},
 /// check that only one card restarts (allowBothCards), then spool it.
+/// `start` through the in-process orchestrator (control plane on).
+#[allow(clippy::too_many_arguments)]
+async fn start_in_process(
+    st: &AppState,
+    snap: &Snapshot,
+    sw: &dyn crate::switch::ondemand_switch::OnDemandSwitcher,
+    target: &str,
+    card: &str,
+    who: &str,
+    adm: &crate::switch::gate::ChatAdmission,
+    now: f64,
+) -> Decision {
+    use crate::switch::ondemand_switch::Ask;
+    let od = &snap.config.on_demand;
+    let md = &od.models[target];
+    match sw
+        .ask(
+            target,
+            card,
+            md,
+            who,
+            adm.caller().clone(),
+            od.allow_both_cards,
+        )
+        .await
+    {
+        Ask::Already(m) | Ask::Busy(m) => wait(m),
+        Ask::Refused(reason) => Decision::Block {
+            reason,
+            retry: 3600,
+        },
+        Ask::Started {
+            job,
+            estimate,
+            layout,
+        } => {
+            let p = Pending {
+                job: job.clone(),
+                card: card.to_string(),
+                started: now,
+                estimate,
+                layout: layout.clone(),
+            };
+            {
+                let mut g = st.ext.ondemand.inner.lock().unwrap();
+                g.pending.insert(target.to_string(), p);
+                g.jobs.insert(job.clone(), card.to_string());
+                g.changed.insert(card.to_string(), now);
+            }
+            st.ext.ondemand.log(
+                json!({"event": "switch-started", "target": target, "card": card,
+                "layout": layout, "job": job, "who": who, "via": "orchestrator"}),
+            );
+            Decision::Wait {
+                reason: format!("switching card {card} to {target}"),
+                switching: true,
+                card: Some(card.to_string()),
+            }
+        }
+    }
+}
+
 async fn start(
     st: &AppState,
     snap: &Snapshot,
