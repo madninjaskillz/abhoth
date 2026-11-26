@@ -5,15 +5,15 @@
 //! engine over HTTP (never through routes; verify chats carry `x-abhoth-no-switch`). The
 //! gpu-power hold is its HTTP API (`/hold?secs=N`, 0 ends it).
 //!
-//! The safety-critical host steps are hostctl builtins. Their arguments, as sent from here
-//! (🟦A: adjust in [`calls`] if hostctl settles on other shapes):
-//! - `flock`  `{"op": "acquire"|"release", "locks": [paths], "holder": "switch"}`;
-//! - `telemetry` `{"uuids": [uuid]}` -> stdout JSON `[{"uuid", "memory_used_mib",
-//!   "sm_clock_max_mhz"}]`;
-//! - `compute-apps` `{}` -> stdout JSON `{uuid: [container names]}` (compute containers per
-//!   card, as layoutctl's `gpu_containers`);
-//! - `oom-kills` `{}` -> stdout, one kernel OOM-kill line each;
-//! - `file-exists` `{"path"}` -> exit 0 when present;
+//! The safety-critical host steps are 🟦A's hostctl builtins (`control::builtins`), all built
+//! in [`calls`]:
+//! - `flock` `{path, op: acquire|release, owner}` per server lock, held for the job;
+//! - `telemetry` -> nvidia-smi CSV, parsed with `control::telemetry::parse` (memory used,
+//!   `clocks.max.sm`);
+//! - `compute-apps` -> JSON `[ComputeApp]` (pid, container): processes on a managed card that
+//!   are not our instances are foreign holders;
+//! - `oom-kills` -> JSON list of kernel lines;
+//! - `file-exists` `{path}` -> exit 0 when present;
 //! - hooks (`prepare` before a start, run by `restore_models`; `before_start`): the hook's own
 //!   parameters plus `card`, `gpu_uuid` and `model_file`.
 //!
@@ -52,23 +52,21 @@ fn herr(e: impl std::fmt::Display) -> HostError {
 pub mod calls {
     use super::*;
 
-    pub fn flock(server: &str, acquire: bool, locks: &[String]) -> ExecRequest {
+    /// The owner name the switch holds server locks under.
+    pub const LOCK_OWNER: &str = "abhoth-switch";
+
+    pub fn flock(server: &str, acquire: bool, path: &str) -> ExecRequest {
         ExecRequest::builtin(
             server,
             "flock",
-            json!({"op": if acquire { "acquire" } else { "release" }, "locks": locks,
-                   "holder": "switch"}),
-            Duration::from_secs(60),
+            json!({"path": path, "op": if acquire { "acquire" } else { "release" },
+                   "owner": LOCK_OWNER}),
+            Duration::from_secs(150),
         )
     }
 
-    pub fn telemetry(server: &str, uuid: &str) -> ExecRequest {
-        ExecRequest::builtin(
-            server,
-            "telemetry",
-            json!({"uuids": [uuid]}),
-            Duration::from_secs(20),
-        )
+    pub fn telemetry(server: &str) -> ExecRequest {
+        ExecRequest::builtin(server, "telemetry", json!({}), Duration::from_secs(20))
     }
 
     pub fn compute_apps(server: &str) -> ExecRequest {
@@ -222,15 +220,13 @@ impl<E: Executor> ExecHost<E> {
         d.parse_status(&i, &out).map_err(herr)
     }
 
-    async fn telemetry(&self, card: &str) -> HostResult<Value> {
-        let o = self
-            .run_ok(calls::telemetry(&self.server, self.uuid(card)?))
-            .await?;
-        let v: Value = serde_json::from_str(o.stdout.trim())
-            .map_err(|e| HostError(format!("telemetry: not JSON ({e})")))?;
-        v.as_array()
-            .and_then(|a| a.first().cloned())
-            .ok_or_else(|| HostError("telemetry: no card".into()))
+    async fn telemetry(&self, card: &str) -> HostResult<crate::control::telemetry::GpuSample> {
+        let uuid = self.uuid(card)?.to_string();
+        let o = self.run_ok(calls::telemetry(&self.server)).await?;
+        crate::control::telemetry::parse(&o.stdout)
+            .into_iter()
+            .find(|g| g.uuid == uuid)
+            .ok_or_else(|| HostError(format!("telemetry: card {card} ({uuid}) not reported")))
     }
 
     async fn hooks(&self, card: &str, spec: &CardSpec, prepare: bool) -> HostResult<Vec<String>> {
@@ -346,19 +342,22 @@ impl<E: Executor> HostOps for ExecHost<E> {
         }
         // compute containers on our cards that are not our instances
         let o = self.run_ok(calls::compute_apps(&self.server)).await?;
-        let apps: BTreeMap<String, Vec<String>> = serde_json::from_str(o.stdout.trim())
+        let apps: Vec<crate::control::builtins::ComputeApp> = serde_json::from_str(o.stdout.trim())
             .map_err(|e| HostError(format!("compute-apps: not JSON ({e})")))?;
         let mut foreign = BTreeMap::new();
         for card in self.cards() {
             let uuid = self.uuid(&card)?;
             let mine = ours.get(uuid).cloned().unwrap_or_default();
-            let theirs: Vec<String> = apps
-                .get(uuid)
-                .into_iter()
-                .flatten()
-                .map(|n| n.trim_start_matches('/').to_string())
+            let mut theirs: Vec<String> = apps
+                .iter()
+                .filter(|a| a.gpu_uuid == uuid)
+                .map(|a| match &a.container {
+                    Some(c) => c.trim_start_matches('/').to_string(),
+                    None => format!("{} (pid {})", a.process, a.pid),
+                })
                 .filter(|n| !mine.contains(n))
                 .collect();
+            theirs.dedup();
             if !theirs.is_empty() {
                 foreign.insert(card, theirs);
             }
@@ -410,8 +409,14 @@ impl<E: Executor> HostOps for ExecHost<E> {
         if locks.is_empty() {
             return Ok(());
         }
-        self.run_ok(calls::flock(&self.server, true, &locks))
-            .await?;
+        for (i, path) in locks.iter().enumerate() {
+            if let Err(e) = self.run_ok(calls::flock(&self.server, true, path)).await {
+                for held in locks[..i].iter().rev() {
+                    let _ = self.run(calls::flock(&self.server, false, held)).await;
+                }
+                return Err(e);
+            }
+        }
         *self.locked.lock().unwrap() = true;
         Ok(())
     }
@@ -426,8 +431,10 @@ impl<E: Executor> HostOps for ExecHost<E> {
             .get(&self.server)
             .map(|s| s.locks.clone())
             .unwrap_or_default();
-        if let Err(e) = self.run_ok(calls::flock(&self.server, false, &locks)).await {
-            tracing::warn!("releasing the switch locks: {}", e.0);
+        for path in locks.iter().rev() {
+            if let Err(e) = self.run_ok(calls::flock(&self.server, false, path)).await {
+                tracing::warn!("releasing the switch lock {path}: {}", e.0);
+            }
         }
     }
 
@@ -450,10 +457,10 @@ impl<E: Executor> HostOps for ExecHost<E> {
     }
 
     async fn gpu_used_mib(&self, card: &str) -> HostResult<u64> {
-        let t = self.telemetry(card).await?;
-        t.get("memory_used_mib")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| HostError("telemetry: no memory_used_mib".into()))
+        self.telemetry(card)
+            .await?
+            .mem_used_mib
+            .ok_or_else(|| HostError(format!("telemetry: no memory.used for card {card}")))
     }
 
     async fn before_start(&self, card: &str, spec: &CardSpec) -> HostResult<Vec<String>> {
@@ -546,22 +553,15 @@ impl<E: Executor> HostOps for ExecHost<E> {
     async fn clocks(&self, card: &str) -> HostResult<Clocks> {
         let t = self.telemetry(card).await?;
         let mhz = t
-            .get("sm_clock_max_mhz")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| HostError("telemetry: no sm_clock_max_mhz".into()))?;
-        Ok(Clocks {
-            max_sm_mhz: mhz as u32,
-        })
+            .max_sm_mhz
+            .ok_or_else(|| HostError(format!("telemetry: no clocks.max.sm for card {card}")))?;
+        Ok(Clocks { max_sm_mhz: mhz })
     }
 
     async fn oom_kills(&self) -> HostResult<Vec<String>> {
         let o = self.run_ok(calls::oom_kills(&self.server)).await?;
-        Ok(o.stdout
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.is_empty())
-            .map(String::from)
-            .collect())
+        serde_json::from_str::<Vec<String>>(o.stdout.trim())
+            .map_err(|e| HostError(format!("oom-kills: not a JSON list ({e})")))
     }
 
     async fn gpu_power_hold(&self, secs: u64) -> HostResult<()> {
@@ -588,6 +588,24 @@ mod host_tests {
 
     const UA: &str = "GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
+    /// One nvidia-smi CSV line for card A in `QUERY_FIELDS` order (memory.used 812 MiB,
+    /// clocks.max.sm 1597 MHz).
+    fn telemetry_csv() -> String {
+        let cols: Vec<&str> = crate::control::telemetry::QUERY_FIELDS
+            .iter()
+            .map(|f| match *f {
+                "uuid" => UA,
+                "index" => "0",
+                "name" => "Tesla V100-SXM3-32GB",
+                "memory.used" => "812",
+                "clocks.max.sm" => "1597",
+                "pstate" => "P0",
+                _ => "1",
+            })
+            .collect();
+        cols.join(", ")
+    }
+
     fn rig(cfg: &Arc<ControlConfig>) -> (ExecHost<FakeExecutor>, FakeExecutor) {
         let fx = FakeExecutor::new();
         let dense = wiring::target_spec(cfg, "gpu", "dense-x2", &[]).unwrap();
@@ -610,11 +628,15 @@ mod host_tests {
                 l if l.contains("inspect") || l.contains("ps:") || l.contains("status") => {
                     Some(Ok(ExecOutput::fail(1, "No such object")))
                 }
-                "compute-apps" => ok(&json!({UA: [format!("/{a_name}"), "/comfyui"]}).to_string()),
-                "telemetry" => {
-                    ok(r#"[{"uuid":"x","memory_used_mib":812,"sm_clock_max_mhz":1597}]"#)
-                }
-                "oom-kills" => ok("Out of memory: Killed process 42 (ninfer)\n"),
+                "compute-apps" => ok(&json!([
+                    {"gpu_uuid": UA, "pid": 10, "used_mib": 30000, "container": a_name,
+                     "process": "ninfer-serve"},
+                    {"gpu_uuid": UA, "pid": 11, "used_mib": 900, "container": "comfyui",
+                     "process": "python3"},
+                ])
+                .to_string()),
+                "telemetry" => ok(&telemetry_csv()),
+                "oom-kills" => ok(r#"["Out of memory: Killed process 42 (ninfer)"]"#),
                 _ => None,
             }
         });
@@ -660,7 +682,8 @@ mod host_tests {
         let flocks = builtin_args(&fx, "flock");
         assert_eq!(flocks.len(), 2);
         assert_eq!(flocks[0]["op"], "acquire");
-        assert_eq!(flocks[0]["locks"][0], "/run/watchdog.lock");
+        assert_eq!(flocks[0]["path"], "/run/watchdog.lock");
+        assert_eq!(flocks[0]["owner"], calls::LOCK_OWNER);
         assert_eq!(flocks[1]["op"], "release");
         // stop: the driver's stop, then gone
         let spec = wiring::target_spec(&cfg, "gpu", "dense-x2", &[]).unwrap();
