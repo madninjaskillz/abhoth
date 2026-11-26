@@ -3317,12 +3317,14 @@ dependencies = [
 name = "orca-hostd"
 version = "0.16.8"
 dependencies = [
+ "async-trait",
  "orca-fans",
  "orca-gpuctl",
  "orca-sensors",
  "serde",
  "serde_json",
  "sha2 0.10.8",
+ "socket2",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

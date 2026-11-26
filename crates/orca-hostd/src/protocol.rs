@@ -194,7 +194,12 @@ pub enum ToHostd {
         reason: String,
     },
     #[serde(rename = "release")]
-    Release { target: Target },
+    Release {
+        target: Target,
+        /// The hold's reason; `None` releases every hold on the target.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     #[serde(rename = "override")]
     Override(Override),
     /// Re-check and fix clocks, power limit and persistence now (after engine `Ready`).
@@ -502,6 +507,11 @@ curve = [[60, 30], [82, 100]]
             },
             ToHostd::Release {
                 target: Target::Card("B".into()),
+                reason: Some("switch".into()),
+            },
+            ToHostd::Release {
+                target: Target::All,
+                reason: None,
             },
             ToHostd::Override(Override::FanDuty {
                 fan: "duct0".into(),

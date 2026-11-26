@@ -1,0 +1,57 @@
+# A policy for `abhoth-hostd policy-put --apps $APPS --policy FILE`, before the supervisor
+# sends one. Same tables as ROUTER-CONFIG ([cards], [sensors], [power], [fan_*], [fans]).
+[cards.A]
+uuid = "GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+bus = "21:00.0"
+[cards.B]
+uuid = "GPU-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+bus = "01:00.0"
+
+[sensors.ctrl_A]
+expr = "ema(first(gpu.A.hbm, gpu.A.core), 4s)"
+[sensors.ctrl_B]
+expr = "ema(first(gpu.B.hbm, gpu.B.core), 4s)"
+
+[power.A]
+persistence = true
+power_limit_w = 350
+serving = "unlocked"            # unlocked boost
+expect_max_sm_mhz = 1597
+idle = { after = "60s", lock_mhz = 135 }
+[power.B]
+persistence = true
+power_limit_w = 250
+app_clocks = [877, 1380]
+serving = "unlocked"
+idle = { after = "60s", lock_mhz = 135 }
+
+[fan_backends.esp-gpu-fans]
+kind = "esphome"
+url = "http://esp-gpu-fans.lan"
+auth = { kind = "digest", user = "fans", password = "secret:esp_fans_password" }
+names = { temp = "GPU {n} Temp", load = "GPU {n} Power" }
+device_stale_seconds = 30
+sync_device_settings = false    # never write the ESP's curve numbers
+mode = "act"
+
+[fan_defaults]
+mode = "device_curve"
+load_gate = { lo = 52, hi = 64 }
+curve = [[60, 30], [82, 100]]
+feed_forward = { lo = 50, hi = 100, max_duty = 60 }
+min_duty = 30
+max_temp = 85
+ramp_down = "2%/2s"
+stale_input = "3s"
+send = { temp_delta = 1.0, load_delta = 10, min_gap = "1s", heartbeat = "10s" }
+
+[fans.duct0]
+backend = "esp-gpu-fans"
+channel = 0
+temp = "sensor.ctrl_B"
+load = "gpu.B.power_pct"
+[fans.duct1]
+backend = "esp-gpu-fans"
+channel = 1
+temp = "sensor.ctrl_A"
+load = "gpu.A.power_pct"

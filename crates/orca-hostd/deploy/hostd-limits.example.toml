@@ -1,0 +1,24 @@
+# hostd's root-owned limits file: $APPS/abhoth/etc/hostd-limits.toml (0644 root:root).
+# Every policy is checked against it and refused in full on any violation.
+max_ttl = "1h"
+
+[fans]
+min_duty = 30            # no fan below this, in any mode or profile
+max_control_temp = 85    # 100 % at or above; no policy may set max_temp higher
+max_stale_s = 30
+
+[backends]
+write = ["esphome"]      # backend kinds allowed to act; any other kind runs in shadow
+
+# One table per GPU hostd may touch (by UUID). Cards not listed are telemetry only.
+[gpus."GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]
+label = "A"
+actions = ["persistence", "power_limit", "lock_clocks", "reset_clocks"]
+clock_mhz = [135, 1597]
+power_limit_w = [250, 350]
+
+[gpus."GPU-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]
+label = "B"
+actions = ["persistence", "power_limit", "app_clocks", "lock_clocks", "reset_clocks"]
+clock_mhz = [135, 1380]
+power_limit_w = [150, 250]
