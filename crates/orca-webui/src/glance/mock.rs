@@ -116,6 +116,7 @@ pub fn gpu_sample(g: &Value, ts: TimestampMs) -> GpuSample {
         pstate: f(&g["pstate"]).map(|p| format!("P{p}")),
         throttle_reasons: Some(throttle),
         persistence: None,
+        ..Default::default()
     }
 }
 
