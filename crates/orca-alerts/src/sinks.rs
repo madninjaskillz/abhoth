@@ -55,7 +55,27 @@ pub struct HaNotify {
     /// `mobile_app_pixel`
     pub service: String,
     pub token_file: String,
+    /// Tap target on the phone (the Abhoth alerts page).
+    pub click_url: Option<String>,
+    /// On resolve: clear the phone notification (default) or replace it with a "Resolved" one.
+    pub on_resolve: ResolveAction,
     http: reqwest::Client,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResolveAction {
+    /// `clear_notification` with the tag.
+    #[default]
+    Clear,
+    /// A "Resolved: ..." notification under the same tag.
+    Notify,
+}
+
+/// A notify service name (`mobile_app_pixel`): only that one service is ever called.
+pub fn valid_service(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 impl HaNotify {
@@ -65,22 +85,39 @@ impl HaNotify {
             base_url: base_url.trim_end_matches('/').into(),
             service: service.into(),
             token_file: token_file.into(),
+            click_url: None,
+            on_resolve: ResolveAction::Clear,
             http: client(),
         }
     }
 
     /// The JSON body HA's notify service gets.
-    pub fn payload(n: &Notification) -> Value {
-        if n.kind == NotifyKind::Resolved {
+    pub fn payload(&self, n: &Notification) -> Value {
+        let resolved = n.kind == NotifyKind::Resolved;
+        if resolved && self.on_resolve == ResolveAction::Clear {
             return json!({"message": "clear_notification", "data": {"tag": n.tag}});
         }
         let mut data = json!({"tag": n.tag, "group": "abhoth"});
-        if n.severity == Severity::Critical {
+        if let Some(u) = &self.click_url {
+            data["url"] = json!(u); // iOS
+            data["clickAction"] = json!(u); // Android
+        }
+        if n.severity == Severity::Critical && !resolved {
+            // Android: at once, even in doze, on its own channel (the user can make it loud);
+            // iOS: time-sensitive.
             data["ttl"] = json!(0);
             data["priority"] = json!("high");
+            data["channel"] = json!("Abhoth critical");
             data["push"] = json!({"interruption-level": "time-sensitive"});
+        } else {
+            data["channel"] = json!("Abhoth");
         }
-        json!({"title": format!("Abhoth: {}", n.title), "message": body_text(n), "data": data})
+        let title = if resolved {
+            format!("Abhoth: resolved: {}", n.title)
+        } else {
+            format!("Abhoth: {}", n.title)
+        };
+        json!({"title": title, "message": body_text(n), "data": data})
     }
 }
 
@@ -96,7 +133,7 @@ impl Sink for HaNotify {
             .http
             .post(&url)
             .bearer_auth(token)
-            .json(&Self::payload(n))
+            .json(&self.payload(n))
             .send()
             .await
             .map_err(|e| format!("ha notify: {}", e.without_url()))?;
@@ -306,8 +343,16 @@ pub fn from_config(cfg: &indexmap::IndexMap<String, Value>) -> (Vec<Arc<dyn Sink
         let ty = s("type").unwrap_or_else(|| name.clone());
         match ty.as_str() {
             "ha" => match (s("url"), s("service"), s("token_file")) {
+                (Some(_), Some(svc), Some(_)) if !valid_service(&svc) => issues.push(format!(
+                    "alerts.sinks.{name}: {svc:?} is not a notify service name (mobile_app_pixel)"
+                )),
                 (Some(u), Some(svc), Some(t)) => {
-                    out.push(Arc::new(HaNotify::new(name, &u, &svc, &t)))
+                    let mut h = HaNotify::new(name, &u, &svc, &t);
+                    h.click_url = s("click_url");
+                    if s("on_resolve").as_deref() == Some("notify") {
+                        h.on_resolve = ResolveAction::Notify;
+                    }
+                    out.push(Arc::new(h))
                 }
                 _ => issues.push(format!(
                     "alerts.sinks.{name}: ha needs url, service and token_file"

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::engine::{AlertState, Engine, NotifyKind, Signal, render};
 use crate::rules::{AlertsConfig, RuleConfig, Severity};
-use crate::sinks::{self, FakeSink, HaNotify, Sink};
+use crate::sinks::{self, FakeSink, HaNotify, ResolveAction, Sink, valid_service};
 
 fn vars(kv: &[(&str, &str)]) -> BTreeMap<String, String> {
     kv.iter()
@@ -292,11 +292,28 @@ fn ha_payload_tags_and_clears() {
     let mut e = engine();
     e.observe(hot("A", true, "86", 0), &no_mute);
     let n = e.observe(hot("A", true, "86", 60), &no_mute).remove(0);
-    let p = HaNotify::payload(&n);
+    let mut ha = HaNotify::new(
+        "ha",
+        "http://ha:8123",
+        "mobile_app_phone",
+        "/run/secrets/ha",
+    );
+    ha.click_url = Some("https://abhoth.example/supervisor/alerts".into());
+    let p = ha.payload(&n);
     assert_eq!(p["data"]["tag"], "hot_card/A");
+    assert_eq!(
+        p["data"]["clickAction"],
+        "https://abhoth.example/supervisor/alerts"
+    );
+    assert_eq!(p["data"]["channel"], "Abhoth");
     assert!(p["title"].as_str().unwrap().contains("hot card"));
     let r = e.observe(hot("A", false, "80", 120), &no_mute).remove(0);
-    assert_eq!(HaNotify::payload(&r)["message"], "clear_notification");
+    assert_eq!(ha.payload(&r)["message"], "clear_notification");
+    ha.on_resolve = ResolveAction::Notify;
+    let rn = ha.payload(&r);
+    assert!(rn["title"].as_str().unwrap().contains("resolved"));
+    assert!(rn["data"].get("priority").is_none());
+    assert!(valid_service("mobile_app_phone") && !valid_service("notify.x"));
 }
 
 #[tokio::test(flavor = "current_thread")]

@@ -136,6 +136,14 @@ impl MqttHandle {
     }
 }
 
+/// The alert engine's `MqttSink` publishes through the HA connection.
+#[async_trait::async_trait]
+impl orca_alerts::sinks::MqttPublish for MqttHandle {
+    async fn publish(&self, topic: &str, payload: &str, retain: bool) -> Result<(), String> {
+        MqttHandle::publish(self, topic, payload, retain).await
+    }
+}
+
 enum Inbound {
     Connected,
     Disconnected(String),
