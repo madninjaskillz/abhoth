@@ -3165,6 +3165,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "orca-alerts"
+version = "0.16.6"
+
+[[package]]
+name = "orca-calendar"
+version = "0.16.6"
+
+[[package]]
 name = "orca-cli"
 version = "0.16.6"
 dependencies = [
@@ -3220,6 +3228,7 @@ dependencies = [
  "chrono",
  "flate2",
  "futures-util",
+ "hmac",
  "indexmap",
  "orca-abstractions",
  "orca-testkit",
@@ -3258,6 +3267,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "orca-fans"
+version = "0.16.6"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "orca-gpuctl"
+version = "0.16.6"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml 1.2.3+spec-1.1.0",
+]
+
+[[package]]
 name = "orca-homeassistant"
 version = "0.16.6"
 dependencies = [
@@ -3266,6 +3292,7 @@ dependencies = [
  "axum 0.8.9",
  "chrono",
  "indexmap",
+ "orca-sensors",
  "reqwest",
  "rumqttc",
  "rumqttd",
@@ -3275,6 +3302,22 @@ dependencies = [
  "tokio",
  "toml 1.2.3+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "orca-hostd"
+version = "0.16.6"
+dependencies = [
+ "orca-fans",
+ "orca-gpuctl",
+ "orca-sensors",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml 1.2.3+spec-1.1.0",
 ]
 
 [[package]]
@@ -3299,6 +3342,26 @@ dependencies = [
  "toml_edit 0.25.21+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "orca-sensors"
+version = "0.16.6"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "orca-supervisor"
+version = "0.16.6"
+dependencies = [
+ "orca-sensors",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -3506,6 +3569,7 @@ dependencies = [
  "mime_guess",
  "orca-abstractions",
  "orca-core",
+ "orca-router",
  "orca-testkit",
  "orca-tools-fs",
  "orca-tools-utility",

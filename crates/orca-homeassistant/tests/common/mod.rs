@@ -9,7 +9,13 @@ use orca_homeassistant::model::*;
 
 /// DeepThought as surveyed 2026-11-26 (SUPERVISOR.md 3.1): A pinned, D has no HBM sensor.
 pub fn deepthought() -> HaSnapshot {
-    let card = |id: &str, gpu: &str| CardState { id: id.into(), gpu: Some(gpu.into()), present: true, online: true, ..Default::default() };
+    let card = |id: &str, gpu: &str| CardState {
+        id: id.into(),
+        gpu: Some(gpu.into()),
+        present: true,
+        online: true,
+        ..Default::default()
+    };
     let mut a = card("A", "V100-SXM3-32GB");
     a.pinned = true;
     a.core_c = Some(41.0);
@@ -71,7 +77,11 @@ pub fn deepthought() -> HaSnapshot {
             hostd: Some("ok".into()),
         },
         cards: vec![a, b, c, d],
-        fans: vec![fan("0", "B", 30.0), fan("1", "A", 34.0), fan("2", "C", 30.0)],
+        fans: vec![
+            fan("0", "B", 30.0),
+            fan("1", "A", 34.0),
+            fan("2", "C", 30.0),
+        ],
         engines: vec![
             EngineState {
                 id: "strata-a".into(),
@@ -107,9 +117,15 @@ pub fn deepthought() -> HaSnapshot {
         control: ControlState {
             layout: Some("merged-inkling-x2".into()),
             layout_title: Some("Inkling 2 Mini ('merged') on both cards".into()),
-            layouts: vec!["flash-x2".into(), "dense-stock-x2".into(), "merged-inkling-x2".into()],
+            layouts: vec![
+                "flash-x2".into(),
+                "dense-stock-x2".into(),
+                "merged-inkling-x2".into(),
+            ],
             switch_state: Some("idle".into()),
-            last_switch: Some(serde_json::json!({"at": "2026-11-26T08:00:00Z", "from": "flash-x2", "to": "merged-inkling-x2"})),
+            last_switch: Some(
+                serde_json::json!({"at": "2026-11-26T08:00:00Z", "from": "flash-x2", "to": "merged-inkling-x2"}),
+            ),
             on_demand: Some("off".into()),
             leases_held: Some(0),
             slots_busy: Some(0),
@@ -144,26 +160,72 @@ pub struct FakeControl {
 #[async_trait]
 impl ControlPort for FakeControl {
     async fn switch_layout(&self, who: &ServicePrincipal, layout: &str) -> ControlOutcome {
-        self.calls.lock().unwrap().push(Call::Switch(who.name.clone(), layout.into()));
+        self.calls
+            .lock()
+            .unwrap()
+            .push(Call::Switch(who.name.clone(), layout.into()));
         if *self.bench.lock().unwrap() {
-            return ControlOutcome::Refused { reason: "guard bench: the bench queue is running".into() };
+            return ControlOutcome::Refused {
+                reason: "guard bench: the bench queue is running".into(),
+            };
         }
-        ControlOutcome::Accepted { message: "queued, about 95 s".into(), job: Some("job-1".into()) }
+        ControlOutcome::Accepted {
+            message: "queued, about 95 s".into(),
+            job: Some("job-1".into()),
+        }
     }
-    async fn set_card_online(&self, who: &ServicePrincipal, card: &str, online: bool) -> ControlOutcome {
-        self.calls.lock().unwrap().push(Call::CardOnline(who.name.clone(), card.into(), online));
+    async fn set_card_online(
+        &self,
+        who: &ServicePrincipal,
+        card: &str,
+        online: bool,
+    ) -> ControlOutcome {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(Call::CardOnline(who.name.clone(), card.into(), online));
         if !online && self.leased_cards.lock().unwrap().iter().any(|c| c == card) {
-            return ControlOutcome::Refused { reason: format!("card {card} holds a lease") };
+            return ControlOutcome::Refused {
+                reason: format!("card {card} holds a lease"),
+            };
         }
-        ControlOutcome::Accepted { message: "ok".into(), job: None }
+        ControlOutcome::Accepted {
+            message: "ok".into(),
+            job: None,
+        }
     }
-    async fn set_clock_cap(&self, who: &ServicePrincipal, card: &str, mhz: Option<u32>, ttl: Duration) -> ControlOutcome {
-        self.calls.lock().unwrap().push(Call::ClockCap(who.name.clone(), card.into(), mhz, ttl.as_secs()));
-        ControlOutcome::Accepted { message: "capped".into(), job: None }
+    async fn set_clock_cap(
+        &self,
+        who: &ServicePrincipal,
+        card: &str,
+        mhz: Option<u32>,
+        ttl: Duration,
+    ) -> ControlOutcome {
+        self.calls.lock().unwrap().push(Call::ClockCap(
+            who.name.clone(),
+            card.into(),
+            mhz,
+            ttl.as_secs(),
+        ));
+        ControlOutcome::Accepted {
+            message: "capped".into(),
+            job: None,
+        }
     }
-    async fn set_fan_mode(&self, who: &ServicePrincipal, mode: FanMode, _ttl: Option<Duration>) -> ControlOutcome {
-        self.calls.lock().unwrap().push(Call::Fan(who.name.clone(), mode));
-        ControlOutcome::Accepted { message: "ok".into(), job: None }
+    async fn set_fan_mode(
+        &self,
+        who: &ServicePrincipal,
+        mode: FanMode,
+        _ttl: Option<Duration>,
+    ) -> ControlOutcome {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(Call::Fan(who.name.clone(), mode));
+        ControlOutcome::Accepted {
+            message: "ok".into(),
+            job: None,
+        }
     }
 }
 

@@ -16,6 +16,7 @@
 use axum::http::{HeaderMap, Method};
 use serde_json::{Map, Value, json};
 
+use super::callers::CallerResolver;
 use crate::guards::Caller;
 
 /// What the shim needs from the control plane. Methods that start work (switch, card
@@ -55,20 +56,6 @@ pub trait ShimBackend: Send + Sync {
     -> (u16, Value);
 }
 
-/// Who a bearer key belongs to, and whether it may switch layouts.
-pub trait KeyCheck: Send + Sync {
-    fn check(&self, key: &str) -> Option<(Caller, bool)>;
-}
-
-fn bearer(headers: &HeaderMap) -> Option<&str> {
-    let v = headers.get("authorization")?.to_str().ok()?;
-    let k = v
-        .strip_prefix("Bearer ")
-        .or_else(|| v.strip_prefix("bearer "))?;
-    let k = k.trim();
-    (!k.is_empty()).then_some(k)
-}
-
 fn query(q: &str) -> Vec<(String, String)> {
     q.split('&')
         .filter_map(|p| p.split_once('='))
@@ -88,9 +75,10 @@ const NEED_KEY: &str = "changing layouts or cards needs an admin key or a servic
 switch permission (Authorization: Bearer ...); people use the admin UI (Router > Layouts)";
 
 /// Answer one request. `path_q` includes the query string.
-pub fn handle(
+pub async fn handle(
     b: &dyn ShimBackend,
-    keys: &dyn KeyCheck,
+    callers: &dyn CallerResolver,
+    peer: Option<std::net::IpAddr>,
     method: &Method,
     path_q: &str,
     headers: &HeaderMap,
@@ -141,9 +129,14 @@ pub fn handle(
         return (404, json!({"error": "not found"}));
     }
     // every POST changes something: a key first, before even reading the body
-    let Some((caller, may_switch)) = bearer(headers).and_then(|k| keys.check(k)) else {
-        return (401, json!({"error": NEED_KEY}));
+    let who = match callers.resolve(headers, peer, "POST", path).await {
+        Ok(r) => r,
+        Err((code, msg)) => return (code, json!({"error": format!("{msg}; {NEED_KEY}")})),
     };
+    if who.caller.principal.is_none() {
+        return (401, json!({"error": NEED_KEY}));
+    }
+    let (caller, may_switch) = (who.caller, who.may_switch);
     if !may_switch {
         return (403, json!({"error": NEED_KEY}));
     }
@@ -277,19 +270,19 @@ mod shim_tests {
         }
     }
 
-    struct K;
-    impl KeyCheck for K {
-        fn check(&self, key: &str) -> Option<(Caller, bool)> {
-            let c = |p: &str| Caller {
+    fn keys() -> crate::switch::callers::StaticCallers {
+        use crate::switch::callers::{Resolved, StaticCallers};
+        let r = |p: &str, sw: bool| Resolved {
+            caller: Caller {
                 principal: Some(p.into()),
                 grants: vec![],
-            };
-            match key {
-                "admin-key" => Some((c("admin"), true)),
-                "user-key" => Some((c("user"), false)),
-                _ => None,
-            }
-        }
+            },
+            may_switch: sw,
+            may_on_demand: sw,
+        };
+        StaticCallers::default()
+            .with("admin-key", r("admin", true))
+            .with("user-key", r("user", false))
     }
 
     fn h(key: Option<&str>) -> HeaderMap {
@@ -300,23 +293,33 @@ mod shim_tests {
         h
     }
 
-    #[test]
-    fn gets_are_anonymous_posts_need_a_switch_key() {
+    #[tokio::test]
+    async fn gets_are_anonymous_posts_need_a_switch_key() {
         let b = B::default();
-        let g = |p: &str| handle(&b, &K, &Method::GET, p, &h(None), b"");
-        assert_eq!(g("/health").1["service"], "profiles-api");
-        assert_eq!(g("/live").0, 200);
-        assert_eq!(g("/cards").1["checked"], "t");
-        assert_eq!(g("/jobs?limit=5").1["jobs"].as_array().unwrap().len(), 2);
-        assert_eq!(g("/jobs/j1").1["state"], "done");
-        assert_eq!(g("/jobs/../../etc").0, 404);
-        assert_eq!(g("/plan?layout=flash-x2").1["layout"], "flash-x2");
-        assert_eq!(g("/plan?layout=x&profile=p").1["layout"], Value::Null);
-        assert_eq!(g("/profiles").0, 503);
-        assert_eq!(g("/nope").0, 404);
+        let k = keys();
+        let kr = &k;
+        macro_rules! g {
+            ($p:expr) => {
+                handle(&b, kr, None, &Method::GET, $p, &h(None), b"").await
+            };
+        }
+        assert_eq!(g!("/health").1["service"], "profiles-api");
+        assert_eq!(g!("/live").0, 200);
+        assert_eq!(g!("/cards").1["checked"], "t");
+        assert_eq!(g!("/jobs?limit=5").1["jobs"].as_array().unwrap().len(), 2);
+        assert_eq!(g!("/jobs/j1").1["state"], "done");
+        assert_eq!(g!("/jobs/../../etc").0, 404);
+        assert_eq!(g!("/plan?layout=flash-x2").1["layout"], "flash-x2");
+        assert_eq!(g!("/plan?layout=x&profile=p").1["layout"], Value::Null);
+        assert_eq!(g!("/profiles").0, 503);
+        assert_eq!(g!("/nope").0, 404);
 
         let body = br#"{"layout": "flash-x2", "requestedBy": "ha", "reason": "button"}"#;
-        let post = |p: &str, key: Option<&str>| handle(&b, &K, &Method::POST, p, &h(key), body);
+        macro_rules! post {
+            ($p:expr, $k:expr) => {
+                handle(&b, kr, None, &Method::POST, $p, &h($k), body).await
+            };
+        }
         // anonymous and unknown keys: 401, a key without the permission: 403; nothing reached
         for p in [
             "/switch",
@@ -326,18 +329,18 @@ mod shim_tests {
             "/profiles/save",
             "/profiles/delete",
         ] {
-            let (code, v) = post(p, None);
+            let (code, v) = post!(p, None);
             assert_eq!(code, 401, "{p}");
             assert!(v["error"].as_str().unwrap().contains("admin UI"));
-            assert_eq!(post(p, Some("wrong")).0, 401);
-            assert_eq!(post(p, Some("user-key")).0, 403);
+            assert_eq!(post!(p, Some("wrong")).0, 401);
+            assert_eq!(post!(p, Some("user-key")).0, 403);
         }
         assert!(b.calls.lock().unwrap().is_empty());
         // with an admin or service key
-        assert_eq!(post("/switch", Some("admin-key")).0, 202);
-        assert_eq!(post("/cards/b/offline", Some("admin-key")).0, 202);
-        assert_eq!(post("/cards/AB/offline", Some("admin-key")).0, 404);
-        assert_eq!(post("/compose", Some("admin-key")).0, 200);
+        assert_eq!(post!("/switch", Some("admin-key")).0, 202);
+        assert_eq!(post!("/cards/b/offline", Some("admin-key")).0, 202);
+        assert_eq!(post!("/cards/AB/offline", Some("admin-key")).0, 404);
+        assert_eq!(post!("/compose", Some("admin-key")).0, 200);
         let calls = b.calls.lock().unwrap().clone();
         assert_eq!(
             calls,
@@ -350,36 +353,42 @@ mod shim_tests {
         assert_eq!(
             handle(
                 &b,
-                &K,
+                kr,
+                None,
                 &Method::POST,
                 "/switch",
                 &h(Some("admin-key")),
                 b"[1]"
             )
+            .await
             .0,
             400
         );
         assert_eq!(
             handle(
                 &b,
-                &K,
+                kr,
+                None,
                 &Method::POST,
                 "/switch",
                 &h(Some("admin-key")),
                 b"{}"
             )
+            .await
             .0,
             400
         );
         assert_eq!(
             handle(
                 &b,
-                &K,
+                kr,
+                None,
                 &Method::DELETE,
                 "/switch",
                 &h(Some("admin-key")),
                 b""
             )
+            .await
             .0,
             404
         );

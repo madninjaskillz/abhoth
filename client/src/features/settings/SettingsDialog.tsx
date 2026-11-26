@@ -5,6 +5,7 @@ import { api, settingsApi, type Project, type Setting, type SettingsDoc } from "
 import { ProfilePicker, useProfiles } from "@/features/profiles/Profiles";
 import { AccountPane } from "@/features/auth/AccountDialog";
 import { UsersPane } from "@/features/auth/UsersDialog";
+import { RouterActivityPane, RouterConfigPane, RouterOverviewPane, RouterRoutesPane, ServiceKeysPane } from "@/features/router/RouterPanes";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Tip, menuRow } from "@/components/ui/misc";
@@ -72,7 +73,8 @@ export function SettingsDialog({ project, requested, onClose }: { project: Proje
   const haveProfiles = !!profiles.data?.available && !!profiles.data.profiles;
 
   const all = useMemo(() => doc.data?.sections ?? [], [doc.data]);
-  const tabs = useMemo(() => visibleTabs({ admin, desktop: inDesktop() }, doc.data ? all : undefined), [admin, all, doc.data]);
+  const router = !!info.data?.router;
+  const tabs = useMemo(() => visibleTabs({ admin, desktop: inDesktop(), router }, doc.data ? all : undefined), [admin, all, doc.data, router]);
   const active = pickTab(requested, tabs) ?? "account";
   const activeTab = tabs.find((t) => t.id === active) ?? tabs[0];
   // The URL says which tab is open (and the first one when it asked for none or one this user can't see).
@@ -273,6 +275,11 @@ function TabList({
 function Pane({ id }: { id: string }) {
   if (id === "account") return <div className="flex h-full flex-col"><AccountPane /></div>;
   if (id === "users") return <div className="flex h-full flex-col"><UsersPane /></div>;
+  if (id === "inference") return <div className="flex h-full flex-col"><RouterOverviewPane /></div>;
+  if (id === "routes") return <div className="flex h-full flex-col"><RouterRoutesPane /></div>;
+  if (id === "router-config") return <div className="flex h-full flex-col"><RouterConfigPane /></div>;
+  if (id === "router-activity") return <div className="flex h-full flex-col"><RouterActivityPane /></div>;
+  if (id === "service-keys") return <div className="flex h-full flex-col"><ServiceKeysPane /></div>;
   return null;
 }
 

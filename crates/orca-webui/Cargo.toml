@@ -39,6 +39,7 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+orca-router.workspace = true
 orca-testkit.workspace = true
 orca-tools-fs.workspace = true
 orca-tools-utility.workspace = true

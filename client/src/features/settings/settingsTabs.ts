@@ -13,6 +13,8 @@ export interface TabContext {
   admin: boolean;
   /** Running inside the desktop app (its window bridge is there). */
   desktop: boolean;
+  /** An `abhoth router` control plane is linked to this server (its admin tabs). */
+  router?: boolean;
 }
 
 export interface TabDef {
@@ -29,6 +31,7 @@ export interface TabDef {
 }
 
 const admins = (c: TabContext) => c.admin;
+const routerAdmins = (c: TabContext) => c.admin && !!c.router;
 
 export const SETTINGS_TABS: TabDef[] = [
   {
@@ -94,6 +97,46 @@ export const SETTINGS_TABS: TabDef[] = [
     blurb: "The users of this server and the audit log.",
     keywords: ["users", "people", "admin", "roles", "add user", "disable", "reset password", "audit log", "sign-ins"],
     visible: admins,
+  },
+  {
+    id: "inference",
+    label: "Inference",
+    kind: "pane",
+    blurb: "The router's GPU servers: cards, engines, temperatures, layouts and switches.",
+    keywords: ["router", "gpu", "cards", "engines", "layouts", "switch", "vram", "temperature", "clocks", "guards", "supervisor"],
+    visible: routerAdmins,
+  },
+  {
+    id: "routes",
+    label: "Routes",
+    kind: "pane",
+    blurb: "Model names, what happens when their model is cold, and who may use them.",
+    keywords: ["routes", "model names", "cold", "fallback", "on demand", "access"],
+    visible: routerAdmins,
+  },
+  {
+    id: "router-config",
+    label: "Router config",
+    kind: "pane",
+    blurb: "router.toml, checked as you type; saves are backed up and audited.",
+    keywords: ["router.toml", "config", "toml", "validation"],
+    visible: routerAdmins,
+  },
+  {
+    id: "router-activity",
+    label: "Jobs & audit",
+    kind: "pane",
+    blurb: "Switch jobs and their steps, the router's audit log, and slot leases.",
+    keywords: ["jobs", "history", "audit", "leases", "slots"],
+    visible: routerAdmins,
+  },
+  {
+    id: "service-keys",
+    label: "Service keys",
+    kind: "pane",
+    blurb: "Named keys for Jarvis, pipelines, Home Assistant and the dash, with scopes.",
+    keywords: ["service keys", "jarvis", "home assistant", "pipelines", "dash", "scopes", "revoke"],
+    visible: routerAdmins,
   },
 ];
 

@@ -609,6 +609,9 @@ impl LoginAuth {
                     .map(|u| (k, u))
             });
         Some(match found {
+            // Service keys (ROUTER-CONFIG.md 11.1) work only at the router, never here: their
+            // owner is an admin, and the key must not carry that admin's rights.
+            Some((k, _)) if k.kind != db::KEY_USER => Err(()),
             Some((k, u)) => {
                 self.db.touch_api_key(k.id, self.now());
                 Ok(Principal::of(&u, Via::ApiKey(k.id)))
@@ -777,6 +780,11 @@ pub async fn login_auth(
         .get::<ConnectInfo<SocketAddr>>()
         .map(|c| c.0.ip());
     let seen = auth.seen(peer, req.headers());
+    // The router's key introspection (ROUTER-CONFIG.md 11.1) carries its own bearer token,
+    // which the handler checks; no session, CSRF or HTTPS rule applies to it.
+    if crate::router_admin::is_internal(req.uri().path()) && req.method() == Method::POST {
+        return harden(next.run(req).await);
+    }
     let loopback = seen.ip.is_some_and(|ip| ip.is_loopback());
     // Exposed: plain HTTP only from this machine; everyone else via the HTTPS proxy.
     if auth.options.exposed && !seen.https && !loopback {

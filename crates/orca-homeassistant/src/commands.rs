@@ -27,7 +27,10 @@ pub struct ServicePrincipal {
 
 impl ServicePrincipal {
     pub fn mqtt(server: &str, scopes: &[String]) -> Self {
-        Self { name: format!("mqtt:{}", slug(server)), scopes: scopes.to_vec() }
+        Self {
+            name: format!("mqtt:{}", slug(server)),
+            scopes: scopes.to_vec(),
+        }
     }
 
     pub fn has(&self, scope: &str) -> bool {
@@ -61,11 +64,23 @@ pub enum Command {
     /// Move the layout select (local only, no action).
     SelectLayout(String),
     /// Apply the selected (or named) layout through the switch orchestrator.
-    ApplyLayout { layout: Option<String> },
-    CardOnline { card: String, online: bool },
+    ApplyLayout {
+        layout: Option<String>,
+    },
+    CardOnline {
+        card: String,
+        online: bool,
+    },
     /// `None` clears the cap.
-    ClockCap { card: String, mhz: Option<u32>, ttl: Duration },
-    FanMode { mode: FanMode, ttl: Option<Duration> },
+    ClockCap {
+        card: String,
+        mhz: Option<u32>,
+        ttl: Duration,
+    },
+    FanMode {
+        mode: FanMode,
+        ttl: Option<Duration>,
+    },
 }
 
 impl Command {
@@ -96,7 +111,10 @@ impl Command {
 #[serde(tag = "result", rename_all = "snake_case")]
 pub enum ControlOutcome {
     /// Accepted (possibly queued); `job` names the switch job when there is one.
-    Accepted { message: String, job: Option<String> },
+    Accepted {
+        message: String,
+        job: Option<String>,
+    },
     /// Already in that state.
     Already { message: String },
     /// Refused by a guard, the calendar, a lease, a limit or the principal's scopes.
@@ -121,9 +139,25 @@ impl ControlOutcome {
 #[async_trait]
 pub trait ControlPort: Send + Sync {
     async fn switch_layout(&self, who: &ServicePrincipal, layout: &str) -> ControlOutcome;
-    async fn set_card_online(&self, who: &ServicePrincipal, card: &str, online: bool) -> ControlOutcome;
-    async fn set_clock_cap(&self, who: &ServicePrincipal, card: &str, mhz: Option<u32>, ttl: Duration) -> ControlOutcome;
-    async fn set_fan_mode(&self, who: &ServicePrincipal, mode: FanMode, ttl: Option<Duration>) -> ControlOutcome;
+    async fn set_card_online(
+        &self,
+        who: &ServicePrincipal,
+        card: &str,
+        online: bool,
+    ) -> ControlOutcome;
+    async fn set_clock_cap(
+        &self,
+        who: &ServicePrincipal,
+        card: &str,
+        mhz: Option<u32>,
+        ttl: Duration,
+    ) -> ControlOutcome;
+    async fn set_fan_mode(
+        &self,
+        who: &ServicePrincipal,
+        mode: FanMode,
+        ttl: Option<Duration>,
+    ) -> ControlOutcome;
 }
 
 /// What the parser needs to validate a command against the current state.
@@ -155,8 +189,16 @@ pub enum ParseError {
 /// Parses `topic` + `payload` into a command. Retained messages on command topics are always
 /// refused: a stale retained command replaying on every reconnect is how ha-bridge once
 /// silently turned quiet mode off.
-pub fn parse(t: &Topics, topic: &str, payload: &[u8], retained: bool, ctx: &CommandContext<'_>) -> Result<Command, ParseError> {
-    let obj = topic.strip_prefix(&format!("{}/set/", t.base)).ok_or(ParseError::NotCommand)?;
+pub fn parse(
+    t: &Topics,
+    topic: &str,
+    payload: &[u8],
+    retained: bool,
+    ctx: &CommandContext<'_>,
+) -> Result<Command, ParseError> {
+    let obj = topic
+        .strip_prefix(&format!("{}/set/", t.base))
+        .ok_or(ParseError::NotCommand)?;
     if payload.is_empty() {
         return Err(ParseError::Empty);
     }
@@ -166,7 +208,9 @@ pub fn parse(t: &Topics, topic: &str, payload: &[u8], retained: bool, ctx: &Comm
     if payload.len() > MAX_PAYLOAD {
         return Err(ParseError::TooLarge);
     }
-    let p = std::str::from_utf8(payload).map_err(|_| ParseError::Invalid("payload is not UTF-8".into()))?.trim();
+    let p = std::str::from_utf8(payload)
+        .map_err(|_| ParseError::Invalid("payload is not UTF-8".into()))?
+        .trim();
     match obj {
         "layout_target" => {
             if ctx.layouts.iter().any(|l| l == p) {
@@ -178,15 +222,23 @@ pub fn parse(t: &Topics, topic: &str, payload: &[u8], retained: bool, ctx: &Comm
         "layout_apply" => {
             // `apply` (the button) applies the selected layout; `{"layout": "x"}` names one.
             if p.starts_with('{') {
-                let v: Value = serde_json::from_str(p).map_err(|_| ParseError::Invalid("bad JSON".into()))?;
+                let v: Value =
+                    serde_json::from_str(p).map_err(|_| ParseError::Invalid("bad JSON".into()))?;
                 if v.get("force").is_some() {
-                    return Err(ParseError::Invalid("force is not available from Home Assistant".into()));
+                    return Err(ParseError::Invalid(
+                        "force is not available from Home Assistant".into(),
+                    ));
                 }
-                let l = v.get("layout").and_then(Value::as_str).ok_or_else(|| ParseError::Invalid("missing layout".into()))?;
+                let l = v
+                    .get("layout")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| ParseError::Invalid("missing layout".into()))?;
                 if !ctx.layouts.iter().any(|x| x == l) {
                     return Err(ParseError::Invalid(format!("unknown layout {l:?}")));
                 }
-                Ok(Command::ApplyLayout { layout: Some(l.to_string()) })
+                Ok(Command::ApplyLayout {
+                    layout: Some(l.to_string()),
+                })
             } else if p == "apply" || p == "PRESS" {
                 Ok(Command::ApplyLayout { layout: None })
             } else {
@@ -194,13 +246,18 @@ pub fn parse(t: &Topics, topic: &str, payload: &[u8], retained: bool, ctx: &Comm
             }
         }
         "fan_mode" => {
-            let mode = FanMode::parse(p).ok_or_else(|| ParseError::Invalid(format!("unknown fan mode {p:?}")))?;
+            let mode = FanMode::parse(p)
+                .ok_or_else(|| ParseError::Invalid(format!("unknown fan mode {p:?}")))?;
             let ttl = (mode == FanMode::Full).then(|| Duration::from_secs(3600));
             Ok(Command::FanMode { mode, ttl })
         }
         other => {
-            let rest = other.strip_prefix("card_").ok_or_else(|| ParseError::Unknown(other.into()))?;
-            let (card_slug, what) = rest.split_once('_').ok_or_else(|| ParseError::Unknown(other.into()))?;
+            let rest = other
+                .strip_prefix("card_")
+                .ok_or_else(|| ParseError::Unknown(other.into()))?;
+            let (card_slug, what) = rest
+                .split_once('_')
+                .ok_or_else(|| ParseError::Unknown(other.into()))?;
             let (card, pinned) = ctx
                 .cards
                 .iter()
@@ -210,23 +267,36 @@ pub fn parse(t: &Topics, topic: &str, payload: &[u8], retained: bool, ctx: &Comm
             match what {
                 "online" => match p {
                     "ON" => Ok(Command::CardOnline { card, online: true }),
-                    "OFF" => Ok(Command::CardOnline { card, online: false }),
+                    "OFF" => Ok(Command::CardOnline {
+                        card,
+                        online: false,
+                    }),
                     _ => Err(ParseError::Invalid(format!("unexpected payload {p:?}"))),
                 },
                 "clock_cap" => {
                     if pinned {
-                        return Err(ParseError::Invalid(format!("card {card} is pinned; it has no clock cap")));
+                        return Err(ParseError::Invalid(format!(
+                            "card {card} is pinned; it has no clock cap"
+                        )));
                     }
                     let mhz = if p == "none" {
                         None
                     } else {
-                        let m: u32 = p.parse().map_err(|_| ParseError::Invalid(format!("bad clock cap {p:?}")))?;
+                        let m: u32 = p
+                            .parse()
+                            .map_err(|_| ParseError::Invalid(format!("bad clock cap {p:?}")))?;
                         if !ctx.clock_cap_options.contains(&m) {
-                            return Err(ParseError::Invalid(format!("clock cap {m} is not an offered option")));
+                            return Err(ParseError::Invalid(format!(
+                                "clock cap {m} is not an offered option"
+                            )));
                         }
                         Some(m)
                     };
-                    Ok(Command::ClockCap { card, mhz, ttl: ctx.clock_cap_ttl })
+                    Ok(Command::ClockCap {
+                        card,
+                        mhz,
+                        ttl: ctx.clock_cap_ttl,
+                    })
                 }
                 _ => Err(ParseError::Unknown(other.into())),
             }
@@ -235,17 +305,26 @@ pub fn parse(t: &Topics, topic: &str, payload: &[u8], retained: bool, ctx: &Comm
 }
 
 /// Runs a command against the control port as `who`. Local-only commands return `None`.
-pub async fn dispatch(port: &dyn ControlPort, who: &ServicePrincipal, cmd: &Command, selected: Option<&str>) -> Option<ControlOutcome> {
+pub async fn dispatch(
+    port: &dyn ControlPort,
+    who: &ServicePrincipal,
+    cmd: &Command,
+    selected: Option<&str>,
+) -> Option<ControlOutcome> {
     if let Some(scope) = cmd.scope()
         && !who.has(scope)
     {
-        return Some(ControlOutcome::Refused { reason: format!("the MQTT principal lacks the {scope} scope") });
+        return Some(ControlOutcome::Refused {
+            reason: format!("the MQTT principal lacks the {scope} scope"),
+        });
     }
     Some(match cmd {
         Command::SelectLayout(_) => return None,
         Command::ApplyLayout { layout } => {
             let Some(l) = layout.as_deref().or(selected) else {
-                return Some(ControlOutcome::Refused { reason: "no layout selected".into() });
+                return Some(ControlOutcome::Refused {
+                    reason: "no layout selected".into(),
+                });
             };
             port.switch_layout(who, l).await
         }
@@ -257,7 +336,8 @@ pub async fn dispatch(port: &dyn ControlPort, who: &ServicePrincipal, cmd: &Comm
 
 /// The `abhoth/<server>/result` payload and the `last_command` state attribute.
 pub fn result_json(cmd: &Command, outcome: &ControlOutcome, at: &str) -> Value {
-    let mut v = json!({"command": cmd.name(), "ok": outcome.ok(), "message": outcome.message(), "at": at});
+    let mut v =
+        json!({"command": cmd.name(), "ok": outcome.ok(), "message": outcome.message(), "at": at});
     match cmd {
         Command::ApplyLayout { layout: Some(l) } => v["layout"] = json!(l),
         Command::CardOnline { card, online } => {
@@ -283,7 +363,12 @@ mod tests {
     use super::*;
 
     fn ctx<'a>(layouts: &'a [String], cards: &'a [(String, bool)]) -> CommandContext<'a> {
-        CommandContext { layouts, cards, clock_cap_options: &[1200, 1300, 1400, 1500], clock_cap_ttl: Duration::from_secs(3600) }
+        CommandContext {
+            layouts,
+            cards,
+            clock_cap_options: &[1200, 1300, 1400, 1500],
+            clock_cap_ttl: Duration::from_secs(3600),
+        }
     }
 
     #[test]
@@ -292,26 +377,100 @@ mod tests {
         let layouts = vec!["flash-x2".to_string(), "dense-x2".to_string()];
         let cards = vec![("A".to_string(), true), ("B".to_string(), false)];
         let c = ctx(&layouts, &cards);
-        let p = |topic: &str, pl: &str| parse(&t, &format!("abhoth/deepthought/set/{topic}"), pl.as_bytes(), false, &c);
-        assert_eq!(p("layout_target", "dense-x2"), Ok(Command::SelectLayout("dense-x2".into())));
-        assert!(matches!(p("layout_target", "nope"), Err(ParseError::Invalid(_))));
-        assert_eq!(p("layout_apply", "apply"), Ok(Command::ApplyLayout { layout: None }));
-        assert_eq!(p("layout_apply", r#"{"layout":"flash-x2"}"#), Ok(Command::ApplyLayout { layout: Some("flash-x2".into()) }));
-        assert!(matches!(p("layout_apply", r#"{"layout":"flash-x2","force":true}"#), Err(ParseError::Invalid(_))));
-        assert_eq!(p("card_b_online", "OFF"), Ok(Command::CardOnline { card: "B".into(), online: false }));
+        let p = |topic: &str, pl: &str| {
+            parse(
+                &t,
+                &format!("abhoth/deepthought/set/{topic}"),
+                pl.as_bytes(),
+                false,
+                &c,
+            )
+        };
+        assert_eq!(
+            p("layout_target", "dense-x2"),
+            Ok(Command::SelectLayout("dense-x2".into()))
+        );
+        assert!(matches!(
+            p("layout_target", "nope"),
+            Err(ParseError::Invalid(_))
+        ));
+        assert_eq!(
+            p("layout_apply", "apply"),
+            Ok(Command::ApplyLayout { layout: None })
+        );
+        assert_eq!(
+            p("layout_apply", r#"{"layout":"flash-x2"}"#),
+            Ok(Command::ApplyLayout {
+                layout: Some("flash-x2".into())
+            })
+        );
+        assert!(matches!(
+            p("layout_apply", r#"{"layout":"flash-x2","force":true}"#),
+            Err(ParseError::Invalid(_))
+        ));
+        assert_eq!(
+            p("card_b_online", "OFF"),
+            Ok(Command::CardOnline {
+                card: "B".into(),
+                online: false
+            })
+        );
         assert_eq!(
             p("card_b_clock_cap", "1300"),
-            Ok(Command::ClockCap { card: "B".into(), mhz: Some(1300), ttl: Duration::from_secs(3600) })
+            Ok(Command::ClockCap {
+                card: "B".into(),
+                mhz: Some(1300),
+                ttl: Duration::from_secs(3600)
+            })
         );
-        assert_eq!(p("card_b_clock_cap", "none"), Ok(Command::ClockCap { card: "B".into(), mhz: None, ttl: Duration::from_secs(3600) }));
-        assert!(matches!(p("card_a_clock_cap", "1300"), Err(ParseError::Invalid(m)) if m.contains("pinned")));
-        assert!(matches!(p("card_b_clock_cap", "900"), Err(ParseError::Invalid(_))));
-        assert!(matches!(p("card_z_online", "ON"), Err(ParseError::Invalid(_))));
-        assert_eq!(p("fan_mode", "full"), Ok(Command::FanMode { mode: FanMode::Full, ttl: Some(Duration::from_secs(3600)) }));
+        assert_eq!(
+            p("card_b_clock_cap", "none"),
+            Ok(Command::ClockCap {
+                card: "B".into(),
+                mhz: None,
+                ttl: Duration::from_secs(3600)
+            })
+        );
+        assert!(
+            matches!(p("card_a_clock_cap", "1300"), Err(ParseError::Invalid(m)) if m.contains("pinned"))
+        );
+        assert!(matches!(
+            p("card_b_clock_cap", "900"),
+            Err(ParseError::Invalid(_))
+        ));
+        assert!(matches!(
+            p("card_z_online", "ON"),
+            Err(ParseError::Invalid(_))
+        ));
+        assert_eq!(
+            p("fan_mode", "full"),
+            Ok(Command::FanMode {
+                mode: FanMode::Full,
+                ttl: Some(Duration::from_secs(3600))
+            })
+        );
         assert!(matches!(p("reboot", "now"), Err(ParseError::Unknown(_))));
-        assert_eq!(parse(&t, "abhoth/deepthought/set/fan_mode", b"auto", true, &c), Err(ParseError::Retained));
-        assert_eq!(parse(&t, "abhoth/deepthought/set/fan_mode", b"", false, &c), Err(ParseError::Empty));
-        assert_eq!(parse(&t, "abhoth/other/set/fan_mode", b"auto", false, &c), Err(ParseError::NotCommand));
-        assert_eq!(parse(&t, "abhoth/deepthought/set/fan_mode", &[b'a'; 600], false, &c), Err(ParseError::TooLarge));
+        assert_eq!(
+            parse(&t, "abhoth/deepthought/set/fan_mode", b"auto", true, &c),
+            Err(ParseError::Retained)
+        );
+        assert_eq!(
+            parse(&t, "abhoth/deepthought/set/fan_mode", b"", false, &c),
+            Err(ParseError::Empty)
+        );
+        assert_eq!(
+            parse(&t, "abhoth/other/set/fan_mode", b"auto", false, &c),
+            Err(ParseError::NotCommand)
+        );
+        assert_eq!(
+            parse(
+                &t,
+                "abhoth/deepthought/set/fan_mode",
+                &[b'a'; 600],
+                false,
+                &c
+            ),
+            Err(ParseError::TooLarge)
+        );
     }
 }

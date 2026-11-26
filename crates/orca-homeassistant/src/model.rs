@@ -168,12 +168,12 @@ pub struct HostState {
     pub cpu_pct: Option<f64>,
     #[serde(default)]
     pub ram_total_gb: Option<f64>,
-    /// Used including ARC.
+    /// Used by processes and the kernel, excluding ARC and cache.
     #[serde(default)]
     pub ram_used_gb: Option<f64>,
     #[serde(default)]
     pub ram_arc_gb: Option<f64>,
-    /// Used excluding ARC ("consumed").
+    /// Everything not free (`total − free`).
     #[serde(default)]
     pub ram_consumed_gb: Option<f64>,
     #[serde(default)]
@@ -242,7 +242,13 @@ impl HaSnapshot {
         let s = self
             .cards
             .iter()
-            .map(|c| format!("{}: {}", c.id, c.summary.as_deref().or(c.model.as_deref()).unwrap_or("off")))
+            .map(|c| {
+                format!(
+                    "{}: {}",
+                    c.id,
+                    c.summary.as_deref().or(c.model.as_deref()).unwrap_or("off")
+                )
+            })
             .collect::<Vec<_>>()
             .join(" | ");
         s.chars().take(250).collect()

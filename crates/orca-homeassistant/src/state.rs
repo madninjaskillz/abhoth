@@ -116,16 +116,25 @@ pub fn card_state(card: &CardState, local: &LocalState) -> Value {
 
 /// Every state publish for this snapshot (all retained).
 pub fn build(t: &Topics, snap: &HaSnapshot, local: &LocalState) -> Vec<StateMessage> {
-    let mut out = vec![StateMessage { topic: t.state(), payload: server_state(snap, local).to_string() }];
+    let mut out = vec![StateMessage {
+        topic: t.state(),
+        payload: server_state(snap, local).to_string(),
+    }];
     if let Some(target) = &local.layout_target {
-        out.push(StateMessage { topic: t.layout_target(), payload: target.clone() });
+        out.push(StateMessage {
+            topic: t.layout_target(),
+            payload: target.clone(),
+        });
     }
     for c in &snap.cards {
         out.push(StateMessage {
             topic: t.card_availability(&c.id),
             payload: if c.present { "online" } else { "offline" }.into(),
         });
-        out.push(StateMessage { topic: t.card_state(&c.id), payload: card_state(c, local).to_string() });
+        out.push(StateMessage {
+            topic: t.card_state(&c.id),
+            payload: card_state(c, local).to_string(),
+        });
     }
     for f in &snap.fans {
         let v = json!({
@@ -137,7 +146,10 @@ pub fn build(t: &Topics, snap: &HaSnapshot, local: &LocalState) -> Vec<StateMess
             "failsafe": onoff(f.failsafe),
             "cools": f.cools,
         });
-        out.push(StateMessage { topic: t.fan_state(&f.id), payload: v.to_string() });
+        out.push(StateMessage {
+            topic: t.fan_state(&f.id),
+            payload: v.to_string(),
+        });
     }
     for en in &snap.engines {
         let v = json!({
@@ -148,7 +160,10 @@ pub fn build(t: &Topics, snap: &HaSnapshot, local: &LocalState) -> Vec<StateMess
             "cards": en.cards,
             "kind": en.kind,
         });
-        out.push(StateMessage { topic: t.engine_state(&en.id), payload: v.to_string() });
+        out.push(StateMessage {
+            topic: t.engine_state(&en.id),
+            payload: v.to_string(),
+        });
     }
     out
 }
@@ -160,14 +175,39 @@ pub fn discrete_fingerprint(snap: &HaSnapshot) -> String {
     let cards: Vec<_> = snap
         .cards
         .iter()
-        .map(|x| (x.id.clone(), x.present, x.online, x.engine_state.clone(), x.model.clone(), x.clock_cap_mhz, x.throttle_reasons.is_empty()))
+        .map(|x| {
+            (
+                x.id.clone(),
+                x.present,
+                x.online,
+                x.engine_state.clone(),
+                x.model.clone(),
+                x.clock_cap_mhz,
+                x.throttle_reasons.is_empty(),
+            )
+        })
         .collect();
-    let engines: Vec<_> = snap.engines.iter().map(|e| (e.id.clone(), e.state.clone(), e.healthy)).collect();
-    let fans: Vec<_> = snap.fans.iter().map(|f| (f.id.clone(), f.failsafe, f.source.clone())).collect();
+    let engines: Vec<_> = snap
+        .engines
+        .iter()
+        .map(|e| (e.id.clone(), e.state.clone(), e.healthy))
+        .collect();
+    let fans: Vec<_> = snap
+        .fans
+        .iter()
+        .map(|f| (f.id.clone(), f.failsafe, f.source.clone()))
+        .collect();
     format!(
         "{:?}",
         (
-            (&c.layout, &c.layouts, &c.switch_state, &c.on_demand, c.leases_held, c.bench_running),
+            (
+                &c.layout,
+                &c.layouts,
+                &c.switch_state,
+                &c.on_demand,
+                c.leases_held,
+                c.bench_running
+            ),
             (c.calendar_block, &c.event_active, c.problem, &c.fan_mode),
             (cards, engines, fans)
         )

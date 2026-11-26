@@ -60,7 +60,11 @@ pub fn notify_payload(a: &AlertNotice, on_resolve: ResolveAction) -> Value {
         message.push_str("\n• ");
         message.push_str(&a.children.join("\n• "));
     }
-    let title = if a.resolved { format!("Resolved: {}", a.title) } else { a.title.clone() };
+    let title = if a.resolved {
+        format!("Resolved: {}", a.title)
+    } else {
+        a.title.clone()
+    };
     let mut data = json!({"tag": tag, "group": "abhoth"});
     if let Some(u) = &a.url {
         data["url"] = json!(u); // iOS
@@ -137,8 +141,15 @@ pub struct HaNotifySink {
 
 impl HaNotifySink {
     pub fn new(rest: HaRest, service: &str, on_resolve: ResolveAction) -> anyhow::Result<Self> {
-        anyhow::ensure!(crate::config::valid_slug(service), "notify service {service:?} is not a service name");
-        Ok(Self { rest, service: service.to_string(), on_resolve })
+        anyhow::ensure!(
+            crate::config::valid_slug(service),
+            "notify service {service:?} is not a service name"
+        );
+        Ok(Self {
+            rest,
+            service: service.to_string(),
+            on_resolve,
+        })
     }
 }
 
@@ -149,7 +160,13 @@ impl NoticeSink for HaNotifySink {
     }
 
     async fn send(&self, notice: &AlertNotice) -> anyhow::Result<()> {
-        self.rest.call_service("notify", &self.service, &notify_payload(notice, self.on_resolve)).await
+        self.rest
+            .call_service(
+                "notify",
+                &self.service,
+                &notify_payload(notice, self.on_resolve),
+            )
+            .await
     }
 }
 
@@ -175,13 +192,19 @@ mod tests {
     fn notify_bodies() {
         let w = notify_payload(&notice(Severity::Warning, false), ResolveAction::Clear);
         assert_eq!(w["data"]["tag"], "abhoth-hot_card-A");
-        assert_eq!(w["data"]["clickAction"], "https://abhoth.example/supervisor/alerts");
+        assert_eq!(
+            w["data"]["clickAction"],
+            "https://abhoth.example/supervisor/alerts"
+        );
         assert!(w["data"].get("priority").is_none());
         let c = notify_payload(&notice(Severity::Critical, false), ResolveAction::Clear);
         assert_eq!(c["data"]["priority"], "high");
         assert_eq!(c["data"]["ttl"], 0);
         let r = notify_payload(&notice(Severity::Critical, true), ResolveAction::Clear);
-        assert_eq!(r, json!({"message": "clear_notification", "data": {"tag": "abhoth-hot_card-A"}}));
+        assert_eq!(
+            r,
+            json!({"message": "clear_notification", "data": {"tag": "abhoth-hot_card-A"}})
+        );
         let r2 = notify_payload(&notice(Severity::Critical, true), ResolveAction::Notify);
         assert_eq!(r2["title"], "Resolved: GPU A at 86°C");
         assert!(r2["data"].get("priority").is_none());
@@ -191,13 +214,24 @@ mod tests {
     fn grouped_children_listed() {
         let mut n = notice(Severity::Critical, false);
         n.children = vec!["engine_crash/B".into()];
-        assert!(notify_payload(&n, ResolveAction::Clear)["message"].as_str().unwrap().ends_with("• engine_crash/B"));
+        assert!(
+            notify_payload(&n, ResolveAction::Clear)["message"]
+                .as_str()
+                .unwrap()
+                .ends_with("• engine_crash/B")
+        );
         assert_eq!(mqtt_event_payload(&n)["event_type"], "critical");
-        assert_eq!(mqtt_alert_payload(&notice(Severity::Info, true))["state"], "resolved");
+        assert_eq!(
+            mqtt_alert_payload(&notice(Severity::Info, true))["state"],
+            "resolved"
+        );
         // orca-alerts' MqttSink JSON drives the same event entity.
         let g = json!({"state": "firing", "identity": "oom_kill/x", "rule": "oom_kill", "severity": "warning", "title": "t", "message": "m", "at": 1});
         assert_eq!(event_from_alert_json(&g).unwrap()["event_type"], "warning");
-        assert_eq!(event_from_alert_json(&json!({"state": "resolved", "severity": "critical"})).unwrap()["event_type"], "resolved");
+        assert_eq!(
+            event_from_alert_json(&json!({"state": "resolved", "severity": "critical"})).unwrap()["event_type"],
+            "resolved"
+        );
         assert!(event_from_alert_json(&json!({"state": "firing", "severity": "panic"})).is_none());
     }
 }

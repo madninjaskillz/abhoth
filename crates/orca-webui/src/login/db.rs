@@ -68,6 +68,11 @@ const MIGRATIONS: &[&str] = &[
         detail TEXT NOT NULL DEFAULT '{}'
     );
     CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    // 2: service keys (ROUTER-CONFIG.md 11.1): API keys of kind 'service', owned by the admin
+    // who issued them, limited to their scopes, valid only at the router.
+    "ALTER TABLE api_keys ADD COLUMN kind TEXT NOT NULL DEFAULT 'user';
+    ALTER TABLE api_keys ADD COLUMN scopes TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE api_keys ADD COLUMN note TEXT;",
 ];
 
 /// SHA-256 of a high-entropy secret (a cookie, an API key, a recovery code).
@@ -132,6 +137,38 @@ pub struct ApiKey {
     pub prefix: String,
     pub created: i64,
     pub last_used: Option<i64>,
+    /// `user` (the owner's own key) or `service` (a named key for a client such as Jarvis).
+    #[serde(skip_serializing_if = "is_user_kind")]
+    pub kind: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+fn is_user_kind(k: &str) -> bool {
+    k == KEY_USER
+}
+
+/// API key kinds.
+pub const KEY_USER: &str = "user";
+pub const KEY_SERVICE: &str = "service";
+
+const KEY_COLS: &str = "id, user_id, name, prefix, created, last_used, kind, scopes, note";
+
+fn key_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ApiKey> {
+    let scopes: String = r.get(7)?;
+    Ok(ApiKey {
+        id: r.get(0)?,
+        user_id: r.get(1)?,
+        name: r.get(2)?,
+        prefix: r.get(3)?,
+        created: r.get(4)?,
+        last_used: r.get(5)?,
+        kind: r.get(6)?,
+        scopes: serde_json::from_str(&scopes).unwrap_or_default(),
+        note: r.get(8)?,
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -201,6 +238,22 @@ fn session_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
     })
 }
 
+/// `abhoth.db.schema<v>-<utc time>.bak` next to the database (never overwrites).
+fn backup_path(db: &Path, version: i64) -> PathBuf {
+    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let name = db
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "abhoth.db".into());
+    let mut p = db.with_file_name(format!("{name}.schema{version}-{stamp}.bak"));
+    let mut n = 1;
+    while p.exists() {
+        n += 1;
+        p = db.with_file_name(format!("{name}.schema{version}-{stamp}-{n}.bak"));
+    }
+    p
+}
+
 impl UserDb {
     /// Open (creating it and its folder) and migrate. The file is private to this OS user on
     /// Unix.
@@ -260,6 +313,23 @@ impl UserDb {
                 self.path.display(),
                 orca_core::brand::PRODUCT_NAME
             ));
+        }
+        // An existing file that is about to change schema is copied first: an older build
+        // cannot open the new schema, so rolling back means restoring this copy.
+        if version > 0 && (version as usize) < MIGRATIONS.len() && self.path.is_file() {
+            let backup = backup_path(&self.path, version);
+            conn.execute("VACUUM INTO ?1", [backup.to_string_lossy()])
+                .map_err(|e| {
+                    format!(
+                        "Could not back up {} before upgrading its schema (nothing was changed): {e}",
+                        self.path.display()
+                    )
+                })?;
+            tracing::info!(
+                "{} upgraded from schema {version}; the old file is kept as {}",
+                self.path.display(),
+                backup.display()
+            );
         }
         for (i, sql) in MIGRATIONS.iter().enumerate().skip(version as usize) {
             let tx = conn.transaction().map_err(db_err)?;
@@ -649,10 +719,41 @@ impl UserDb {
         prefix: &str,
         now: i64,
     ) -> Option<ApiKey> {
+        self.insert_key(user_id, name, key, prefix, now, KEY_USER, &[], None)
+    }
+
+    /// A service key owned by `admin_id` (the admin who issues it).
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_service_key(
+        &self,
+        admin_id: i64,
+        name: &str,
+        key: &str,
+        prefix: &str,
+        now: i64,
+        scopes: &[String],
+        note: Option<&str>,
+    ) -> Option<ApiKey> {
+        self.insert_key(admin_id, name, key, prefix, now, KEY_SERVICE, scopes, note)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_key(
+        &self,
+        user_id: i64,
+        name: &str,
+        key: &str,
+        prefix: &str,
+        now: i64,
+        kind: &str,
+        scopes: &[String],
+        note: Option<&str>,
+    ) -> Option<ApiKey> {
         let conn = self.conn.lock().unwrap();
+        let scopes_json = serde_json::to_string(scopes).ok()?;
         conn.execute(
-            "INSERT INTO api_keys(user_id, name, prefix, key_hash, created) VALUES(?1, ?2, ?3, ?4, ?5)",
-            params![user_id, name, prefix, secret_hash(key), now],
+            "INSERT INTO api_keys(user_id, name, prefix, key_hash, created, kind, scopes, note) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![user_id, name, prefix, secret_hash(key), now, kind, scopes_json, note],
         )
         .ok()?;
         Some(ApiKey {
@@ -662,51 +763,58 @@ impl UserDb {
             prefix: prefix.into(),
             created: now,
             last_used: None,
+            kind: kind.into(),
+            scopes: scopes.to_vec(),
+            note: note.map(str::to_string),
         })
     }
 
+    /// Any key (user or service) by its secret.
     pub fn api_key_by_secret(&self, key: &str) -> Option<ApiKey> {
+        self.api_key_by_hash(&secret_hash(key))
+    }
+
+    /// Any key by the SHA-256 of its secret (the router's introspection sends only that).
+    pub fn api_key_by_hash(&self, hash: &[u8]) -> Option<ApiKey> {
         self.conn
             .lock()
             .unwrap()
             .query_row(
-                "SELECT id, user_id, name, prefix, created, last_used FROM api_keys WHERE key_hash=?1",
-                [secret_hash(key)],
-                |r| {
-                    Ok(ApiKey {
-                        id: r.get(0)?,
-                        user_id: r.get(1)?,
-                        name: r.get(2)?,
-                        prefix: r.get(3)?,
-                        created: r.get(4)?,
-                        last_used: r.get(5)?,
-                    })
-                },
+                &format!("SELECT {KEY_COLS} FROM api_keys WHERE key_hash=?1"),
+                [hash],
+                key_row,
             )
             .optional()
             .ok()
             .flatten()
     }
 
+    /// A user's own keys (not the service keys an admin issued).
     pub fn api_keys_of(&self, user_id: i64) -> Vec<ApiKey> {
+        self.keys_where("user_id=?1 AND kind='user'", params![user_id])
+    }
+
+    /// Every service key, oldest first.
+    pub fn service_keys(&self) -> Vec<ApiKey> {
+        self.keys_where("kind='service'", params![])
+    }
+
+    pub fn service_key(&self, id: i64) -> Option<ApiKey> {
+        self.keys_where("id=?1 AND kind='service'", params![id])
+            .into_iter()
+            .next()
+    }
+
+    fn keys_where(&self, cond: &str, args: impl rusqlite::Params) -> Vec<ApiKey> {
         let conn = self.conn.lock().unwrap();
-        let Ok(mut st) = conn.prepare(
-            "SELECT id, user_id, name, prefix, created, last_used FROM api_keys WHERE user_id=?1 ORDER BY id",
-        ) else {
+        let Ok(mut st) = conn.prepare(&format!(
+            "SELECT {KEY_COLS} FROM api_keys WHERE {cond} ORDER BY id"
+        )) else {
             return vec![];
         };
-        st.query_map([user_id], |r| {
-            Ok(ApiKey {
-                id: r.get(0)?,
-                user_id: r.get(1)?,
-                name: r.get(2)?,
-                prefix: r.get(3)?,
-                created: r.get(4)?,
-                last_used: r.get(5)?,
-            })
-        })
-        .map(|rows| rows.filter_map(Result::ok).collect())
-        .unwrap_or_default()
+        st.query_map(args, key_row)
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
     }
 
     pub fn touch_api_key(&self, id: i64, now: i64) {
@@ -716,11 +824,19 @@ impl UserDb {
         );
     }
 
-    /// Revoke one of `user_id`'s keys.
+    /// Revoke one of `user_id`'s own keys.
     pub fn delete_api_key(&self, user_id: i64, id: i64) -> bool {
         self.exec(
-            "DELETE FROM api_keys WHERE id=?1 AND user_id=?2",
+            "DELETE FROM api_keys WHERE id=?1 AND user_id=?2 AND kind='user'",
             params![id, user_id],
+        )
+    }
+
+    /// Revoke a service key (any admin may).
+    pub fn delete_service_key(&self, id: i64) -> bool {
+        self.exec(
+            "DELETE FROM api_keys WHERE id=?1 AND kind='service'",
+            params![id],
         )
     }
 
@@ -808,6 +924,60 @@ impl UserDb {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 0.16.x database (schema 1, with a user and an API key) upgrades in place, keeps its
+    /// rows, and leaves a schema-1 copy that an older build can open.
+    #[test]
+    fn a_schema_1_database_is_backed_up_then_upgraded() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("abhoth.db");
+        {
+            let c = Connection::open(&p).unwrap();
+            c.execute_batch(MIGRATIONS[0]).unwrap();
+            c.execute_batch(
+                "PRAGMA user_version=1;
+                 INSERT INTO users(id, username, username_key, password_hash, is_admin, created)
+                   VALUES (1, 'Ann', 'ann', 'h', 1, 1);
+                 INSERT INTO api_keys(user_id, name, prefix, key_hash, created)
+                   VALUES (1, 'laptop', 'abk_x', x'01', 1);",
+            )
+            .unwrap();
+        }
+        let db = UserDb::open(&p).unwrap();
+        assert_eq!(db.schema_version(), MIGRATIONS.len() as i64);
+        let keys = db.api_keys_of(1);
+        assert_eq!(keys.len(), 1);
+        assert_eq!((keys[0].kind.as_str(), keys[0].scopes.len()), (KEY_USER, 0));
+        drop(db);
+        let backups: Vec<PathBuf> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.to_string_lossy().ends_with(".bak"))
+            .collect();
+        assert_eq!(backups.len(), 1, "{backups:?}");
+        assert!(backups[0].to_string_lossy().contains("abhoth.db.schema1-"));
+        let old = Connection::open(&backups[0]).unwrap();
+        let v: i64 = old
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        let n: i64 = old
+            .query_row("SELECT count(*) FROM api_keys", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((v, n), (1, 1));
+        // opened again: already current, no second copy
+        drop(UserDb::open(&p).unwrap());
+        let count = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .to_string_lossy()
+                    .ends_with(".bak")
+            })
+            .count();
+        assert_eq!(count, 1);
+    }
 
     #[test]
     fn migrations_apply_once_and_a_newer_schema_is_refused() {

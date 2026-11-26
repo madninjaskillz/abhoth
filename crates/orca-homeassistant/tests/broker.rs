@@ -18,7 +18,11 @@ use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 fn start_broker(port: u16) {
@@ -72,7 +76,10 @@ impl Observer {
             loop {
                 match el.poll().await {
                     Ok(Event::Incoming(Packet::Publish(p))) => {
-                        if tx.send((p.topic.clone(), p.payload.to_vec(), p.retain)).is_err() {
+                        if tx
+                            .send((p.topic.clone(), p.payload.to_vec(), p.retain))
+                            .is_err()
+                        {
                             return;
                         }
                     }
@@ -97,7 +104,11 @@ impl Observer {
                         seen.push(t)
                     }
                 }
-                _ => panic!("timed out waiting for {topic}; saw {} topics: {:?}", seen.len(), &seen[..seen.len().min(40)]),
+                _ => panic!(
+                    "timed out waiting for {topic}; saw {} topics: {:?}",
+                    seen.len(),
+                    &seen[..seen.len().min(40)]
+                ),
             }
         }
     }
@@ -136,7 +147,10 @@ async fn wait_calls(control: &FakeControl, n: usize) -> Vec<Call> {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    panic!("expected {n} control calls, got {:?}", control.calls.lock().unwrap());
+    panic!(
+        "expected {n} control calls, got {:?}",
+        control.calls.lock().unwrap()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -155,10 +169,33 @@ async fn end_to_end() {
     // Seed what a previous run / ha-bridge left behind.
     let seed = Observer::connect(port, "seed", "seed/none").await;
     let stale = "homeassistant/sensor/abhoth_deepthought_engine_gone_state/config";
-    seed.client.publish(stale, QoS::AtLeastOnce, true, r#"{"name":"gone"}"#).await.unwrap();
-    seed.client.publish("abhoth/deepthought/set/card_b_online", QoS::AtLeastOnce, true, "OFF").await.unwrap();
-    seed.client.publish("homeassistant/select/deepthought_maxclock/config", QoS::AtLeastOnce, true, r#"{"name":"GPU Max Clock"}"#).await.unwrap();
-    let mut want: Vec<&str> = vec![stale, "abhoth/deepthought/set/card_b_online", "homeassistant/select/deepthought_maxclock/config"];
+    seed.client
+        .publish(stale, QoS::AtLeastOnce, true, r#"{"name":"gone"}"#)
+        .await
+        .unwrap();
+    seed.client
+        .publish(
+            "abhoth/deepthought/set/card_b_online",
+            QoS::AtLeastOnce,
+            true,
+            "OFF",
+        )
+        .await
+        .unwrap();
+    seed.client
+        .publish(
+            "homeassistant/select/deepthought_maxclock/config",
+            QoS::AtLeastOnce,
+            true,
+            r#"{"name":"GPU Max Clock"}"#,
+        )
+        .await
+        .unwrap();
+    let mut want: Vec<&str> = vec![
+        stale,
+        "abhoth/deepthought/set/card_b_online",
+        "homeassistant/select/deepthought_maxclock/config",
+    ];
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     while !want.is_empty() {
         match tokio::time::timeout_at(deadline, obs.rx.recv()).await {
@@ -166,8 +203,15 @@ async fn end_to_end() {
             _ => panic!("seeds never arrived: {want:?}"),
         }
     }
-    for topic in [stale, "abhoth/deepthought/set/card_b_online", "homeassistant/select/deepthought_maxclock/config"] {
-        assert!(Observer::retained(port, topic).await.contains_key(topic), "seeded {topic} is retained");
+    for topic in [
+        stale,
+        "abhoth/deepthought/set/card_b_online",
+        "homeassistant/select/deepthought_maxclock/config",
+    ] {
+        assert!(
+            Observer::retained(port, topic).await.contains_key(topic),
+            "seeded {topic} is retained"
+        );
     }
 
     let task = tokio::spawn(run(HaMqttParams {
@@ -179,24 +223,52 @@ async fn end_to_end() {
         shutdown: stop_rx,
     }));
     // Availability comes up, discovery and state are published.
-    obs.wait("abhoth/deepthought/availability", |p, _| p == b"online").await;
-    let cfg = obs.wait("homeassistant/sensor/deepthought_gpu_temp/config", |p, _| !p.is_empty()).await;
+    obs.wait("abhoth/deepthought/availability", |p, _| p == b"online")
+        .await;
+    let cfg = obs
+        .wait(
+            "homeassistant/sensor/deepthought_gpu_temp/config",
+            |p, _| !p.is_empty(),
+        )
+        .await;
     assert_eq!(json(&cfg)["state_topic"], "abhoth/deepthought/card/b/state");
-    let st = obs.wait("abhoth/deepthought/card/b/state", |_, _| true).await;
+    let st = obs
+        .wait("abhoth/deepthought/card/b/state", |_, _| true)
+        .await;
     assert_eq!(json(&st)["core_temp"], 26.0);
 
     // Retained-message policy: after the sweep, the stale config, the retained command and
     // the retired ha-bridge select are gone; ours are retained. (rumqttd forwards at most
     // `max_inflight_count` retained messages per subscription, so probe topic by topic.)
     tokio::time::sleep(Duration::from_secs(4)).await;
-    let held = |topic: &'static str| async move { Observer::retained(port, topic).await.remove(topic) };
+    let held =
+        |topic: &'static str| async move { Observer::retained(port, topic).await.remove(topic) };
     assert_eq!(held(stale).await, None, "stale discovery config swept");
-    assert_eq!(held("abhoth/deepthought/set/card_b_online").await, None, "retained command cleared");
-    assert_eq!(held("homeassistant/select/deepthought_maxclock/config").await, None, "retired maxclock cleared");
-    assert_eq!(held("abhoth/deepthought/availability").await.as_deref(), Some(&b"online"[..]));
-    assert!(held("homeassistant/sensor/abhoth_deepthought_card_c_core_temp/config").await.is_some());
+    assert_eq!(
+        held("abhoth/deepthought/set/card_b_online").await,
+        None,
+        "retained command cleared"
+    );
+    assert_eq!(
+        held("homeassistant/select/deepthought_maxclock/config").await,
+        None,
+        "retired maxclock cleared"
+    );
+    assert_eq!(
+        held("abhoth/deepthought/availability").await.as_deref(),
+        Some(&b"online"[..])
+    );
+    assert!(
+        held("homeassistant/sensor/abhoth_deepthought_card_c_core_temp/config")
+            .await
+            .is_some()
+    );
     assert!(held("abhoth/deepthought/state").await.is_some());
-    assert_eq!(held("abhoth/deepthought/result").await, None, "results are not retained");
+    assert_eq!(
+        held("abhoth/deepthought/result").await,
+        None,
+        "results are not retained"
+    );
     // The retained command was never acted on.
     let calls = control.calls.lock().unwrap().clone();
     assert!(calls.is_empty(), "{calls:?}");
@@ -205,14 +277,20 @@ async fn end_to_end() {
     let sender = obs.client.clone();
     let cmd = |topic: &str, payload: &str| {
         let c = sender.clone();
-        let (t, p) = (format!("abhoth/deepthought/set/{topic}"), payload.to_string());
+        let (t, p) = (
+            format!("abhoth/deepthought/set/{topic}"),
+            payload.to_string(),
+        );
         async move { c.publish(t, QoS::AtLeastOnce, false, p).await.unwrap() }
     };
     // Card offline: accepted by the guard, as the MQTT principal.
     cmd("card_b_online", "OFF").await;
     let r = json(&obs.wait("abhoth/deepthought/result", |_, _| true).await);
     assert_eq!(r["ok"], true, "{r}");
-    assert_eq!(wait_calls(&control, 1).await[0], Call::CardOnline("mqtt:deepthought".into(), "B".into(), false));
+    assert_eq!(
+        wait_calls(&control, 1).await[0],
+        Call::CardOnline("mqtt:deepthought".into(), "B".into(), false)
+    );
     // Card A holds a lease: refused by the guard, and the refusal reaches HA.
     cmd("card_a_online", "OFF").await;
     let r = json(&obs.wait("abhoth/deepthought/result", |_, _| true).await);
@@ -223,26 +301,44 @@ async fn end_to_end() {
     let r = json(&obs.wait("abhoth/deepthought/result", |_, _| true).await);
     assert!(r["message"].as_str().unwrap().contains("pinned"), "{r}");
     cmd("card_b_clock_cap", "1400").await;
-    obs.wait("abhoth/deepthought/result", |p, _| json(p)["command"] == "clock_cap").await;
+    obs.wait("abhoth/deepthought/result", |p, _| {
+        json(p)["command"] == "clock_cap"
+    })
+    .await;
     // Select a layout, then apply: the switch uses the selected layout. The bench guard
     // refuses the first try.
     cmd("layout_target", "flash-x2").await;
-    obs.wait("abhoth/deepthought/layout_target", |p, _| p == b"flash-x2").await;
+    obs.wait("abhoth/deepthought/layout_target", |p, _| p == b"flash-x2")
+        .await;
     *control.bench.lock().unwrap() = true;
     cmd("layout_apply", "apply").await;
-    let r = json(&obs.wait("abhoth/deepthought/result", |p, _| json(p)["command"] == "layout_apply").await);
+    let r = json(
+        &obs.wait("abhoth/deepthought/result", |p, _| {
+            json(p)["command"] == "layout_apply"
+        })
+        .await,
+    );
     assert_eq!(r["ok"], false);
     assert!(r["message"].as_str().unwrap().contains("bench"));
     *control.bench.lock().unwrap() = false;
     cmd("layout_apply", "apply").await;
-    let r = json(&obs.wait("abhoth/deepthought/result", |p, _| json(p)["command"] == "layout_apply").await);
+    let r = json(
+        &obs.wait("abhoth/deepthought/result", |p, _| {
+            json(p)["command"] == "layout_apply"
+        })
+        .await,
+    );
     assert_eq!(r["ok"], true);
     assert_eq!(r["job"], "job-1");
     // A forced apply is not available from HA, and unknown commands do nothing.
     cmd("layout_apply", r#"{"layout":"flash-x2","force":true}"#).await;
-    obs.wait("abhoth/deepthought/result", |p, _| json(p)["ok"] == false).await;
+    obs.wait("abhoth/deepthought/result", |p, _| json(p)["ok"] == false)
+        .await;
     cmd("fan_mode", "full").await;
-    obs.wait("abhoth/deepthought/result", |p, _| json(p)["command"] == "fan_mode").await;
+    obs.wait("abhoth/deepthought/result", |p, _| {
+        json(p)["command"] == "fan_mode"
+    })
+    .await;
     let calls = wait_calls(&control, 6).await;
     assert_eq!(
         calls[1..],
@@ -255,7 +351,12 @@ async fn end_to_end() {
         ]
     );
     // The last command is visible in the server state attributes.
-    let st = json(&obs.wait("abhoth/deepthought/state", |p, _| json(p)["last_command"]["command"] == "fan_mode").await);
+    let st = json(
+        &obs.wait("abhoth/deepthought/state", |p, _| {
+            json(p)["last_command"]["command"] == "fan_mode"
+        })
+        .await,
+    );
     assert_eq!(st["last_command"]["ok"], true);
 
     // ── snapshot changes: an engine disappears → its discovery is cleared; the layout
@@ -264,8 +365,15 @@ async fn end_to_end() {
     snap1.engines.retain(|e| e.id != "comfyui");
     snap1.control.layout = Some("dense-stock-x2".into());
     snap_tx.send(snap1).unwrap();
-    obs.wait("homeassistant/sensor/abhoth_deepthought_engine_comfyui_state/config", |p, _| p.is_empty()).await;
-    obs.wait("abhoth/deepthought/layout_target", |p, _| p == b"dense-stock-x2").await;
+    obs.wait(
+        "homeassistant/sensor/abhoth_deepthought_engine_comfyui_state/config",
+        |p, _| p.is_empty(),
+    )
+    .await;
+    obs.wait("abhoth/deepthought/layout_target", |p, _| {
+        p == b"dense-stock-x2"
+    })
+    .await;
 
     // ── alerts (the mqtt sink) ──
     handle
@@ -282,24 +390,56 @@ async fn end_to_end() {
         })
         .await
         .unwrap();
-    let ev = json(&obs.wait("abhoth/deepthought/alert_event", |_, _| true).await);
+    let ev = json(
+        &obs.wait("abhoth/deepthought/alert_event", |_, _| true)
+            .await,
+    );
     assert_eq!(ev["event_type"], "critical");
     let held = Observer::retained(port, "abhoth/deepthought/alert/#").await;
-    assert_eq!(json(&held["abhoth/deepthought/alert/hot_card"])["state"], "open");
+    assert_eq!(
+        json(&held["abhoth/deepthought/alert/hot_card"])["state"],
+        "open"
+    );
     // The orca-alerts MqttSink path: a raw publish on an alert topic, which also fires the
     // event entity; anything outside the alert topics is refused.
-    handle.publish("abhoth/deepthought/set/card_c_online", "OFF", false).await.unwrap();
+    handle
+        .publish("abhoth/deepthought/set/card_c_online", "OFF", false)
+        .await
+        .unwrap();
     let body = r#"{"state":"resolved","identity":"hot_card/A","rule":"hot_card","severity":"critical","title":"t","message":"m","at":1}"#;
-    handle.publish("abhoth/deepthought/alert/hot_card", body, true).await.unwrap();
-    let ev = json(&obs.wait("abhoth/deepthought/alert_event", |p, _| json(p)["event_type"] == "resolved").await);
+    handle
+        .publish("abhoth/deepthought/alert/hot_card", body, true)
+        .await
+        .unwrap();
+    let ev = json(
+        &obs.wait("abhoth/deepthought/alert_event", |p, _| {
+            json(p)["event_type"] == "resolved"
+        })
+        .await,
+    );
     assert_eq!(ev["identity"], "hot_card/A");
-    assert!(!control.calls.lock().unwrap().iter().any(|c| matches!(c, Call::CardOnline(_, card, _) if card == "C")));
+    assert!(
+        !control
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, Call::CardOnline(_, card, _) if card == "C"))
+    );
 
     // ── orderly stop publishes offline ──
     stop_tx.send(true).unwrap();
-    tokio::time::timeout(Duration::from_secs(10), task).await.unwrap().unwrap().unwrap();
+    tokio::time::timeout(Duration::from_secs(10), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
     let held = Observer::retained(port, "abhoth/deepthought/availability").await;
-    assert_eq!(held.get("abhoth/deepthought/availability").map(Vec::as_slice), Some(&b"offline"[..]));
+    assert_eq!(
+        held.get("abhoth/deepthought/availability")
+            .map(Vec::as_slice),
+        Some(&b"offline"[..])
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -321,9 +461,11 @@ async fn reconnects_then_last_will_marks_offline_on_crash() {
     start_broker(port);
     tokio::time::sleep(Duration::from_millis(300)).await;
     let mut obs = Observer::connect(port, "observer-lwt", "abhoth/deepthought/availability").await;
-    obs.wait("abhoth/deepthought/availability", |p, _| p == b"online").await;
+    obs.wait("abhoth/deepthought/availability", |p, _| p == b"online")
+        .await;
     // A crash: the task and its connection vanish without a DISCONNECT.
     task.abort();
     let _ = task.await;
-    obs.wait("abhoth/deepthought/availability", |p, _| p == b"offline").await;
+    obs.wait("abhoth/deepthought/availability", |p, _| p == b"offline")
+        .await;
 }

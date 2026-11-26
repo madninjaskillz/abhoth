@@ -19,7 +19,10 @@ pub struct HaRest {
 
 impl std::fmt::Debug for HaRest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HaRest").field("base", &self.base).field("token", &self.token).finish()
+        f.debug_struct("HaRest")
+            .field("base", &self.base)
+            .field("token", &self.token)
+            .finish()
     }
 }
 
@@ -48,8 +51,14 @@ pub struct HaReading {
 
 impl HaRest {
     pub fn new(base_url: &str, token: Secret) -> anyhow::Result<Self> {
-        let http = reqwest::Client::builder().timeout(Duration::from_secs(5)).build()?;
-        Ok(Self { base: base_url.trim_end_matches('/').to_string(), token, http })
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()?;
+        Ok(Self {
+            base: base_url.trim_end_matches('/').to_string(),
+            token,
+            http,
+        })
     }
 
     pub fn from_config(c: &HomeAssistantConfig) -> anyhow::Result<Self> {
@@ -76,7 +85,12 @@ impl HaRest {
     }
 
     /// `POST /api/services/<domain>/<service>`.
-    pub async fn call_service(&self, domain: &str, service: &str, body: &Value) -> anyhow::Result<()> {
+    pub async fn call_service(
+        &self,
+        domain: &str,
+        service: &str,
+        body: &Value,
+    ) -> anyhow::Result<()> {
         if !valid_slug(domain) || !valid_slug(service) {
             bail!("bad service name {domain}.{service}");
         }
@@ -124,7 +138,11 @@ pub fn to_reading(name: &str, s: HaEntityState) -> HaReading {
         name: name.to_string(),
         entity_id: s.entity_id,
         value,
-        unit: s.attributes.get("unit_of_measurement").and_then(Value::as_str).map(String::from),
+        unit: s
+            .attributes
+            .get("unit_of_measurement")
+            .and_then(Value::as_str)
+            .map(String::from),
         raw: Some(s.state),
         error: None,
     }
@@ -132,7 +150,11 @@ pub fn to_reading(name: &str, s: HaEntityState) -> HaReading {
 
 /// Polls `reads` every `read_interval_seconds` and sends each round to `tx` (the hub turns
 /// them into `ha.<name>` sensors). Ends when the receiver is dropped.
-pub async fn poll_reads(rest: HaRest, cfg: HomeAssistantConfig, tx: tokio::sync::mpsc::Sender<Vec<HaReading>>) {
+pub async fn poll_reads(
+    rest: HaRest,
+    cfg: HomeAssistantConfig,
+    tx: tokio::sync::mpsc::Sender<Vec<HaReading>>,
+) {
     let mut tick = tokio::time::interval(Duration::from_secs(cfg.read_interval_seconds.max(5)));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -154,11 +176,17 @@ mod tests {
         let st = |s: &str| HaEntityState {
             entity_id: "sensor.ac_out".into(),
             state: s.into(),
-            attributes: json!({"unit_of_measurement": "W"}).as_object().unwrap().clone(),
+            attributes: json!({"unit_of_measurement": "W"})
+                .as_object()
+                .unwrap()
+                .clone(),
             last_updated: None,
         };
         assert_eq!(to_reading("ecoflow_ac", st("412.5")).value, Some(412.5));
-        assert_eq!(to_reading("ecoflow_ac", st("412.5")).unit.as_deref(), Some("W"));
+        assert_eq!(
+            to_reading("ecoflow_ac", st("412.5")).unit.as_deref(),
+            Some("W")
+        );
         assert_eq!(to_reading("ecoflow_ac", st("unavailable")).value, None);
         assert_eq!(to_reading("ecoflow_ac", st("nan")).value, None);
     }

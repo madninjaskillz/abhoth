@@ -118,10 +118,22 @@ struct E<'a> {
 }
 
 fn e<'a>(component: &'static str, key: &str, name: &'a str, extra: Value) -> E<'a> {
-    E { component, key: key.to_string(), name, field: key.to_string(), extra }
+    E {
+        component,
+        key: key.to_string(),
+        name,
+        field: key.to_string(),
+        extra,
+    }
 }
 
-fn sensor<'a>(key: &str, name: &'a str, unit: Option<&str>, dc: Option<&str>, icon: Option<&str>) -> E<'a> {
+fn sensor<'a>(
+    key: &str,
+    name: &'a str,
+    unit: Option<&str>,
+    dc: Option<&str>,
+    icon: Option<&str>,
+) -> E<'a> {
     let mut m = Map::new();
     if let Some(u) = unit {
         m.insert("unit_of_measurement".into(), json!(u));
@@ -161,7 +173,11 @@ impl<'a> Builder<'a> {
                     "manufacturer": s.manufacturer.clone().unwrap_or_else(|| "Abhoth".into()),
                     "model": s.model.clone().unwrap_or_else(|| "Abhoth Supervisor".into()),
                 });
-                d["sw_version"] = json!(s.version.clone().unwrap_or_else(|| self.opts.sw_version.clone()));
+                d["sw_version"] = json!(
+                    s.version
+                        .clone()
+                        .unwrap_or_else(|| self.opts.sw_version.clone())
+                );
                 d
             }
             Scope::Card(c) => {
@@ -176,7 +192,12 @@ impl<'a> Builder<'a> {
             }
             Scope::Fan(f) => {
                 let fan = snap.fans.iter().find(|x| x.id == f);
-                let mut name = format!("{} fan {}", s.name, fan.and_then(|x| x.name.clone()).unwrap_or_else(|| f.to_string()));
+                let mut name = format!(
+                    "{} fan {}",
+                    s.name,
+                    fan.and_then(|x| x.name.clone())
+                        .unwrap_or_else(|| f.to_string())
+                );
                 if let Some(fan) = fan
                     && !fan.cools.is_empty()
                 {
@@ -244,10 +265,16 @@ impl<'a> Builder<'a> {
             // ha-bridge published both; keeping them keeps the entity ids it created.
             cfg.insert("object_id".into(), json!(object_id));
         }
-        cfg.insert("default_entity_id".into(), json!(format!("{}.{object_id}", x.component)));
+        cfg.insert(
+            "default_entity_id".into(),
+            json!(format!("{}.{object_id}", x.component)),
+        );
         if stateful {
             cfg.insert("state_topic".into(), json!(self.state_topic(scope)));
-            cfg.insert("value_template".into(), json!(format!("{{{{ value_json.{} }}}}", x.field)));
+            cfg.insert(
+                "value_template".into(),
+                json!(format!("{{{{ value_json.{} }}}}", x.field)),
+            );
         }
         if let Value::Object(m) = x.extra {
             for (k, v) in m {
@@ -257,7 +284,10 @@ impl<'a> Builder<'a> {
         cfg.insert("availability".into(), self.availability(scope));
         cfg.insert("availability_mode".into(), json!("all"));
         cfg.insert("device".into(), self.device(scope, snap));
-        cfg.insert("origin".into(), json!({"name": "Abhoth Supervisor", "sw_version": self.opts.sw_version}));
+        cfg.insert(
+            "origin".into(),
+            json!({"name": "Abhoth Supervisor", "sw_version": self.opts.sw_version}),
+        );
         self.out.push(DiscoveryMessage {
             topic: self.t.discovery(x.component, &uid),
             component: x.component,
@@ -268,7 +298,11 @@ impl<'a> Builder<'a> {
 }
 
 fn attrs(fields: &[&str]) -> String {
-    let inner = fields.iter().map(|f| format!("'{f}': value_json.{f}")).collect::<Vec<_>>().join(", ");
+    let inner = fields
+        .iter()
+        .map(|f| format!("'{f}': value_json.{f}"))
+        .collect::<Vec<_>>()
+        .join(", ");
     format!("{{{{ {{{inner}}} | tojson }}}}")
 }
 
@@ -279,47 +313,144 @@ pub fn build(t: &Topics, opts: &DiscoveryOptions, snap: &HaSnapshot) -> Vec<Disc
         // ha-bridge's device: HA merges devices on any shared identifier.
         ident.insert(0, json!("deepthought"));
     }
-    let mut b = Builder { t, opts, server_ident: Value::Array(ident), out: Vec::new() };
+    let mut b = Builder {
+        t,
+        opts,
+        server_ident: Value::Array(ident),
+        out: Vec::new(),
+    };
     let s = Scope::Server;
 
     // ── server ──
     for x in [
-        sensor("tok_s_total", "Tokens per second", Some("t/s"), None, Some("mdi:speedometer")),
+        sensor(
+            "tok_s_total",
+            "Tokens per second",
+            Some("t/s"),
+            None,
+            Some("mdi:speedometer"),
+        ),
         diag(sensor("models", "Model", None, None, Some("mdi:brain"))),
-        sensor("power_total", "GPU power total", Some("W"), Some("power"), None),
+        sensor(
+            "power_total",
+            "GPU power total",
+            Some("W"),
+            Some("power"),
+            None,
+        ),
         sensor("cpu", "Host CPU", Some("%"), None, Some("mdi:cpu-64-bit")),
         sensor("ram_used", "RAM used", Some("GB"), Some("data_size"), None),
         sensor("ram_arc", "RAM ARC", Some("GB"), Some("data_size"), None),
-        sensor("ram_consumed", "RAM consumed", Some("GB"), Some("data_size"), None),
+        sensor(
+            "ram_consumed",
+            "RAM consumed",
+            Some("GB"),
+            Some("data_size"),
+            None,
+        ),
         sensor("ram_free", "RAM free", Some("GB"), Some("data_size"), None),
-        sensor("net_in", "Network in", Some("Mbit/s"), Some("data_rate"), None),
-        sensor("net_out", "Network out", Some("Mbit/s"), Some("data_rate"), None),
+        sensor(
+            "net_in",
+            "Network in",
+            Some("Mbit/s"),
+            Some("data_rate"),
+            None,
+        ),
+        sensor(
+            "net_out",
+            "Network out",
+            Some("Mbit/s"),
+            Some("data_rate"),
+            None,
+        ),
         with(
             sensor("layout", "Layout", None, None, Some("mdi:layers-triple")),
             json!({"json_attributes_topic": t.state(), "json_attributes_template": attrs(&["layout_title", "layouts"])}),
         ),
         with(
-            sensor("switch_state", "Layout switch", None, None, Some("mdi:swap-horizontal")),
+            sensor(
+                "switch_state",
+                "Layout switch",
+                None,
+                None,
+                Some("mdi:swap-horizontal"),
+            ),
             json!({"json_attributes_topic": t.state(), "json_attributes_template": attrs(&["last_switch", "last_command", "layout_target"])}),
         ),
-        sensor("last_switch_at", "Last switch", None, Some("timestamp"), None),
-        sensor("on_demand", "On-demand", None, None, Some("mdi:power-sleep")),
+        sensor(
+            "last_switch_at",
+            "Last switch",
+            None,
+            Some("timestamp"),
+            None,
+        ),
+        sensor(
+            "on_demand",
+            "On-demand",
+            None,
+            None,
+            Some("mdi:power-sleep"),
+        ),
         sensor("leases", "Leases held", None, None, Some("mdi:lock")),
-        sensor("slots_busy", "Slots busy", None, None, Some("mdi:tray-full")),
+        sensor(
+            "slots_busy",
+            "Slots busy",
+            None,
+            None,
+            Some("mdi:tray-full"),
+        ),
         sensor("slots_total", "Slots total", None, None, Some("mdi:tray")),
-        e("binary_sensor", "bench_running", "Bench running", json!({"icon": "mdi:timer-sand"})),
-        e("binary_sensor", "calendar_block", "Calendar block", json!({"icon": "mdi:calendar-lock"})),
+        e(
+            "binary_sensor",
+            "bench_running",
+            "Bench running",
+            json!({"icon": "mdi:timer-sand"}),
+        ),
+        e(
+            "binary_sensor",
+            "calendar_block",
+            "Calendar block",
+            json!({"icon": "mdi:calendar-lock"}),
+        ),
         with(
-            e("binary_sensor", "event_active", "Event active", json!({"icon": "mdi:calendar-star"})),
+            e(
+                "binary_sensor",
+                "event_active",
+                "Event active",
+                json!({"icon": "mdi:calendar-star"}),
+            ),
             json!({"json_attributes_topic": t.state(), "json_attributes_template": attrs(&["event"])}),
         ),
         with(
-            e("binary_sensor", "problem", "Problem", json!({"device_class": "problem"})),
+            e(
+                "binary_sensor",
+                "problem",
+                "Problem",
+                json!({"device_class": "problem"}),
+            ),
             json!({"json_attributes_topic": t.state(), "json_attributes_template": attrs(&["open_alerts"])}),
         ),
-        diag(sensor("version", "Supervisor version", None, None, Some("mdi:tag"))),
-        diag(sensor("config_rev", "Config revision", None, None, Some("mdi:file-cog"))),
-        diag(sensor("hostd", "hostd status", None, None, Some("mdi:heart-pulse"))),
+        diag(sensor(
+            "version",
+            "Supervisor version",
+            None,
+            None,
+            Some("mdi:tag"),
+        )),
+        diag(sensor(
+            "config_rev",
+            "Config revision",
+            None,
+            None,
+            Some("mdi:file-cog"),
+        )),
+        diag(sensor(
+            "hostd",
+            "hostd status",
+            None,
+            None,
+            Some("mdi:heart-pulse"),
+        )),
     ] {
         b.add(snap, s, x, true);
     }
@@ -338,7 +469,11 @@ pub fn build(t: &Topics, opts: &DiscoveryOptions, snap: &HaSnapshot) -> Vec<Disc
 
     // ── server controls ──
     if opts.control("switch") {
-        let options = if snap.control.layouts.is_empty() { vec!["unknown".to_string()] } else { snap.control.layouts.clone() };
+        let options = if snap.control.layouts.is_empty() {
+            vec!["unknown".to_string()]
+        } else {
+            snap.control.layouts.clone()
+        };
         b.add(
             snap,
             s,
@@ -378,25 +513,71 @@ pub fn build(t: &Topics, opts: &DiscoveryOptions, snap: &HaSnapshot) -> Vec<Disc
     for card in &snap.cards {
         let c = Scope::Card(&card.id);
         for x in [
-            sensor("core_temp", "Core temp", Some("°C"), Some("temperature"), None),
-            sensor("hbm_temp", "HBM temp", Some("°C"), Some("temperature"), None),
+            sensor(
+                "core_temp",
+                "Core temp",
+                Some("°C"),
+                Some("temperature"),
+                None,
+            ),
+            sensor(
+                "hbm_temp",
+                "HBM temp",
+                Some("°C"),
+                Some("temperature"),
+                None,
+            ),
             sensor("power", "Power", Some("W"), Some("power"), None),
-            sensor("power_pct", "Power of limit", Some("%"), None, Some("mdi:flash")),
+            sensor(
+                "power_pct",
+                "Power of limit",
+                Some("%"),
+                None,
+                Some("mdi:flash"),
+            ),
             sensor("sm_clock", "SM clock", Some("MHz"), Some("frequency"), None),
             sensor("util", "Utilization", Some("%"), None, Some("mdi:chip")),
-            sensor("vram_used", "VRAM used", Some("GB"), None, Some("mdi:memory")),
+            sensor(
+                "vram_used",
+                "VRAM used",
+                Some("GB"),
+                None,
+                Some("mdi:memory"),
+            ),
             with(
                 sensor("engine", "Engine", None, None, Some("mdi:expansion-card")),
                 json!({"json_attributes_topic": t.card_state(&card.id), "json_attributes_template": attrs(&["engine_name", "engine_state", "model", "gpu"])}),
             ),
-            sensor("engine_state", "Engine state", None, None, Some("mdi:state-machine")),
+            sensor(
+                "engine_state",
+                "Engine state",
+                None,
+                None,
+                Some("mdi:state-machine"),
+            ),
             sensor("model", "Model", None, None, Some("mdi:brain")),
-            sensor("tok_s", "Tokens per second", Some("t/s"), None, Some("mdi:speedometer")),
+            sensor(
+                "tok_s",
+                "Tokens per second",
+                Some("t/s"),
+                None,
+                Some("mdi:speedometer"),
+            ),
             sensor("running", "Running", None, None, Some("mdi:play")),
             sensor("queued", "Queued", None, None, Some("mdi:tray-full")),
-            e("binary_sensor", "clock_locked", "Clock locked", json!({"icon": "mdi:lock-clock"})),
+            e(
+                "binary_sensor",
+                "clock_locked",
+                "Clock locked",
+                json!({"icon": "mdi:lock-clock"}),
+            ),
             with(
-                e("binary_sensor", "throttling", "Throttling", json!({"icon": "mdi:speedometer-slow"})),
+                e(
+                    "binary_sensor",
+                    "throttling",
+                    "Throttling",
+                    json!({"icon": "mdi:speedometer-slow"}),
+                ),
                 json!({"json_attributes_topic": t.card_state(&card.id), "json_attributes_template": attrs(&["throttle_reasons"])}),
             ),
         ] {
@@ -441,10 +622,33 @@ pub fn build(t: &Topics, opts: &DiscoveryOptions, snap: &HaSnapshot) -> Vec<Disc
         for x in [
             sensor("duty", "Duty", Some("%"), None, Some("mdi:fan")),
             sensor("rpm", "Speed", Some("rpm"), None, Some("mdi:fan")),
-            sensor("control_temp", "Control temp", Some("°C"), Some("temperature"), None),
-            sensor("source", "Control source", None, None, Some("mdi:thermometer-lines")),
-            diag(sensor("push_age", "Push age", Some("s"), Some("duration"), None)),
-            e("binary_sensor", "failsafe", "Failsafe", json!({"device_class": "problem"})),
+            sensor(
+                "control_temp",
+                "Control temp",
+                Some("°C"),
+                Some("temperature"),
+                None,
+            ),
+            sensor(
+                "source",
+                "Control source",
+                None,
+                None,
+                Some("mdi:thermometer-lines"),
+            ),
+            diag(sensor(
+                "push_age",
+                "Push age",
+                Some("s"),
+                Some("duration"),
+                None,
+            )),
+            e(
+                "binary_sensor",
+                "failsafe",
+                "Failsafe",
+                json!({"device_class": "problem"}),
+            ),
         ] {
             b.add(snap, f, x, true);
         }
@@ -456,8 +660,19 @@ pub fn build(t: &Topics, opts: &DiscoveryOptions, snap: &HaSnapshot) -> Vec<Disc
         for x in [
             sensor("state", "State", None, None, Some("mdi:state-machine")),
             sensor("model", "Model", None, None, Some("mdi:brain")),
-            sensor("tok_s", "Tokens per second", Some("t/s"), None, Some("mdi:speedometer")),
-            e("binary_sensor", "healthy", "Healthy", json!({"device_class": "running"})),
+            sensor(
+                "tok_s",
+                "Tokens per second",
+                Some("t/s"),
+                None,
+                Some("mdi:speedometer"),
+            ),
+            e(
+                "binary_sensor",
+                "healthy",
+                "Healthy",
+                json!({"device_class": "running"}),
+            ),
         ] {
             b.add(snap, g, x, true);
         }
@@ -470,7 +685,11 @@ pub fn build(t: &Topics, opts: &DiscoveryOptions, snap: &HaSnapshot) -> Vec<Disc
 pub fn retired_topics(t: &Topics, cfg: &MqttConfig) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     if cfg.legacy_ids {
-        out.extend(crate::topics::LEGACY_RETIRED_DISCOVERY.iter().map(|x| format!("{}/{x}/config", t.discovery_prefix)));
+        out.extend(
+            crate::topics::LEGACY_RETIRED_DISCOVERY
+                .iter()
+                .map(|x| format!("{}/{x}/config", t.discovery_prefix)),
+        );
     }
     for r in &cfg.retired_discovery {
         if !out.contains(r) {
@@ -482,5 +701,7 @@ pub fn retired_topics(t: &Topics, cfg: &MqttConfig) -> Vec<String> {
 
 /// topic → serialized payload, for change detection.
 pub fn index(msgs: &[DiscoveryMessage]) -> IndexMap<String, String> {
-    msgs.iter().map(|m| (m.topic.clone(), m.payload.to_string())).collect()
+    msgs.iter()
+        .map(|m| (m.topic.clone(), m.payload.to_string()))
+        .collect()
 }

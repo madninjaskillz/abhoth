@@ -75,11 +75,27 @@ impl ChatAdmission {
     }
 }
 
-/// The principal (user or key id, never the key) of a request. The accounts integration (D140
-/// key introspection) plugs in here; until it does no request has one, so with `require_key`
-/// no request can start a switch.
-pub fn principal_of(_headers: &HeaderMap) -> Option<String> {
-    None
+/// The caller of a chat request for the gate: through the control plane's access rules
+/// (🟨C's key introspection) when the control plane runs. Only a caller allowed to start an
+/// on-demand switch (`Perm::OnDemand`) keeps its principal; everyone else is anonymous here,
+/// so with `require_key` they cannot switch (their chat may still be served).
+pub async fn chat_caller(
+    st: &crate::state::AppState,
+    headers: &HeaderMap,
+    peer: Option<std::net::IpAddr>,
+) -> Caller {
+    use super::callers::CallerResolver;
+    let Some(cp) = st.control.get() else {
+        return Caller::default();
+    };
+    match cp
+        .access
+        .resolve(headers, peer, "POST", "/v1/chat/completions")
+        .await
+    {
+        Ok(r) if r.may_on_demand => r.caller,
+        _ => Caller::default(),
+    }
 }
 
 /// Permission to start one on-demand switch now.
@@ -90,11 +106,26 @@ pub struct OnDemandTicket {
     pub caller: Caller,
 }
 
-/// Sliding one-hour windows of switches started.
-#[derive(Debug, Default)]
+/// Sliding one-hour windows of switches started. With a store attached the history survives
+/// a restart (a crash loop cannot reset the limits).
+#[derive(Default)]
 pub struct RateLimiter {
     started: Mutex<VecDeque<(f64, Option<String>)>>,
+    store: Mutex<Option<std::sync::Arc<crate::control::store::Store>>>,
 }
+
+impl std::fmt::Debug for RateLimiter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RateLimiter")
+            .field("started", &self.started.lock().unwrap().len())
+            .finish()
+    }
+}
+
+/// `router.db` part for the on-demand switch history.
+pub const STORE_PART: &str = "ondemand_limits";
+pub const MIGRATIONS: &[&str] =
+    &["CREATE TABLE ondemand_switches(at REAL NOT NULL, principal TEXT);"];
 
 /// The limits and the key rule.
 #[derive(Debug, Clone, Copy)]
@@ -164,6 +195,52 @@ impl RateLimiter {
             .lock()
             .unwrap()
             .push_back((now, who.map(str::to_string)));
+        if let Some(st) = self.store.lock().unwrap().as_ref() {
+            let c = st.conn();
+            let r = c
+                .execute(
+                    "INSERT INTO ondemand_switches(at, principal) VALUES (?1, ?2)",
+                    rusqlite::params![now, who],
+                )
+                .and_then(|_| {
+                    c.execute(
+                        "DELETE FROM ondemand_switches WHERE at < ?1",
+                        rusqlite::params![now - 3600.0],
+                    )
+                });
+            if let Err(e) = r {
+                tracing::warn!("router.db: on-demand switch history: {e}");
+            }
+        }
+    }
+
+    /// Keep the history in `router.db` from now on, loading the last hour from it.
+    pub fn attach_store(
+        &self,
+        store: std::sync::Arc<crate::control::store::Store>,
+        now: f64,
+    ) -> Result<(), String> {
+        store.migrate_part(STORE_PART, MIGRATIONS)?;
+        let rows: Vec<(f64, Option<String>)> = {
+            let c = store.conn();
+            let mut q = c
+                .prepare("SELECT at, principal FROM ondemand_switches WHERE at >= ?1 ORDER BY at")
+                .map_err(|e| e.to_string())?;
+            q.query_map(rusqlite::params![now - 3600.0], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?
+        };
+        let mut g = self.started.lock().unwrap();
+        let mut all: Vec<(f64, Option<String>)> = rows;
+        all.extend(g.drain(..));
+        all.sort_by(|a, b| a.0.total_cmp(&b.0));
+        all.dedup();
+        g.extend(all);
+        *self.store.lock().unwrap() = Some(store);
+        Ok(())
     }
 }
 
@@ -251,5 +328,23 @@ mod gate_tests {
         // an hour later the window has moved
         assert!(admit(&k3, &rules, &lim, t + 3601.0).is_ok());
         assert!(admit(&k1, &rules, &lim, t + 3602.0).is_ok());
+    }
+
+    #[test]
+    fn history_survives_a_restart() {
+        let store = std::sync::Arc::new(crate::control::store::Store::memory().unwrap());
+        let rules = GateRules::default();
+        let t = 1_800_000_000.0;
+        let lim = RateLimiter::default();
+        lim.attach_store(store.clone(), t).unwrap();
+        lim.record(Some("k1"), t - 4000.0); // older than an hour: pruned
+        lim.record(Some("k1"), t);
+        lim.record(Some("k1"), t + 1.0);
+        // a new process: the same limits apply
+        let again = RateLimiter::default();
+        again.attach_store(store, t + 2.0).unwrap();
+        assert_eq!(again.count(), 2);
+        let k1 = ChatAdmission::for_test("dense", caller(Some("k1")), false);
+        assert!(admit(&k1, &rules, &again, t + 2.0).is_err());
     }
 }

@@ -17,6 +17,7 @@ pub mod paths;
 pub mod profiles;
 pub mod projects;
 pub mod pty;
+pub mod router_admin;
 pub mod server;
 pub mod settings;
 pub mod util;

@@ -19,7 +19,10 @@ pub struct SecretRef {
 impl std::fmt::Debug for SecretRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // The reference itself is not secret, but say so explicitly: no value is ever held here.
-        f.debug_struct("SecretRef").field("file", &self.file).field("env", &self.env).finish()
+        f.debug_struct("SecretRef")
+            .field("file", &self.file)
+            .field("env", &self.env)
+            .finish()
     }
 }
 
@@ -59,23 +62,31 @@ pub enum SecretError {
 
 impl SecretRef {
     pub fn env(name: &str) -> Self {
-        Self { file: None, env: Some(name.to_string()) }
+        Self {
+            file: None,
+            env: Some(name.to_string()),
+        }
     }
 
     pub fn file(path: &str) -> Self {
-        Self { file: Some(path.to_string()), env: None }
+        Self {
+            file: Some(path.to_string()),
+            env: None,
+        }
     }
 
     /// Reads the value. A trailing newline in a file is dropped (as `echo x > file` leaves one).
     pub fn resolve(&self) -> Result<Secret, SecretError> {
         let (value, from) = match (&self.file, &self.env) {
             (Some(path), None) => {
-                let v = std::fs::read_to_string(path).map_err(|_| SecretError::File(path.clone()))?;
+                let v =
+                    std::fs::read_to_string(path).map_err(|_| SecretError::File(path.clone()))?;
                 (v.trim_end_matches(['\r', '\n']).to_string(), path.clone())
             }
-            (None, Some(name)) => {
-                (std::env::var(name).map_err(|_| SecretError::Env(name.clone()))?, format!("${name}"))
-            }
+            (None, Some(name)) => (
+                std::env::var(name).map_err(|_| SecretError::Env(name.clone()))?,
+                format!("${name}"),
+            ),
             _ => return Err(SecretError::Shape),
         };
         if value.is_empty() {
@@ -110,7 +121,10 @@ fn d_clock_cap_ttl() -> u64 {
     3600
 }
 fn d_scopes() -> Vec<String> {
-    ["switch", "card_state", "clock_cap", "fan_profile"].iter().map(|s| s.to_string()).collect()
+    ["switch", "card_state", "clock_cap", "fan_profile"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 fn d_read_interval() -> u64 {
     20
@@ -183,20 +197,33 @@ impl MqttConfig {
         } else if let Some(r) = self.url.strip_prefix("mqtt://") {
             (false, r)
         } else {
-            return Err(format!("mqtt.url must start with mqtt:// or mqtts:// (got {:?})", self.url));
+            return Err(format!(
+                "mqtt.url must start with mqtt:// or mqtts:// (got {:?})",
+                self.url
+            ));
         };
         let rest = rest.trim_end_matches('/');
         if rest.contains('@') {
-            return Err("mqtt.url must not carry credentials; use username/password references".into());
+            return Err(
+                "mqtt.url must not carry credentials; use username/password references".into(),
+            );
         }
         let (host, port) = match rest.rsplit_once(':') {
-            Some((h, p)) => (h, p.parse::<u16>().map_err(|_| format!("bad port in mqtt.url: {p:?}"))?),
+            Some((h, p)) => (
+                h,
+                p.parse::<u16>()
+                    .map_err(|_| format!("bad port in mqtt.url: {p:?}"))?,
+            ),
             None => (rest, if tls { 8883 } else { 1883 }),
         };
         if host.is_empty() {
             return Err("mqtt.url has no host".into());
         }
-        Ok(Endpoint { host: host.to_string(), port, tls })
+        Ok(Endpoint {
+            host: host.to_string(),
+            port,
+            tls,
+        })
     }
 
     /// Config problems, as `config check` would print them.
@@ -226,7 +253,9 @@ impl MqttConfig {
             }
         }
         if self.clock_cap_ttl_seconds == 0 || self.clock_cap_ttl_seconds > 3600 {
-            out.push("mqtt.clock_cap_ttl_seconds must be 1..=3600 (overrides expire within 1 h)".into());
+            out.push(
+                "mqtt.clock_cap_ttl_seconds must be 1..=3600 (overrides expire within 1 h)".into(),
+            );
         }
         out
     }
@@ -268,20 +297,26 @@ impl HomeAssistantConfig {
         }
         for (k, e) in &self.reads {
             if !valid_entity_id(e) {
-                out.push(format!("homeassistant.reads.{k}: {e:?} is not an entity id"));
+                out.push(format!(
+                    "homeassistant.reads.{k}: {e:?} is not an entity id"
+                ));
             }
         }
         if let Some(s) = &self.notify_service
             && !valid_slug(s)
         {
-            out.push(format!("homeassistant.notify_service {s:?} is not a service name"));
+            out.push(format!(
+                "homeassistant.notify_service {s:?} is not a service name"
+            ));
         }
         out
     }
 }
 
 pub(crate) fn valid_slug(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 pub(crate) fn valid_entity_id(s: &str) -> bool {
@@ -298,7 +333,14 @@ mod tests {
 
     #[test]
     fn endpoint_parsing() {
-        assert_eq!(cfg("mqtt://ha.lan").endpoint().unwrap(), Endpoint { host: "ha.lan".into(), port: 1883, tls: false });
+        assert_eq!(
+            cfg("mqtt://ha.lan").endpoint().unwrap(),
+            Endpoint {
+                host: "ha.lan".into(),
+                port: 1883,
+                tls: false
+            }
+        );
         assert_eq!(cfg("mqtts://ha.lan").endpoint().unwrap().port, 8883);
         assert_eq!(cfg("mqtt://10.0.0.2:1884/").endpoint().unwrap().port, 1884);
         assert!(cfg("http://x").endpoint().is_err());
@@ -319,7 +361,12 @@ mod tests {
         .unwrap();
         assert_eq!(bad.validate().len(), 2);
         // A literal password is not a reference: refused at parse.
-        assert!(toml::from_str::<MqttConfig>("url = \"mqtt://x\"\nclient_id = \"x\"\npassword = \"hunter2\"").is_err());
+        assert!(
+            toml::from_str::<MqttConfig>(
+                "url = \"mqtt://x\"\nclient_id = \"x\"\npassword = \"hunter2\""
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -331,10 +378,16 @@ mod tests {
         let s = SecretRef::file(f.to_str().unwrap()).resolve().unwrap();
         assert_eq!(s.expose(), "s3cret");
         assert_eq!(format!("{s:?} {s}"), "Secret(<redacted>) <redacted>");
-        assert_eq!(SecretRef::env("ORCA_HA_TEST_SURELY_UNSET").resolve(), Err(SecretError::Env("ORCA_HA_TEST_SURELY_UNSET".into())));
+        assert_eq!(
+            SecretRef::env("ORCA_HA_TEST_SURELY_UNSET").resolve(),
+            Err(SecretError::Env("ORCA_HA_TEST_SURELY_UNSET".into()))
+        );
         assert_eq!(SecretRef::default().resolve(), Err(SecretError::Shape));
         std::fs::write(&f, "\n").unwrap();
-        assert!(matches!(SecretRef::file(f.to_str().unwrap()).resolve(), Err(SecretError::Empty(_))));
+        assert!(matches!(
+            SecretRef::file(f.to_str().unwrap()).resolve(),
+            Err(SecretError::Empty(_))
+        ));
         let _ = std::fs::remove_dir_all(dir);
     }
 

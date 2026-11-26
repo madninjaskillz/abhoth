@@ -22,7 +22,9 @@ use serde_json::json;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, warn};
 
-use crate::commands::{self, Command, CommandContext, ControlOutcome, ControlPort, ParseError, ServicePrincipal};
+use crate::commands::{
+    self, Command, CommandContext, ControlOutcome, ControlPort, ParseError, ServicePrincipal,
+};
 use crate::config::MqttConfig;
 use crate::discovery::{self, DiscoveryOptions};
 use crate::model::HaSnapshot;
@@ -41,7 +43,12 @@ pub fn mqtt_options(cfg: &MqttConfig, t: &Topics) -> anyhow::Result<MqttOptions>
     o.set_keep_alive(Duration::from_secs(cfg.keep_alive_seconds.clamp(5, 600)));
     o.set_clean_session(true);
     o.set_max_packet_size(MAX_PACKET, MAX_PACKET);
-    o.set_last_will(LastWill::new(t.availability(), "offline", QoS::AtLeastOnce, true));
+    o.set_last_will(LastWill::new(
+        t.availability(),
+        "offline",
+        QoS::AtLeastOnce,
+        true,
+    ));
     match (&cfg.username, &cfg.password) {
         (Some(u), Some(p)) => {
             let u = u.resolve().context("mqtt.username")?;
@@ -62,8 +69,9 @@ pub fn mqtt_options(cfg: &MqttConfig, t: &Topics) -> anyhow::Result<MqttOptions>
             }
             // The system roots. rumqttc panics if the platform store can't be read; turn that
             // into an error instead of taking the supervisor down.
-            None => std::panic::catch_unwind(Transport::tls_with_default_config)
-                .map_err(|_| anyhow::anyhow!("could not load the platform's TLS root certificates"))?,
+            None => std::panic::catch_unwind(Transport::tls_with_default_config).map_err(|_| {
+                anyhow::anyhow!("could not load the platform's TLS root certificates")
+            })?,
         };
         o.set_transport(transport);
     }
@@ -88,7 +96,11 @@ pub struct HaMqttParams {
 pub enum Outbound {
     Alert(AlertNotice),
     /// Only under `abhoth/<server>/alert/`; anything else is refused.
-    Publish { topic: String, payload: String, retain: bool },
+    Publish {
+        topic: String,
+        payload: String,
+        retain: bool,
+    },
 }
 
 /// A cloneable handle for publishing through the HA MQTT connection. It implements the
@@ -107,20 +119,31 @@ impl MqttHandle {
 
     pub async fn publish(&self, topic: &str, payload: &str, retain: bool) -> Result<(), String> {
         self.tx
-            .send(Outbound::Publish { topic: topic.into(), payload: payload.into(), retain })
+            .send(Outbound::Publish {
+                topic: topic.into(),
+                payload: payload.into(),
+                retain,
+            })
             .await
             .map_err(|_| "the HA MQTT publisher is not running".to_string())
     }
 
     pub async fn alert(&self, a: AlertNotice) -> Result<(), String> {
-        self.tx.send(Outbound::Alert(a)).await.map_err(|_| "the HA MQTT publisher is not running".to_string())
+        self.tx
+            .send(Outbound::Alert(a))
+            .await
+            .map_err(|_| "the HA MQTT publisher is not running".to_string())
     }
 }
 
 enum Inbound {
     Connected,
     Disconnected(String),
-    Message { topic: String, payload: Vec<u8>, retain: bool },
+    Message {
+        topic: String,
+        payload: Vec<u8>,
+        retain: bool,
+    },
 }
 
 /// Polls the event loop forever, reconnecting with backoff (1, 2, 4 … 30 s).
@@ -136,7 +159,11 @@ async fn drive(mut el: EventLoop, tx: mpsc::Sender<Inbound>) {
                 }
             }
             Ok(Event::Incoming(Packet::Publish(p))) => {
-                let m = Inbound::Message { topic: p.topic.clone(), payload: p.payload.to_vec(), retain: p.retain };
+                let m = Inbound::Message {
+                    topic: p.topic.clone(),
+                    payload: p.payload.to_vec(),
+                    retain: p.retain,
+                };
                 if tx.send(m).await.is_err() {
                     return;
                 }
@@ -144,7 +171,8 @@ async fn drive(mut el: EventLoop, tx: mpsc::Sender<Inbound>) {
             Ok(_) => {}
             Err(e) => {
                 failures += 1;
-                let wait = Duration::from_secs(2u64.saturating_pow(failures.min(5)).min(30) / 2).max(Duration::from_secs(1));
+                let wait = Duration::from_secs(2u64.saturating_pow(failures.min(5)).min(30) / 2)
+                    .max(Duration::from_secs(1));
                 if tx.send(Inbound::Disconnected(e.to_string())).await.is_err() {
                     return;
                 }
@@ -172,7 +200,11 @@ struct Runtime {
 
 impl Runtime {
     async fn publish(&self, topic: &str, payload: impl Into<Vec<u8>>, retain: bool) {
-        if let Err(e) = self.client.publish(topic, QoS::AtLeastOnce, retain, payload.into()).await {
+        if let Err(e) = self
+            .client
+            .publish(topic, QoS::AtLeastOnce, retain, payload.into())
+            .await
+        {
             warn!(topic, error = %e, "mqtt publish queue failed");
         }
     }
@@ -195,8 +227,14 @@ impl Runtime {
         }
         let subs = [
             (self.t.set_filter(), QoS::AtLeastOnce),
-            (format!("{}/status", self.t.discovery_prefix), QoS::AtLeastOnce),
-            (format!("{}/+/+/config", self.t.discovery_prefix), QoS::AtMostOnce),
+            (
+                format!("{}/status", self.t.discovery_prefix),
+                QoS::AtLeastOnce,
+            ),
+            (
+                format!("{}/+/+/config", self.t.discovery_prefix),
+                QoS::AtMostOnce,
+            ),
         ];
         for (topic, qos) in subs {
             if let Err(e) = self.client.subscribe(topic.clone(), qos).await {
@@ -217,7 +255,12 @@ impl Runtime {
                 self.publish(topic, payload.clone(), true).await;
             }
         }
-        let gone: Vec<String> = self.published_discovery.keys().filter(|k| !next.contains_key(*k)).cloned().collect();
+        let gone: Vec<String> = self
+            .published_discovery
+            .keys()
+            .filter(|k| !next.contains_key(*k))
+            .cloned()
+            .collect();
         for topic in gone {
             self.clear(&topic).await;
         }
@@ -237,17 +280,26 @@ impl Runtime {
     }
 
     async fn finish_sweep(&mut self) {
-        let Some((_, seen)) = self.sweep.take() else { return };
+        let Some((_, seen)) = self.sweep.take() else {
+            return;
+        };
         for topic in seen {
             if !self.published_discovery.contains_key(&topic) {
                 info!(topic, "clearing a stale discovery config");
                 self.clear(&topic).await;
             }
         }
-        let _ = self.client.unsubscribe(format!("{}/+/+/config", self.t.discovery_prefix)).await;
+        let _ = self
+            .client
+            .unsubscribe(format!("{}/+/+/config", self.t.discovery_prefix))
+            .await;
     }
 
-    fn command_ctx<'a>(&'a self, snap: &'a HaSnapshot, cards: &'a [(String, bool)]) -> CommandContext<'a> {
+    fn command_ctx<'a>(
+        &'a self,
+        snap: &'a HaSnapshot,
+        cards: &'a [(String, bool)],
+    ) -> CommandContext<'a> {
         CommandContext {
             layouts: &snap.control.layouts,
             cards,
@@ -256,7 +308,13 @@ impl Runtime {
         }
     }
 
-    async fn on_message(&mut self, snap: &HaSnapshot, topic: String, payload: Vec<u8>, retain: bool) {
+    async fn on_message(
+        &mut self,
+        snap: &HaSnapshot,
+        topic: String,
+        payload: Vec<u8>,
+        retain: bool,
+    ) {
         // Discovery sweep: remember retained configs we own; ignore everything else there.
         if topic.starts_with(&format!("{}/", self.t.discovery_prefix)) {
             if topic == format!("{}/status", self.t.discovery_prefix) {
@@ -280,8 +338,18 @@ impl Runtime {
         if !self.cfg.controls {
             return;
         }
-        let cards: Vec<(String, bool)> = snap.cards.iter().map(|c| (c.id.clone(), c.pinned)).collect();
-        let parsed = commands::parse(&self.t, &topic, &payload, retain, &self.command_ctx(snap, &cards));
+        let cards: Vec<(String, bool)> = snap
+            .cards
+            .iter()
+            .map(|c| (c.id.clone(), c.pinned))
+            .collect();
+        let parsed = commands::parse(
+            &self.t,
+            &topic,
+            &payload,
+            retain,
+            &self.command_ctx(snap, &cards),
+        );
         match parsed {
             Err(ParseError::NotCommand | ParseError::Empty) => {}
             Err(ParseError::Retained) => {
@@ -300,11 +368,14 @@ impl Runtime {
                 self.publish(&self.t.layout_target(), l, true).await;
             }
             Ok(cmd) => {
-                let (port, who, tx) = (self.control.clone(), self.who.clone(), self.results.clone());
+                let (port, who, tx) =
+                    (self.control.clone(), self.who.clone(), self.results.clone());
                 let selected = self.local.layout_target.clone();
                 info!(principal = %who.name, command = cmd.name(), "HA command");
                 tokio::spawn(async move {
-                    if let Some(outcome) = commands::dispatch(port.as_ref(), &who, &cmd, selected.as_deref()).await {
+                    if let Some(outcome) =
+                        commands::dispatch(port.as_ref(), &who, &cmd, selected.as_deref()).await
+                    {
                         let _ = tx.send((cmd, outcome)).await;
                     }
                 });
@@ -315,9 +386,17 @@ impl Runtime {
     async fn on_result(&mut self, snap: &HaSnapshot, cmd: Command, outcome: ControlOutcome) {
         let v = commands::result_json(&cmd, &outcome, &now());
         if outcome.ok() {
-            info!(command = cmd.name(), message = outcome.message(), "HA command accepted");
+            info!(
+                command = cmd.name(),
+                message = outcome.message(),
+                "HA command accepted"
+            );
         } else {
-            warn!(command = cmd.name(), reason = outcome.message(), "HA command refused");
+            warn!(
+                command = cmd.name(),
+                reason = outcome.message(),
+                "HA command refused"
+            );
         }
         self.local.last_command = Some(v.clone());
         self.publish(&self.t.result(), v.to_string(), false).await;
@@ -330,18 +409,35 @@ impl Runtime {
         let prefix = format!("{}/alert/", self.t.base);
         let rule = topic.strip_prefix(&prefix).unwrap_or_default();
         if rule.is_empty() || rule.contains(['/', '#', '+']) {
-            warn!(topic, "refusing an outbound publish outside the alert topics");
+            warn!(
+                topic,
+                "refusing an outbound publish outside the alert topics"
+            );
             return;
         }
-        if let Some(ev) = serde_json::from_str(&payload).ok().and_then(|v| event_from_alert_json(&v)) {
-            self.publish(&self.t.alert_event(), ev.to_string(), false).await;
+        if let Some(ev) = serde_json::from_str(&payload)
+            .ok()
+            .and_then(|v| event_from_alert_json(&v))
+        {
+            self.publish(&self.t.alert_event(), ev.to_string(), false)
+                .await;
         }
         self.publish(topic, payload, retain).await;
     }
 
     async fn on_alert(&self, a: &AlertNotice) {
-        self.publish(&self.t.alert(&a.rule), mqtt_alert_payload(a).to_string(), true).await;
-        self.publish(&self.t.alert_event(), mqtt_event_payload(a).to_string(), false).await;
+        self.publish(
+            &self.t.alert(&a.rule),
+            mqtt_alert_payload(a).to_string(),
+            true,
+        )
+        .await;
+        self.publish(
+            &self.t.alert_event(),
+            mqtt_event_payload(a).to_string(),
+            false,
+        )
+        .await;
     }
 }
 
@@ -352,7 +448,14 @@ fn now() -> String {
 /// Runs the HA MQTT publisher until `shutdown` turns true. Returns early only on a config
 /// error; connection problems are retried forever.
 pub async fn run(p: HaMqttParams) -> anyhow::Result<()> {
-    let HaMqttParams { cfg, sw_version, mut snapshots, control, mut outbound, mut shutdown } = p;
+    let HaMqttParams {
+        cfg,
+        sw_version,
+        mut snapshots,
+        control,
+        mut outbound,
+        mut shutdown,
+    } = p;
     let problems = cfg.validate();
     anyhow::ensure!(problems.is_empty(), "mqtt config: {}", problems.join("; "));
     let server_id = snapshots.borrow().server.id.clone();
@@ -367,7 +470,10 @@ pub async fn run(p: HaMqttParams) -> anyhow::Result<()> {
     let mut rt = Runtime {
         opts: DiscoveryOptions::from_config(&cfg, &sw_version),
         who: ServicePrincipal::mqtt(&server_id, &cfg.scopes),
-        local: LocalState { clock_cap_ttl_seconds: cfg.clock_cap_ttl_seconds, ..Default::default() },
+        local: LocalState {
+            clock_cap_ttl_seconds: cfg.clock_cap_ttl_seconds,
+            ..Default::default()
+        },
         cfg,
         t,
         client,

@@ -1,5 +1,6 @@
 //! Abhoth Supervisor: Home Assistant (SUPERVISOR.md 11).
 //!
+//! - [`feed`]: follows the telemetry hub (`TelemetryFeed`) and builds the HA view;
 //! - [`mqtt`]: the MQTT runtime (availability with LWT, reconnects, retained-message policy,
 //!   discovery and state publishing, command handling);
 //! - [`discovery`] and [`state`]: pure payload builders (golden-tested);
@@ -14,6 +15,7 @@
 pub mod commands;
 pub mod config;
 pub mod discovery;
+pub mod feed;
 pub mod model;
 pub mod mqtt;
 pub mod notify;

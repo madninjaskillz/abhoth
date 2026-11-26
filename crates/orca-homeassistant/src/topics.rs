@@ -32,7 +32,11 @@ pub struct Topics {
 impl Topics {
     pub fn new(base_topic: &str, discovery_prefix: &str, server_id: &str) -> Self {
         let server = slug(server_id);
-        Self { base: format!("{base_topic}/{server}"), discovery_prefix: discovery_prefix.to_string(), server }
+        Self {
+            base: format!("{base_topic}/{server}"),
+            discovery_prefix: discovery_prefix.to_string(),
+            server,
+        }
     }
 
     pub fn availability(&self) -> String {
@@ -90,7 +94,9 @@ impl Topics {
             return false;
         };
         let parts: Vec<&str> = rest.split('/').collect();
-        parts.len() == 3 && parts[2] == "config" && parts[1].starts_with(&format!("abhoth_{}_", self.server))
+        parts.len() == 3
+            && parts[2] == "config"
+            && parts[1].starts_with(&format!("abhoth_{}_", self.server))
     }
 }
 
@@ -126,10 +132,19 @@ mod tests {
     fn topic_shapes() {
         let t = Topics::new("abhoth", "homeassistant", "DeepThought");
         assert_eq!(t.availability(), "abhoth/deepthought/availability");
-        assert_eq!(t.card_availability("B"), "abhoth/deepthought/card/b/availability");
+        assert_eq!(
+            t.card_availability("B"),
+            "abhoth/deepthought/card/b/availability"
+        );
         assert_eq!(t.set("layout_apply"), "abhoth/deepthought/set/layout_apply");
-        assert_eq!(t.unique_id("card_b_core_temp"), "abhoth_deepthought_card_b_core_temp");
-        assert_eq!(t.discovery("sensor", "abhoth_deepthought_x"), "homeassistant/sensor/abhoth_deepthought_x/config");
+        assert_eq!(
+            t.unique_id("card_b_core_temp"),
+            "abhoth_deepthought_card_b_core_temp"
+        );
+        assert_eq!(
+            t.discovery("sensor", "abhoth_deepthought_x"),
+            "homeassistant/sensor/abhoth_deepthought_x/config"
+        );
         assert!(t.owns_discovery_topic("homeassistant/sensor/abhoth_deepthought_x/config"));
         assert!(!t.owns_discovery_topic("homeassistant/sensor/abhoth_other_x/config"));
         assert!(!t.owns_discovery_topic("homeassistant/sensor/deepthought_gpu_temp/config"));
