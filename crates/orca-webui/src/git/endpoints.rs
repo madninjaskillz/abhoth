@@ -500,6 +500,12 @@ async fn get_token(State(s): State<Arc<AppState>>, Path(pid): Path<String>) -> R
             "githubApp": true,
         }))
         .into_response(),
+        Some(t) if t.starts_with(crate::git::github_user::USER_LINK_PREFIX) => axum::Json(json!({
+            "token": "Your GitHub sign-in (Clone from GitHub)",
+            "githubApp": false,
+            "githubUser": true,
+        }))
+        .into_response(),
         t => axum::Json(json!({"token": t.map(|t| tokens::mask(&t)), "githubApp": false}))
             .into_response(),
     }

@@ -68,6 +68,14 @@ pub struct WebUiOptions {
     pub github_app: Option<crate::git::github_app::GitHubAppConfigFn>,
     /// The clock the GitHub sign-in reads (`None`: the system clock; tests).
     pub github_clock: Option<Arc<dyn crate::git::github_app::Clock>>,
+    /// The OAuth app for "Sign in with GitHub" with each user's own account (`None`:
+    /// `github.oauthClientId` in config.json, asked on each use; D146).
+    pub github_oauth_client_id: Option<crate::git::github_user::ClientIdFn>,
+    /// How this machine's `gh` / `git credential` are run (`None`: the real ones; tests).
+    pub github_machine: Option<crate::git::github_user::MachineCredentials>,
+    /// Whether this machine's GitHub sign-ins may be used (`None`: only for the desktop app or
+    /// a local, non-exposed server; see `github_user::machine_credentials_allowed`).
+    pub github_machine_allowed: Option<bool>,
     /// The bench runner (Benchmarks page); `None` = off.
     pub bench: Option<crate::bench::BenchOptions>,
     /// Set when the server backs the desktop window (`abhoth --desktop`, D110).
@@ -116,6 +124,9 @@ impl WebUiOptions {
                 .unwrap_or_else(|| "https://github.com".into()),
             github_app: None,
             github_clock: None,
+            github_oauth_client_id: None,
+            github_machine: None,
+            github_machine_allowed: None,
             bench: None,
             desktop: None,
         }
@@ -139,6 +150,8 @@ pub struct AppState {
     pub clones: crate::projects::clone::CloneService,
     /// The GitHub sign-in ("Clone from GitHub").
     pub github_app: Arc<crate::git::github_app::GitHubAppService>,
+    /// Each user's own GitHub credentials ("Clone from GitHub" without an app, D146).
+    pub github_user: Arc<crate::git::github_user::GitHubUserService>,
     /// The accounts.
     pub login: Arc<crate::login::LoginAuth>,
 }
@@ -267,8 +280,40 @@ impl WebUiServer {
             ))
         };
         let _ = projects.github_app.set(github_app.clone());
+        let github_user = {
+            use crate::git::github_user::{
+                GitHubUserOptions, GitHubUserService, MachineCredentials, load_client_id,
+                machine_credentials_allowed,
+            };
+            let home = options.config_home.clone();
+            let svc = Arc::new(GitHubUserService::new(GitHubUserOptions {
+                web: options.github_web.clone(),
+                api: options.github_api.clone(),
+                state_dir: projects.store().state_dir(),
+                machine: options
+                    .github_machine
+                    .clone()
+                    .unwrap_or_else(MachineCredentials::system),
+                machine_allowed: options
+                    .github_machine_allowed
+                    .unwrap_or_else(|| machine_credentials_allowed(&options)),
+                client_id: options
+                    .github_oauth_client_id
+                    .clone()
+                    .unwrap_or_else(|| Arc::new(move || load_client_id(home.as_deref()))),
+            }));
+            let l = Arc::downgrade(&login);
+            svc.set_is_admin(Arc::new(move |uid| {
+                l.upgrade()
+                    .and_then(|l| l.db.user(uid))
+                    .is_some_and(|u| u.admin && !u.disabled)
+            }));
+            svc
+        };
+        let _ = projects.github_user.set(github_user.clone());
         let state = Arc::new(AppState {
             github_app,
+            github_user,
             options: options.clone(),
             clones,
             login,
@@ -395,6 +440,7 @@ fn router(state: Arc<AppState>) -> Router {
         .merge(crate::projects::endpoints::routes())
         .merge(crate::git::endpoints::routes())
         .merge(crate::git::github_app_endpoints::routes())
+        .merge(crate::git::github_user_endpoints::routes())
         .merge(crate::settings::routes())
         .merge(crate::files::attachments::routes())
         .merge(crate::files::preview::routes())

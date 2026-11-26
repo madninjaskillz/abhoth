@@ -1028,7 +1028,7 @@ pub fn check_repo(full_name: &str) -> Result<String, GitHubAppError> {
     Ok(f.to_string())
 }
 
-fn error_text(error: &str, description: Option<&str>) -> String {
+pub(crate) fn error_text(error: &str, description: Option<&str>) -> String {
     match error {
         "device_flow_disabled" => "Device flow isn't enabled for this GitHub App (tick \"Enable Device Flow\" in the app's settings).".into(),
         "incorrect_client_credentials" => "GitHub doesn't know this client ID. Check the GitHub App's client ID (not its app ID).".into(),
@@ -1041,15 +1041,15 @@ fn error_text(error: &str, description: Option<&str>) -> String {
 }
 
 /// FormUrlEncodedContent: Uri.EscapeDataString, spaces as '+'.
-fn form_escape(s: &str) -> String {
+pub(crate) fn form_escape(s: &str) -> String {
     crate::util::escape_data(s).replace("%20", "+")
 }
 
-fn str_of(el: &Option<Value>, name: &str) -> Option<String> {
+pub(crate) fn str_of(el: &Option<Value>, name: &str) -> Option<String> {
     el.as_ref()?.get(name)?.as_str().map(str::to_string)
 }
 
-fn int_of(el: &Option<Value>, name: &str) -> Option<i64> {
+pub(crate) fn int_of(el: &Option<Value>, name: &str) -> Option<i64> {
     el.as_ref()?
         .get(name)?
         .as_i64()
@@ -1057,7 +1057,7 @@ fn int_of(el: &Option<Value>, name: &str) -> Option<i64> {
 }
 
 /// A GitHub timestamp; one without an offset is read as UTC.
-fn parse_offset(s: &str) -> Option<DateTime<FixedOffset>> {
+pub(crate) fn parse_offset(s: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::parse_from_rfc3339(s).ok().or_else(|| {
         chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
             .ok()

@@ -666,6 +666,27 @@ export interface GitHubAppStatus {
   setup?: string | null;
 }
 
+/** Where the caller's own GitHub credentials come from (D146). */
+export type GitHubUserSource = "session" | "saved" | "oauth" | "gh-cli" | "git-credential" | "anonymous";
+
+export interface GitHubUserStatus {
+  source: GitHubUserSource;
+  sourceText: string;
+  signedIn: boolean;
+  login?: string | null;
+  avatarUrl?: string | null;
+  notes: string[];
+  saved: boolean;
+  /** This machine's gh / Git Credential Manager sign-ins may be used (for this caller). */
+  machineAllowed: boolean;
+  /** The server is local (desktop app or a non-exposed --hostui). */
+  machineServer: boolean;
+  oauthConfigured: boolean;
+  protection: string;
+  /** The shared GitHub App sign-in is set up and the caller is an admin. */
+  appAvailable: boolean;
+}
+
 export interface GitHubDeviceStart {
   flowId: string;
   userCode: string;
@@ -745,6 +766,19 @@ export const api = {
     request<{ defaultBranch?: string | null; branches: string[]; truncated: boolean }>("GET", `/api/github/app/branches${q({ repo })}`),
   githubClone: (body: { repo: string; branch?: string; parent: string; name?: string }) =>
     request<CloneStatus>("POST", "/api/github/app/clone", body),
+  githubUser: () => request<GitHubUserStatus>("GET", "/api/github/user"),
+  githubUserToken: (token: string, save: boolean) =>
+    request<{ ok: boolean; source: GitHubUserSource; login?: string | null }>("POST", "/api/github/user/token", { token, save }),
+  githubUserForget: () => request<{ ok: boolean; removed: boolean }>("DELETE", "/api/github/user/token"),
+  githubUserRecheck: () => request<{ ok: boolean }>("POST", "/api/github/user/recheck"),
+  githubUserDeviceStart: () => request<GitHubDeviceStart>("POST", "/api/github/user/device"),
+  githubUserDevicePoll: (flowId: string) => request<GitHubDevicePoll>("POST", `/api/github/user/device/${encodeURIComponent(flowId)}`),
+  githubUserRepos: (query: string, page: number, reload = false) =>
+    request<GitHubRepoPage>("GET", `/api/github/user/repos${q({ q: query, page: String(page), perPage: "30", reload: reload || undefined })}`),
+  githubUserBranches: (repo: string) =>
+    request<{ defaultBranch?: string | null; branches: string[]; truncated: boolean }>("GET", `/api/github/user/branches${q({ repo })}`),
+  githubUserClone: (body: { repo: string; branch?: string; parent: string; name?: string }) =>
+    request<CloneStatus>("POST", "/api/github/user/clone", body),
   validateGithub: (body: { token?: string; pid?: string; url?: string }) => request<GitHubCheck>("POST", "/api/github/validate", body),
   benchLogs: async (id: string) => {
     const res = await fetch(`/api/bench/runs/${encodeURIComponent(id)}/logs`, { credentials: "same-origin" });

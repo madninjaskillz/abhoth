@@ -2,37 +2,236 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { brandName } from "@/lib/brand";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, GitBranch, Github, Globe, Loader2, Lock, LogOut, RefreshCw, Search,
+  ArrowLeft, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, GitBranch, Github, Globe, KeyRound, Loader2, Lock, LogOut, RefreshCw, Search,
+  TriangleAlert,
 } from "lucide-react";
-import { api, ApiError, type CloneStatus, type GitHubDeviceStart, type GitHubRepo } from "@/lib/api";
+import {
+  api, ApiError, type CloneStatus, type GitHubDevicePoll, type GitHubDeviceStart, type GitHubRepo, type GitHubRepoPage, type GitHubUserStatus,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isAdmin } from "@/lib/auth";
 import { FolderPicker } from "./FolderPicker";
 import { CloneProgress, useClonePolling } from "./CloneProgress";
-import { deviceEndMessage, pageCount, pageRange, pollDelayMs, repoFolderName, timeAgo } from "./cloneHelpers";
+import { deviceEndMessage, ownerRepo, pageCount, pageRange, pollDelayMs, repoFolderName, timeAgo } from "./cloneHelpers";
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** The server answered "not signed in to GitHub" (409 with signedOut): show the sign-in again. */
 const signedOut = (e: unknown) => e instanceof ApiError && (e as ApiError & { data?: { signedOut?: boolean } }).data?.signedOut === true;
 
+/** What the repository picker and the clone step call: the user's own credentials or the server's GitHub App. */
+interface RepoOps {
+  key: string;
+  app: boolean;
+  repos: (query: string, page: number, reload: boolean) => Promise<GitHubRepoPage>;
+  branches: (repo: string) => Promise<{ defaultBranch?: string | null; branches: string[]; truncated: boolean }>;
+  clone: (body: { repo: string; branch?: string; parent: string; name?: string }) => Promise<CloneStatus>;
+}
+
+const appOps: RepoOps = { key: "github-app", app: true, repos: api.githubRepos, branches: api.githubBranches, clone: api.githubClone };
+const userOps: RepoOps = { key: "github-user", app: false, repos: api.githubUserRepos, branches: api.githubUserBranches, clone: api.githubUserClone };
+
+type Panel = "none" | "token" | "device";
+
 /**
- * "Clone from GitHub": sign in with the server's GitHub App (device flow, no pasted token), pick a
- * repository the app can reach and a branch, choose the parent folder, clone. Tokens stay on the
- * server; the new project's fetch, pull and push use the sign-in.
+ * "Clone from GitHub" (D146): with the user's own GitHub credentials, no GitHub App needed. In the
+ * desktop app (or a local server) an admin's machine sign-ins are used as they are (the GitHub
+ * CLI, then Git Credential Manager); anyone can paste a token (for the session, or saved) or sign
+ * in with GitHub (device flow, when the server has an OAuth client ID); with nothing, public
+ * repositories clone anonymously. Admins can still use the server's GitHub App when it's set up.
  */
 export function GitHubCloneStep({ onAdded }: { onAdded: (p: { id: string }) => void }) {
-  // The GitHub App sign-in is the server's (one account), so an admin's to use.
-  if (!isAdmin()) {
+  const [useApp, setUseApp] = useState(false);
+  if (useApp && isAdmin()) {
     return (
-      <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3 text-xs" data-testid="github-admin-only">
-        <div className="flex items-center gap-2 font-medium"><Github className="size-4" /> Clone from GitHub is for admins</div>
-        <p className="text-muted-foreground">It uses the server's GitHub sign-in. Use "Clone a repository" with a URL (and a token if it's private).</p>
+      <div className="flex flex-col gap-2 text-xs">
+        <button className="self-start text-[11px] text-muted-foreground hover:text-foreground hover:underline" onClick={() => setUseApp(false)}>
+          <ArrowLeft className="mr-1 inline size-3" />Use your own GitHub sign-in instead
+        </button>
+        <GitHubCloneAdmin onAdded={onAdded} />
       </div>
     );
   }
-  return <GitHubCloneAdmin onAdded={onAdded} />;
+  return <UserGitHubClone onAdded={onAdded} onUseApp={() => setUseApp(true)} />;
+}
+
+function UserGitHubClone({ onAdded, onUseApp }: { onAdded: (p: { id: string }) => void; onUseApp: () => void }) {
+  const qc = useQueryClient();
+  const status = useQuery({ queryKey: ["github-user"], queryFn: api.githubUser });
+  const refresh = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["github-user"] });
+    void qc.invalidateQueries({ queryKey: ["github-user-repos"] });
+  }, [qc]);
+  const [panel, setPanel] = useState<Panel>("none");
+  const done = useCallback(() => {
+    setPanel("none");
+    refresh();
+  }, [refresh]);
+
+  if (status.isLoading) {
+    return (
+      <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" /> Looking for your GitHub sign-in…
+      </div>
+    );
+  }
+  if (status.error) return <div className="p-3 text-xs text-destructive">{errorText(status.error)}</div>;
+  const s = status.data!;
+  return (
+    <div className="flex flex-col gap-2 text-xs" data-testid="github-user">
+      <UserAccount s={s} panel={panel} setPanel={setPanel} onChanged={refresh} />
+      {panel === "token" && <TokenForm s={s} onDone={done} onCancel={() => setPanel("none")} />}
+      {panel === "device" && (
+        <SignIn start={api.githubUserDeviceStart} poll={api.githubUserDevicePoll} onSignedIn={done} autoStart onCancel={() => setPanel("none")} />
+      )}
+      {panel === "none" && <RepoWizard ops={userOps} anonymous={!s.signedIn} onAdded={onAdded} onSignedOut={refresh} />}
+      {s.appAvailable && panel === "none" && (
+        <button className="self-start text-[11px] text-muted-foreground hover:text-foreground hover:underline" onClick={onUseApp} data-testid="github-use-app">
+          Use the server's GitHub App sign-in instead
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Which sign-in is in use, and the ways to change it. */
+function UserAccount({ s, panel, setPanel, onChanged }: {
+  s: GitHubUserStatus;
+  panel: Panel;
+  setPanel: (p: Panel) => void;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const run = async (f: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await f();
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const own = s.source === "session" || s.source === "saved" || s.source === "oauth";
+  return (
+    <div className="flex flex-col gap-1 rounded-md border bg-muted/30 px-2 py-1.5" data-testid="github-user-account">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        {s.avatarUrl ? <img src={s.avatarUrl} alt="" className="size-5 rounded-full" referrerPolicy="no-referrer" /> : <Github className="size-4 shrink-0" />}
+        <span className="min-w-0 flex-1 truncate" data-testid="github-user-source" title={s.sourceText}>
+          {s.sourceText}
+          {s.login && <> as <span className="font-medium" data-testid="github-login">@{s.login}</span></>}
+        </span>
+        <span className="flex shrink-0 items-center gap-0.5">
+          {s.machineAllowed && !own && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-1.5"
+              disabled={busy}
+              onClick={() => void run(api.githubUserRecheck)}
+              title="Look for this machine's GitHub sign-ins again (after gh auth login)"
+            >
+              <RefreshCw className={cn(busy && "animate-spin")} />
+            </Button>
+          )}
+          {panel === "none" && (
+            <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={() => setPanel("token")} data-testid="github-user-paste">
+              <KeyRound /> {own ? "Change token" : "Paste a token"}
+            </Button>
+          )}
+          {panel === "none" && s.oauthConfigured && (
+            <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={() => setPanel("device")} data-testid="github-user-signin">
+              <Github /> Sign in with GitHub
+            </Button>
+          )}
+          {own && panel === "none" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-1.5"
+              disabled={busy}
+              onClick={() => void run(api.githubUserForget)}
+              title={s.saved ? "Delete the saved token or sign-in from this server" : "Stop using the pasted token"}
+              data-testid="github-user-forget"
+            >
+              <LogOut /> Forget
+            </Button>
+          )}
+        </span>
+      </div>
+      {s.notes.map((n) => (
+        <div key={n} className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400"><TriangleAlert className="size-3 shrink-0" />{n}</div>
+      ))}
+      {!s.signedIn && (
+        <div className="text-[11px] text-muted-foreground" data-testid="github-user-hint">
+          {s.machineAllowed
+            ? "No GitHub CLI or Git Credential Manager sign-in found on this machine. "
+            : s.machineServer
+              ? ""
+              : "This server never uses its own machine's GitHub sign-ins for you. "}
+          Public repositories clone as they are; for private ones, paste a token{s.oauthConfigured ? " or sign in with GitHub" : ""}.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Paste a token: for this session, or saved (sealed) for this user on the server. */
+function TokenForm({ s, onDone, onCancel }: { s: GitHubUserStatus; onDone: () => void; onCancel: () => void }) {
+  const [token, setToken] = useState("");
+  const [save, setSave] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.githubUserToken(token.trim(), save);
+      setToken("");
+      onDone();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border p-2" data-testid="github-user-token">
+      <span className="text-muted-foreground">
+        A GitHub token: fine-grained with Contents read and write on the repositories, or classic with <code>repo</code>.
+      </span>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="password"
+          autoComplete="off"
+          autoFocus
+          className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && token.trim()) void submit();
+          }}
+          placeholder="github_pat_…"
+          data-testid="github-user-token-input"
+        />
+        <Button size="sm" disabled={!token.trim() || busy} onClick={() => void submit()} data-testid="github-user-token-use">
+          {busy && <Loader2 className="animate-spin" />} Use token
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
+      </div>
+      <label className="flex items-start gap-1.5 text-[11px]">
+        <input type="checkbox" className="mt-0.5" checked={save} onChange={(e) => setSave(e.target.checked)} data-testid="github-user-token-save" />
+        <span>
+          Remember it on this server for my account{" "}
+          <span className="text-muted-foreground">
+            ({s.protection === "dpapi" ? "encrypted with Windows data protection" : "in a file only the server can read"}). Otherwise it's
+            kept only until the server restarts.
+          </span>
+        </span>
+      </label>
+      {error && <div className="text-destructive" data-testid="github-user-token-error">{error}</div>}
+    </div>
+  );
 }
 
 function GitHubCloneAdmin({ onAdded }: { onAdded: (p: { id: string }) => void }) {
@@ -56,17 +255,23 @@ function GitHubCloneAdmin({ onAdded }: { onAdded: (p: { id: string }) => void })
       </div>
     );
   }
-  if (!s.signedIn) return <SignIn onSignedIn={refresh} />;
+  if (!s.signedIn) return <SignIn start={api.githubDeviceStart} poll={api.githubDevicePoll} onSignedIn={refresh} />;
   return (
     <div className="flex flex-col gap-2 text-xs">
       <Account login={s.login} avatarUrl={s.avatarUrl} onSignedOut={refresh} />
-      <RepoWizard installUrl={s.installUrl} onAdded={onAdded} onSignedOut={refresh} />
+      <RepoWizard ops={appOps} installUrl={s.installUrl} onAdded={onAdded} onSignedOut={refresh} />
     </div>
   );
 }
 
 /** Device flow: show the code and a link to github.com/login/device, then poll the server until done. */
-function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
+function SignIn({ start: startFlow, poll: pollFlow, onSignedIn, autoStart, onCancel }: {
+  start: () => Promise<GitHubDeviceStart>;
+  poll: (flowId: string) => Promise<GitHubDevicePoll>;
+  onSignedIn: () => void;
+  autoStart?: boolean;
+  onCancel?: () => void;
+}) {
   const [flow, setFlow] = useState<GitHubDeviceStart | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +281,7 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     setStarting(true);
     setError(null);
     try {
-      setFlow(await api.githubDeviceStart());
+      setFlow(await startFlow());
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -92,7 +297,7 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
       timer = setTimeout(async () => {
         if (stopped) return;
         try {
-          const p = await api.githubDevicePoll(flow.flowId);
+          const p = await pollFlow(flow.flowId);
           if (stopped) return;
           if (p.state === "done") return onSignedIn();
           if (p.state === "pending") return void poll(p.interval);
@@ -114,7 +319,16 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
       stopped = true;
       clearTimeout(timer);
     };
-  }, [flow, onSignedIn]);
+  }, [flow, onSignedIn, pollFlow]);
+
+  const started = useRef(false);
+  useEffect(() => {
+    if (autoStart && !started.current) {
+      started.current = true;
+      void start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
 
   const copy = async () => {
     if (!flow) return;
@@ -149,7 +363,7 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
         <div className="flex items-center gap-2 text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" /> Waiting for you to approve on GitHub…
         </div>
-        <Button size="sm" variant="ghost" onClick={() => setFlow(null)}>Cancel</Button>
+        <Button size="sm" variant="ghost" onClick={() => { setFlow(null); onCancel?.(); }}>Cancel</Button>
       </div>
     );
   }
@@ -158,13 +372,15 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     <div className="flex flex-col items-center gap-3 rounded-md border p-5 text-center text-xs">
       <Github className="size-8" />
       <p className="max-w-sm text-muted-foreground">
-        Sign in with GitHub to pick a repository and clone it. No token to paste: the sign-in stays on the server and is
-        used for this project's fetch, pull and push.
+        {autoStart
+          ? "Starting the GitHub sign-in…"
+          : "Sign in with GitHub to pick a repository and clone it. No token to paste: the sign-in stays on the server and is used for this project's fetch, pull and push."}
       </p>
       <Button size="sm" onClick={() => void start()} disabled={starting} data-testid="github-signin">
         {starting ? <Loader2 className="animate-spin" /> : <Github />} Sign in with GitHub
       </Button>
       {error && <div className="text-destructive" data-testid="github-signin-error">{error}</div>}
+      {onCancel && <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>}
     </div>
   );
 }
@@ -213,16 +429,28 @@ function Account({ login, avatarUrl, onSignedOut }: { login?: string | null; ava
 }
 
 /** Pick a repository (search, pages), then a branch, the parent folder and the folder name; clone. */
-function RepoWizard({ installUrl, onAdded, onSignedOut }: { installUrl?: string | null; onAdded: (p: { id: string }) => void; onSignedOut: () => void }) {
+function RepoWizard({ ops, installUrl, anonymous, onAdded, onSignedOut }: {
+  ops: RepoOps;
+  installUrl?: string | null;
+  /** No credentials: no list, just a repository by name (public ones clone). */
+  anonymous?: boolean;
+  onAdded: (p: { id: string }) => void;
+  onSignedOut: () => void;
+}) {
   const [repo, setRepo] = useState<GitHubRepo | null>(null);
   const [job, setJob] = useState<CloneStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   useClonePolling(job, setJob, onAdded, setError);
 
   if (job) return <CloneProgress job={job} onBack={() => setJob(null)} />;
-  if (!repo) return <RepoList installUrl={installUrl} onPick={setRepo} onSignedOut={onSignedOut} />;
+  if (!repo) {
+    return anonymous
+      ? <ByName onPick={setRepo} />
+      : <RepoList ops={ops} installUrl={installUrl} onPick={setRepo} onSignedOut={onSignedOut} />;
+  }
   return (
     <ClonePlace
+      ops={ops}
       repo={repo}
       onBack={() => setRepo(null)}
       onSignedOut={onSignedOut}
@@ -233,7 +461,35 @@ function RepoWizard({ installUrl, onAdded, onSignedOut }: { installUrl?: string 
   );
 }
 
-function RepoList({ installUrl, onPick, onSignedOut }: { installUrl?: string | null; onPick: (r: GitHubRepo) => void; onSignedOut: () => void }) {
+/** A repository typed as owner/repo (or its github.com URL). */
+function ByName({ onPick }: { onPick: (r: GitHubRepo) => void }) {
+  const [typed, setTyped] = useState("");
+  const picked = ownerRepo(typed);
+  const go = () => {
+    if (picked) onPick({ fullName: picked, owner: picked.split("/")[0], name: picked.split("/")[1], private: false });
+  };
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="github-by-name">
+      <span className="text-muted-foreground">Repository (owner/repo, or its github.com address)</span>
+      <div className="flex gap-1.5">
+        <input
+          autoFocus
+          className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") go();
+          }}
+          placeholder="owner/repo"
+          data-testid="github-by-name-input"
+        />
+        <Button size="sm" disabled={!picked} onClick={go} data-testid="github-by-name-next">Next</Button>
+      </div>
+    </div>
+  );
+}
+
+function RepoList({ ops, installUrl, onPick, onSignedOut }: { ops: RepoOps; installUrl?: string | null; onPick: (r: GitHubRepo) => void; onSignedOut: () => void }) {
   const [typed, setTyped] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -246,11 +502,11 @@ function RepoList({ installUrl, onPick, onSignedOut }: { installUrl?: string | n
     return () => clearTimeout(t);
   }, [typed]);
   const repos = useQuery({
-    queryKey: ["github-repos", query, page],
+    queryKey: [`${ops.key}-repos`, query, page],
     queryFn: () => {
       const reload = reloadNext.current;
       reloadNext.current = false;
-      return api.githubRepos(query, page, reload);
+      return ops.repos(query, page, reload);
     },
     placeholderData: keepPreviousData,
     retry: false,
@@ -264,7 +520,8 @@ function RepoList({ installUrl, onPick, onSignedOut }: { installUrl?: string | n
   };
   const data = repos.data;
   const pages = data ? pageCount(data.perPage, data.total) : 1;
-  const noInstall = data && data.installations.length === 0;
+  const noInstall = ops.app && data && data.installations.length === 0;
+  const typedRepo = ops.app ? null : ownerRepo(typed);
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
@@ -276,7 +533,7 @@ function RepoList({ installUrl, onPick, onSignedOut }: { installUrl?: string | n
             className="min-w-0 flex-1 bg-transparent text-xs outline-none"
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
-            placeholder="Search repositories"
+            placeholder={ops.app ? "Search repositories" : "Search your repositories, or type owner/repo"}
             aria-label="Search repositories"
             data-testid="github-repo-search"
           />
@@ -288,7 +545,8 @@ function RepoList({ installUrl, onPick, onSignedOut }: { installUrl?: string | n
       {noInstall ? (
         <div className="flex flex-col items-center gap-2 rounded-md border p-4 text-center" data-testid="github-install">
           <p className="text-muted-foreground">The {brandName()} GitHub App isn't installed on your account or any organization yet, so it can't see any repositories.</p>
-          {installUrl && (
+          {!ops.app && <span className="min-w-0 truncate">Not listed? Type owner/repo.</span>}
+          {ops.app && installUrl && (
             <a href={installUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 font-medium text-primary hover:underline">
               Install the app on your account or organization <ExternalLink className="size-3" />
             </a>
@@ -299,7 +557,16 @@ function RepoList({ installUrl, onPick, onSignedOut }: { installUrl?: string | n
         <div className="h-64 overflow-y-auto overflow-x-hidden rounded-md border bg-background" data-testid="github-repo-list">
           {repos.isLoading && <div className="p-3 text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /></div>}
           {repos.error && !signedOut(repos.error) && <div className="p-3 text-destructive">{errorText(repos.error)}</div>}
-          {data?.items.length === 0 && <div className="p-3 text-muted-foreground">{query ? `No repositories match "${query}".` : "No repositories."}</div>}
+          {typedRepo && !data?.items.some((r) => r.fullName.toLowerCase() === typedRepo.toLowerCase()) && (
+            <button
+              onClick={() => onPick({ fullName: typedRepo, owner: typedRepo.split("/")[0], name: typedRepo.split("/")[1], private: false })}
+              className="flex w-full items-center gap-1.5 border-b px-2 py-1.5 text-left hover:bg-accent/60"
+              data-testid="github-repo-by-name"
+            >
+              <Github className="size-3 shrink-0 text-muted-foreground" /> Clone <span className="font-medium">{typedRepo}</span> by name
+            </button>
+          )}
+          {data?.items.length === 0 && !typedRepo && <div className="p-3 text-muted-foreground">{query ? `No repositories match "${query}".` : "No repositories."}</div>}
           {data?.items.map((r) => (
             <button
               key={r.fullName}
@@ -351,7 +618,8 @@ function RepoList({ installUrl, onPick, onSignedOut }: { installUrl?: string | n
   );
 }
 
-function ClonePlace({ repo, onBack, onSignedOut, onStarted, error, setError }: {
+function ClonePlace({ ops, repo, onBack, onSignedOut, onStarted, error, setError }: {
+  ops: RepoOps;
   repo: GitHubRepo;
   onBack: () => void;
   onSignedOut: () => void;
@@ -359,7 +627,7 @@ function ClonePlace({ repo, onBack, onSignedOut, onStarted, error, setError }: {
   error: string | null;
   setError: (e: string | null) => void;
 }) {
-  const branches = useQuery({ queryKey: ["github-branches", repo.fullName], queryFn: () => api.githubBranches(repo.fullName), retry: false });
+  const branches = useQuery({ queryKey: [`${ops.key}-branches`, repo.fullName], queryFn: () => ops.branches(repo.fullName), retry: false });
   const [branch, setBranch] = useState("");
   const [parent, setParent] = useState("");
   const [name, setName] = useState("");
@@ -376,7 +644,7 @@ function ClonePlace({ repo, onBack, onSignedOut, onStarted, error, setError }: {
     setBusy(true);
     setError(null);
     try {
-      onStarted(await api.githubClone({ repo: repo.fullName, branch: chosen || undefined, parent, name: name.trim() || undefined }));
+      onStarted(await ops.clone({ repo: repo.fullName, branch: chosen || undefined, parent, name: name.trim() || undefined }));
     } catch (e) {
       if (signedOut(e)) onSignedOut();
       setError(errorText(e));
