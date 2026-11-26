@@ -861,3 +861,35 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   normalisation and reasoning mapping are adapter chains with a golden corpus; only admins
   (D140) see and edit the config. Supersedes ROUTER.md's WON'T items for switching, cloud
   providers, budgets and the admin UI. About 41 agent-days (cutover set about 32).
+- **D146** (user decisions 2026-11-26) The router control plane of D145 grows into the
+  **Abhoth Supervisor** (`abhoth supervisor`; `abhoth router` stays as an alias). Design in
+  [`SUPERVISOR.md`](SUPERVISOR.md); schema additions in ROUTER-CONFIG.md 4.11; nothing built
+  yet.
+  - **Process model.** An unprivileged supervisor container plus a root `abhoth hostd` on the
+    host. hostd is reached only through the forced-command SSH channel and bounded by a
+    root-owned limits file. It runs NVML telemetry, fan and clock loops, idle clock-down
+    (woken by the router on admission) and host facts, and keeps its last-known-good policy
+    when the supervisor restarts.
+  - **Fans.** A fan's temperature source is an expression over any sensor, with fallbacks
+    (the M4000 has no HBM, so it uses core). The load feed-forward is gated by temperature.
+    Backends: ESPHome (device-side curve and fail-safe, the default), hwmon, IPMI (read-only
+    by default), liquidctl, NVML and Windows. The ESP32 firmware, pinout and BOM are in
+    `docs/hardware/esp32-gpu-fans/`.
+  - **Clocks and power.** Card A is pinned at 1597 MHz while it serves, and clocks are
+    re-asserted on every engine Ready. This replaces clockctl, gpu-power and `boot.sh`.
+  - **Media engines.** ComfyUI, image-api and SA3 become engines with image and music
+    routes.
+  - **Alerts.** Rules with dedupe, sent to HA notify, MQTT, ntfy or a webhook.
+  - **Home Assistant.** MQTT discovery that keeps ha-bridge's entity ids.
+  - **Calendar.** One generic calendar (RRULE, cron, iCal, live detection, reservations)
+    replaces the pipeline, quiet-window and music guards. Events can carry **event API keys**
+    (`abe_`, D140 keys) that work only inside their window, with least-privilege scopes. They
+    never bypass the probe rule, excluded cards, budgets or thermal limits.
+  - **Glance.** Rebuilt in the Abhoth web UI over a snapshot and an SSE feed, with a parity
+    table and a redacted public view.
+  - **The Abhoth app** points at a supervisor with one URL and key. A catalog with a live
+    stream replaces per-model config, the profiles API client and the slot client, and
+    existing settings migrate as `supersededBy` without loss.
+
+  About 54 agent-days, of which about 23 can start now in parallel with the router-control
+  builders.

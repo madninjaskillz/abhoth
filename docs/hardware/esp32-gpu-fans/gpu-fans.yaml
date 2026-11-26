@@ -1,0 +1,461 @@
+# ESP32 3-fan PWM controller
+# ----------------------------------------------------------------------------
+# Safety model (fans are FULL SPEED unless something healthy says otherwise):
+#   * ESP32 unpowered / booting / crashed  -> PWM pins float -> fan's own pull-up = 100%
+#   * On boot                              -> 100%, then follows data once it arrives
+#   * No GPU temp received for STALE secs  -> that fan goes 100% (server script died, WiFi down…)
+#   * Temp >= Critical Temp                -> 100%, even in Manual mode
+#   * Manual mode (HA slider) only holds while HA is connected; HA gone 60s -> back to Auto
+# Auto target = max(temp curve, power feed-forward). Feed-forward only counts while
+# its load value is fresh as well. Ramp up instantly, down 2% per 2 s tick.
+# The server pushes temps (EMA-smoothed, 0.1 C) + load (% of enforced power limit)
+# straight to this ESP over HTTP (web_server REST) on change, with a 10 s heartbeat,
+# so the curve keeps working with Home Assistant down.
+# ----------------------------------------------------------------------------
+
+substitutions:
+  name: gpu-fans
+  friendly: GPU Fans
+  stale_seconds: "30"      # no temp for this long -> fan to 100% (pusher heartbeat = 10 s; was 75 s until 2026-11-21)
+  # Pins: all on the LEFT (VIN/GND) side of the 30-pin DevKit, paired per fan.
+  # Avoided: D34/D35/VP/VN (input-only, no pull-ups), D12 (boot strap), D14 (glitches at boot).
+  pwm0: GPIO32
+  tach0: GPIO33
+  pwm1: GPIO25
+  tach1: GPIO26
+  pwm2: GPIO27
+  tach2: GPIO13
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly}
+  on_boot:
+    priority: 600
+    then:
+      - output.set_level: { id: pwm_fan0, level: 100% }
+      - output.set_level: { id: pwm_fan1, level: 100% }
+      - output.set_level: { id: pwm_fan2, level: 100% }
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_key
+  reboot_timeout: 0s        # IMPORTANT: default reboots the ESP every 15 min when HA is down
+
+ota:
+  - platform: esphome        # OTA is encrypted with the api key above
+
+wifi:
+  networks:
+    - ssid: !secret wifi_ssid   # preferred network name
+      password: !secret wifi_password
+      priority: 10
+    - ssid: !secret wifi_ssid_legacy   # older name of the same network (optional)
+      password: !secret wifi_password
+      priority: 0
+  ap:
+    ssid: "${name} fallback"
+    password: !secret fallback_password
+
+captive_portal:
+
+# HTTP API the server pushes temps into (independent of Home Assistant)
+web_server:
+  port: 80
+  version: 3
+  auth:
+    type: digest
+    username: !secret web_user
+    password: !secret web_password
+
+# ---------------------------------------------------------------- outputs ---
+output:
+  - platform: ledc
+    id: pwm_fan0
+    pin: ${pwm0}
+    frequency: 25000 Hz       # Intel 4-pin fan spec
+  - platform: ledc
+    id: pwm_fan1
+    pin: ${pwm1}
+    frequency: 25000 Hz
+  - platform: ledc
+    id: pwm_fan2
+    pin: ${pwm2}
+    frequency: 25000 Hz
+
+# ---------------------------------------------------------------- state -----
+globals:
+  - { id: seen0, type: uint32_t, initial_value: "0" }   # millis() of last temp push
+  - { id: seen1, type: uint32_t, initial_value: "0" }
+  - { id: seen2, type: uint32_t, initial_value: "0" }
+  - { id: pseen0, type: uint32_t, initial_value: "0" }  # millis() of last load push
+  - { id: pseen1, type: uint32_t, initial_value: "0" }
+  - { id: pseen2, type: uint32_t, initial_value: "0" }
+  - { id: duty0, type: float, initial_value: "1.0" }    # current applied duty 0..1
+  - { id: duty1, type: float, initial_value: "1.0" }
+  - { id: duty2, type: float, initial_value: "1.0" }
+  - { id: ff0, type: float, initial_value: "0.0" }      # feed-forward duty 0..1 (0 = no load data)
+  - { id: ff1, type: float, initial_value: "0.0" }
+  - { id: ff2, type: float, initial_value: "0.0" }
+  - { id: ha_seen, type: uint32_t, initial_value: "0" }
+  - { id: failsafe, type: bool, initial_value: "true" }
+
+# ------------------------------------------------------- inputs & settings ---
+number:
+  # Temps: pushed by the server (EMA-smoothed, 0.1 C) on change + 10 s heartbeat
+  - platform: template
+    name: GPU 0 Temp
+    id: gpu0_temp
+    optimistic: true
+    min_value: 0
+    max_value: 125
+    step: 0.1
+    mode: box
+    unit_of_measurement: "°C"
+    on_value:
+      - lambda: id(seen0) = millis();
+      - script.execute: { id: fan_control, tick: false }
+  - platform: template
+    name: GPU 1 Temp
+    id: gpu1_temp
+    optimistic: true
+    min_value: 0
+    max_value: 125
+    step: 0.1
+    mode: box
+    unit_of_measurement: "°C"
+    on_value:
+      - lambda: id(seen1) = millis();
+      - script.execute: { id: fan_control, tick: false }
+  - platform: template
+    name: GPU 2 Temp
+    id: gpu2_temp
+    optimistic: true
+    min_value: 0
+    max_value: 125
+    step: 0.1
+    mode: box
+    unit_of_measurement: "°C"
+    on_value:
+      - lambda: id(seen2) = millis();
+      - script.execute: { id: fan_control, tick: false }
+
+  # Load: power.draw as % of the card's enforced power limit, pushed with the temp
+  - platform: template
+    name: GPU 0 Power
+    id: gpu0_power
+    optimistic: true
+    min_value: 0
+    max_value: 150
+    step: 0.1
+    mode: box
+    unit_of_measurement: "%"
+    on_value:
+      - lambda: id(pseen0) = millis();
+      - script.execute: { id: fan_control, tick: false }
+  - platform: template
+    name: GPU 1 Power
+    id: gpu1_power
+    optimistic: true
+    min_value: 0
+    max_value: 150
+    step: 0.1
+    mode: box
+    unit_of_measurement: "%"
+    on_value:
+      - lambda: id(pseen1) = millis();
+      - script.execute: { id: fan_control, tick: false }
+  - platform: template
+    name: GPU 2 Power
+    id: gpu2_power
+    optimistic: true
+    min_value: 0
+    max_value: 150
+    step: 0.1
+    mode: box
+    unit_of_measurement: "%"
+    on_value:
+      - lambda: id(pseen2) = millis();
+      - script.execute: { id: fan_control, tick: false }
+
+  # Curve: below Low -> Min Duty, linear ramp, at/above High -> 100%
+  - platform: template
+    name: Curve Low Temp
+    id: curve_lo
+    optimistic: true
+    restore_value: true
+    initial_value: 45
+    min_value: 20
+    max_value: 90
+    step: 1
+    unit_of_measurement: "°C"
+    entity_category: config
+  - platform: template
+    name: Curve High Temp
+    id: curve_hi
+    optimistic: true
+    restore_value: true
+    initial_value: 78
+    min_value: 30
+    max_value: 100
+    step: 1
+    unit_of_measurement: "°C"
+    entity_category: config
+  - platform: template
+    name: Min Duty
+    id: duty_min
+    optimistic: true
+    restore_value: true
+    initial_value: 30
+    min_value: 10
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    entity_category: config
+  # Feed-forward on load: below FF Low -> Min Duty, linear to FF Max Duty at FF High
+  - platform: template
+    name: FF Low Load
+    id: ff_lo
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    entity_category: config
+  - platform: template
+    name: FF High Load
+    id: ff_hi
+    optimistic: true
+    restore_value: true
+    initial_value: 90
+    min_value: 0
+    max_value: 150
+    step: 1
+    unit_of_measurement: "%"
+    entity_category: config
+  - platform: template
+    name: FF Max Duty
+    id: ff_max
+    optimistic: true
+    restore_value: true
+    initial_value: 80
+    min_value: 10
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    entity_category: config
+  - platform: template
+    name: Critical Temp
+    id: temp_crit
+    optimistic: true
+    restore_value: true
+    initial_value: 85
+    min_value: 50
+    max_value: 105
+    step: 1
+    unit_of_measurement: "°C"
+    entity_category: config
+  - platform: template
+    name: Manual Duty
+    id: manual_duty
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    min_value: 10
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+
+switch:
+  - platform: template
+    name: Manual Override
+    id: manual_mode
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+
+# ------------------------------------------------------------ control loop ---
+# Runs every 2 s (tick) and immediately whenever a temp/load value arrives.
+# Only ticks may lower a duty (2% per tick); arrivals can only raise it.
+script:
+  - id: fan_control
+    mode: queued
+    max_runs: 10
+    parameters:
+      tick: bool
+    then:
+      - lambda: |-
+          const uint32_t now = millis();
+          const uint32_t STALE = ${stale_seconds} * 1000UL;
+
+          if (api::global_api_server != nullptr && api::global_api_server->is_connected())
+            id(ha_seen) = now;
+          const bool ha_up  = id(ha_seen) != 0 && (now - id(ha_seen)) < 60000UL;
+          const bool manual = ha_up && id(manual_mode).state;
+
+          const float lo   = id(curve_lo).state;
+          const float hi   = id(curve_hi).state;
+          const float dmin = id(duty_min).state / 100.0f;
+          const float crit = id(temp_crit).state;
+          const float man  = id(manual_duty).state / 100.0f;
+          const float flo  = id(ff_lo).state;
+          const float fhi  = id(ff_hi).state;
+          const float fmax = id(ff_max).state / 100.0f;
+
+          const float temps[3]    = { id(gpu0_temp).state, id(gpu1_temp).state, id(gpu2_temp).state };
+          const float loads[3]    = { id(gpu0_power).state, id(gpu1_power).state, id(gpu2_power).state };
+          const uint32_t seen[3]  = { id(seen0), id(seen1), id(seen2) };
+          const uint32_t pseen[3] = { id(pseen0), id(pseen1), id(pseen2) };
+          float *duty[3]          = { &id(duty0), &id(duty1), &id(duty2) };
+          float *ffd[3]           = { &id(ff0), &id(ff1), &id(ff2) };
+          output::FloatOutput *out[3] = { id(pwm_fan0), id(pwm_fan1), id(pwm_fan2) };
+
+          bool any_failsafe = false;
+          for (int i = 0; i < 3; i++) {
+            const bool fresh  = seen[i] != 0 && (now - seen[i]) < STALE && !std::isnan(temps[i]);
+            const bool pfresh = fresh && pseen[i] != 0 && (now - pseen[i]) < STALE && !std::isnan(loads[i]);
+
+            // load feed-forward
+            float ff = 0.0f;
+            if (pfresh) {
+              if (loads[i] <= flo)                    ff = dmin;
+              else if (fhi <= flo || loads[i] >= fhi) ff = fmax;
+              else ff = dmin + (fmax - dmin) * (loads[i] - flo) / (fhi - flo);
+            }
+            *ffd[i] = ff;
+
+            float target;
+            if (manual) {
+              target = man;
+            } else if (!fresh) {
+              target = 1.0f; any_failsafe = true;
+            } else {
+              if (hi <= lo || temps[i] >= hi) target = 1.0f;
+              else if (temps[i] <= lo)        target = dmin;
+              else target = dmin + (1.0f - dmin) * (temps[i] - lo) / (hi - lo);
+              target = std::max(target, ff);
+            }
+            if (fresh && temps[i] >= crit) target = 1.0f;   // overrides Manual too
+
+            // Up instantly, down gently (2% per 2s tick) so bursty loads don't see-saw
+            const float cur = *duty[i];
+            if (target < cur) target = tick ? std::max(target, cur - 0.02f) : cur;
+            target = std::min(std::max(target, 0.0f), 1.0f);
+
+            if (target > cur + 0.005f)
+              ESP_LOGI("fans", "fan%d up %.0f%% -> %.0f%% (T=%.1f L=%.1f ff=%.0f%%)",
+                       i, cur * 100.0f, target * 100.0f, temps[i], loads[i], ff * 100.0f);
+            *duty[i] = target;
+            out[i]->set_level(target);
+          }
+          id(failsafe) = any_failsafe;
+
+interval:
+  - interval: 2s
+    then:
+      - script.execute: { id: fan_control, tick: true }
+
+# ------------------------------------------------------------ telemetry -----
+sensor:
+  - platform: pulse_counter
+    name: Fan 0 RPM
+    id: fan0_rpm
+    pin: { number: "${tach0}", mode: { input: true, pullup: true } }
+    unit_of_measurement: RPM
+    update_interval: 5s
+    internal_filter: 13us
+    count_mode: { rising_edge: INCREMENT, falling_edge: DISABLE }
+    filters:
+      - multiply: 0.5          # fans give 2 tach pulses per revolution
+  - platform: pulse_counter
+    name: Fan 1 RPM
+    id: fan1_rpm
+    pin: { number: "${tach1}", mode: { input: true, pullup: true } }
+    unit_of_measurement: RPM
+    update_interval: 5s
+    internal_filter: 13us
+    count_mode: { rising_edge: INCREMENT, falling_edge: DISABLE }
+    filters:
+      - multiply: 0.5
+  - platform: pulse_counter
+    name: Fan 2 RPM
+    id: fan2_rpm
+    pin: { number: "${tach2}", mode: { input: true, pullup: true } }
+    unit_of_measurement: RPM
+    update_interval: 5s
+    internal_filter: 13us
+    count_mode: { rising_edge: INCREMENT, falling_edge: DISABLE }
+    filters:
+      - multiply: 0.5
+
+  - platform: template
+    name: Fan 0 Duty
+    lambda: return id(duty0) * 100.0f;
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 5s
+  - platform: template
+    name: Fan 1 Duty
+    lambda: return id(duty1) * 100.0f;
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 5s
+  - platform: template
+    name: Fan 2 Duty
+    lambda: return id(duty2) * 100.0f;
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 5s
+
+  # Feed-forward duty from load (0 = no fresh load data) - for tuning
+  - platform: template
+    name: Fan 0 FF Duty
+    lambda: return id(ff0) * 100.0f;
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 5s
+  - platform: template
+    name: Fan 1 FF Duty
+    lambda: return id(ff1) * 100.0f;
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 5s
+  - platform: template
+    name: Fan 2 FF Duty
+    lambda: return id(ff2) * 100.0f;
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 5s
+
+  - platform: wifi_signal
+    name: WiFi Signal
+    update_interval: 60s
+    entity_category: diagnostic
+
+binary_sensor:
+  - platform: template
+    name: Failsafe Active          # ON = some fan forced to 100% for lack of temp data
+    lambda: return id(failsafe);
+    device_class: problem
+  - platform: template
+    name: Fan 0 Stalled
+    device_class: problem
+    lambda: return id(duty0) > 0.25f && id(fan0_rpm).state < 300;
+    filters: [ delayed_on: 15s ]
+  - platform: template
+    name: Fan 1 Stalled
+    device_class: problem
+    lambda: return id(duty1) > 0.25f && id(fan1_rpm).state < 300;
+    filters: [ delayed_on: 15s ]
+  - platform: template
+    name: Fan 2 Stalled
+    device_class: problem
+    lambda: return id(duty2) > 0.25f && id(fan2_rpm).state < 300;
+    filters: [ delayed_on: 15s ]

@@ -18,6 +18,12 @@ read-only, done on 2026-11-25 against the live layout `merged-inkling-x2`. Host-
 are placeholders: `gpu-host` (the GPU server), `$AI_ROOT` (its AI tree), `$ARCHIVE` (the Optane
 model archive), `GPU-aaaa…` / `GPU-bbbb…` (card UUIDs). Keys are left out on purpose.
 
+**2026-11-26:** this control plane is now one subsystem of the **Abhoth Supervisor**
+([SUPERVISOR.md](SUPERVISOR.md)). That design adds fans, sensors, GPU clocks and power, media
+engines, alerts, Home Assistant over MQTT, the calendar with event keys, Glance and the app's
+catalog. It changes nothing in sections 1-15 below, except where a note says so. Its schema
+additions are in [4.11](#411-supervisor-additions).
+
 ## Contents
 
 0. [User decisions](#0-user-decisions)
@@ -421,10 +427,12 @@ on_demand = true
 [cards.C]
 server   = "deepthought"
 gpu_uuid = "GPU-cccccccc-cccc-cccc-cccc-cccccccccccc"
+label    = "V100-SXM2 16 GB (E1:00.0, ComfyUI)"
 managed  = false
 [cards.D]
 server   = "deepthought"
 gpu_uuid = "GPU-dddddddd-dddd-dddd-dddd-dddddddddddd"
+label    = "Quadro M4000 (44:00.0, own fan, no HBM sensor)"
 managed  = false
 
 # ── engines: reusable definitions (4.4) ────────────────────────────────────────────────────
@@ -747,6 +755,11 @@ stream_note = "reasoning"
 | `budgets[]` | | scope, upstream pattern, period, USD, requests/tokens per minute | ledger in `router.db` |
 | `guards.<id>` | id | kind, source, which actions it blocks, retry | evaluated continuously |
 | `secrets.<id>` | id | `file` or `env` | values never in config |
+| `cards.<id>.power` | card | persistence, power limit, app clocks, serving clocks, idle clock-down | supervisor (4.11); hostd applies it |
+| `sensors.<id>`, `fans.<id>`, `fan_backends.<id>`, `fan_profiles.<id>` | id | expressions; fan policy; devices | supervisor (4.11) |
+| `calendar.entries.<id>` | id | when, detect, effects, priority, event-key policy | `calendar.toml` include; occurrences and key use in `router.db` |
+| `alerts.rules.<id>`, `alerts.sinks.<id>` | id | condition or event, dedupe, sinks | open alerts in `router.db` |
+| `mqtt`, `homeassistant`, `glance` | — | broker, HA REST, dashboard | supervisor (4.11) |
 
 ### 4.4 Route targets
 
@@ -875,6 +888,296 @@ read it from the label, systemd and process from a sidecar file the start wrote.
 - Edits made by hand on the file are picked up by the watcher and audited as `file` with the
   diff against the previous snapshot.
 - `abhoth router config history` and `config revert <rev>` (which is itself an audited write).
+
+### 4.11 Supervisor additions
+
+[SUPERVISOR.md](SUPERVISOR.md) grows this config into the Abhoth Supervisor's. The file
+becomes `supervisor.toml`; `router.toml` is still loaded when that is missing. Everything in
+4.2 stays as it is. These are new top-level tables. They are ignored, with a warning, by a
+build without the supervisor crates, so the builders of C1-C14 are not blocked by them.
+
+| Table | Holds | Design |
+|---|---|---|
+| `[supervisor]` | includes, the hostd channel per server, feed rates | SUPERVISOR.md 2 |
+| `[cards.X.power]` | persistence, power limit, app clocks, `serving` (unlocked / pin / range / cap), `idle`, `reassert`, `on_mismatch`. It replaces `[cards.X].clocks`, which is kept as an alias. | SUPERVISOR.md 6 |
+| `[sensors.<name>]` | a named expression over sources (`gpu.A.hbm`, `bmc.*`, `hwmon.*`, `esp.*`, `ha.*`, `mqtt.*`) | SUPERVISOR.md 4 |
+| `[fan_backends.<id>]` | kind (`esphome`, `hwmon`, `ipmi`, `liquidctl`, `nvml`, `windows`), address, secret refs, fail-safe settings | SUPERVISOR.md 5.3 |
+| `[fans.<id>]` | backend + channel, `temp`/`load` expressions, `load_gate`, `curve`, `feed_forward`, `min_duty`, `max_temp`, `ramp_down`, `stale`, `send`, `profile`, alerts | SUPERVISOR.md 5.2 |
+| `[fan_profiles.<id>]` | policy overrides (quiet, full with TTL) | SUPERVISOR.md 5.2 |
+| `[engines.X]` new fields | `api` (`comfyui`, `openai-images`, `sa3`), `lifecycle` (`standing`, `on_request`, `layout`), `idle_stop`, `depends_on`, `conflicts` | SUPERVISOR.md 7 |
+| `[routes.X].kind` | `chat` (default), `images`, `audio` or `music` | SUPERVISOR.md 7 |
+| `[models.X.client]` | agent hints for the app's catalog: mode, tool profile, sampling | SUPERVISOR.md 13 |
+| `[calendar]` + `[calendar.entries.<id>]` | entries (at/rrule/cron/ics, duration, lead/tail, detect, after, effects, priority) and the policy for each event key (`[calendar.entries.<id>.key]`: scopes, routes, layouts, graces, `overrides_lower`, `on_reserve`) | SUPERVISOR.md 8-9 |
+| `[guards.X] kind = "calendar"` | a guard that is active while an entry with the named effect is active | SUPERVISOR.md 8.2 |
+| `[alerts]` + `[alerts.rules.<id>]` + `[alerts.sinks.<id>]` | rules (expression or built-in event, `for`, severity, dedupe, cooldown, repeat, resolve, sinks) | SUPERVISOR.md 10 |
+| `[mqtt]`, `[homeassistant]` | broker URL, client id, credentials as secret refs, base topic, discovery prefix, `legacy_ids`; HA REST URL, token ref, `reads` | SUPERVISOR.md 11 |
+| `[glance]` | services list, extras (noise), public listener and redaction | SUPERVISOR.md 12 |
+
+**Secrets** use the same `{ file = … }` / `{ env = … }` references as 4.7: the ESP web
+password, MQTT credentials, the HA token and push tokens.
+
+**Validation** (4.8) gains these checks:
+
+- expression sources exist on the server;
+- no fan's `max_temp` is above hostd's limits file, and no `min_duty` is below it;
+- event keys never name excluded cards or models (`managed = false`, `on_demand = false`,
+  routes with `cold = "reject"` that are excluded, such as `dense-pi`);
+- overlapping reservations at equal priority are warned about;
+- `ipmi` writes are refused unless the limits allow them.
+
+The annotated DeepThought example continues 4.2. The values are from the 2026-11-26 survey.
+
+```toml
+# ── supervisor (SUPERVISOR.md) ─────────────────────────────────────────────────────────────
+[supervisor]
+include  = ["calendar.toml"]              # the Calendar page edits this file
+hostd    = { deepthought = { channel = "ssh", required = true } }  # fans/clocks need hostd
+
+[secrets]                                  # additions to the table above
+esp_fans_password = { file = "/run/secrets/esp-gpu-fans" }   # ESP web_server digest password
+mqtt_password     = { file = "/run/secrets/mqtt-password" }
+ha_token          = { file = "/run/secrets/ha-token" }
+
+# Card labels by survey: A = V100-SXM3 21:00.0, B = V100-PCIe 01:00.0,
+# C = V100-SXM2-16GB E1:00.0 (ComfyUI), D = Quadro M4000 44:00.0 (own fan, no HBM sensor).
+[cards.A.power]
+persistence   = true
+power_limit_w = 350
+serving       = { pin = 1597 }             # full boost while serving (lock 1597,1597)
+idle          = { after = "60s", lock_mhz = 135, wake = ["router", "sniff", "util"] }
+reassert      = ["boot", "engine_ready", "every:5m"]
+on_mismatch   = "fix"
+allow_cap     = false                      # the HA/UI clock cap never applies to A
+[cards.B.power]
+persistence   = true
+power_limit_w = 250
+app_clocks    = [877, 1380]                # was boot.sh
+serving       = "unlocked"
+idle          = { after = "60s", lock_mhz = 135, wake = ["router", "sniff", "util"] }
+reassert      = ["boot", "engine_ready", "every:5m"]
+[cards.C.power]                            # card C stays managed = false for layouts;
+manage_power  = true                       # power/idle control is allowed separately
+idle          = { after = "60s", lock_mhz = 135, wake = ["sniff", "util"], sniff_ports = [8188] }
+
+# ── sensors: control temperatures (pusher TEMP_SRC=hbm, EMA 4 s) ──────────────────────────
+[sensors.ctrl_A]
+expr = "ema(first(gpu.A.hbm, gpu.A.core), 4s)"
+[sensors.ctrl_B]
+expr = "ema(first(gpu.B.hbm, gpu.B.core), 4s)"
+[sensors.ctrl_C]
+expr = "ema(first(gpu.C.hbm, gpu.C.core), 4s)"
+[sensors.ctrl_D]
+expr = "ema(first(gpu.D.hbm, gpu.D.core), 4s)"   # the M4000 has no HBM: core is used
+
+# ── fans ───────────────────────────────────────────────────────────────────────────────────
+[fan_backends.esp-gpu-fans]
+kind      = "esphome"
+url       = "http://esp-gpu-fans.lan"       # placeholder host name
+transport = "web_server"                    # REST push + SSE /events (api = "native" later)
+auth      = { kind = "digest", user = "fans", password = "secret:esp_fans_password" }
+names     = { temp = "GPU {n} Temp", load = "GPU {n} Power" }
+device_stale_seconds = 30                   # the firmware's stale_seconds (read back, checked)
+sync_device_settings = false                # read-only diff first (SUPERVISOR.md 15 Q3)
+mode      = "act"                           # "shadow" during the pusher retirement (5.4)
+
+[fan_defaults]                              # inherited by every [fans.*]
+mode         = "device_curve"
+load_gate    = { lo = 52, hi = 64 }         # load counts fully only above 64 °C
+curve        = [[45, 30], [78, 100]]        # mirrors the ESP numbers
+feed_forward = { lo = 20, hi = 90, max_duty = 80 }
+min_duty     = 30
+max_temp     = 85                           # ESP Critical Temp
+ramp_down    = "2%/2s"
+stale_input  = "3s"                         # pusher SAMPLE_STALE: send nothing → device fails safe
+send         = { temp_delta = 1.0, load_delta = 10, min_gap = "1s", heartbeat = "10s" }
+alerts       = { temp_warn = 75, stalled = true, failsafe = true }
+
+[fans.duct0]                                # FAN_MAP fan0 ← 01:00.0
+backend = "esp-gpu-fans"
+channel = 0
+temp    = "sensor.ctrl_B"
+load    = "gpu.B.power_pct"
+[fans.duct1]                                # fan1 ← 21:00.0
+backend = "esp-gpu-fans"
+channel = 1
+temp    = "sensor.ctrl_A"
+load    = "gpu.A.power_pct"
+[fans.duct2]                                # fan2 ← E1:00.0
+backend = "esp-gpu-fans"
+channel = 2
+temp    = "sensor.ctrl_C"
+load    = "gpu.C.power_pct"
+
+[fan_profiles.quiet]                        # chosen by the calendar, HA or the UI
+curve        = [[50, 25], [80, 100]]        # never below min_duty, never above max_temp
+feed_forward = { max_duty = 60 }
+[fan_profiles.full]
+duty = 100
+ttl  = "1h"
+
+[fan_backends.bmc]                          # the BMC runs the CPU fans; read-only
+kind  = "ipmi"
+write = false
+
+# ── media engines (SUPERVISOR.md 7) ───────────────────────────────────────────────────────
+[engines.comfyui]
+api       = "comfyui"
+driver    = "compose"
+run       = { app = "comfyui" }
+health    = { http = "http://127.0.0.1:8188/system_stats" }
+lifecycle = "standing"
+card      = "C"
+[engines.image-api]
+api        = "openai-images"
+driver     = "compose"
+run        = { app = "image-api" }
+health     = { http = "http://127.0.0.1:8189/health" }
+lifecycle  = "standing"
+depends_on = ["comfyui"]
+[engines.sa3]
+api       = "sa3"
+driver    = "compose"
+run       = { app = "stable-audio" }
+health    = { http = "http://127.0.0.1:8095/health" }
+lifecycle = "on_request"
+idle_stop = "30m"
+card      = "B"                             # placement to confirm (SUPERVISOR.md 15 Q9)
+conflicts = ["layout:*@B"]                  # replaces the music-mode guard file
+
+[routes."qwen-image"]
+kind    = "images"
+targets = [{ engine = "image-api" }]
+access  = "users"
+[routes."sa3"]
+kind    = "music"
+targets = [{ engine = "sa3" }]
+cold    = "on_demand"                       # starting SA3 is cheap; still authenticated only
+access  = "users"
+
+# ── guards that now come from the calendar (replace quiet-window, video, music) ────────────
+[guards.calendar-switch]
+kind   = "calendar"
+effect = "block_switch"
+blocks = ["switch"]
+[guards.calendar-on-demand]
+kind   = "calendar"
+effect = "block_on_demand"
+blocks = ["on_demand"]
+
+# ── alerts ─────────────────────────────────────────────────────────────────────────────────
+[alerts]
+defaults = { sinks = ["ha", "mqtt"], cooldown = "30m", repeat = "2h", resolve = true }
+[alerts.sinks.ha]
+kind    = "ha_notify"
+service = "notify.mobile_app_phone"         # placeholder
+[alerts.sinks.mqtt]
+kind = "mqtt"
+[alerts.rules.hot-card]
+when     = "max_avail(gpu.A.core, gpu.B.core, gpu.C.core) >= 85"
+for      = "60s"
+severity = "warning"
+dedupe   = "card"
+[alerts.rules.nic-hot]
+when     = "bmc.MB_10G >= 75"
+for      = "60s"
+severity = "warning"
+# built-ins (oom_kill, engine_crash, switch_failed, fan_stale, fan_stalled, clock_mismatch,
+# hostd_down, calendar_overlap, event_key_*) are on unless listed in alerts.disabled
+
+# ── Home Assistant ─────────────────────────────────────────────────────────────────────────
+[mqtt]
+url        = "mqtt://ha.lan:1883"
+client_id  = "abhoth-supervisor-deepthought"
+username   = { env = "ABHOTH_MQTT_USER" }
+password   = "secret:mqtt_password"
+base_topic = "abhoth"
+discovery_prefix = "homeassistant"
+legacy_ids = true                           # keep ha-bridge's deepthought_* unique_ids
+retire_discovery = ["homeassistant/select/deepthought_maxclock/config"]
+principal  = "svc-home-assistant"           # D140 service user: switch, card_state, clock_cap, fan_profile
+[homeassistant]
+url   = "http://ha.lan:8123"
+token = "secret:ha_token"
+reads = { ecoflow_ac = "sensor.ecoflow_ac_out_power" }   # placeholder entity id
+
+# ── Glance ─────────────────────────────────────────────────────────────────────────────────
+[glance]
+services = [ { name = "Whisper STT", group = "Voice", tcp = 10300 },
+             { name = "TTS", group = "Voice", tcp = 10203 },
+             { name = "Noise meter", group = "Infra", tcp = 9879 },
+             { name = "Prometheus", group = "Infra", http = "http://127.0.0.1:9090/-/healthy" },
+             { name = "Grafana", group = "Infra", http = "http://127.0.0.1:8015/api/health" } ]
+extra    = { noise = { prometheus = "max(noise_dbfs)" } }
+[glance.public]
+enabled       = false
+public_listen = "0.0.0.0:8077"              # the old Glance port, so the NPM host keeps working
+redact        = ["recent_requests", "oom_process", "container_names", "errors"]
+```
+
+`calendar.toml` (an include; the Calendar page writes it):
+
+```toml
+[calendar]
+timezone = "Europe/London"                  # defaults to router.timezone
+ics_feed = true                             # read-only per-user .ics export
+
+[calendar.entries.ai-news]
+title    = "AI News daily pipeline"
+owner    = "admin"
+rrule    = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0" # imported from the TrueNAS cron job
+duration = "90m"
+lead     = "15m"                            # replaces the 06:45-07:30 quiet-window guard
+detect   = { process = { argv_any = "run_daily.sh", label_arg = "--channel", label = "ai-news" },
+             mode = "both", grace = "10m" }
+effects  = [ { block_switch = "server:deepthought" }, { block_on_demand = "server:deepthought" },
+             { reserve_card = "B", on_reserve = "wait" } ]
+priority = "normal"
+[calendar.entries.ai-news.key]              # the key itself is a D140 key (abe_…) in abhoth.db
+scopes          = ["chat", "use_reserved"]  # least privilege (the default)
+routes          = ["qwen3.8-27b-coder"]
+layouts         = []                        # no switching
+grace_before    = "5m"
+grace_after     = "15m"
+overrides_lower = false
+
+[calendar.entries.game-news]
+title    = "Video Game News daily pipeline"
+owner    = "admin"
+after    = "ai-news"                        # cron starts it at 07:00 with --wait-lock
+duration = "60m"
+detect   = { process = { argv_any = "run_daily.sh", label_arg = "--channel", label = "game-news" },
+             mode = "both", grace = "10m" }
+effects  = [ { block_switch = "server:deepthought" }, { block_on_demand = "server:deepthought" },
+             { reserve_card = "B", on_reserve = "wait" } ]
+[calendar.entries.game-news.key]
+scopes = ["chat", "use_reserved"]
+routes = ["qwen3.8-27b-coder"]
+
+[calendar.entries.car-news]
+title    = "Car News weekly pipeline"
+owner    = "admin"
+rrule    = "FREQ=WEEKLY;BYDAY=SU;BYHOUR=7;BYMINUTE=0"
+after    = "game-news"
+duration = "60m"
+detect   = { process = { argv_any = "run_daily.sh", label_arg = "--channel", label = "car-news" },
+             mode = "both", grace = "10m" }
+effects  = [ { block_switch = "server:deepthought" }, { block_on_demand = "server:deepthought" },
+             { reserve_card = "B", on_reserve = "wait" } ]
+[calendar.entries.car-news.key]
+scopes = ["chat", "use_reserved"]
+routes = ["qwen3.8-27b-coder"]
+
+[calendar.entries.upload-retry]
+title   = "videoPipeline upload retry"
+cron    = "*/10 * * * *"
+effects = [ { info = true } ]
+
+# The bench queue adds one-off entries with their own key while a run is active, e.g.:
+# [calendar.entries.bench-2026-11-26-1]
+# at = "2026-11-26T20:00"  duration = "3h"  detect = { json_file = "…/bench/queue.json", active_when = ["running"] }
+# effects = [ { block_on_demand = "server:deepthought" }, { hold_clocks = "A" }, { hold_clocks = "B" } ]
+# key = { scopes = ["chat", "use_reserved", "lease", "switch"], layouts = ["merged-inkling-x2", "flash-x2"] }
+```
 
 ## 5. Engine lifecycle and layout switches
 
@@ -1135,7 +1438,10 @@ do. It does:
   benches.
 - **Show** clocks, power and temperatures per card in the UI and `/status`.
 
-Taking over clock management is a later, separate decision (open question 7).
+Taking over clock management is a later, separate decision (open question 7). **Decided
+2026-11-26:** the supervisor takes it over through `abhoth hostd` (SUPERVISOR.md 6). The
+verify step above becomes hostd's `assert`, card A is pinned at 1597 MHz while it serves, and
+clockctl, gpu-power and `boot.sh` are retired.
 
 ## 7. Guards and the cold-model policy
 
@@ -1154,6 +1460,18 @@ A guard is a named condition, evaluated continuously, that blocks a set of actio
 | `http` | GET a URL, active when the JSON path is truthy | (new) |
 | `lease` | an active guard lease (8.3) of a given kind | (new) bench, video, maintenance |
 | `admin_hold` | set from the UI with a reason and expiry | `gateway --hold`, but for switches |
+| `calendar` | active while a calendar entry with the named effect (`block_switch`, `block_on_demand`, `block_ensure`) is active. **Event keys** of that entry pass their own entry's blocks (SUPERVISOR.md 8-9). | quiet window, video pipeline, music mode (supervisor) |
+
+**Supervisor note (2026-11-26).** The `schedule` and `process` guards for the pipelines and
+the `file_exists` guard for music mode become calendar entries. An entry adds `lead`/`tail`,
+live detection that extends or starts an occurrence, reservations (`reserve_card`,
+`reserve_slots`) and an optional **event API key** (`abe_…`, a D140 key). Inside its window
+that key bypasses its own entry's blocks and uses its reservations, with admin-chosen scopes:
+`chat` and `use_reserved` by default; `lease`, `switch` (limited to listed layouts),
+`card_state`, `hold_clocks`, `fan_profile` and `on_demand` when granted. It never bypasses
+D-RC7, excluded cards and models, budgets or thermal limits. Overlaps, priority and in-flight
+work (`on_reserve = wait | drain | preempt`) are in SUPERVISOR.md 8.4 and 9.4. The builders
+implement `schedule`/`process` as designed here; the calendar kind plugs in later (SV12).
 
 Rules carried over from `ondemand.py`:
 
@@ -1598,6 +1916,13 @@ mapping is a clamp onto the target's list, so new engines only declare their lis
   | read config, state, jobs, plans | yes | no | no | `:8098` GETs only |
   | edit config, switch layouts, offline/online, holds | yes | no | switch only (if granted) | no |
 
+- **Event keys** (`abe_…`; SUPERVISOR.md 9) are D140 keys with `kind = "event"`, owned by the
+  admin who created the event. Introspection returns their event, scopes and graces. The
+  router accepts them only inside an occurrence of their event (plus graces), with only the
+  scopes listed for that event.
+- **The web server's service token** may carry `act_as_user`, so that each web user sees
+  their own catalog (SUPERVISOR.md 13.1).
+
 - **Anonymous LAN** (`[access] anonymous_lan = ["lan-cidr"]`) keeps today's clients (Jarvis,
   the video pipelines) working without keys at cutover; each gets a key afterwards, and the
   option is removed later (open question 6).
@@ -1694,7 +2019,13 @@ API separately. With the router:
 - Grafana gets a router dashboard from the metrics above (switch history, GPU clocks vs
   expectation, spend).
 
+Superseded by SUPERVISOR.md 12: Glance is rebuilt in the Abhoth web UI, fed by the
+supervisor's snapshot and SSE feed, with a parity table and an optional public read-only view.
+
 ### 12.4 Alerts
+
+Extended by SUPERVISOR.md 10 (rules, dedupe, HA notify, MQTT and push sinks). The list below
+becomes built-in rules there.
 
 Sent to the existing Home Assistant notification path (HA webhook URL in config, a secret):
 engine Failed; switch failed or rolled back; reconcile gave up (3 tries); clock mismatch;
@@ -1912,7 +2243,7 @@ and translation and can land before or just after; nothing in the cutover depend
 | 4 | Local execution on DeepThought: SSH to the host's loopback from the container, or run the router on the host as a service? | **SSH loopback with the forced command**: one security model, no docker socket, no root in the container |
 | 5 | Engine keys in argv: add `--api-key-file` (or an env var) to ninfer, and check Strata? | **Yes**, add it to ninfer (we own it); keep `--api-key` only for Strata if it has nothing else, via a wrapper reading the file inside the container |
 | 6 | Anonymous LAN clients (Jarvis, video pipelines, the dash buttons, HA's switch buttons) after cutover? | Keep **anonymous LAN chat** for 30 days and issue keys meanwhile; **switching needs a key from day one** (HA and Jarvis get service keys with `switch`; dash buttons link to the admin UI) |
-| 7 | Should the router own GPU clocks (absorb clockctl/gpu-power)? | **No, not now.** Verify after starts (A at 1597 unlocked, B app clocks), hold gpu-power during switches; revisit when a second host exists |
+| 7 | Should the router own GPU clocks (absorb clockctl/gpu-power)? | ~~No, not now.~~ **Yes (user, 2026-11-26)**: through `abhoth hostd` (SUPERVISOR.md 6) |
 | 8 | Responses API `previous_response_id`: store responses (24 h, per principal) or refuse it? | **Store for 24 h** (clients assume it works); `store: false` keeps nothing |
 | 9 | Which text tool-call formats do our local models really emit? | **Record first** (C11 recorder against each local model with tools), then implement only those parsers plus `hermes-json` |
 | 10 | On-demand for users: should non-admin users ever start a switch? | **No by default**; per route `allow_user_switch` for models the household uses on purpose |
