@@ -620,3 +620,103 @@ fn file_sink_writes_layoutctl_job_files() {
     let h = std::fs::read_to_string(d.path().join("history.jsonl")).unwrap();
     assert_eq!(h.lines().count(), 1);
 }
+
+// ── wiring to the control plane's config and router.db ─────────────────────────────────────
+
+fn sample() -> crate::control::schema::ControlConfig {
+    let p =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/control/sample.toml");
+    crate::control::load::load(&p).unwrap().config
+}
+
+#[test]
+fn switch_settings_and_targets_come_from_the_config() {
+    let cfg = sample();
+    let sc = wiring::switch_config(&cfg, "gpu");
+    assert_eq!(sc.cards, ["A", "B"]); // C is not managed
+    assert!(sc.engines["strata"].sequential);
+    assert_eq!(sc.engines["strata"].share.as_deref(), Some("expert-arena"));
+    assert_eq!(sc.engines["ninfer"].restart_if_peer_starts, ["strata"]);
+    assert_eq!(sc.lease_settle, Duration::from_millis(1500));
+    let flash = wiring::target_spec(&cfg, "gpu", "flash-x2", &[]).unwrap();
+    assert_eq!(flash["B"], CardSpec::new("strata", "2slot", "flash", 2));
+    let dense = wiring::target_spec(&cfg, "gpu", "dense-x2", &[]).unwrap();
+    // flash -> dense restarts both; offline B stays off
+    assert_eq!(restart_set(&sc, &flash, &dense), ["A", "B"]);
+    let off = wiring::target_spec(&cfg, "gpu", "dense-a-small-b", &["B".into()]).unwrap();
+    assert!(off["B"].is_off());
+    assert_eq!(restart_set(&sc, &dense, &off), ["B"]);
+    assert!(wiring::target_spec(&cfg, "gpu", "nope", &[]).is_none());
+    assert_eq!(wiring::parse_window("06:45-07:30"), Some((405, 450)));
+    assert_eq!(wiring::parse_window("25:00-07:30"), None);
+}
+
+#[test]
+fn guards_from_the_config() {
+    let cfg = sample();
+    let (board, _cal) = wiring::guard_board(&cfg, "gpu");
+    // music is a file probe: stale until the host probe reports, then blocks switches and ensure
+    assert_eq!(board.blocks(Action::Switch, &[], NOW).len(), 1);
+    board.report("music", NOW, Some("music mode is on".into()));
+    assert_eq!(board.blocks(Action::Ensure, &[], NOW + 1.0).len(), 1);
+    board.report("music", NOW + 2.0, None);
+    assert!(board.blocks(Action::Switch, &[], NOW + 3.0).is_empty());
+    // the quiet window is a calendar entry: 06:50 London on a winter day blocks switches
+    let t = chrono::DateTime::parse_from_rfc3339("2026-12-01T06:50:00Z")
+        .unwrap()
+        .timestamp() as f64;
+    board.report("music", t, None);
+    let b = board.blocks(Action::Switch, &[], t);
+    assert_eq!(b.len(), 1);
+    assert_eq!(b[0].source, "quiet");
+}
+
+#[tokio::test(start_paused = true)]
+async fn jobs_land_in_router_db_and_legacy_files() {
+    let store = Arc::new(crate::control::store::Store::memory().unwrap());
+    let d = tempfile::tempdir().unwrap();
+    let sink = Arc::new(wiring::StoreJobSink::new(
+        store.clone(),
+        "gpu",
+        Some(FileJobSink {
+            dir: d.path().to_path_buf(),
+        }),
+    ));
+    let mut r = rig(spec(ink(), ink()));
+    r.orch.jobs = sink;
+    let j = r.orch.switch(req("combo-1", spec(ink(), dense()))).await;
+    assert_eq!(j.state, "done");
+    let row = store.job(&j.id).unwrap().unwrap();
+    assert_eq!(row.state, crate::control::store::JobState::Done);
+    assert_eq!(row.target, "combo-1");
+    let steps = store.steps(&j.id).unwrap();
+    assert_eq!(steps.len(), j.steps.len());
+    assert!(
+        d.path()
+            .join("jobs")
+            .join(format!("{}.json", j.id))
+            .exists()
+    );
+    assert!(d.path().join("history.jsonl").exists());
+}
+
+#[test]
+fn leases_persist_in_router_db() {
+    let store = crate::control::store::Store::memory().unwrap();
+    crate::leases::store_migrate(&store).unwrap();
+    crate::leases::store_migrate(&store).unwrap(); // idempotent
+    let mut t = crate::leases::LeaseTable::default();
+    let view = SlotView {
+        slots: vec!["A1".into(), "B1".into()],
+        cards: vec!["A".into(), "B".into()],
+        ..SlotView::default()
+    };
+    let mut b = serde_json::Map::new();
+    b.insert("key".into(), json!("k1"));
+    t.claim(&view, &b, NOW, 90.0, Some("user:7"));
+    t.claim_guard("bench-1", "bench", "bench", None, NOW, 90.0);
+    crate::leases::store_save(&store, &t).unwrap();
+    let back = crate::leases::store_load(&store).unwrap();
+    assert_eq!(back, t);
+    assert_eq!(back.leases["A1"].principal.as_deref(), Some("user:7"));
+}

@@ -422,3 +422,75 @@ impl LeaseTable {
             .collect()
     }
 }
+
+// ── persistence in router.db (its own part, so migrations never clash) ─────────────────────
+
+/// `router.db` part name and migrations for leases.
+pub const STORE_PART: &str = "leases";
+pub const MIGRATIONS: &[&str] = &[
+    "CREATE TABLE leases(slot TEXT PRIMARY KEY, lease TEXT NOT NULL);
+     CREATE TABLE guard_leases(key TEXT PRIMARY KEY, lease TEXT NOT NULL);",
+];
+
+/// Create or upgrade the lease tables.
+pub fn store_migrate(store: &crate::control::store::Store) -> Result<(), String> {
+    store.migrate_part(STORE_PART, MIGRATIONS)
+}
+
+/// Replace the stored leases with `t` (one transaction).
+pub fn store_save(store: &crate::control::store::Store, t: &LeaseTable) -> Result<(), String> {
+    let mut c = store.conn();
+    let tx = c.transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM leases", [])
+        .map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM guard_leases", [])
+        .map_err(|e| e.to_string())?;
+    for (s, l) in &t.leases {
+        let j = serde_json::to_string(l).map_err(|e| e.to_string())?;
+        tx.execute(
+            "INSERT INTO leases(slot, lease) VALUES (?1, ?2)",
+            rusqlite::params![s, j],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    for (k, g) in &t.guards {
+        let j = serde_json::to_string(g).map_err(|e| e.to_string())?;
+        tx.execute(
+            "INSERT INTO guard_leases(key, lease) VALUES (?1, ?2)",
+            rusqlite::params![k, j],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())
+}
+
+/// The stored leases (expired ones are reaped by the next call, as after a pig-slots restart).
+pub fn store_load(store: &crate::control::store::Store) -> Result<LeaseTable, String> {
+    let c = store.conn();
+    let mut t = LeaseTable::default();
+    let mut q = c
+        .prepare("SELECT slot, lease FROM leases ORDER BY rowid")
+        .map_err(|e| e.to_string())?;
+    let rows = q
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (s, j) = row.map_err(|e| e.to_string())?;
+        if let Ok(l) = serde_json::from_str(&j) {
+            t.leases.insert(s, l);
+        }
+    }
+    let mut q = c
+        .prepare("SELECT key, lease FROM guard_leases ORDER BY rowid")
+        .map_err(|e| e.to_string())?;
+    let rows = q
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (k, j) = row.map_err(|e| e.to_string())?;
+        if let Ok(g) = serde_json::from_str(&j) {
+            t.guards.insert(k, g);
+        }
+    }
+    Ok(t)
+}

@@ -13,6 +13,7 @@
 
 mod job;
 mod run;
+pub mod wiring;
 
 #[cfg(test)]
 mod fake;

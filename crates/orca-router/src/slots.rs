@@ -44,6 +44,9 @@ struct Inner {
     /// Set by the control plane (ROUTER-CONFIG.md 8.2): the active layout's slots, withdrawn
     /// cards and the freeze, in memory. Wins over the layout file.
     control: Option<SlotView>,
+    /// `router.db` when the control plane runs: leases persist there (plus `leases.json` while
+    /// the legacy mirror is on).
+    store: Option<std::sync::Arc<crate::control::store::Store>>,
     loaded: bool,
 }
 
@@ -178,6 +181,11 @@ impl Registry {
     }
 
     fn save(inner: &Inner, snap: &Snapshot) {
+        if let Some(st) = &inner.store
+            && let Err(e) = crate::leases::store_save(st, &inner.table)
+        {
+            tracing::warn!("router.db: saving leases: {e}");
+        }
         let Some(p) = Self::state_path(snap) else {
             return;
         };
@@ -278,6 +286,27 @@ impl Registry {
 
     // ── the control plane's side (ROUTER-CONFIG.md 5.4 steps 4-5, 8.2, 8.3) ────────────────
 
+    /// Keep leases in `router.db` from now on; leases stored there are loaded (they expire by
+    /// TTL as usual). Replaces what `leases.json` gave.
+    pub fn attach_store(
+        &self,
+        store: std::sync::Arc<crate::control::store::Store>,
+    ) -> Result<(), String> {
+        crate::leases::store_migrate(&store)?;
+        let t = crate::leases::store_load(&store)?;
+        let mut g = self.inner.lock().unwrap();
+        g.table = t;
+        g.loaded = true;
+        g.store = Some(store);
+        Ok(())
+    }
+
+    /// Save now (after the control plane changed guard leases directly).
+    pub fn persist(&self, snap: &Snapshot) {
+        let g = self.inner.lock().unwrap();
+        Self::save(&g, snap);
+    }
+
     /// Replace the slot view (the active layout's slots, withdrawn cards, the freeze). `None`
     /// goes back to the layout file or the upstreams' lanes.
     pub fn set_control_view(&self, view: Option<SlotView>) {
@@ -314,14 +343,16 @@ impl Registry {
         principal: Option<&str>,
     ) -> GuardLease {
         let mut g = self.prepare(snap);
-        g.table.claim_guard(
+        let out = g.table.claim_guard(
             key,
             reason,
             owner,
             principal,
             now_epoch(),
             snap.config.slots.ttl_seconds,
-        )
+        );
+        Self::save(&g, snap);
+        out
     }
 
     /// Live guard leases (they block switches and on-demand).
