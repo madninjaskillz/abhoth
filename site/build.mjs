@@ -40,7 +40,7 @@ async function latestVersion() {
 }
 
 const DOCS_NAV = [
-  ["Getting started", [["docs/", "Overview"], ["docs/install/", "Install"], ["docs/quick-start/", "Quick start"], ["docs/migrating/", "From OpenOrca"]]],
+  ["Getting started", [["docs/", "Overview"], ["docs/install/", "Install"], ["docs/quick-start/", "Quick start"]]],
   ["Using Abhoth", [["docs/configuration/", "Configuration"], ["docs/web-ui/", "Web UI"], ["docs/desktop/", "Desktop app"]]],
   ["Running it your way", [["docs/docker/", "Self-host with Docker"], ["docs/local-models/", "Local models"], ["docs/router/", "The router"]]],
 ];
@@ -80,9 +80,9 @@ function header(current) {
     </a>
     <button class="nav-toggle" aria-expanded="false" aria-controls="site-nav" aria-label="Menu">${ICON.menu}</button>
     <nav id="site-nav" class="site-nav" aria-label="Main">
-      ${link("#features", "Features", "features")}
-      ${link("#install", "Install", "install")}
+      ${link("#models", "Features", "features")}
       ${link("#self-host", "Self-host", "selfhost")}
+      ${link("#install", "Install", "install")}
       ${link("docs/", "Docs", "docs")}
       <a href="${REPO}" class="nav-gh">${ICON.github}<span>GitHub</span></a>
       <button class="theme-toggle" type="button" aria-label="Switch colour theme"><span class="i-sun">${ICON.sun}</span><span class="i-moon">${ICON.moon}</span></button>
@@ -96,7 +96,7 @@ function footer() {
   <div class="wrap footer-inner">
     <div class="footer-brand">
       <img src="${BASE}img/abhoth.svg" width="48" height="41" alt="" loading="lazy">
-      <p><strong>Abhoth</strong>: an open-source coding agent for the models you run.<br>MIT licensed. The successor of OpenOrca.</p>
+      <p><strong>Abhoth</strong>: an open-source coding agent for the models you run.<br>MIT licensed.</p>
     </div>
     <nav aria-label="Footer">
       <ul>

@@ -173,3 +173,16 @@ rust/tools/split-abhoth-repo.sh <openorca clone> <empty dir> feature/rust-port -
   state formats are shared, so nothing needs converting.
 - **Code:** the `openorca` repo is untouched, with C# on its main. If a fix is needed there,
   it is made in openorca and cross-checked as before.
+
+## Old site redirects (done 2026-11-25)
+
+OpenOrca's old web addresses redirect to the Abhoth site. Both are GitHub Pages sites built with
+Jekyll, and both carry old docs paths (`/docs/...`, `/openorca/docs/...`) to the matching Abhoth docs
+page. Anything else goes to the home page.
+
+- `Open-Orca-AI/openorca-uk-redirect` serves `openorca.uk` (CNAME, HTTPS enforced).
+- `Open-Orca-AI/open-orca-ai.github.io` serves `open-orca-ai.github.io`.
+
+To move them to `https://abhoth.co.uk` later, change the `target:` line in each repo's `_config.yml`.
+That one line is all it takes.
+

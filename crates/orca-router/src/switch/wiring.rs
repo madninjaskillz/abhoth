@@ -255,3 +255,30 @@ impl JobSink for StoreJobSink {
         }
     }
 }
+
+/// The data plane's on-demand settings that the control plane owns: the gate follows
+/// `control.enabled` (keys required, hourly limits, `x-abhoth-no-switch`), and cards that are
+/// unmanaged or not `on_demand = true` are never picked. With the flag off nothing changes.
+pub fn apply_on_demand(cfg: &ControlConfig, server: &str, od: &mut crate::config::OnDemandConfig) {
+    if !cfg.control.enabled {
+        return;
+    }
+    let s = &cfg.on_demand;
+    od.control_gate = true;
+    od.require_key = true;
+    od.max_switches_per_hour = s.max_switches_per_hour;
+    od.max_switches_per_principal_per_hour = s.max_switches_per_principal_per_hour;
+    od.queue_seconds = s.queue_seconds;
+    od.min_stay_seconds = s.min_stay_seconds;
+    od.idle_grace_seconds = s.idle_grace_seconds;
+    od.switch_timeout_seconds = s.switch_timeout_seconds;
+    od.failure_hold_seconds = s.failure_hold_seconds;
+    od.allow_both_cards = s.allow_both_cards;
+    od.stream_note = s.stream_note.clone();
+    od.exclude_cards = cfg
+        .cards
+        .iter()
+        .filter(|(_, c)| c.server == server && !(c.managed && c.on_demand))
+        .map(|(k, _)| k.clone())
+        .collect();
+}

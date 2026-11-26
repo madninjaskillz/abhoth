@@ -336,8 +336,12 @@ pub struct OnDemandConfig {
     pub models: IndexMap<String, OnDemandModel>,
     /// How long a drain waits for requests in flight.
     pub drain_timeout_seconds: u64,
-    /// Only callers with a key (a principal) may start a switch. Off for the LiteLLM-era data
-    /// plane; the control plane turns it on (keys from day one).
+    /// The control plane's gate (ROUTER-CONFIG.md 7.4): set from `control.enabled` by the
+    /// control plane. Off (the default and the data plane alone): on-demand behaves exactly as
+    /// before the control plane, and `require_key`, the hourly limits and
+    /// `x-abhoth-no-switch` are not looked at.
+    pub control_gate: bool,
+    /// With the gate: only callers with a key (a principal) may start a switch.
     pub require_key: bool,
     /// On-demand switches started per hour (server), and per principal.
     pub max_switches_per_hour: u32,
@@ -366,7 +370,8 @@ impl Default for OnDemandConfig {
             allow_both_cards: false,
             models: IndexMap::new(),
             drain_timeout_seconds: 120,
-            require_key: false,
+            control_gate: false,
+            require_key: true,
             max_switches_per_hour: 4,
             max_switches_per_principal_per_hour: 2,
             exclude_cards: Vec::new(),

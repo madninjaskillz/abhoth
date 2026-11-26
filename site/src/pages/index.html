@@ -1,6 +1,6 @@
 <!--meta {
   "title": "Abhoth",
-  "description": "Abhoth is an open-source AI coding agent for the models you run: a terminal agent, a web UI, a desktop app and a self-hosted Docker server, written in Rust. MIT licensed.",
+  "description": "Abhoth is an open-source AI coding agent for the models you run: a terminal agent, a web UI, a desktop app and a self-hosted server, written in Rust. MIT licensed.",
   "layout": "home",
   "jsonld": {
     "@context": "https://schema.org",
@@ -19,14 +19,14 @@
   <div class="starfield" aria-hidden="true"></div>
   <div class="wrap hero-grid">
     <div>
-      <a class="eyebrow" href="{{repo}}/releases/latest"><b>v{{version}}</b> Now in Rust. OpenOrca's successor.</a>
+      <a class="eyebrow" href="{{repo}}/releases/latest"><b>v{{version}}</b> Open source, written in Rust</a>
       <h1>The coding agent for <span class="grad">the models you run.</span></h1>
-      <p class="lede">Abhoth reads your code, edits it, runs the tests and keeps going until the job is done. Point it at LM Studio, llama.cpp, vLLM, Ollama or any OpenAI-compatible server. Use it in the terminal, in the browser, as a desktop app, or on your own server.</p>
+      <p class="lede">Abhoth reads your code, changes it, runs the tests and keeps going until the job is done. It works with the models on your own hardware, and you can use it in the terminal, in a browser, as a desktop app, or on a server your whole team shares.</p>
       <div class="cta">
         <a class="btn btn-primary" href="#install">Install Abhoth</a>
         <a class="btn btn-ghost" href="{{base}}docs/quick-start/">Quick start</a>
       </div>
-      <p class="hero-meta">Free and open source (MIT) · Windows and Linux builds · <a href="{{repo}}">Source on GitHub</a></p>
+      <p class="hero-meta">Free and MIT licensed · Windows and Linux builds · <a href="{{repo}}">Source on GitHub</a></p>
     </div>
     <div class="hero-visual">
       <img class="mascot-float" src="{{base}}img/abhoth.svg" width="150" height="128" alt="" fetchpriority="high">
@@ -40,186 +40,66 @@
   </div>
 </section>
 
-<div class="strip">
-  <ul class="wrap" aria-label="Highlights">
-    <li>One native binary</li>
-    <li>Local models first</li>
-    <li>Terminal, web and desktop</li>
-    <li>Sub-agents in parallel</li>
-    <li>Self-hostable</li>
-    <li>MIT licensed</li>
-  </ul>
-</div>
-
-<section class="section" id="features" aria-labelledby="features-h">
-  <div class="wrap">
-    <div class="section-head reveal-up">
-      <p class="kicker">Features</p>
-      <h2 id="features-h">A whole agent harness, tuned for models you host.</h2>
-      <p>Local models make different mistakes from cloud ones. Abhoth's loop is built around that: it repairs broken tool calls, notices when a model is going round in circles, keeps long sessions inside the context window, and hands work to sub-agents when there is spare capacity.</p>
+<section class="section story" id="models" aria-labelledby="models-h">
+  <div class="wrap split">
+    <div class="reveal-up">
+      <p class="kicker">Your models, your hardware</p>
+      <h2 id="models-h">Built for the model on your own GPU.</h2>
+      <p>Most coding agents are designed around the biggest cloud models, and they struggle when you point them at something you run yourself. A local model might format a tool call slightly wrong, think for too long, or lose track halfway through a long task. A harness that assumes perfect behaviour gives up there, or wastes your evening going round in circles.</p>
+      <p>Abhoth expects this. It repairs tool calls that come back as broken JSON, notices when the model repeats itself, and stops runaway reasoning. It reads the server's real context window and summarises older turns before the window fills, so long tasks don't fall over. Set a base URL, whether that's LM Studio, llama.cpp, vLLM or Ollama, and it adapts to the server it finds.</p>
+      <p>Your code stays on your network, and you aren't paying per token to iterate.</p>
+      <a class="text-link" href="{{base}}docs/local-models/">Set up a local model →</a>
     </div>
-    <div class="features">
-      <article class="feature reveal-up">
-        <div class="f-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></div>
-        <h3>An agent loop that copes</h3>
-        <p>Native and text tool calls, with JSON repair. It catches doom loops, runaway thinking and empty replies, and retries or fails over to your backup model when one stalls.</p>
-      </article>
-      <article class="feature reveal-up">
-        <div class="f-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg></div>
-        <h3>Dozens of built-in tools</h3>
-        <p>Files, search, edit and patch; shell with background processes; git and GitHub; web fetch and search; archives; LSP; image generation; and any MCP server you add.</p>
-      </article>
-      <article class="feature reveal-up">
-        <div class="f-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4M12 11.5 6.5 17M12 11.5l5.5 5.5"/></svg></div>
-        <h3>Sub-agents and a Lead</h3>
-        <p>A Lead plans and delegates to sub-agents that run in parallel across your inference server's slots, with a planner phase, early read-only runs and optional pair voting.</p>
-      </article>
-      <article class="feature reveal-up">
-        <div class="f-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 9l3 2.5L7 14M12 14h5"/></svg></div>
-        <h3>Terminal, browser, desktop</h3>
-        <p>An interactive terminal session, one-shot <code>--print</code> runs with JSON output for scripts, a full web UI with <code>--hostui</code>, and the same UI as a desktop app with a tray icon.</p>
-      </article>
-      <article class="feature reveal-up">
-        <div class="f-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg></div>
-        <h3>You stay in control</h3>
-        <p>Tools are graded by risk and ask before they act. Allow and deny patterns like <code>Bash(git *)</code>, a read-only plan mode, a sandbox mode, and a checkpoint of every file before it changes.</p>
-      </article>
-      <article class="feature reveal-up">
-        <div class="f-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/></svg></div>
-        <h3>Engines and providers</h3>
-        <p>OpenAI-compatible servers, native Ollama and the Anthropic Messages API. Claude Code and Codex can also run as engines, all inside the same project.</p>
-      </article>
-      <article class="feature reveal-up">
-        <div class="f-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12l4 4v12H4z"/><path d="M8 12h8M8 16h5"/></svg></div>
-        <h3>Sessions that last</h3>
-        <p>Auto-saved sessions you can continue, resume, fork and browse as a tree. Compaction summarises old turns before the context window fills, and hooks can run before or after any tool.</p>
-      </article>
-      <article class="feature reveal-up">
-        <div class="f-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c.6-3.3 3-5 6-5s5.4 1.7 6 5"/><path d="M17 11l1.5 1.5L21.5 9"/></svg></div>
-        <h3>Accounts for the web UI <span class="tag new">new</span></h3>
-        <p>Multi-user sign-in for a shared server: Argon2id passwords, TOTP two-factor, API keys, per-user projects and an audit log. From v0.16.2.</p>
-      </article>
-      <article class="feature soon reveal-up">
-        <div class="f-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17h4l3-10h2l3 10h4"/><path d="M2 17h20"/></svg></div>
-        <h3>Bridge mode <span class="tag">coming soon</span></h3>
-        <p>Start a session on your server and run its tools on your own laptop or GPU box. The server keeps the conversation; the machine is a remote pair of hands, limited to the folders you allow.</p>
-      </article>
+    <figure class="shot reveal-up">
+      <img src="{{base}}img/shots/webui-settings-1600.webp" srcset="{{base}}img/shots/webui-settings-800.webp 800w, {{base}}img/shots/webui-settings-1600.webp 1600w" sizes="(max-width: 900px) 100vw, 620px" width="1600" height="1000" loading="lazy" decoding="async" alt="The Abhoth settings dialog, open at the LLM server section: a base URL, an API key and the models in priority order.">
+      <figcaption>Point it at your server and list models in priority order. The next ones are backups.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="section story alt" id="agent" aria-labelledby="agent-h">
+  <div class="wrap split rev">
+    <div class="reveal-up">
+      <p class="kicker">A real agent</p>
+      <h2 id="agent-h">It doesn't stop at a suggestion.</h2>
+      <p>Pasting code from a chat window into your editor gets old quickly. Abhoth works in the project itself. It reads the files it needs, makes the edit, runs your tests, and if something fails it reads the error and tries again. It finishes when the work is verified, and then tells you plainly what changed.</p>
+      <p>You stay in charge. Reading is free, but anything that writes files or runs commands asks first, unless you've allowed it with rules like <code>Bash(npm test*)</code>. Every file is checkpointed before it changes, so <code>/undo</code> is always there. For bigger jobs, a Lead plans the work and hands parts of it to sub-agents that run in parallel.</p>
+      <a class="text-link" href="{{base}}docs/quick-start/">Try it on your project →</a>
+    </div>
+    <figure class="shot reveal-up">
+      <img src="{{base}}img/shots/webui-chat-1600.webp" srcset="{{base}}img/shots/webui-chat-800.webp 800w, {{base}}img/shots/webui-chat-1600.webp 1600w" sizes="(max-width: 900px) 100vw, 620px" width="1600" height="1000" loading="lazy" decoding="async" alt="A finished task in the Abhoth web UI: the agent reads two files, edits them, writes a test, runs npm test and summarises the change. The changed files are marked in the file tree.">
+      <figcaption>A real task: it reads, edits, writes a test, runs it, then reports.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="section story" id="anywhere" aria-labelledby="anywhere-h">
+  <div class="wrap split">
+    <div class="reveal-up">
+      <p class="kicker">Use it anywhere</p>
+      <h2 id="anywhere-h">One agent, wherever you work.</h2>
+      <p>Some days you live in a terminal, and some days you want to see a diff, or check in on a long task from your phone. Abhoth is a single binary that does all of it. Run <code>abhoth</code> for an interactive session in the current folder, or <code>abhoth -p "…"</code> for one-shot runs in scripts and CI.</p>
+      <p><code>abhoth --hostui</code> serves a full web UI. Projects open as tabs, each with a file tree that shows git changes, the chat with every tool call laid out, editor tabs with side-by-side diffs, and real terminals. <code>abhoth --desktop</code> puts the same UI in a native window. Closing the window hides it to the tray, so your agents keep working, and it updates itself in the background.</p>
+      <a class="text-link" href="{{base}}docs/web-ui/">Tour the web UI →</a>
+    </div>
+    <div class="window reveal-up">
+      <div class="window-bar"><img src="{{base}}img/abhoth.svg" width="18" height="15" alt=""> Abhoth<span class="wc" aria-hidden="true">— ▢ ✕</span></div>
+      <img class="full" src="{{base}}img/shots/webui-diff-1600.webp" srcset="{{base}}img/shots/webui-diff-800.webp 800w, {{base}}img/shots/webui-diff-1600.webp 1600w" sizes="(max-width: 900px) 100vw, 620px" width="1600" height="1000" loading="lazy" decoding="async" alt="The Abhoth desktop app showing a side-by-side diff of server.js, with the agent's new DELETE route highlighted in green.">
     </div>
   </div>
 </section>
 
-<section class="section alt" id="web-ui" aria-labelledby="webui-h">
-  <div class="wrap">
-    <div class="section-head reveal-up">
-      <p class="kicker">Web UI</p>
-      <h2 id="webui-h">Watch it work. Step in when you want.</h2>
-      <p>Run <code>abhoth --hostui</code> and open the link. Every project gets a file tree with git status, a chat with each tool call laid out, editor tabs with diffs, real terminals and an HTML preview. Settings are searchable and apply to the running session.</p>
+<section class="section story alt" id="self-host" aria-labelledby="selfhost-h">
+  <div class="wrap split rev">
+    <div class="reveal-up">
+      <p class="kicker">Self-host for a team</p>
+      <h2 id="selfhost-h">A coding agent server you own.</h2>
+      <p>The GPUs are usually in one machine, and the people who want to use them are everywhere else. Run Abhoth in Docker next to the hardware, and everyone gets the same agent from their browser, without installing anything or copying model settings around.</p>
+      <p>It's built to sit on a network. Each person has their own account and projects, with optional two-factor sign-in and API keys for scripts. The container runs as a non-root user with a read-only filesystem and no extra privileges. Put it behind your usual HTTPS proxy and it's ready. There's even a benchmark page to compare models and settings on your own tasks.</p>
+      <a class="text-link" href="{{base}}docs/docker/">Read the Docker guide →</a>
     </div>
-    <div class="shots">
-      <figure class="shot reveal-up">
-        <img src="{{base}}img/shots/webui-chat-1600.webp" srcset="{{base}}img/shots/webui-chat-800.webp 800w, {{base}}img/shots/webui-chat-1600.webp 1600w" sizes="(max-width: 900px) 100vw, 680px" width="1600" height="1000" loading="lazy" decoding="async" alt="The Abhoth web UI: a chat in which the agent reads two files, edits them, writes a test, runs npm test and summarises the change. A file tree on the left marks the changed files.">
-        <figcaption>A finished task: every tool call with its timing, and the changed files marked in the tree.</figcaption>
-      </figure>
-      <div class="shots-side">
-        <figure class="shot reveal-up">
-          <img src="{{base}}img/shots/webui-diff-800.webp" srcset="{{base}}img/shots/webui-diff-800.webp 800w, {{base}}img/shots/webui-diff-1600.webp 1600w" sizes="(max-width: 900px) 100vw, 480px" width="800" height="500" loading="lazy" decoding="async" alt="A side-by-side diff of server.js in the Abhoth web UI, showing the new DELETE route in green.">
-          <figcaption>Side-by-side diffs of what the agent changed.</figcaption>
-        </figure>
-        <figure class="shot reveal-up">
-          <img src="{{base}}img/shots/webui-settings-800.webp" srcset="{{base}}img/shots/webui-settings-800.webp 800w, {{base}}img/shots/webui-settings-1600.webp 1600w" sizes="(max-width: 900px) 100vw, 480px" width="800" height="500" loading="lazy" decoding="async" alt="The Abhoth settings dialog with a search box and the LLM server section: base URL, API key and models.">
-          <figcaption>Searchable settings, per project or as server defaults.</figcaption>
-        </figure>
-      </div>
-    </div>
-    <div class="modes">
-      <div class="mode reveal-up"><code>abhoth</code><p>An interactive session in the current folder, with slash commands and a live agent panel.</p></div>
-      <div class="mode reveal-up"><code>abhoth -p "fix the test"</code><p>One prompt, then exit. Add <code>--output json</code> for scripts and CI.</p></div>
-      <div class="mode reveal-up"><code>abhoth --hostui</code><p>The web UI, on this machine or bound to your LAN behind sign-in.</p></div>
-      <div class="mode reveal-up"><code>abhoth --desktop</code><p>The same UI in its own window, with a tray icon and a native folder picker.</p></div>
-    </div>
-  </div>
-</section>
-
-<section class="section" id="install" aria-labelledby="install-h">
-  <div class="wrap">
-    <div class="section-head center reveal-up">
-      <p class="kicker">Install</p>
-      <h2 id="install-h">Up and running in a minute.</h2>
-      <p>Version {{version}}. The installers come from <a href="{{repo}}/releases/latest">GitHub Releases</a>, with SHA-256 checksums.</p>
-    </div>
-    <div class="install reveal-up">
-      <div class="tabs" role="tablist" aria-label="Choose your platform" data-detect-os>
-        <button class="tab" role="tab" id="tab-win" data-os="windows" aria-selected="true" aria-controls="p-win">Windows</button>
-        <button class="tab" role="tab" id="tab-linux" data-os="linux" aria-selected="false" aria-controls="p-linux" tabindex="-1">Linux</button>
-        <button class="tab" role="tab" id="tab-mac" data-os="macos" aria-selected="false" aria-controls="p-mac" tabindex="-1">macOS</button>
-        <button class="tab" role="tab" id="tab-src" aria-selected="false" aria-controls="p-src" tabindex="-1">From source</button>
-        <button class="tab" role="tab" id="tab-docker" aria-selected="false" aria-controls="p-docker" tabindex="-1">Docker</button>
-      </div>
-      <div class="panel" role="tabpanel" id="p-win" aria-labelledby="tab-win" tabindex="0">
-        <h3>Windows (x64)</h3>
-        <p>One click, no admin rights. The installer puts <code>abhoth.exe</code> and the desktop app in your user folder, adds them to your PATH and a Start-menu shortcut, then opens the app. It updates itself in the background.</p>
-        <div class="cta">
-          <a class="btn btn-primary" href="{{repo}}/releases/latest/download/Abhoth-win-Setup.exe">Download for Windows <small>setup.exe</small></a>
-          <a class="btn btn-ghost" href="{{repo}}/releases/latest/download/Abhoth-win-Portable.zip">Portable .zip</a>
-        </div>
-        <p>The builds are not code-signed yet, so SmartScreen may warn the first time: choose <em>More info</em>, then <em>Run anyway</em>. Uninstall from Settings, Apps.</p>
-      </div>
-      <div class="panel" role="tabpanel" id="p-linux" aria-labelledby="tab-linux" tabindex="0" hidden>
-        <h3>Linux (x86-64)</h3>
-        <p>An AppImage of the desktop app that updates itself. It needs WebKitGTK 4.1, which most desktop distributions already have. For the terminal agent on its own, build from source.</p>
-        <div class="cta">
-          <a class="btn btn-primary" href="{{repo}}/releases/latest/download/Abhoth.AppImage">Download the AppImage</a>
-        </div>
-<pre data-copy><code>chmod +x Abhoth.AppImage
-./Abhoth.AppImage</code></pre>
-        <p>On a server with no desktop, <a href="#self-host">use Docker</a> or build from source.</p>
-      </div>
-      <div class="panel" role="tabpanel" id="p-mac" aria-labelledby="tab-mac" tabindex="0" hidden>
-        <h3>macOS</h3>
-        <p>There's no macOS installer yet. CI builds and checks the desktop app on macOS, so building from source works:</p>
-<pre data-copy><code>git clone https://github.com/madninjaskillz/abhoth
-cd abhoth
-cargo build --release --features desktop
-./target/release/abhoth --version</code></pre>
-        <p>You need <a href="https://rustup.rs">rustup</a>; it installs the toolchain the repo pins.</p>
-      </div>
-      <div class="panel" role="tabpanel" id="p-src" aria-labelledby="tab-src" tabindex="0" hidden>
-        <h3>Build from source</h3>
-        <p>Any platform with Rust. The web client ships prebuilt in the repo, so you don't need Node.</p>
-<pre data-copy><code>git clone https://github.com/madninjaskillz/abhoth
-cd abhoth
-cargo build --release                      # target/release/abhoth
-cargo build --release --features desktop   # adds --desktop and abhoth-desktop</code></pre>
-        <p>On Linux, the desktop feature needs <code>libwebkit2gtk-4.1-dev</code>, <code>libgtk-3-dev</code>, <code>libdbus-1-dev</code> and <code>pkg-config</code>.</p>
-      </div>
-      <div class="panel" role="tabpanel" id="p-docker" aria-labelledby="tab-docker" tabindex="0" hidden>
-        <h3>Docker: the web UI on your server</h3>
-        <p>Build the image from the repo, then run it with sign-in turned on. See <a href="{{base}}docs/docker/">Self-host with Docker</a> for volumes, secrets and a reverse proxy.</p>
-<pre data-copy><code>git clone https://github.com/madninjaskillz/abhoth
-cd abhoth
-docker build -f deploy/docker/Dockerfile -t abhoth-web .</code></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="section alt" id="self-host" aria-labelledby="selfhost-h">
-  <div class="wrap">
-    <div class="split">
-      <div class="reveal-up">
-        <p class="kicker">Self-host it</p>
-        <h2 id="selfhost-h">Your own coding agent server.</h2>
-        <p>Run Abhoth on the box that sits next to your GPUs and use it from any browser, including your phone. The Docker image is hardened by default and keeps all its state in one volume.</p>
-        <ul class="checks">
-          <li><strong>Sign-in mode</strong> for exposed servers: plain HTTP is refused except from the machine itself, and HTTPS works through your reverse proxy.</li>
-          <li><strong>Runs locked down:</strong> as a non-root user, with a read-only root filesystem, no capabilities and only the project and state folders writable.</li>
-          <li><strong>Git that works:</strong> deploy keys or a credential file as secrets, plus "Clone from GitHub" through a GitHub App.</li>
-          <li><strong>A benchmark page:</strong> queue runs, compare models and modes, and watch them live.</li>
-        </ul>
-        <a class="btn btn-ghost" href="{{base}}docs/docker/">Read the Docker guide</a>
-      </div>
-      <div class="reveal-up">
-<pre data-copy><code><span class="c"># compose.yaml (minimal)</span>
+    <div class="reveal-up">
+<pre data-copy><code><span class="c"># compose.yaml</span>
 <span class="k">services:</span>
   <span class="k">abhoth:</span>
     <span class="k">image:</span> abhoth-web
@@ -236,197 +116,99 @@ docker build -f deploy/docker/Dockerfile -t abhoth-web .</code></pre>
     <span class="k">tmpfs:</span> [/tmp]
     <span class="k">cap_drop:</span> [ALL]
     <span class="k">security_opt:</span> [<span class="s">"no-new-privileges:true"</span>]</code></pre>
-      </div>
-    </div>
-
-    <div class="split rev" id="desktop">
-      <div class="reveal-up">
-        <p class="kicker">Desktop app</p>
-        <h2>The web UI in its own window.</h2>
-        <p><code>abhoth --desktop</code> starts the server on loopback and opens it in a native window, using WebView2 on Windows and WebKitGTK on Linux. There's no token to copy and no browser tab to lose.</p>
-        <ul class="checks">
-          <li><strong>Closing the window hides it to the tray.</strong> Your agents keep running; Quit from the tray when you're done.</li>
-          <li><strong>One instance.</strong> Launching it again brings the window back.</li>
-          <li><strong>Native folder picker</strong>, and links open in your normal browser.</li>
-          <li><strong>Auto-update:</strong> it checks for a new release every 6 hours and offers "restart into" from the tray.</li>
-        </ul>
-      </div>
-      <div class="window reveal-up" aria-hidden="false">
-        <div class="window-bar"><img src="{{base}}img/abhoth.svg" width="18" height="15" alt=""> Abhoth<span class="wc" aria-hidden="true">— ▢ ✕</span></div>
-        <img class="full" src="{{base}}img/shots/webui-file-800.webp" srcset="{{base}}img/shots/webui-file-800.webp 800w, {{base}}img/shots/webui-file-1600.webp 1600w" sizes="(max-width: 900px) 100vw, 560px" width="800" height="500" loading="lazy" decoding="async" alt="The Abhoth app with store.js open in an editor tab; the new removeTodo function is visible.">
-      </div>
     </div>
   </div>
 </section>
 
-<section class="section" id="local-models" aria-labelledby="local-h">
-  <div class="wrap">
-    <div class="split">
-      <div class="reveal-up">
-        <p class="kicker">Local models</p>
-        <h2 id="local-h">Built for the models on your own hardware.</h2>
-        <p>Set a base URL and a model, and Abhoth works out the rest: the server's real context window, whether the model does native tool calls, and how to keep a long task inside its limits.</p>
-        <ul class="checks">
-          <li><strong>Any OpenAI-compatible server:</strong> LM Studio, llama.cpp, vLLM, ninfer, LiteLLM; plus native Ollama and the Anthropic API as named providers.</li>
-          <li><strong>Context aware:</strong> reads the window from the server, compacts early and retries once after an overflow.</li>
-          <li><strong>Thinking control:</strong> per-request thinking levels and budgets, sampling presets for Qwen-family coders, and a guard that stops runaway reasoning.</li>
-          <li><strong>Backup models</strong> in priority order, with failover on timeouts, empty replies or refusals.</li>
-          <li><strong>Inference slots:</strong> Abhoth leases slots on multi-slot servers, keeps the Lead's prompt cache warm and puts sub-agents on free copies.</li>
-        </ul>
-        <a class="btn btn-ghost" href="{{base}}docs/local-models/">Set up a local model</a>
-      </div>
-      <div class="reveal-up">
-<pre data-copy><code><span class="c"># ~/.abhoth/config.json</span>
-{
-  <span class="k">"lmStudio"</span>: {
-    <span class="k">"baseUrl"</span>: <span class="s">"http://localhost:1234/v1"</span>,
-    <span class="k">"models"</span>: [<span class="s">"qwen3-coder-30b"</span>, <span class="s">"qwen3-8b"</span>],
-    <span class="k">"nativeToolCalling"</span>: true
-  },
-  <span class="k">"providers"</span>: {
-    <span class="k">"ollama"</span>: {
-      <span class="k">"type"</span>: <span class="s">"ollama"</span>,
-      <span class="k">"baseUrl"</span>: <span class="s">"http://localhost:11434"</span>,
-      <span class="k">"models"</span>: [<span class="s">"qwen3-coder:30b"</span>],
-      <span class="k">"contextWindow"</span>: 65536
-    }
-  }
-}</code></pre>
-      </div>
+<section class="section story" id="router" aria-labelledby="router-h">
+  <div class="wrap split">
+    <div class="reveal-up">
+      <p class="kicker">Routing</p>
+      <h2 id="router-h">Make several GPUs behave like one.</h2>
+      <p>Once you have more than one card, or a mix of local models and a cloud API, every request needs to go somewhere sensible. Round-robin load balancing breaks prompt caches and lets background work take the lane your main conversation needs.</p>
+      <p><code>abhoth router</code> is an OpenAI-compatible gateway in the same binary. It knows what a coding agent needs. It keeps each session on the card where its cache is warm, makes sure the lead conversation never waits behind its own sub-agents, and smooths over each engine's quirks so clients don't have to. Abhoth also talks to the Anthropic API and Ollama directly, and can run Claude Code or Codex as the engine of a project.</p>
+      <p class="hero-meta">The router is new and still being trialled. <a href="{{base}}docs/router/">Read the router docs</a>.</p>
     </div>
-
-    <div class="split rev" id="router">
-      <div class="reveal-up">
-        <p class="kicker">Routing</p>
-        <h2>One endpoint in front of all your engines.</h2>
-        <p><code>abhoth router</code> is an OpenAI-compatible gateway built into the same binary. Clients see one URL and a list of model names. Behind it, the router picks a card, keeps sessions where their cache is warm and smooths over each engine's quirks.</p>
-        <ul class="checks">
-          <li><strong>Aliases and pinning:</strong> a model name can mean the whole pool, one card, or a catalog model.</li>
-          <li><strong>Slot leases and Lead priority:</strong> the Lead always has a lane, and agents queue instead of hitting a 429.</li>
-          <li><strong>Session affinity</strong> by prompt-cache key, so prefix caches keep hitting.</li>
-          <li><strong>Per-engine fixes:</strong> it clamps reasoning effort, handles thinking-off, drops parameters an engine rejects, and fails over before the first byte.</li>
-          <li><strong>Metrics:</strong> Prometheus <code>/metrics</code>, a <code>/status</code> JSON and a JSONL request log with no bodies. <code>import-litellm</code> converts an existing LiteLLM config.</li>
-        </ul>
-        <p class="hero-meta">The router is new and still on trial. <a href="{{base}}docs/router/">Read the router docs</a>.</p>
-      </div>
-      <div class="diagram reveal-up">
-        <svg viewBox="0 0 520 360" role="img" aria-labelledby="dg-t dg-d">
-          <title id="dg-t">How abhoth router routes requests</title>
-          <desc id="dg-d">Three clients (the Abhoth agent, scripts and other tools) send requests to abhoth router, which routes them to card A, card B or an on-demand model.</desc>
-          <g>
-            <rect class="box" x="10" y="40" width="130" height="54" rx="12"/><text x="75" y="64" text-anchor="middle">Abhoth</text><text class="sub" x="75" y="82" text-anchor="middle">Lead + sub-agents</text>
-            <rect class="box" x="10" y="153" width="130" height="54" rx="12"/><text x="75" y="177" text-anchor="middle">Scripts</text><text class="sub" x="75" y="195" text-anchor="middle">--print, CI</text>
-            <rect class="box" x="10" y="266" width="130" height="54" rx="12"/><text x="75" y="290" text-anchor="middle">Other clients</text><text class="sub" x="75" y="308" text-anchor="middle">any OpenAI SDK</text>
-            <path class="wire" d="M140 67 C175 67 175 180 200 180"/><path class="wire" d="M140 180 H200"/><path class="wire" d="M140 293 C175 293 175 180 200 180"/>
-            <path class="pulse" d="M140 67 C175 67 175 180 200 180"/><path class="pulse" d="M140 293 C175 293 175 180 200 180"/>
-            <rect class="hub" x="200" y="128" width="130" height="104" rx="16"/><text x="265" y="170" text-anchor="middle">abhoth router</text><text class="sub" x="265" y="190" text-anchor="middle">affinity · leases</text><text class="sub" x="265" y="206" text-anchor="middle">effort · failover</text>
-            <path class="wire" d="M330 180 C360 180 355 67 380 67"/><path class="wire" d="M330 180 H380"/><path class="wire" d="M330 180 C360 180 355 293 380 293"/>
-            <path class="pulse" d="M330 180 C360 180 355 67 380 67"/><path class="pulse" d="M330 180 H380"/>
-            <rect class="box" x="380" y="40" width="130" height="54" rx="12"/><text x="445" y="64" text-anchor="middle">Card A</text><text class="sub" x="445" y="82" text-anchor="middle">4 lanes</text>
-            <rect class="box" x="380" y="153" width="130" height="54" rx="12"/><text x="445" y="177" text-anchor="middle">Card B</text><text class="sub" x="445" y="195" text-anchor="middle">4 lanes</text>
-            <rect class="box" x="380" y="266" width="130" height="54" rx="12"/><text x="445" y="290" text-anchor="middle">On demand</text><text class="sub" x="445" y="308" text-anchor="middle">switched in</text>
-          </g>
-        </svg>
-      </div>
+    <div class="diagram reveal-up">
+      <svg viewBox="0 0 520 360" role="img" aria-labelledby="dg-t dg-d">
+        <title id="dg-t">How abhoth router routes requests</title>
+        <desc id="dg-d">Three clients (the Abhoth agent, scripts and other tools) send requests to abhoth router, which routes them to card A, card B or an on-demand model.</desc>
+        <g>
+          <rect class="box" x="10" y="40" width="130" height="54" rx="12"/><text x="75" y="64" text-anchor="middle">Abhoth</text><text class="sub" x="75" y="82" text-anchor="middle">Lead + sub-agents</text>
+          <rect class="box" x="10" y="153" width="130" height="54" rx="12"/><text x="75" y="177" text-anchor="middle">Scripts</text><text class="sub" x="75" y="195" text-anchor="middle">--print, CI</text>
+          <rect class="box" x="10" y="266" width="130" height="54" rx="12"/><text x="75" y="290" text-anchor="middle">Other clients</text><text class="sub" x="75" y="308" text-anchor="middle">any OpenAI SDK</text>
+          <path class="wire" d="M140 67 C175 67 175 180 200 180"/><path class="wire" d="M140 180 H200"/><path class="wire" d="M140 293 C175 293 175 180 200 180"/>
+          <path class="pulse" d="M140 67 C175 67 175 180 200 180"/><path class="pulse" d="M140 293 C175 293 175 180 200 180"/>
+          <rect class="hub" x="200" y="128" width="130" height="104" rx="16"/><text x="265" y="170" text-anchor="middle">abhoth router</text><text class="sub" x="265" y="190" text-anchor="middle">affinity · leases</text><text class="sub" x="265" y="206" text-anchor="middle">effort · failover</text>
+          <path class="wire" d="M330 180 C360 180 355 67 380 67"/><path class="wire" d="M330 180 H380"/><path class="wire" d="M330 180 C360 180 355 293 380 293"/>
+          <path class="pulse" d="M330 180 C360 180 355 67 380 67"/><path class="pulse" d="M330 180 H380"/>
+          <rect class="box" x="380" y="40" width="130" height="54" rx="12"/><text x="445" y="64" text-anchor="middle">Card A</text><text class="sub" x="445" y="82" text-anchor="middle">4 lanes</text>
+          <rect class="box" x="380" y="153" width="130" height="54" rx="12"/><text x="445" y="177" text-anchor="middle">Card B</text><text class="sub" x="445" y="195" text-anchor="middle">4 lanes</text>
+          <rect class="box" x="380" y="266" width="130" height="54" rx="12"/><text x="445" y="290" text-anchor="middle">On demand</text><text class="sub" x="445" y="308" text-anchor="middle">switched in</text>
+        </g>
+      </svg>
     </div>
   </div>
 </section>
 
-<section class="section alt" id="performance" aria-labelledby="perf-h">
-  <div class="wrap">
-    <div class="perf">
-      <div class="reveal-up">
-        <p class="kicker">Performance</p>
-        <h2 id="perf-h">Parity, with less overhead.</h2>
-        <p>Abhoth is a careful port of the C# OpenOrca, checked against it scenario by scenario. Before the switch, both builds ran 100 benchmark runs on the same tasks, model and slots. Both passed 49 of 50 tasks, and Abhoth took 0.98× the C# wall-clock time per task (geometric mean).</p>
-        <p>To be straight about it, a coding agent spends nearly all its time waiting for the model, and a rewrite can't make the model faster. What Rust cuts is the harness's own time between model calls. Over the whole bench, that was 330 s for Abhoth against 511 s for C#.</p>
-        <p class="hero-meta"><a href="{{repo}}/blob/main/docs/bench/BENCH-PARITY-2026-11-25.md">Read the full bench write-up</a>, including the tiers where Abhoth was slower and why.</p>
-      </div>
-      <div class="reveal-up">
-        <div class="bars reveal" role="img" aria-label="Wall-clock per benchmark task relative to the C# build, geometric mean over 100 runs: OpenOrca in C# 1.00, Abhoth in Rust 0.98. Harness time outside model calls: C# 511 seconds, Rust 330 seconds.">
-          <p class="bar-label" aria-hidden="true" style="margin:0 0 12px">Wall-clock per task</p>
-          <div class="bar-row" aria-hidden="true"><span class="bar-label">OpenOrca<small>C#, .NET</small></span><span class="bar-track"><span class="bar-fill cs" style="--w:100%"></span></span><span class="bar-val">1.00×</span></div>
-          <div class="bar-row" aria-hidden="true"><span class="bar-label">Abhoth<small>Rust</small></span><span class="bar-track"><span class="bar-fill rs" style="--w:98%"></span></span><span class="bar-val">0.98×</span></div>
-          <p class="bar-label" aria-hidden="true" style="margin:22px 0 12px">Harness time outside model calls</p>
-          <div class="bar-row" aria-hidden="true"><span class="bar-label">OpenOrca<small>C#, .NET</small></span><span class="bar-track"><span class="bar-fill cs" style="--w:100%"></span></span><span class="bar-val">511 s</span></div>
-          <div class="bar-row" aria-hidden="true"><span class="bar-label">Abhoth<small>Rust</small></span><span class="bar-track"><span class="bar-fill rs" style="--w:64.6%"></span></span><span class="bar-val">330 s</span></div>
-          <p class="bars-note">Bench parity run, 2026-11-25: 100 runs over four tiers on the same server. The server's decode speed varied during the run, which moves single tiers both ways. Lower is better.</p>
-        </div>
-        <div class="stats">
-          <div class="stat"><b>49 / 50</b><span>tasks passed by each build</span></div>
-          <div class="stat"><b>149</b><span>cross-check scenarios with identical output from both builds</span></div>
-          <div class="stat"><b>1,946</b><span>Rust tests, and clippy with <code>-D warnings</code></span></div>
-          <div class="stat"><b>1</b><span>binary for the CLI, web server, router and desktop app</span></div>
-        </div>
-      </div>
+<section class="section story alt" id="open" aria-labelledby="open-h">
+  <div class="wrap split rev">
+    <div class="reveal-up">
+      <p class="kicker">Open source</p>
+      <h2 id="open-h">Yours to read, run and change.</h2>
+      <p>A tool that edits your code and runs commands should be one you can inspect. Abhoth is MIT licensed, with no paid tier, no account to create and no telemetry. It talks to the model servers you configure and the GitHub release feed for updates. It only goes further when you let the agent use a tool like web fetch.</p>
+      <p>It's written in Rust as one native binary, with nearly two thousand tests behind it. Next is bridge mode: start a session on your server and let it work on your laptop's files, limited to the folders you allow.</p>
+      <a class="text-link" href="{{repo}}">Browse the source on GitHub →</a>
+    </div>
+    <div class="open-art reveal-up" aria-hidden="true">
+      <img src="{{base}}img/abhoth.svg" width="300" height="257" alt="" loading="lazy">
     </div>
   </div>
 </section>
 
-<section class="section" id="openorca" aria-labelledby="oo-h">
-  <div class="wrap">
-    <div class="callout reveal-up">
-      <img src="{{base}}img/abhoth.svg" width="96" height="82" alt="" loading="lazy">
-      <div>
-        <h2 id="oo-h">Coming from OpenOrca?</h2>
-        <p>Abhoth <em>is</em> OpenOrca, rewritten in Rust and renamed. The C# version is retired. The first time Abhoth starts, it copies your <code>~/.openorca</code> folder to <code>~/.abhoth</code>: config, sessions, prompts and projects, in the same file formats. It leaves the original untouched.</p>
-        <p><code>OPENORCA_*</code> environment variables still work as a fallback, and existing Docker state is used as it is. <a href="{{base}}docs/migrating/">Read the migration notes</a>.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="section alt" id="faq" aria-labelledby="faq-h">
+<section class="section" id="install" aria-labelledby="install-h">
   <div class="wrap">
     <div class="section-head center reveal-up">
-      <p class="kicker">FAQ</p>
-      <h2 id="faq-h">Questions, answered.</h2>
+      <p class="kicker">Install</p>
+      <h2 id="install-h">Summon your own coding agent.</h2>
+      <p>Version {{version}}, from <a href="{{repo}}/releases/latest">GitHub Releases</a>. Install it, point it at a model, and give it something to fix.</p>
     </div>
-    <div class="faq">
-      <details>
-        <summary>Is Abhoth free?</summary>
-        <div><p>Yes. It's open source under the MIT licence, with no paid tier and no account to create. You bring the model: one you run yourself, or an API you already pay for.</p></div>
-      </details>
-      <details>
-        <summary>Does it send my code anywhere?</summary>
-        <div><p>Only to the model servers you configure. There's no telemetry. The installed desktop app checks GitHub Releases for updates, and the agent reaches the web only through tools you allow, such as web fetch. Run a local model and your code never leaves your network.</p></div>
-      </details>
-      <details>
-        <summary>Which models work best?</summary>
-        <div><p>Any model with good tool calling. It's tuned and tested most with Qwen-family coding models served by llama.cpp, vLLM-style servers and LM Studio. Abhoth detects native tool calling, and falls back to text tool calls with repair for models that don't support it.</p></div>
-      </details>
-      <details>
-        <summary>Can I use cloud models too?</summary>
-        <div><p>Yes. Any OpenAI-compatible endpoint works, the Anthropic Messages API is supported natively (with prompt caching), and Claude Code or Codex can run as the engine of a project if you have them installed.</p></div>
-      </details>
-      <details>
-        <summary>Is there a macOS build?</summary>
-        <div><p>Not as an installer yet. CI builds and checks it on macOS, so <a href="{{base}}docs/install/#source">build it from source</a> with Cargo. The installers are for Windows (x64) and Linux (x86-64 AppImage).</p></div>
-      </details>
-      <details>
-        <summary>Why does Windows warn about the installer?</summary>
-        <div><p>The builds aren't code-signed yet, so SmartScreen doesn't know them. Every release lists SHA-256 checksums in <code>SHA256SUMS</code>, and you can always build the same code yourself.</p></div>
-      </details>
-      <details>
-        <summary>Can several people share one server?</summary>
-        <div><p>Yes. The web UI has accounts with roles, two-factor sign-in, API keys and per-user projects (from v0.16.2). Accounts separate users in the web UI, not in the operating system: agents run shell commands as the server's user, so only give accounts to people you'd trust with a shell.</p></div>
-      </details>
-      <details>
-        <summary>Why "Abhoth"?</summary>
-        <div><p>In Clark Ashton Smith's mythos, Abhoth is an ancient being that endlessly spawns offspring, which suits an agent that spawns sub-agents. Ours is friendlier, and wears a hood.</p></div>
-      </details>
-    </div>
-  </div>
-</section>
-
-<section class="final">
-  <div class="wrap">
-    <img src="{{base}}img/abhoth.svg" width="140" height="120" alt="" loading="lazy">
-    <h2>Summon your own coding agent.</h2>
-    <p>Install it, point it at a model, and give it something to fix.</p>
-    <div class="cta">
-      <a class="btn btn-primary" href="#install">Install Abhoth</a>
-      <a class="btn btn-ghost" href="{{repo}}">Star it on GitHub</a>
+    <div class="install reveal-up">
+      <div class="tabs" role="tablist" aria-label="Choose your platform" data-detect-os>
+        <button class="tab" role="tab" id="tab-win" data-os="windows" aria-selected="true" aria-controls="p-win">Windows</button>
+        <button class="tab" role="tab" id="tab-linux" data-os="linux" aria-selected="false" aria-controls="p-linux" tabindex="-1">Linux</button>
+        <button class="tab" role="tab" id="tab-mac" data-os="macos" aria-selected="false" aria-controls="p-mac" tabindex="-1">macOS</button>
+        <button class="tab" role="tab" id="tab-src" aria-selected="false" aria-controls="p-src" tabindex="-1">From source</button>
+        <button class="tab" role="tab" id="tab-docker" aria-selected="false" aria-controls="p-docker" tabindex="-1">Docker</button>
+      </div>
+      <div class="panel" role="tabpanel" id="p-win" aria-labelledby="tab-win" tabindex="0">
+        <p>One click, no admin rights. The installer adds <code>abhoth</code> to your PATH and a Start-menu shortcut to the desktop app, which keeps itself up to date. The builds aren't code-signed yet, so SmartScreen may ask you to confirm the first time.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="{{repo}}/releases/latest/download/Abhoth-win-Setup.exe">Download for Windows <small>setup.exe</small></a>
+          <a class="btn btn-ghost" href="{{repo}}/releases/latest/download/Abhoth-win-Portable.zip">Portable .zip</a>
+        </div>
+      </div>
+      <div class="panel" role="tabpanel" id="p-linux" aria-labelledby="tab-linux" tabindex="0" hidden>
+        <p>A self-updating AppImage of the desktop app for x86-64. It needs WebKitGTK 4.1, which most desktop distributions already have. On a headless server, use Docker.</p>
+        <div class="cta"><a class="btn btn-primary" href="{{repo}}/releases/latest/download/Abhoth.AppImage">Download the AppImage</a></div>
+<pre data-copy><code>chmod +x Abhoth.AppImage && ./Abhoth.AppImage</code></pre>
+      </div>
+      <div class="panel" role="tabpanel" id="p-mac" aria-labelledby="tab-mac" tabindex="0" hidden>
+        <p>There's no macOS installer yet. CI builds and checks the desktop app on macOS, so building from source with <a href="https://rustup.rs">rustup</a> works:</p>
+<pre data-copy><code>git clone https://github.com/madninjaskillz/abhoth && cd abhoth
+cargo build --release --features desktop</code></pre>
+      </div>
+      <div class="panel" role="tabpanel" id="p-src" aria-labelledby="tab-src" tabindex="0" hidden>
+        <p>Any platform with Rust. The web client ships prebuilt, so you don't need Node.</p>
+<pre data-copy><code>git clone https://github.com/madninjaskillz/abhoth && cd abhoth
+cargo build --release                      # target/release/abhoth
+cargo build --release --features desktop   # adds --desktop</code></pre>
+      </div>
+      <div class="panel" role="tabpanel" id="p-docker" aria-labelledby="tab-docker" tabindex="0" hidden>
+        <p>Build the image from the repo, then follow <a href="{{base}}docs/docker/">Self-host with Docker</a> for volumes, accounts and HTTPS.</p>
+<pre data-copy><code>git clone https://github.com/madninjaskillz/abhoth && cd abhoth
+docker build -f deploy/docker/Dockerfile -t abhoth-web .</code></pre>
+      </div>
     </div>
   </div>
 </section>
