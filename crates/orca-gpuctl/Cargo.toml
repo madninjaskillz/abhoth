@@ -1,0 +1,16 @@
+[package]
+name = "orca-gpuctl"
+description = "Abhoth Supervisor: GPU clock and power policy (pin / unlocked / idle clock-down), the per-card state machine hostd runs, the limits file, and an nvidia-smi adapter. Replaces clockctl, gpu-power and boot.sh (SUPERVISOR.md 6)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true
