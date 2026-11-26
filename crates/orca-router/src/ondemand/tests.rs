@@ -22,6 +22,7 @@ fn models() -> IndexMap<String, OnDemandModel> {
             engine: "ninfer".into(),
             engine_profile: "ninfer-merged-inkling-4lane".into(),
             served_id: String::new(),
+            per_card: Default::default(),
         },
     );
     m.insert(
@@ -31,6 +32,7 @@ fn models() -> IndexMap<String, OnDemandModel> {
             engine: "ninfer".into(),
             engine_profile: "ninfer-merged-4lane".into(),
             served_id: String::new(),
+            per_card: Default::default(),
         },
     );
     m

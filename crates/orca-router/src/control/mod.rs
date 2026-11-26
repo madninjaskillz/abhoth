@@ -11,13 +11,18 @@
 //! - [`import`]: the importer from DeepThought's files (C2).
 
 pub mod builtins;
+pub mod caps;
+pub mod downloads;
 pub mod driver;
 pub mod drivers;
 pub mod exec;
+pub mod fetch;
+pub mod hf;
 pub mod host;
 pub mod hostctl;
 pub mod hostd;
 pub mod import;
+pub mod inventory;
 pub mod lifecycle;
 pub mod load;
 pub mod reconcile;

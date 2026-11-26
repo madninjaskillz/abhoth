@@ -9,6 +9,7 @@ import {
   type RouteEdit, type RouteView, type StateView,
 } from "./routerModel";
 import type { AdminKey, ConfigData, FormEdit, GatewayCheck, GatewayDoc, NewAdminKey } from "./forms/formModel";
+import type { CardOption, CatalogKind, DetectedGpu, DownloadJob, HfDetails, HfFile, HfRow, Inventory } from "./forms/inventoryModel";
 
 /** Where the admin API is and how calls authenticate. */
 export interface RouterTransport {
@@ -88,6 +89,23 @@ export const routerApi = {
   adminKeys: () => call<{ keys: AdminKey[]; local: boolean }>("GET", `${R()}/admin-keys`),
   createAdminKey: (name: string) => call<NewAdminKey>("POST", `${R()}/admin-keys`, { name }),
   revokeAdminKey: (id: number) => call<{ ok: boolean }>("DELETE", `${R()}/admin-keys/${id}`),
+  // D152: the inventory, engine capabilities, Hugging Face and downloads.
+  inventory: () => call<Inventory>("GET", `${R()}/inventory`),
+  catalog: () => call<CatalogKind[]>("GET", `${R()}/catalog`),
+  detect: (server: string) => call<{ server: string; gpus: DetectedGpu[] }>("POST", `${R()}/inventory/detect`, { server }),
+  ggufMeta: (server: string, path: string) => call<Record<string, string>>("POST", `${R()}/inventory/gguf`, { server, path }),
+  place: (model: string) => call<{ placement: CardOption[] }>("POST", `${R()}/inventory/place`, { model }),
+  hfSearch: (q: string, kind?: string) => call<HfRow[]>("GET", `${R()}/hf/search?q=${encodeURIComponent(q)}${kind ? `&kind=${encodeURIComponent(kind)}` : ""}`),
+  hfModel: (repo: string) => call<HfDetails>("GET", `${R()}/hf/model?repo=${encodeURIComponent(repo)}`),
+  hfToken: () => call<{ set: boolean; from: string }>("GET", `${R()}/hf/token`),
+  hfSetToken: (token: string) => call<{ set: boolean; from: string }>("PUT", `${R()}/hf/token`, { token }),
+  hfRemoveToken: () => call<{ set: boolean; from: string }>("DELETE", `${R()}/hf/token`),
+  downloads: () => call<DownloadJob[]>("GET", `${R()}/downloads`),
+  startDownload: (r: { server: string; repo: string; revision?: string | null; files: HfFile[]; model?: string; gated?: boolean }) =>
+    call<DownloadJob>("POST", `${R()}/downloads`, r),
+  cancelDownload: (id: string) => call<DownloadJob>("POST", `${R()}/downloads/${encodeURIComponent(id)}/cancel`),
+  resumeDownload: (id: string) => call<DownloadJob>("POST", `${R()}/downloads/${encodeURIComponent(id)}/resume`),
+  removeDownload: (id: string) => call<{ ok: boolean }>("DELETE", `${R()}/downloads/${encodeURIComponent(id)}`),
 };
 
 export interface ServiceKey {

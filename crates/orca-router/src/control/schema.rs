@@ -61,6 +61,12 @@ pub struct ControlConfig {
     pub placement: PlacementSection,
     #[serde(default)]
     pub on_demand: OnDemandSection,
+    /// The inventory model (ROUTER-INVENTORY.md, D152): present once a file has been migrated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inventory: Option<InventorySection>,
+    /// Hugging Face search and downloads (D152).
+    #[serde(default, skip_serializing_if = "HfSection::is_default")]
+    pub hf: HfSection,
     // Reserved for the wider supervisor (SUPERVISOR.md, being written): sensors, fans, alerts,
     // MQTT and calendars. Accepted and kept as raw values so files written for a newer build
     // still load and round-trip; their owners give them typed schemas and validation.
@@ -305,6 +311,9 @@ pub struct Server {
     /// (utility-only containers such as clockctl, gpu-power).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ignore_holders: Vec<String>,
+    /// Where models downloaded for this server go (D152: Hugging Face downloads).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_dir: Option<String>,
 }
 
 fn d_ready_timeout() -> u64 {
@@ -412,6 +421,11 @@ pub struct Card {
     /// May be switched by an on-demand request.
     #[serde(default)]
     pub on_demand: bool,
+    /// Which engines may run here, per model type (D152): `llm = ["strata", "ninfer"]`,
+    /// `tts = ["maya", "ninfer"]`. Unset: any engine with a port for this card may run LLMs
+    /// (the behaviour before the inventory model).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engines: Option<IndexMap<String, Vec<String>>>,
 }
 
 fn d_reserve() -> f64 {
@@ -566,6 +580,60 @@ pub struct Engine {
     pub before_start: Vec<Hook>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapters: Vec<String>,
+    /// What it can run (D152): the built-in catalog's entry for its kind (its id, or
+    /// `caps.inherits`), refined by a live probe, then these overrides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caps: Option<EngineCaps>,
+}
+
+/// An engine's capabilities, as overrides of its kind's (ROUTER-INVENTORY.md 3).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EngineCaps {
+    /// A built-in engine kind (`llamacpp`) or another engine's id to start from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inherits: Option<String>,
+    /// Replace the inherited lists (None: keep them). An empty `archs`/`quants` = any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kinds: Option<Vec<ModelKind>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formats: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archs: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quants: Option<Vec<String>>,
+    /// Add to / take from the inherited lists.
+    #[serde(default, skip_serializing_if = "CapsDelta::is_empty")]
+    pub add: CapsDelta,
+    #[serde(default, skip_serializing_if = "CapsDelta::is_empty")]
+    pub remove: CapsDelta,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_context: Option<u64>,
+    /// Ask the running engine what it is (`/props`, `/v1/models`); default true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probe: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CapsDelta {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<ModelKind>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub formats: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub archs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quants: Vec<String>,
+}
+
+impl CapsDelta {
+    pub fn is_empty(&self) -> bool {
+        self.kinds.is_empty()
+            && self.formats.is_empty()
+            && self.archs.is_empty()
+            && self.quants.is_empty()
+    }
 }
 
 /// How the engine key reaches the engine (6.4). Designed to work whether or not the engine has a
@@ -929,9 +997,140 @@ pub struct Model {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub vision: bool,
+    /// What kind of model it is (D152). Unset: an LLM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ModelKind>,
+    /// The engine tried first when the router places it (D152). The engines that can run it
+    /// are worked out from what it is (format, architecture, quant) and what each engine can
+    /// run; this is only a preference. Unset: the first in `prefer`, else the first artifact's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<String>,
+    /// Preferred order after the primary (the rest follow by capability).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prefer: Vec<String>,
+    /// Exceptions: engines that run it although their capabilities don't say so, and engines
+    /// that never run it although they match.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deny: Vec<String>,
+    /// What it is (filled from Hugging Face or the file's GGUF metadata).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quant: Option<String>,
+    /// Servers that have the files (D152). Unset: assumed on every server (as before).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub servers: Option<Vec<String>>,
+    /// Context length the model supports (informational; from its card or config).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<u64>,
+    /// Size of its files in GiB (informational; VRAM hints before an artifact says).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_gib: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub licence: Option<String>,
+    /// Where it came from (a Hugging Face repo and the files picked).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<ModelSource>,
     /// Engine id -> the artifact that engine loads.
     #[serde(default)]
     pub artifacts: IndexMap<String, Artifact>,
+}
+
+impl Model {
+    pub fn kind(&self) -> ModelKind {
+        self.kind.unwrap_or_default()
+    }
+    /// Are the files on `server` (unset list: assumed everywhere)?
+    pub fn on_server(&self, server: &str) -> bool {
+        self.servers
+            .as_ref()
+            .is_none_or(|s| s.iter().any(|x| x == server))
+    }
+}
+
+/// The model types the inventory knows (D152).
+#[derive(
+    Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelKind {
+    #[default]
+    Llm,
+    Tts,
+    Stt,
+    Image,
+    Music,
+    Embedding,
+}
+
+impl ModelKind {
+    pub const ALL: [ModelKind; 6] = [
+        ModelKind::Llm,
+        ModelKind::Tts,
+        ModelKind::Stt,
+        ModelKind::Image,
+        ModelKind::Music,
+        ModelKind::Embedding,
+    ];
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ModelKind::Llm => "llm",
+            ModelKind::Tts => "tts",
+            ModelKind::Stt => "stt",
+            ModelKind::Image => "image",
+            ModelKind::Music => "music",
+            ModelKind::Embedding => "embedding",
+        }
+    }
+    pub fn parse(s: &str) -> Option<ModelKind> {
+        ModelKind::ALL.into_iter().find(|k| k.as_str() == s)
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ModelSource {
+    /// `org/name` on Hugging Face.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hf: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    /// The files picked (a GGUF quant, a safetensors set).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
+    /// Gated on Hugging Face (accept the licence there; downloads need a token).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gated: bool,
+}
+
+/// `[inventory]`: the migration marker.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct InventorySection {
+    pub version: u32,
+}
+
+/// `[hf]`: Hugging Face settings. The token is a secret reference (or the file
+/// `<state_dir>/secrets/hf-token` the admin pages write); never a value.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct HfSection {
+    /// `"secret:<id>"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    /// The API's base (tests and mirrors); default `https://huggingface.co`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+}
+
+impl HfSection {
+    pub fn is_default(&self) -> bool {
+        self == &HfSection::default()
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
@@ -959,6 +1158,13 @@ pub struct Artifact {
     /// Engine profile used when a pick names none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_profile: Option<String>,
+    /// What the file is (default: from its name and the model's own fields).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quant: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

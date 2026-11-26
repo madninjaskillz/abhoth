@@ -216,7 +216,9 @@ image or on its own (`abhoth router --config router.json --port 8010 --control r
   the app.
 - Docs: [`ROUTER.md`](ROUTER.md) (running it; section 14 for the admin pages),
   [`ROUTER-CONFIG.md`](ROUTER-CONFIG.md) (the control plane's `router.toml`),
-  [`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md) and
+  [`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md),
+  [`docs/design/ROUTER-INVENTORY.md`](docs/design/ROUTER-INVENTORY.md) (servers, cards, engine
+  capabilities, Hugging Face downloads; section 15 of `ROUTER.md`) and
   [`docs/design/ROUTER-MODE.md`](docs/design/ROUTER-MODE.md).
 
 ## Tests and the cross-check

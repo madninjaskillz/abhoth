@@ -427,7 +427,7 @@ impl HostOps for ExecHost {
                 let restorable = c
                     .models
                     .get(&spec.model)
-                    .and_then(|m| m.artifacts.get(&spec.engine))
+                    .and_then(|m| super::caps::artifact_for(&c, m, &spec.engine))
                     .is_some_and(|a| a.restore.is_some());
                 if !present && !restorable {
                     return Err(format!(
@@ -448,7 +448,7 @@ impl HostOps for ExecHost {
         let Some(restore) = c
             .models
             .get(&spec.model)
-            .and_then(|m| m.artifacts.get(&spec.engine))
+            .and_then(|m| super::caps::artifact_for(&c, m, &spec.engine))
             .and_then(|a| a.restore.clone())
         else {
             return Ok(vec![]);

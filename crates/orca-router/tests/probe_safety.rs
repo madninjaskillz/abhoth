@@ -52,6 +52,7 @@ fn cfg(a: &str, b: &str, relay: &str, api: &str, dir: &std::path::Path) -> Route
             engine: "ninfer".into(),
             engine_profile: "ninfer-x".into(),
             served_id: String::new(),
+            per_card: Default::default(),
         },
     );
     cfg.slots.enabled = true;

@@ -179,7 +179,7 @@ pub fn model_vision(
     if !vision_gated(c, engine) {
         return Some(true);
     }
-    let art = m.artifacts.get(engine)?;
+    let art = super::caps::artifact_for(c, m, engine)?;
     let profile = profile
         .map(str::to_string)
         .or_else(|| art.default_profile.clone())
@@ -244,9 +244,9 @@ fn parts<'a>(c: &'a ControlConfig, spec: &CardSpec) -> Result<Parts<'a>, String>
         .models
         .get(&spec.model)
         .ok_or_else(|| format!("no model `{}`", spec.model))?;
-    let art = model.artifacts.get(&spec.engine).ok_or_else(|| {
+    let art = super::caps::artifact_for(c, model, &spec.engine).ok_or_else(|| {
         format!(
-            "model `{}` has no artifact for `{}`",
+            "model `{}` has no file `{}` can run",
             spec.model, spec.engine
         )
     })?;

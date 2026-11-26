@@ -964,3 +964,25 @@ Design: [`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md).
   is never treated as a loopback admin.
 - **From the Abhoth app:** in router mode with an admin key, Settings → Models → Connection →
   Router admin.
+
+## 15. The inventory (D152)
+
+The admin pages' **Inventory** tab sets the router up as servers → cards → which engines may run
+each kind of model, with an engine catalog and models whose engines are worked out from their
+files. Design: [`docs/design/ROUTER-INVENTORY.md`](docs/design/ROUTER-INVENTORY.md).
+
+- **Upgrading converts `router.toml` once** at start-up (cards get `engines`, models get `kind`,
+  `primary`, `prefer`, `servers`; `[inventory] version = 1`), comments kept, the old file backed up
+  to `<state_dir>/backups/router.toml.pre-inventory-<time>`. Nothing behaves differently. To go
+  back to 0.16.13, restore that backup first (the old router refuses the new fields).
+- **Set a model folder** per server (`servers.x.model_dir`) for Hugging Face downloads; they run on
+  the server (`<model_dir>/<owner>/<name>/`), resumable. A Hugging Face token, if you need one for
+  gated models, is set on the page and kept in `<state_dir>/secrets/hf-token`, never in the config.
+- **Engines describe what they run** (catalog + a read-only probe of idle running engines +
+  `caps` overrides). A fork: `[engines.my-fork] caps = { inherits = "llamacpp" }` runs every
+  model llama.cpp runs.
+- **Routes may let the router pick the card**: `on_demand = { layout_from = "auto" }` places the
+  model on a card that has its files, allows the engine and has room (primary engine first). A
+  route's `pick` still pins an engine and profile.
+- **Strict hostctl hosts** need their allowlist re-exported for `download`, `download-status` and
+  `gguf-meta`. New models and routes are switchable on demand after a router restart.

@@ -142,6 +142,17 @@ fn secret_ref(c: &ControlConfig, path: &str, r: &str, v: &mut Vec<Issue>) {
 }
 
 fn servers(c: &ControlConfig, v: &mut Vec<Issue>) {
+    for (id, s) in &c.servers {
+        if let Some(md) = &s.model_dir
+            && (!(md.starts_with('/') || md.as_bytes().get(1) == Some(&b':'))
+                || md.split(['/', '\\']).any(|x| x == ".."))
+        {
+            v.push(Issue::err(
+                format!("servers.{}.model_dir", key(id)),
+                "the model folder must be an absolute path (no `..`)",
+            ));
+        }
+    }
     for (id, s) in &c.secrets {
         let p = format!("secrets.{}", key(id));
         match (&s.file, &s.env) {
@@ -276,6 +287,25 @@ fn cards(c: &ControlConfig, v: &mut Vec<Issue>) {
     let mut uuids: HashMap<String, &str> = HashMap::new();
     for (id, card) in &c.cards {
         let p = format!("cards.{}", key(id));
+        for (kind, list) in card.engines.iter().flatten() {
+            if super::schema::ModelKind::parse(kind).is_none() {
+                v.push(Issue::err(
+                    format!("{p}.engines.{}", key(kind)),
+                    format!(
+                        "`{kind}` is not a model type (llm, tts, stt, image, music, embedding)"
+                    ),
+                ));
+            }
+            for e in list {
+                if e != "*" && !c.engines.contains_key(e) {
+                    v.push(Issue::warn(
+                        format!("{p}.engines.{}", key(kind)),
+                        format!("engine `{e}` is not set up yet (it is skipped until it is)"),
+                    ));
+                }
+            }
+        }
+
         if !c.servers.contains_key(&card.server) {
             v.push(Issue::err(
                 format!("{p}.server"),
@@ -436,10 +466,54 @@ fn engines(c: &ControlConfig, v: &mut Vec<Issue>) {
 
 fn models(c: &ControlConfig, v: &mut Vec<Issue>) {
     for (mid, m) in &c.models {
+        let mp = format!("models.{}", key(mid));
+        let order = super::caps::engine_order(c, m);
+        if let Some(pr) = &m.primary
+            && !order.contains(pr)
+        {
+            v.push(Issue::warn(
+                format!("{mp}.primary"),
+                format!(
+                    "`{pr}` can't run it now (it can: {}); the router falls back to the others",
+                    if order.is_empty() {
+                        "none".to_string()
+                    } else {
+                        order.join(", ")
+                    }
+                ),
+            ));
+        }
+        for (f, list) in [
+            ("prefer", &m.prefer),
+            ("allow", &m.allow),
+            ("deny", &m.deny),
+        ] {
+            for e in list {
+                if !c.engines.contains_key(e) {
+                    v.push(Issue::warn(
+                        format!("{mp}.{f}"),
+                        format!("no engine `{e}` (yet)"),
+                    ));
+                }
+            }
+        }
+        for sv in m.servers.iter().flatten() {
+            if !c.servers.contains_key(sv) {
+                v.push(Issue::err(
+                    format!("{mp}.servers"),
+                    format!("no server `{sv}`"),
+                ));
+            }
+        }
+
         for (eid, a) in &m.artifacts {
             let p = format!("models.{}.artifacts.{}", key(mid), key(eid));
             let Some(e) = c.engines.get(eid) else {
-                v.push(Issue::err(&p, format!("no engine `{eid}`")));
+                // D152: a file named for an engine not set up (yet); other engines may run it
+                v.push(Issue::warn(
+                    &p,
+                    format!("no engine `{eid}` (its launch settings are kept)"),
+                ));
                 continue;
             };
             for prof in &a.profiles {
@@ -525,7 +599,7 @@ fn layouts(c: &ControlConfig, v: &mut Vec<Issue>) {
             let art = c
                 .models
                 .get(&s.model)
-                .and_then(|m| m.artifacts.get(&s.engine));
+                .and_then(|m| super::caps::artifact_for(c, m, &s.engine));
             match (c.models.get(&s.model), art) {
                 (None, _) => v.push(Issue::err(
                     format!("{cp}.model"),
@@ -778,7 +852,28 @@ fn routes(c: &ControlConfig, v: &mut Vec<Issue>) {
                 ));
             }
             let od = r.on_demand.clone().unwrap_or_default();
-            if od.cards.is_empty() {
+            // D152: `layout_from = "auto"` lets the router place it (any allowed card, the
+            // model's engines); `pick` and `cards` are then optional pins.
+            let auto = od.layout_from == "auto";
+            if !auto && od.layout_from != "pick" {
+                v.push(Issue::err(
+                    format!("{p}.on_demand.layout_from"),
+                    "layout_from is \"pick\" (a fixed engine) or \"auto\" (the router places it)",
+                ));
+            }
+            if auto
+                && let Some(m) = r.targets.iter().find_map(|t| t.model.as_deref())
+                && c.models.contains_key(m)
+                && !super::inventory::place(c, m, &super::inventory::Pin::of(Some(&od)))
+                    .iter()
+                    .any(|o| o.ok)
+            {
+                v.push(Issue::warn(
+                    format!("{p}.on_demand"),
+                    format!("no card can run `{m}` now (its engines, the cards' allowed engines, files or VRAM): requests for it will be refused"),
+                ));
+            }
+            if od.cards.is_empty() && !auto {
                 v.push(Issue::err(
                     format!("{p}.on_demand.cards"),
                     "list the cards an on-demand switch may use",
@@ -798,6 +893,7 @@ fn routes(c: &ControlConfig, v: &mut Vec<Issue>) {
                 }
             }
             match &od.pick {
+                None if auto => {}
                 None => v.push(Issue::err(
                     format!("{p}.on_demand.pick"),
                     "on-demand needs pick = { engine, profile }",

@@ -399,6 +399,7 @@ pub fn import(src: &Sources, opt: &Options) -> Result<Imported, String> {
                 clocks: None,
                 managed: true,
                 on_demand: true,
+                engines: None,
             },
         );
     }
@@ -440,6 +441,7 @@ pub fn import(src: &Sources, opt: &Options) -> Result<Imported, String> {
                     clocks: None,
                     managed: false,
                     on_demand: false,
+                    engines: None,
                 },
             );
             rep.add(
@@ -908,6 +910,7 @@ pub fn import(src: &Sources, opt: &Options) -> Result<Imported, String> {
                 description: mv["description"].as_str().map(String::from),
                 vision: mv["vision"].as_bool().unwrap_or(true),
                 artifacts: IndexMap::new(),
+                ..Model::default()
             };
             if let Some(arts) = mv["artifacts"].as_object() {
                 for (eng, a) in arts {
@@ -954,6 +957,9 @@ pub fn import(src: &Sources, opt: &Options) -> Result<Imported, String> {
                             unset,
                             params: (params != RequestParams::default()).then_some(params),
                             default_profile: None,
+                            format: None,
+                            arch: None,
+                            quant: None,
                         },
                     );
                 }

@@ -191,12 +191,58 @@ impl RouteSink for LiveRoutes {
     }
 }
 
+/// Ask running, idle engines what they are (`/props`, `/v1/models`; never a completion, a
+/// load or a switch), when the cache has nothing for their build or it is 6 hours old.
+async fn probe_engines(st: Arc<AppState>, c: Arc<ControlConfig>, running: Arc<Mutex<Running>>) {
+    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+    loop {
+        let spec = running.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let snap = st.snapshot();
+        let now = chrono::Utc::now().timestamp();
+        for (card, s) in &spec.spec {
+            if s.is_off() || !spec.ready.contains(card) || st.inflight(card) > 0 {
+                continue;
+            }
+            if !super::caps::needs_probe(&c, &s.engine, now, 6 * 3600) {
+                continue;
+            }
+            let Some(up) = snap.config.upstreams.get(card) else {
+                continue;
+            };
+            let Some(e) = c.engines.get(&s.engine) else {
+                continue;
+            };
+            let how = super::caps::probe_how(&c, &s.engine);
+            if let Some(p) = super::caps::probe_engine(
+                &st.http,
+                &up.url,
+                snap.key_for(card),
+                how,
+                super::caps::stamp(e),
+            )
+            .await
+            {
+                tracing::info!(
+                    "engine {} on card {card}: probed ({})",
+                    s.engine,
+                    p.version.as_deref().unwrap_or("no version")
+                );
+                super::caps::record_probe(&s.engine, p);
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(600)).await;
+    }
+}
+
 /// The effective cold policy of a route.
 fn cold_of(c: &ControlConfig, r: &schema::Route) -> ColdPolicy {
     r.cold.unwrap_or(c.route_defaults.cold)
 }
 
-/// On-demand names from `router.toml`: route name -> the pick (engine, profile, model).
+/// On-demand names from `router.toml`: route name -> the pick (engine, profile, model), with the
+/// router's placement per card (D152). A route with `on_demand.pick` is pinned to that engine
+/// (and profile) and its `cards`; `layout_from = "auto"` lets the router choose among the
+/// model's engines, primary first.
 pub fn on_demand_models(c: &ControlConfig) -> IndexMap<String, OnDemandModel> {
     let mut out = IndexMap::new();
     for (name, r) in &c.routes {
@@ -206,21 +252,49 @@ pub fn on_demand_models(c: &ControlConfig) -> IndexMap<String, OnDemandModel> {
         let Some(model) = r.targets.iter().find_map(|t| t.model.clone()) else {
             continue;
         };
-        let Some(pick) = r.on_demand.as_ref().and_then(|o| o.pick.as_ref()) else {
+        let od = r.on_demand.as_ref();
+        let auto = od.is_none_or(|o| o.layout_from == "auto");
+        let pick = od.and_then(|o| o.pick.as_ref());
+        if pick.is_none() && !auto {
             continue;
+        }
+        let picks = super::inventory::route_picks(c, &model, od);
+        let per_card: IndexMap<String, crate::config::CardPick> = picks
+            .iter()
+            .map(|(card, (engine, profile, rank))| {
+                (
+                    card.clone(),
+                    crate::config::CardPick {
+                        engine: engine.clone(),
+                        engine_profile: profile.clone(),
+                        rank: *rank,
+                    },
+                )
+            })
+            .collect();
+        let (engine, profile) = match pick {
+            Some(pk) => (
+                pk.engine.clone(),
+                pk.profile.clone().or_else(|| {
+                    c.engines
+                        .get(&pk.engine)
+                        .and_then(|e| e.profiles.keys().next().cloned())
+                }),
+            ),
+            None => match per_card.values().min_by_key(|p| p.rank) {
+                Some(p) => (p.engine.clone(), Some(p.engine_profile.clone())),
+                // nowhere to run it: still a name (decide() says why), never a switch
+                None => (String::new(), None),
+            },
         };
-        let profile = pick.profile.clone().or_else(|| {
-            c.engines
-                .get(&pick.engine)
-                .and_then(|e| e.profiles.keys().next().cloned())
-        });
         out.insert(
             name.clone(),
             OnDemandModel {
                 model,
-                engine: pick.engine.clone(),
+                engine,
                 engine_profile: profile.unwrap_or_default(),
                 served_id: String::new(),
+                per_card,
             },
         );
     }
@@ -876,6 +950,11 @@ fn active_of(store: &Store, c: &ControlConfig, server: &str) -> Option<String> {
 
 /// Start the control plane from `main` (router.toml). Off: says so and changes nothing.
 pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
+    // D152: write the inventory defaults explicitly (backup first; a failure changes nothing).
+    let migrated = super::inventory::migrate_file(main);
+    if !migrated.is_empty() {
+        eprintln!("abhoth router: {migrated}");
+    }
     let l = super::load::load(main).map_err(|issues| {
         issues
             .iter()
@@ -1008,6 +1087,10 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
         st: st.clone(),
     });
     let backend = live::ConfigBackend::with_actions(main, &state_dir, store.clone(), actions);
+    // D152: inventory, Hugging Face, downloads; engine probes (static reads of idle engines).
+    let inv = crate::control::downloads::install(main, &state_dir, backend.clone());
+    inv.note_started(&c);
+    tokio::spawn(probe_engines(st.clone(), c.clone(), running.clone()));
     crate::control_api::bootstrap_hint(&local_keys, &c, main);
     let cp = Arc::new(ControlPlane {
         access: Access::new(c.access.clone(), token).with_local_keys(local_keys),

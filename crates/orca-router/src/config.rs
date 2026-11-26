@@ -395,6 +395,40 @@ pub struct OnDemandModel {
     pub engine_profile: String,
     #[serde(default)]
     pub served_id: String,
+    /// The router's placement (D152): card -> the engine and profile it would use there, best
+    /// first. Empty: any card, with `engine` / `engine_profile` (the pre-inventory pick).
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub per_card: IndexMap<String, CardPick>,
+}
+
+/// One card's on-demand choice (D152).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CardPick {
+    pub engine: String,
+    pub engine_profile: String,
+    /// 0 = the model's primary engine.
+    #[serde(default)]
+    pub rank: usize,
+}
+
+impl OnDemandModel {
+    /// The pick for `card`: its placement when there is one, else the model's own.
+    pub fn for_card(&self, card: &str) -> OnDemandModel {
+        match self.per_card.get(card) {
+            Some(p) => OnDemandModel {
+                model: self.model.clone(),
+                engine: p.engine.clone(),
+                engine_profile: p.engine_profile.clone(),
+                served_id: self.served_id.clone(),
+                per_card: IndexMap::new(),
+            },
+            None => OnDemandModel {
+                per_card: IndexMap::new(),
+                ..self.clone()
+            },
+        }
+    }
 }
 
 fn one() -> u32 {

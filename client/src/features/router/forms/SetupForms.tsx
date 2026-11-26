@@ -17,7 +17,7 @@ import { Check2, Field, FormDialog, Grid, ReviewDialog, RowActions, SectionHead,
 const KEY = ["router-config-json"];
 
 /** Turn edits into a checked text, review it, save it. */
-function useEditFlow() {
+export function useEditFlow() {
   const qc = useQueryClient();
   const [pending, setPending] = useState<{ text: string; rev: string; review: Review; done?: () => void } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +37,7 @@ function useEditFlow() {
       setError(null);
       void qc.invalidateQueries({ queryKey: KEY });
       void qc.invalidateQueries({ queryKey: ["router-config"] });
+      void qc.invalidateQueries({ queryKey: ["router-inventory"] });
     },
     onError: (e) => setError(e instanceof RouterApiError && e.status === 412 ? "router.toml changed since you loaded it: reload the page and make the change again." : errText(e)),
   });

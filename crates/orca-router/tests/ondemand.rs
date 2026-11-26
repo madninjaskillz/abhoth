@@ -51,6 +51,7 @@ fn ondemand_cfg(
             engine: "ninfer".into(),
             engine_profile: "ninfer-x".into(),
             served_id: String::new(),
+            per_card: Default::default(),
         },
     );
     cfg.slots.enabled = true; // leases from the router's own registry (none held)

@@ -211,6 +211,10 @@ fn admin_only_read(sub: &str) -> bool {
         || first == "routes"
         || first == "admin-keys"
         || first == "gateway"
+        || first == "inventory"
+        || first == "hf"
+        || first == "downloads"
+        || first == "catalog"
         || (first == "calendar" && sub != "calendar/now")
 }
 
@@ -436,6 +440,19 @@ pub async fn handle(
                 Err(e) => api_err(e),
             }
         }
+        // D152: the inventory, engine capabilities, Hugging Face and downloads.
+        (
+            m,
+            [
+                first @ ("inventory" | "hf" | "downloads" | "catalog"),
+                rest @ ..,
+            ],
+        ) => {
+            match crate::control::downloads::installed_for(std::path::Path::new(&b.config().path)) {
+                Some(svc) => inventory_api(&svc, m, first, rest, &qs, &body, &who).await,
+                None => err(503, "the inventory needs the router started with --control"),
+            }
+        }
         (m, ["calendar", ..]) => match crate::calendar::installed() {
             Some(svc) => {
                 let (status, v) =
@@ -443,6 +460,103 @@ pub async fn handle(
                 json_resp(status, &v)
             }
             None => err(404, "the calendar is off (calendar.enabled = false)"),
+        },
+        _ => err(404, "no such admin call"),
+    }
+}
+
+/// `/admin/api/{inventory,catalog,hf,downloads}/…` (D152).
+async fn inventory_api(
+    svc: &Arc<crate::control::downloads::Service>,
+    m: Method,
+    first: &str,
+    rest: &[&str],
+    qs: &[(String, String)],
+    body: &Value,
+    who: &str,
+) -> Response {
+    use crate::control::{caps, downloads::StartReq, inventory, schema::ModelKind};
+    let s = |k: &str| body[k].as_str().unwrap_or("").to_string();
+    let c = match svc.config() {
+        Ok(c) => c,
+        Err(e) => return err(409, &format!("router.toml does not load: {e}")),
+    };
+    let fail = |e: String| err(422, &e);
+    match (m, first, rest) {
+        (Method::GET, "inventory", []) => {
+            let mut v = inventory::view(&c);
+            v["restartNeeded"] = json!(svc.restart_needed(&c));
+            v["hf"] = svc.token_view(&c);
+            ok(&v)
+        }
+        (Method::GET, "catalog", []) => ok(&caps::catalog_view()),
+        (Method::POST, "inventory", ["detect"]) => match svc.detect(&s("server")).await {
+            Ok(v) => ok(&v),
+            Err(e) => fail(e),
+        },
+        (Method::POST, "inventory", ["gguf"]) => match svc.gguf(&s("server"), &s("path")).await {
+            Ok(v) => ok(&v),
+            Err(e) => fail(e),
+        },
+        (Method::POST, "inventory", ["place"]) => {
+            // where a model would run (the forms' preview): {model}
+            let pin = inventory::Pin::default();
+            ok(&json!({"placement": inventory::place(&c, &s("model"), &pin)}))
+        }
+        (Method::GET, "hf", ["search"]) => {
+            let kind = q(qs, "kind").and_then(ModelKind::parse);
+            match svc.hf(&c).search(q(qs, "q").unwrap_or(""), kind).await {
+                Ok(v) => ok(&v),
+                Err(e) => err(502, &e),
+            }
+        }
+        (Method::GET, "hf", ["model"]) => {
+            let repo = q(qs, "repo").unwrap_or("");
+            match svc.hf(&c).model(repo).await {
+                Ok(mut v) => {
+                    v["fit"] = svc.fit(&c, &v);
+                    ok(&v)
+                }
+                Err(e) => err(502, &e),
+            }
+        }
+        (Method::GET, "hf", ["token"]) => ok(&svc.token_view(&c)),
+        (Method::PUT, "hf", ["token"]) => match svc.set_token(&s("token")) {
+            Ok(()) => {
+                svc.backend
+                    .record(who, "hf-token.set", "hf", "", "", "", "");
+                ok(&svc.token_view(&c))
+            }
+            Err(e) => fail(e),
+        },
+        (Method::DELETE, "hf", ["token"]) => {
+            let _ = svc.set_token("");
+            svc.backend
+                .record(who, "hf-token.remove", "hf", "", "", "", "");
+            ok(&svc.token_view(&c))
+        }
+        (Method::GET, "downloads", []) => ok(&svc.list()),
+        (Method::POST, "downloads", []) => match serde_json::from_value::<StartReq>(body.clone()) {
+            Ok(r) => match svc.start(r, who) {
+                Ok(d) => json_resp(202, &serde_json::to_value(d).unwrap_or_default()),
+                Err(e) => fail(e),
+            },
+            Err(_) => err(
+                400,
+                "expected {server, repo, files: [{path, size}], model?, gated?}",
+            ),
+        },
+        (Method::POST, "downloads", [id, "cancel"]) => match svc.cancel(id, who) {
+            Ok(d) => ok(&d),
+            Err(e) => err(404, &e),
+        },
+        (Method::POST, "downloads", [id, "resume"]) => match svc.resume(id, who) {
+            Ok(d) => json_resp(202, &serde_json::to_value(d).unwrap_or_default()),
+            Err(e) => fail(e),
+        },
+        (Method::DELETE, "downloads", [id]) => match svc.remove(id) {
+            Ok(()) => ok(&json!({"ok": true})),
+            Err(e) => fail(e),
         },
         _ => err(404, "no such admin call"),
     }
@@ -795,6 +909,7 @@ pub fn install_admin_only(
     bootstrap_hint(&keys, c, main);
     let access = Access::new(c.access.clone(), token).with_local_keys(keys);
     let backend = live::ConfigBackend::new(main, &state_dir, store);
+    crate::control::downloads::install(main, &state_dir, backend.clone());
     st.admin_only
         .set(Arc::new(ControlPlane { access, backend }))
         .map_err(|_| "the admin pages are already on".to_string())?;

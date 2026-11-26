@@ -995,3 +995,22 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
   - **App:** in router mode with an admin key, Settings → Models → Connection shows "Router
     admin" (the pages in a dialog through the app's server, which adds the key; or "Open in
     browser"). The built-in router's Router config tab has the same forms.
+- **D152** (user request 2026-11-26) **The router inventory**: servers → cards → engines allowed
+  per kind of model (llm, tts, stt, image, music, embedding), an engine catalog, models with a
+  primary engine and the servers that hold their files, a guided setup, Hugging Face search and
+  downloads, and the router picking the card. Follow-up: capability-driven engines (catalog,
+  probe, overrides, `inherits`), engine lists computed with reasons. Design in
+  [`docs/design/ROUTER-INVENTORY.md`](docs/design/ROUTER-INVENTORY.md).
+  - **Config:** `servers.x.model_dir`, `cards.x.engines`, `engines.x.caps`, `models.x.{kind,
+    primary, prefer, allow, deny, format, arch, quant, servers, context, size_gib, licence,
+    source}`, `[hf]`, `[inventory]`. Old files load unchanged; start-up migrates in place
+    (toml_edit, backup, checked, atomic), placement identical.
+  - **Placement:** `control::inventory::place` per card: files on the server, card allows the
+    engine for the kind, VRAM fit, primary first; routes with `layout_from = "auto"` get per-card
+    picks (`OnDemandModel.per_card`); a route `pick` is a pin; all guards unchanged.
+  - **Hugging Face:** router-side API calls; downloads on the server through its executor
+    (`download` / `download-status` builtins: `.part` + Range resume, SHA-256, cancel), token in a
+    secret file sent on stdin only; a finished download marks the model present on the server.
+  - **UI:** an Inventory tab in both the app's Router config and `/admin/` (servers & cards with
+    GPU detection, engines with capability pages and forks, models with computed engines and
+    reasons, Hugging Face add, downloads); phone width.

@@ -33,6 +33,9 @@ pub const NAMES: &[&str] = &[
     "gpus-visible",
     "file-exists",
     "read-json",
+    "download",
+    "download-status",
+    "gguf-meta",
 ];
 
 /// Builtins that change the host (root on a strict host, logged as writes).
@@ -43,6 +46,7 @@ pub const WRITES: &[&str] = &[
     "restore-file",
     "secret-put",
     "docker-rm-robust",
+    "download",
 ];
 
 /// Argument keys that name host paths (checked against the allowlist's path rules).
@@ -56,6 +60,9 @@ pub const PATH_ARGS: &[(&str, &str, bool)] = &[
     ("mounted", "path", false),
     ("file-exists", "path", false),
     ("read-json", "path", false),
+    ("download", "dest", true),
+    ("download-status", "dest", false),
+    ("gguf-meta", "path", false),
 ];
 
 pub fn known(name: &str) -> bool {
@@ -72,10 +79,13 @@ fn args_of<T: for<'de> Deserialize<'de>>(name: &str, args: &Value) -> Result<T, 
 
 /// An absolute path without `..` or control characters.
 pub fn clean_path(p: &str) -> Result<(), String> {
-    if !p.starts_with('/') {
+    // `C:/…` only where the host itself is Windows (a local server on a Windows router)
+    let windows_abs =
+        cfg!(windows) && p.as_bytes().get(1) == Some(&b':') && p.as_bytes().get(2) == Some(&b'/');
+    if !p.starts_with('/') && !windows_abs {
         return Err(format!("{p:?} is not an absolute path"));
     }
-    if p.split('/').any(|c| c == "..") || p.chars().any(char::is_control) {
+    if p.split(['/', '\\']).any(|c| c == "..") || p.chars().any(char::is_control) {
         return Err(format!("{p:?} is not a plain path"));
     }
     Ok(())
@@ -165,6 +175,33 @@ pub async fn run(
                 } else {
                     ExecOutput::fail(1, &format!("not visible: {missing:?}"))
                 }
+            }
+        }
+        "download" => {
+            let a: super::fetch::DownloadArgs = args_of(name, args)?;
+            clean_path(&a.dest).map_err(|e| bad(name, e))?;
+            super::fetch::download(&a, stdin, timeout, cancel).await
+        }
+        "download-status" => {
+            let a: super::fetch::DownloadStatusArgs = args_of(name, args)?;
+            clean_path(&a.dest).map_err(|e| bad(name, e))?;
+            ExecOutput::ok_with(&super::fetch::status(&a.dest).to_string())
+        }
+        "gguf-meta" => {
+            let a: PathArg = args_of(name, args)?;
+            clean_path(&a.path).map_err(|e| bad(name, e))?;
+            use std::io::Read as _;
+            let mut buf = Vec::new();
+            match std::fs::File::open(&a.path).and_then(|f| f.take(16 << 20).read_to_end(&mut buf))
+            {
+                Err(e) => ExecOutput::fail(1, &format!("{}: {e}", a.path)),
+                Ok(_) => match super::caps::gguf_meta(&buf) {
+                    Some(m) => ExecOutput::ok_with(&serde_json::to_string(&m).unwrap_or_default()),
+                    None => ExecOutput::fail(
+                        2,
+                        "not a GGUF file (or no general.architecture in its first 16 MiB)",
+                    ),
+                },
             }
         }
         "telemetry" => {

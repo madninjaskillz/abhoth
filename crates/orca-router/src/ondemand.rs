@@ -189,6 +189,14 @@ pub fn decide(
     if !live.is_empty() {
         return Decision::Live { cards: live };
     }
+    if md.per_card.is_empty() && md.engine.is_empty() {
+        return Decision::Block {
+            reason: format!(
+                "no card can run {target}: check its engines, the cards' allowed engines, its files and VRAM (router admin, Models)"
+            ),
+            retry: 3600,
+        };
+    }
     if let Some(p) = pending {
         return Decision::Wait {
             reason: format!("switching card {} to {target}", p.card),
@@ -225,6 +233,11 @@ pub fn decide(
     let mut why = Vec::new();
     let mut ok = Vec::new();
     for (c, v) in cards {
+        // D152: only cards the router's placement allows (empty: any card, the old pick).
+        if !md.per_card.is_empty() && !md.per_card.contains_key(c) {
+            why.push(format!("card {c} can't run {target}"));
+            continue;
+        }
         if v.excluded {
             why.push(format!("card {c} is excluded from on-demand switches"));
             continue;
@@ -273,9 +286,13 @@ pub fn decide(
             why.join("; ")
         });
     }
-    // the card idle longest (never seen busy = idle longest); a tie goes to B (the fast card A stays)
+    // D152: the model's primary engine first (its rank), then the card idle longest (never seen
+    // busy = idle longest); a tie goes to B (the fast card A stays)
+    let rank = |c: &str| md.per_card.get(c).map_or(0, |p| p.rank);
+    let best = ok.iter().map(|c| rank(c)).min().unwrap_or(0);
     let card = ok
         .iter()
+        .filter(|c| rank(c) == best)
         .min_by(|a, b| {
             let ka = (cards[*a].last_busy.unwrap_or(0.0), *a != "B");
             let kb = (cards[*b].last_busy.unwrap_or(0.0), *b != "B");
@@ -283,8 +300,16 @@ pub fn decide(
         })
         .cloned()
         .unwrap();
+    let engine = md.for_card(&card).engine;
     Decision::Switch {
-        reason: format!("card {card} idle longest"),
+        reason: if md.per_card.is_empty() || best == 0 && md.per_card.values().all(|p| p.rank == 0)
+        {
+            format!("card {card} idle longest")
+        } else if best == 0 {
+            format!("card {card}: {engine} is the primary engine")
+        } else {
+            format!("card {card} ({engine}; no card free for the primary engine)")
+        },
         card,
     }
 }
@@ -743,7 +768,7 @@ async fn start_in_process(
 ) -> Decision {
     use crate::switch::ondemand_switch::Ask;
     let od = &snap.config.on_demand;
-    let md = &od.models[target];
+    let md = &od.models[target].for_card(card);
     match sw
         .ask(
             target,
@@ -802,7 +827,7 @@ async fn start(
 ) -> Decision {
     let od = &snap.config.on_demand;
     let api = od.profiles_api.trim_end_matches('/');
-    let md = &od.models[target];
+    let md = &od.models[target].for_card(card);
     let Some(live) = get_json(st, &format!("{api}/live")).await else {
         return Decision::Block {
             reason: "the profiles API is not answering".into(),

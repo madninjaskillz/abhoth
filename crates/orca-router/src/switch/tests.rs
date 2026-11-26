@@ -752,6 +752,7 @@ fn od_model(engine: &str, profile: &str, model: &str) -> crate::config::OnDemand
         engine: engine.into(),
         engine_profile: profile.into(),
         served_id: String::new(),
+        per_card: Default::default(),
     }
 }
 

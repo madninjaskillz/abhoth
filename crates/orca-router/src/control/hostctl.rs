@@ -213,6 +213,15 @@ impl Allowlist {
                 if !builtins::known(name) || !self.builtins.allow.contains(name) {
                     return Err(format!("builtin {name} is not allowed"));
                 }
+                // D152: downloads come from Hugging Face only (its CDN is reached by redirect).
+                if name == "download" {
+                    let url = args.get("url").and_then(Value::as_str).unwrap_or("");
+                    if !(url.starts_with("https://huggingface.co/")
+                        || url.starts_with("https://hf.co/"))
+                    {
+                        return Err("download: only https://huggingface.co/ URLs".into());
+                    }
+                }
                 if req.root && !self.builtins.root.contains(name) {
                     return Err(format!("builtin {name} may not run as root"));
                 }
@@ -610,6 +619,11 @@ pub fn suggested_paths(c: &ControlConfig, server: &str) -> PathRules {
         // The lock files themselves (their `.holder` sidecar is written by flock itself).
         for l in &s.locks {
             write.insert(l.clone());
+        }
+        // D152: Hugging Face downloads land here.
+        if let Some(md) = &s.model_dir {
+            write.insert(expand(md));
+            read.insert(expand(md));
         }
     }
     for e in c.engines.values() {

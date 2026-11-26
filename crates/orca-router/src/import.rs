@@ -327,6 +327,7 @@ pub fn from_litellm(
                     } else {
                         d.served_id.clone()
                     },
+                    per_card: Default::default(),
                 },
             ))
         })

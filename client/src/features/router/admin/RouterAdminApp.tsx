@@ -4,13 +4,14 @@
 import mascot128 from "@/assets/brand/abhoth-mascot-128.webp";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Boxes, Gauge, KeyRound, Loader2, LogOut, Route, ServerCog, Settings2 } from "lucide-react";
+import { Activity, Boxes, Gauge, HardDrive, KeyRound, Loader2, LogOut, Route, ServerCog, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { RouterActivityPane, RouterOverviewPane, RouterRoutesPane } from "../RouterPanes";
 import { setRouterTransport } from "../routerApi";
 import { AdminKeys } from "../forms/AdminKeys";
 import { GatewayForms } from "../forms/GatewayForms";
+import { InventoryForms } from "../forms/InventoryForms";
 import { RouterSetupForms } from "../forms/SetupForms";
 import { pageUrl, type RouterSession } from "./session";
 
@@ -24,6 +25,7 @@ async function loadSession(): Promise<RouterSession> {
 
 const TABS = [
   { id: "overview", label: "Overview", icon: Gauge },
+  { id: "inventory", label: "Inventory", icon: HardDrive },
   { id: "setup", label: "Servers & layouts", icon: ServerCog },
   { id: "models", label: "Model list", icon: Boxes },
   { id: "routes", label: "Routes", icon: Route },
@@ -176,6 +178,7 @@ function Shell({ s, onSignedOut }: { s: RouterSession; onSignedOut: () => void }
       )}
       <main className="flex min-h-0 flex-1 flex-col">
         {tab === "overview" && <RouterOverviewPane />}
+        {tab === "inventory" && <InventoryForms />}
         {tab === "setup" && <RouterSetupForms />}
         {tab === "models" && <GatewayForms />}
         {tab === "routes" && <RouterRoutesPane />}
