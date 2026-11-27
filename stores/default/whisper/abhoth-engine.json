@@ -41,6 +41,13 @@
       "min": 1,
       "max": 10,
       "description": "Beam size."
+    },
+    "threads": {
+      "type": "int",
+      "default": 8,
+      "min": 1,
+      "max": 64,
+      "description": "CPU threads for the docker (CPU) method (--cpu-threads). On a big CPU, 16 gets a short voice command to well under a second."
     }
   },
   "api": "wyoming",
@@ -68,7 +75,9 @@
         "--language",
         "{{param.language}}",
         "--beam-size",
-        "{{param.beam}}"
+        "{{param.beam}}",
+        "--cpu-threads",
+        "{{param.threads}}"
       ],
       "env": {
         "NVIDIA_VISIBLE_DEVICES": "void"

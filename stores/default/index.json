@@ -100,7 +100,7 @@
       "id": "whisper",
       "version": "3.8.1",
       "path": "whisper",
-      "sha256": "a4bc7d6a2a3dc1cab64f3dcc3587722863b1f4d64b1f0342255598ae6d11c866",
+      "sha256": "d67088874e0f53042fe6e405a3158b7b20ed68434ea7b3ee0a91fff7e6412fbc",
       "name": "Whisper (Wyoming faster-whisper)",
       "kinds": [
         "stt"
