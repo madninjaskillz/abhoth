@@ -129,7 +129,7 @@ async fn run(args: &[String], version: &str) -> Result<i32, String> {
             } else {
                 Vec::new()
             };
-            let d = detect::descriptor(&c, &gpus, &detect::cpu().await);
+            let d = detect::descriptor(&c, &gpus, &detect::cpu_for(&c).await);
             println!("{}", serde_json::to_string_pretty(&d).unwrap_or_default());
             let p = d.problems();
             for x in &p {

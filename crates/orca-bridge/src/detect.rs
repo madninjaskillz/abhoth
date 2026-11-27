@@ -86,6 +86,26 @@ fn round1(x: f64) -> f64 {
 
 /// The CPU card's facts: cores and RAM within the container's limits.
 pub async fn cpu() -> Cpu {
+    cpu_with(true).await
+}
+
+/// Whether [`descriptor`] uses the detected RAM: only for the detected CPU card, and not when
+/// the config disables that card or fixes its `ram_gib`.
+pub fn needs_ram(c: &BridgeConfig) -> bool {
+    c.detect.cpu
+        && !c
+            .cards
+            .get("CPU")
+            .is_some_and(|o| o.disable || o.ram_gib.is_some())
+}
+
+/// [`cpu`] for the bridge's config: it skips the RAM query when the descriptor does not use it.
+/// On Windows that query is a PowerShell CIM call that can take many seconds on a busy host.
+pub async fn cpu_for(c: &BridgeConfig) -> Cpu {
+    cpu_with(needs_ram(c)).await
+}
+
+async fn cpu_with(query_ram: bool) -> Cpu {
     let mut cores = std::thread::available_parallelism()
         .map(|n| n.get() as u32)
         .unwrap_or(1);
@@ -98,18 +118,20 @@ pub async fn cpu() -> Cpu {
         {
             cores = cores.min(n);
         }
-        ram = std::fs::read_to_string("/proc/meminfo")
-            .ok()
-            .as_deref()
-            .and_then(parse_meminfo);
-        if let Some(limit) = std::fs::read_to_string("/sys/fs/cgroup/memory.max")
-            .ok()
-            .and_then(|s| s.trim().parse::<f64>().ok())
-        {
-            let gib = limit / 1024.0 / 1024.0 / 1024.0;
-            ram = Some(ram.map_or(gib, |r: f64| r.min(gib)));
+        if query_ram {
+            ram = std::fs::read_to_string("/proc/meminfo")
+                .ok()
+                .as_deref()
+                .and_then(parse_meminfo);
+            if let Some(limit) = std::fs::read_to_string("/sys/fs/cgroup/memory.max")
+                .ok()
+                .and_then(|s| s.trim().parse::<f64>().ok())
+            {
+                let gib = limit / 1024.0 / 1024.0 / 1024.0;
+                ram = Some(ram.map_or(gib, |r: f64| r.min(gib)));
+            }
         }
-    } else if cfg!(windows) {
+    } else if cfg!(windows) && query_ram {
         let mut cmd = tokio::process::Command::new("powershell");
         cmd.args([
             "-NoProfile",
@@ -410,6 +432,19 @@ mod tests {
         assert_eq!(parse_cpu_max("max 100000"), None);
         let gib = parse_meminfo("MemTotal:       32768000 kB\nMemFree: 1 kB\n").unwrap();
         assert!((gib - 31.25).abs() < 0.01);
+    }
+
+    #[test]
+    fn the_ram_query_is_skipped_when_the_config_fixes_it() {
+        let cfg = |extra: &str| -> BridgeConfig {
+            let base = "[bridge]\nid = \"b\"\nrouter = \"http://r:8010\"\ntoken_file = \"/t\"\n";
+            toml::from_str(&format!("{base}{extra}")).unwrap()
+        };
+        assert!(needs_ram(&cfg("")));
+        assert!(needs_ram(&cfg("[cards.CPU]\ncores = 2\n")));
+        assert!(!needs_ram(&cfg("[cards.CPU]\nram_gib = 4\n")));
+        assert!(!needs_ram(&cfg("[cards.CPU]\ndisable = true\n")));
+        assert!(!needs_ram(&cfg("[detect]\ncpu = false\n")));
     }
 
     #[test]

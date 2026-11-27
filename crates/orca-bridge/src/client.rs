@@ -208,7 +208,7 @@ async fn run_inner(
     } else {
         Vec::new()
     };
-    let cpu = detect::cpu().await;
+    let cpu = detect::cpu_for(&cfg).await;
     let base = detect::descriptor(&cfg, &gpus, &cpu);
     let mut descriptor = base.clone();
     if let Some(f) = &opts.shape {
@@ -643,7 +643,8 @@ async fn command(ctx: &Arc<Ctx>, mux: &Arc<Mux>, op: &str, args: &Value) -> Resu
             } else {
                 Vec::new()
             };
-            *ctx.base.lock().unwrap() = detect::descriptor(&ctx.cfg, &gpus, &detect::cpu().await);
+            *ctx.base.lock().unwrap() =
+                detect::descriptor(&ctx.cfg, &gpus, &detect::cpu_for(&ctx.cfg).await);
             let d = ctx.reshape();
             mux.send(&Frame::Descriptor {
                 descriptor: d.clone(),
