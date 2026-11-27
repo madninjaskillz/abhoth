@@ -3,6 +3,7 @@
 
 pub mod access;
 pub mod admin_ui;
+pub mod bridges;
 pub mod calendar;
 pub mod claude;
 pub mod cli;

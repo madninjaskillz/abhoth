@@ -349,6 +349,7 @@ impl Executors {
                     scrubber: scrubber.clone(),
                     ..Default::default()
                 }),
+                ExecKind::Bridge => Arc::new(crate::bridges::BridgeExecutor { bridge: id.clone() }),
                 ExecKind::Ssh => {
                     let ssh = s
                         .ssh

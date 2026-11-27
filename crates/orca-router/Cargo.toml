@@ -30,10 +30,12 @@ orca-calendar.workspace = true
 orca-alerts.workspace = true
 # Engine packages (D153): manifests, the store, the runner.
 orca-engines.workspace = true
+# Bridges (ROUTER-MEDIA-PLAN.md 13): the protocol and stream multiplexer the bridges speak.
+orca-bridge.workspace = true
 chrono-tz.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
-axum.workspace = true
+axum = { workspace = true, features = ["ws"] }
 chrono.workspace = true
 futures-util.workspace = true
 getrandom.workspace = true

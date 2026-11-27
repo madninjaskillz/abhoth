@@ -49,6 +49,10 @@ USAGE:
   abhoth router admin-key list|revoke ID|NAME --control router.toml
                 (the router's own admin keys, for its admin pages at /admin/; --out writes the
                  new key to FILE (mode 600) instead of printing it)
+  abhoth router bridge-token create ID --control router.toml --out FILE [--rotate]
+  abhoth router bridge-token list|revoke ID --control router.toml
+                (tokens for bridges that dial /bridge/ws; the new token goes to FILE (mode 600),
+                 never to the terminal; the router keeps only its hash)
   abhoth router calendar check|import-cron|import-ics --file calendar.toml ...   (see calendar --help)
   abhoth router hostctl serve --allowlist FILE        (the SSH forced command on a GPU host)
   abhoth router hostctl exec-root --allowlist FILE    (its single sudo entry)
@@ -74,6 +78,7 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
         Some("hostctl") => hostctl_cmd(&args[1..]).await,
         Some("admin-key") => admin_key_cmd(&args[1..]),
         Some("init") => crate::init::run(&args[1..]),
+        Some("bridge-token") => bridge_token_cmd(&args[1..]),
         Some("config-check") => {
             let mut config = None;
             let mut i = 1;
@@ -656,6 +661,75 @@ fn admin_key_cmd(args: &[String]) -> Result<i32> {
             Ok(0)
         }
         _ => bail!("admin-key create NAME | list | revoke ID|NAME, with --control router.toml"),
+    }
+}
+
+/// `abhoth router bridge-token create|list|revoke`: bridge tokens (ROUTER-MEDIA-PLAN.md 13.1).
+fn bridge_token_cmd(args: &[String]) -> Result<i32> {
+    use crate::bridges::tokens;
+    let sub = args.first().map(String::as_str).unwrap_or("");
+    let (mut control, mut out, mut id, mut rotate) = (None, None, None, false);
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--control" | "--config" => control = Some(take(args, &mut i, "--control")?),
+            "--out" => out = Some(take(args, &mut i, "--out")?),
+            "--rotate" => rotate = true,
+            a if !a.starts_with("--") && id.is_none() => id = Some(a.to_string()),
+            a => bail!("unknown argument {a}"),
+        }
+        i += 1;
+    }
+    let control = PathBuf::from(control.ok_or_else(|| {
+        anyhow!("--control router.toml is required (its state_dir holds the token hashes)")
+    })?);
+    let loaded = crate::control::load::load(&control).map_err(|issues| {
+        anyhow!(
+            "{}",
+            issues
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(
+                    "
+"
+                )
+        )
+    })?;
+    let state_dir = PathBuf::from(&loaded.config.router.state_dir);
+    match sub {
+        "create" => {
+            let id = id.ok_or_else(|| anyhow!("bridge-token create ID --out FILE"))?;
+            let out = out.ok_or_else(|| {
+                anyhow!("--out FILE is required: a bridge token is never printed")
+            })?;
+            let path = std::path::Path::new(&out);
+            if path.exists() {
+                bail!("{out} exists; give a new file");
+            }
+            let token = tokens::mint(&state_dir, &id, rotate).map_err(|e| anyhow!(e))?;
+            write_secret(path, &token).with_context(|| format!("writing {out}"))?;
+            println!(
+                "bridge {id}: token written to {out} (mode 600). Copy it to the bridge's token_file; the router keeps only its hash."
+            );
+            Ok(0)
+        }
+        "list" => {
+            for t in tokens::list(&state_dir) {
+                let when = chrono::DateTime::from_timestamp(t.created, 0)
+                    .map(|d| d.format("%Y-%m-%d %H:%M UTC").to_string())
+                    .unwrap_or_default();
+                println!("{:<32} token made {when}", t.id);
+            }
+            Ok(0)
+        }
+        "revoke" => {
+            let id = id.ok_or_else(|| anyhow!("bridge-token revoke ID"))?;
+            tokens::revoke(&state_dir, &id).map_err(|e| anyhow!(e))?;
+            println!("bridge {id}: token revoked (a running router drops it at its next connect)");
+            Ok(0)
+        }
+        _ => bail!("bridge-token create|list|revoke (see --help)"),
     }
 }
 

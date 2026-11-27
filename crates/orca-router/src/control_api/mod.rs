@@ -212,6 +212,7 @@ fn admin_only_read(sub: &str) -> bool {
         || first == "admin-keys"
         || first == "gateway"
         || first == "inventory"
+        || first == "bridges"
         || first == "hf"
         || first == "downloads"
         || first == "catalog"
@@ -490,6 +491,17 @@ pub async fn handle(
                 ),
             }
         }
+        // Bridges (ROUTER-MEDIA-PLAN.md 13): tokens, settings, commands, test requests.
+        (m, ["bridges", rest @ ..]) => match crate::bridges::installed() {
+            Some(hub) => {
+                let audit = |action: &str, target: &str| {
+                    b.record(&who, action, target, "", "", "", "");
+                };
+                let (status, v) = crate::bridges::api::handle(&hub, &m, rest, &body, &audit).await;
+                json_resp(status, &v)
+            }
+            None => err(503, "bridges need the router started with --control"),
+        },
         (m, ["calendar", ..]) => match crate::calendar::installed() {
             Some(svc) => {
                 let (status, v) =

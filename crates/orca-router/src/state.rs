@@ -50,6 +50,8 @@ pub struct AppState {
     pub discovery: std::sync::OnceLock<crate::discovery::Discovery>,
     /// What the online cards' engines say about their models (image input, context; D149).
     pub engine_caps: crate::discovery::caps::CapsCache,
+    /// The bridges that dial `/bridge/ws` (ROUTER-MEDIA-PLAN.md 13); unset = none accepted.
+    pub bridges: std::sync::OnceLock<Arc<crate::bridges::Hub>>,
 }
 
 /// Applied to each snapshot's config before it is swapped in.
@@ -83,6 +85,7 @@ impl AppState {
             engine_caps: Default::default(),
             wake: std::sync::OnceLock::new(),
             overlay: std::sync::OnceLock::new(),
+            bridges: std::sync::OnceLock::new(),
         })
     }
 

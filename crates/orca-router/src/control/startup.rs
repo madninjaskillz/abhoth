@@ -989,6 +989,13 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
             .join("\n")
     })?;
     let c = Arc::new(l.config);
+    // Bridges (ROUTER-MEDIA-PLAN.md 13): `/bridge/ws` and `/admin/api/bridges`, with the control
+    // plane on or off.
+    {
+        let hub = crate::bridges::Hub::new(std::path::Path::new(&c.router.state_dir), c.clone());
+        crate::bridges::install(hub.clone());
+        let _ = st.bridges.set(hub);
+    }
     if !c.control.enabled {
         // The admin pages still work (D151): config forms, admin keys; nothing switches.
         let message = match crate::control_api::install_admin_only(st, main, &c) {

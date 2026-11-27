@@ -261,6 +261,9 @@ pub enum ExecKind {
     #[default]
     Local,
     Ssh,
+    /// A bridge's server (ROUTER-MEDIA-PLAN.md 13.4): set by the bridges overlay, refused in
+    /// `router.toml`. Commands travel over the bridge's own connection.
+    Bridge,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -322,6 +325,10 @@ pub struct Server {
     /// `<comfy_root>/<role folder>/`. Unset: `<model_dir>/comfyui`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comfy_root: Option<String>,
+    /// `bridge:<id>` for a server a bridge describes (the overlay sets it; never read from or
+    /// written to `router.toml`).
+    #[serde(skip)]
+    pub origin: Option<String>,
 }
 
 fn d_ready_timeout() -> u64 {

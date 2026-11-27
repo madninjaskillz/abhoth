@@ -80,6 +80,12 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
         started: Some(Instant::now()),
         peer: peer.map(|p| p.ip()),
     };
+    // A bridge dialling in (ROUTER-MEDIA-PLAN.md 13.1): a WebSocket, before any body is read.
+    if cx.mode == Mode::Gateway
+        && crate::bridges::ws::is_bridge_path(req.method(), req.uri().path())
+    {
+        return crate::bridges::ws::upgrade(st.bridges.get().cloned(), req).await;
+    }
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     let path_q = req

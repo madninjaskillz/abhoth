@@ -582,7 +582,7 @@ pub fn view(c: &ControlConfig) -> Value {
                 .collect();
             json!({
                 "id": sid, "title": s.title, "host": s.host,
-                "exec": match s.exec { super::schema::ExecKind::Local => "local", super::schema::ExecKind::Ssh => "ssh" },
+                "exec": match s.exec { super::schema::ExecKind::Local => "local", super::schema::ExecKind::Ssh => "ssh", super::schema::ExecKind::Bridge => "bridge" },
                 "modelDir": s.model_dir, "comfyRoot": s.comfy_root, "cards": cards,
             })
         })

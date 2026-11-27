@@ -209,6 +209,10 @@ fn servers(c: &ControlConfig, v: &mut Vec<Issue>) {
             (ExecKind::Local, Some(_)) => {
                 v.push(Issue::warn(format!("{p}.ssh"), "ignored: exec = \"local\""))
             }
+            (ExecKind::Bridge, _) if s.origin.is_none() => v.push(Issue::err(
+                format!("{p}.exec"),
+                "exec = \"bridge\" is for servers a bridge describes itself; a bridge joins by dialling /bridge/ws with its token",
+            )),
             _ => {}
         }
         if s.hostctl == HostctlMode::Trusted {
