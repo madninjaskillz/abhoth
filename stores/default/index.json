@@ -100,12 +100,13 @@
       "id": "whisper",
       "version": "3.8.1",
       "path": "whisper",
-      "sha256": "118a5640ad5921a82450b322b4eddc80fe8117be4fe8d590d9830bdf6e00c093",
+      "sha256": "a4bc7d6a2a3dc1cab64f3dcc3587722863b1f4d64b1f0342255598ae6d11c866",
       "name": "Whisper (Wyoming faster-whisper)",
       "kinds": [
         "stt"
       ],
       "methods": [
+        "docker",
         "compose",
         "pip"
       ],

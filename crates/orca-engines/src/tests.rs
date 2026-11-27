@@ -607,7 +607,7 @@ fn host_mounts_need_approval_and_required_params_must_be_set() {
 #[test]
 fn a_compose_plan_renders_and_checks_mounts() {
     let p = default_pkg("whisper");
-    let i = installed_for(&p, 0, Path::new("/nonexistent"));
+    let i = installed_for(&p, 1, Path::new("/nonexistent"));
     let dt = linux_gpu_host();
     let mut s = RunSpec::new("whisper", CardSel::cpu("DT-CPU", &dt), 10300);
     s.model_dir = Some("/tank/whisper".into());
