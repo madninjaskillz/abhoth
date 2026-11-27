@@ -5,7 +5,8 @@
 //! [`startup`] runs first in both exes: Setup.exe / Update.exe start the main exe with
 //! `--veloapp-install` and friends, which add or remove that folder on the user PATH and exit
 //! at once. The desktop app checks the public releases of the abhoth repo in the background
-//! ([`spawn_checker`]); a newer release is downloaded, and the tray offers to restart into it.
+//! (`update_service`; Settings -> Updates checks on demand); a newer release is downloaded,
+//! and the tray and the page offer to restart into it.
 //! Outside a Velopack install (a dev build, `cargo run`) all of this is a no-op.
 
 use std::sync::{Arc, Mutex};
@@ -14,11 +15,11 @@ use std::time::Duration;
 use velopack::sources::GithubSource;
 use velopack::{UpdateCheck, UpdateInfo, UpdateManager, VelopackApp};
 
-/// Where releases are published (`abhoth-v*` tags; CI attaches the Velopack feed files).
-pub const RELEASES_REPO: &str = "https://github.com/madninjaskillz/abhoth";
+use crate::update_service::Feed;
+pub use crate::update_service::RELEASES_REPO;
 
-/// How often the desktop app looks for a new release.
-const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+/// How often the desktop app looks for a new release (when `desktop.autoUpdate` is on).
+pub const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// Velopack's startup work, first thing in `main`. The install / update / uninstall hooks run
 /// here and exit the process (Velopack kills a hook after 15-30 s). `apply_pending` lets the
@@ -36,75 +37,78 @@ pub fn startup(apply_pending: bool) {
     app.run();
 }
 
-/// A downloaded update, ready to apply.
-#[derive(Clone)]
-pub struct ReadyUpdate {
+/// Velopack's GitHub feed as the update service's [`Feed`] (settings -> Updates, the tray).
+pub struct VelopackFeed {
     manager: UpdateManager,
-    info: UpdateInfo,
+    found: Mutex<Option<UpdateInfo>>,
 }
 
-impl ReadyUpdate {
-    pub fn version(&self) -> String {
-        self.info.TargetFullRelease.Version.clone()
-    }
-
-    /// Hands over to Velopack's updater, which waits for this process to exit, applies the
-    /// update and starts the new version. Does not return on success.
-    pub fn apply_and_restart(&self) -> Result<(), String> {
-        self.manager
-            .apply_updates_and_restart(&self.info)
-            .map_err(|e| e.to_string())
+/// The feed of an installed app; `None` outside a Velopack install (a dev build, `cargo run`).
+pub fn feed() -> Option<Arc<dyn Feed>> {
+    match UpdateManager::new(GithubSource::new(RELEASES_REPO, None, false), None, None) {
+        Ok(manager) => Some(Arc::new(VelopackFeed {
+            manager,
+            found: Mutex::new(None),
+        })),
+        Err(e) => {
+            tracing::debug!("updates: not a Velopack install ({e})");
+            None
+        }
     }
 }
 
-/// The slot the checker fills when an update is downloaded.
-pub type Slot = Arc<Mutex<Option<ReadyUpdate>>>;
-
-/// Starts the background check (now, then every [`CHECK_EVERY`]) when this is a Velopack
-/// install. `on_ready` is called once with the version when an update has been downloaded.
-pub fn spawn_checker(slot: Slot, on_ready: impl Fn(String) + Send + 'static) {
-    let manager =
-        match UpdateManager::new(GithubSource::new(RELEASES_REPO, None, false), None, None) {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::debug!("updates: not a Velopack install ({e}); no update checks");
-                return;
+impl Feed for VelopackFeed {
+    fn current(&self) -> String {
+        self.manager.get_current_version_as_string()
+    }
+    fn channel(&self) -> String {
+        // GithubSource(prerelease = false): published releases, no pre-releases
+        "stable".into()
+    }
+    fn check(&self) -> Result<Option<String>, String> {
+        match self
+            .manager
+            .check_for_updates()
+            .map_err(|e| e.to_string())?
+        {
+            UpdateCheck::UpdateAvailable(info) => {
+                let v = info.TargetFullRelease.Version.clone();
+                *self.found.lock().unwrap() = Some(*info);
+                Ok(Some(v))
             }
-        };
-    let _ = std::thread::Builder::new()
-        .name("abhoth-update-check".into())
-        .spawn(move || {
-            loop {
-                match check_and_download(&manager) {
-                    Ok(Some(ready)) => {
-                        let version = ready.version();
-                        tracing::info!("updates: {version} downloaded, ready to apply");
-                        if let Ok(mut s) = slot.lock() {
-                            *s = Some(ready);
-                        }
-                        on_ready(version);
-                        return;
-                    }
-                    Ok(None) => {}
-                    Err(e) => tracing::warn!("updates: check failed: {e}"),
-                }
-                std::thread::sleep(CHECK_EVERY);
+            UpdateCheck::NoUpdateAvailable | UpdateCheck::RemoteIsEmpty => Ok(None),
+        }
+    }
+    fn download(&self, progress: Arc<dyn Fn(u8) + Send + Sync>) -> Result<(), String> {
+        let info = self
+            .found
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or("nothing to download (check first)")?;
+        let (tx, rx) = std::sync::mpsc::channel::<i16>();
+        let reader = std::thread::spawn(move || {
+            for p in rx {
+                progress(p.clamp(0, 100) as u8);
             }
         });
-}
-
-fn check_and_download(manager: &UpdateManager) -> Result<Option<ReadyUpdate>, String> {
-    match manager.check_for_updates().map_err(|e| e.to_string())? {
-        UpdateCheck::UpdateAvailable(info) => {
-            manager
-                .download_updates(&info, None)
-                .map_err(|e| e.to_string())?;
-            Ok(Some(ReadyUpdate {
-                manager: manager.clone(),
-                info: *info,
-            }))
-        }
-        UpdateCheck::NoUpdateAvailable | UpdateCheck::RemoteIsEmpty => Ok(None),
+        let r = self
+            .manager
+            .download_updates(&info, Some(tx))
+            .map_err(|e| e.to_string());
+        let _ = reader.join();
+        r
+    }
+    fn apply(&self) -> Result<(), String> {
+        let info = self
+            .found
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or("no update is downloaded")?;
+        self.manager
+            .apply_updates_and_restart(&info)
+            .map_err(|e| e.to_string())
     }
 }
 

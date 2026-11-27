@@ -19,6 +19,7 @@ import { modeOf, visibleInMode } from "./connection";
 import { MigoPanel } from "@/features/machine/MigoSharing";
 import { LocalEnginesPane } from "@/features/machine/LocalEnginesPane";
 import { AboutPane } from "./AboutPane";
+import { UpdatesPanel } from "./UpdatesPanel";
 import { TAB_GROUPS, groupsOfTab, nextTabIndex, pickTab, searchTabs, unsavedByTab, visibleTabs, type Group, type SearchHit, type TabDef } from "./settingsTabs";
 
 const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
@@ -173,6 +174,7 @@ export function SettingsDialog({ project, requested, onClose }: { project: Proje
                   <p className="pt-2 text-xs text-muted-foreground">{activeTab.blurb}</p>
                   {doc.isLoading && <div className="py-6 text-sm text-muted-foreground">Loading…</div>}
                   {doc.isError && <div className="py-6 text-sm text-destructive">{(doc.error as Error).message}</div>}
+                  {activeTab.panel === "updates" && <UpdatesPanel />}
                   {activeTab.panel === "connection" && doc.isSuccess && <ConnectionPanel key={pid ?? "server"} pid={pid} mode={mode} sections={all} />}
                   {groupsOfTab(activeTab, all).map((g) => (
                     <SettingsGroup key={g.name} group={g} hide={hide} unsaved={g.settings.some((x) => dirty.has(x.key))}>

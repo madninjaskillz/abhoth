@@ -947,6 +947,10 @@ pub struct DesktopConfig {
     /// Bridge mode: a router admin may change this machine's inventory through the bridge
     /// (D155 8). Off by default; the router can never change this setting.
     pub bridge_remote_config: bool,
+    /// Look for a new release in the background (at start, then every 6 hours) and download
+    /// it; the tray and Settings -> Updates offer the restart. On by default. Off: only
+    /// Settings -> Updates' "Check for updates now" looks.
+    pub auto_update: bool,
 }
 
 impl Default for DesktopConfig {
@@ -960,6 +964,7 @@ impl Default for DesktopConfig {
             bridge_token: String::new(),
             bridge_config: String::new(),
             bridge_remote_config: false,
+            auto_update: true,
         }
     }
 }

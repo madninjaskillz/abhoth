@@ -1045,6 +1045,13 @@ async fn the_desktop_folder_dialog_is_only_there_for_the_desktop_window() {
                     axum::response::IntoResponse::into_response(axum::Json(json!({"seen": path})))
                 })
             })),
+            // Settings -> Updates: the app's update service sees the request as sent.
+            updates: Some(Arc::new(|req: axum::http::Request<axum::body::Body>| {
+                let seen = format!("{} {}", req.method(), req.uri().path());
+                Box::pin(async move {
+                    axum::response::IntoResponse::into_response(axum::Json(json!({"seen": seen})))
+                })
+            })),
         });
     })
     .await;
@@ -1066,6 +1073,21 @@ async fn the_desktop_folder_dialog_is_only_there_for_the_desktop_window() {
         .await
         .unwrap();
     assert_eq!(r["seen"], "/api/admin/machine/inventory");
+    for (m, p) in [
+        (Method::GET, "/api/desktop/updates"),
+        (Method::POST, "/api/desktop/updates/check"),
+        (Method::POST, "/api/desktop/updates/apply"),
+    ] {
+        let r: Value = host
+            .api(m.clone(), p)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(r["seen"], format!("{m} {p}"));
+    }
     let info: Value = host
         .api(Method::GET, "/api/info")
         .send()

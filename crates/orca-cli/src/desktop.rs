@@ -41,6 +41,8 @@ enum UserEvent {
     TrayClick,
     /// A newer release has been downloaded (its version); the tray offers to restart into it.
     UpdateReady(String),
+    /// Restart into the downloaded release (the tray's item, or Settings -> Updates).
+    ApplyUpdate,
     /// The page's title bar asks the window for something (D143).
     Window(WindowCommand),
 }
@@ -321,6 +323,27 @@ pub fn run(raw: Vec<String>) -> i32 {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
+    // Updates (Velopack): the background check and Settings -> Updates share one service.
+    let updates = {
+        let p = std::sync::Mutex::new(proxy.clone());
+        crate::update_service::Updates::new(crate::updater::feed(), move |version| {
+            let _ = p
+                .lock()
+                .unwrap()
+                .send_event(UserEvent::UpdateReady(version));
+        })
+    };
+    {
+        let p = std::sync::Mutex::new(proxy.clone());
+        updates.set_apply(move || {
+            let _ = p.lock().unwrap().send_event(UserEvent::ApplyUpdate);
+        });
+        let h = home.clone();
+        updates.spawn_auto(crate::updater::CHECK_EVERY, move || {
+            chrome::desktop_config(&h).auto_update
+        });
+    }
+
     // The host: its own threads and tokio runtime.
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<String, String>>();
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
@@ -330,6 +353,7 @@ pub fn run(raw: Vec<String>) -> i32 {
         hooks: orca_webui::server::DesktopHooks {
             pick_folder: pick_folder_hook(),
             machine,
+            updates: Some(crate::update_service::hook(updates.clone())),
         },
     });
     let args = host_args(&raw);
@@ -415,13 +439,7 @@ pub fn run(raw: Vec<String>) -> i32 {
     let show_id = MenuId::new("show");
     let quit_id = MenuId::new("quit");
     let update_id = MenuId::new("update");
-    let update_slot: crate::updater::Slot = Arc::new(std::sync::Mutex::new(None));
-    {
-        let proxy = proxy.clone();
-        crate::updater::spawn_checker(update_slot.clone(), move |version| {
-            let _ = proxy.send_event(UserEvent::UpdateReady(version));
-        });
-    }
+    let apply_proxy = proxy.clone();
     let mut menu: Option<Menu> = None;
     let mut tray: Option<TrayIcon> = None;
     let mut webview: Option<wry::WebView> = None;
@@ -561,20 +579,22 @@ pub fn run(raw: Vec<String>) -> i32 {
                     )));
                 }
             }
+            Event::UserEvent(UserEvent::ApplyUpdate) => {
+                if updates.status().phase == "ready" {
+                    // Stop the host cleanly first; Velopack's updater waits for this
+                    // process to exit, applies the update and starts the new version.
+                    drop(webview.take());
+                    drop(tray.take());
+                    let _ = quit(&mut stop, &mut host, &mut lock);
+                    if let Err(e) = updates.apply_feed() {
+                        report_error(&format!("Could not apply the update: {e}"));
+                    }
+                    finish(0);
+                }
+            }
             Event::UserEvent(UserEvent::Menu(id)) => {
                 if id == update_id {
-                    let ready = update_slot.lock().ok().and_then(|s| s.clone());
-                    if let Some(ready) = ready {
-                        // Stop the host cleanly first; Velopack's updater waits for this
-                        // process to exit, applies the update and starts the new version.
-                        drop(webview.take());
-                        drop(tray.take());
-                        let _ = quit(&mut stop, &mut host, &mut lock);
-                        if let Err(e) = ready.apply_and_restart() {
-                            report_error(&format!("Could not apply the update: {e}"));
-                        }
-                        finish(0);
-                    }
+                    let _ = apply_proxy.send_event(UserEvent::ApplyUpdate);
                 } else if id == show_id {
                     window.set_visible(true);
                     window.set_minimized(false);

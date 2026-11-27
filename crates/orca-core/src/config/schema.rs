@@ -933,6 +933,15 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
         ),
         SettingDef::new(
             DESKTOP,
+            "desktop.autoUpdate",
+            "Check for updates automatically",
+            T::Bool,
+            "Desktop app: look for a new release at start and every 6 hours, and download it; the tray and Settings -> Updates offer the restart. Off: only \"Check for updates now\" looks.",
+            |c| V::Bool(c.desktop.auto_update),
+            |c, v| c.desktop.auto_update = v.as_bool(),
+        ),
+        SettingDef::new(
+            DESKTOP,
             "desktop.bridgeMode",
             "Migo Bridge",
             T::Bool,

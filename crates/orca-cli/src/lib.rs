@@ -28,6 +28,8 @@ pub mod repl;
 pub mod sessions;
 pub mod together;
 pub mod ui;
+#[cfg(any(feature = "desktop", all(test, feature = "bridge")))]
+pub mod update_service;
 #[cfg(feature = "desktop")]
 pub mod updater;
 

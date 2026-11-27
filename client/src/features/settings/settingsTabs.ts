@@ -55,7 +55,7 @@ export interface TabDef {
   /** Config tabs: the groups of settings shown, in order. */
   groups?: GroupDef[];
   /** Config tabs with a panel of their own besides the settings (always shown when the tab is visible). */
-  panel?: "connection" | "migo";
+  panel?: "connection" | "migo" | "updates";
   /** Words the search finds the tab (and its panel) by. */
   keywords?: string[];
   visible: (c: TabContext) => boolean;
@@ -163,6 +163,17 @@ export const SETTINGS_TABS: TabDef[] = [
     group: "app",
     blurb: "The desktop app's window: its title bar, and closing to the tray.",
     groups: [{ title: "Window", blurb: "Applies to this desktop app's window.", keys: ["desktop.closeToTray", "desktop.systemTitleBar"], section: "Desktop" }],
+    visible: desktopAdmins,
+  },
+  {
+    id: "updates",
+    label: "Updates",
+    kind: "config",
+    group: "app",
+    panel: "updates",
+    blurb: "This app's version, and new releases: check now, download and restart.",
+    keywords: ["updates", "update", "check for updates", "version", "release", "release notes", "upgrade", "restart", "download", "channel", "velopack"],
+    groups: [{ title: "Automatic checks", blurb: "In the background at start and every 6 hours; the tray and this tab offer the restart.", keys: ["desktop.autoUpdate"] }],
     visible: desktopAdmins,
   },
   {
@@ -309,6 +320,8 @@ export const TAB_ALIASES: Record<string, string> = {
   approvals: "migo",
   "remote-config": "migo",
   "this-machine": "machine",
+  update: "updates",
+  "check-for-updates": "updates",
   engines: "local-engines",
   "local-engine": "local-engines",
   cloud: "local-engines",

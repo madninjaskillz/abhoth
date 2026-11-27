@@ -106,6 +106,9 @@ pub struct DesktopHooks {
     /// This machine (D155): `/api/admin/machine/*` and `/api/machine/*`, answered by the app's
     /// own in-process router and engines. `None`: not available.
     pub machine: Option<MachineFn>,
+    /// Settings -> Updates: `/api/desktop/updates[/check|/apply]` (admins), the app's update
+    /// service. `None`: no updates here.
+    pub updates: Option<MachineFn>,
 }
 
 /// Answers a `/api/admin/machine/*` or `/api/machine/*` request (an admin's; checked first).
@@ -526,6 +529,16 @@ fn router(state: Arc<AppState>) -> Router {
     if state.options.desktop.is_some() {
         api = api.route("/api/desktop/pick-folder", post(pick_folder));
     }
+    if state
+        .options
+        .desktop
+        .as_ref()
+        .is_some_and(|d| d.updates.is_some())
+    {
+        api = api
+            .route("/api/desktop/updates", axum::routing::any(updates))
+            .route("/api/desktop/updates/{*rest}", axum::routing::any(updates));
+    }
     if machine_fn(&state.options).is_some() {
         api = api
             .route("/api/admin/machine/{*rest}", axum::routing::any(machine))
@@ -572,6 +585,25 @@ async fn machine(
             axum::http::StatusCode::FORBIDDEN,
             "Only an admin can do that.",
         );
+    }
+    f(req).await
+}
+
+/// Settings -> Updates (desktop app): admins only, then the app's update service.
+async fn updates(
+    State(state): State<Arc<AppState>>,
+    req: axum::http::Request<axum::body::Body>,
+) -> Response {
+    let Some(f) = state
+        .options
+        .desktop
+        .as_ref()
+        .and_then(|d| d.updates.clone())
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !crate::login::principal_of(&req).is_some_and(|p| p.admin) {
+        return crate::login::error(StatusCode::FORBIDDEN, "Only an admin can do that.");
     }
     f(req).await
 }

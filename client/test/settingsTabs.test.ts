@@ -102,7 +102,7 @@ test("settings go where their group says; unknown keys follow their section; unk
 
 test("admins see the app's tabs; desktop-only tabs only in the desktop app; Advanced only when a section needs it", () => {
   assert.deepEqual(ids(visibleTabs(admin, schema)), ["general", "connection", "models", "agent", "images", "account", "users", "about"]);
-  assert.deepEqual(ids(visibleTabs(desk, schema)), ["general", "connection", "models", "agent", "images", "desktop", "migo", "local-engines", "machine", "account", "users", "about"]);
+  assert.deepEqual(ids(visibleTabs(desk, schema)), ["general", "connection", "models", "agent", "images", "desktop", "updates", "migo", "local-engines", "machine", "account", "users", "about"]);
   const more = [...schema, { name: "Something New", settings: [s("x.y")] }];
   assert.ok(ids(visibleTabs(admin, more)).includes("advanced"));
   // Before the schema loads the tabs are there already (no jump when it arrives).
@@ -248,4 +248,15 @@ test("Local Engines and This Machine are on every host that runs them, for admin
   // found by search for what it holds
   const hits = searchTabs(visibleTabs(web, schema), schema, "ollama").map((h) => h.tab.id);
   assert.ok(hits.includes("local-engines"), hits.join(","));
+});
+
+test("Updates is a desktop-app tab with its own panel and the automatic-check setting", () => {
+  assert.ok(ids(visibleTabs(desk, schema)).includes("updates"));
+  assert.ok(!ids(visibleTabs({ admin: true, desktop: false, machine: true }, schema)).includes("updates"));
+  assert.ok(!ids(visibleTabs({ admin: false, desktop: true }, schema)).includes("updates"));
+  assert.equal(tabById("updates")!.panel, "updates");
+  assert.deepEqual(placeSetting("Desktop", "desktop.autoUpdate"), { tab: "updates", group: "Automatic checks", advanced: false });
+  const tabs = visibleTabs(desk, schema);
+  assert.equal(pickTab("check-for-updates", tabs), "updates");
+  assert.ok(searchTabs(tabs, schema, "check for updates").some((h) => h.tab.id === "updates"));
 });
