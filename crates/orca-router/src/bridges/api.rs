@@ -3,7 +3,10 @@
 //! - `GET    bridges`                 every bridge: token, settings, online, descriptor;
 //! - `POST   bridges {id, rotate?}`   mint a token (in the answer once; only its hash is kept);
 //! - `DELETE bridges/<id>`            revoke its token and disconnect it;
-//! - `PUT    bridges/<id>/settings {enabled?, priority?}`;
+//! - `PUT    bridges/<id>/settings {enabled?, priority?, enginesOff?}`;
+//! - `ANY    bridges/<id>/machine/<rest>`   the bridge's own admin API (a desktop app's "This
+//!   machine", MACHINE.md 8), only when the bridge allows remote config: `config.get`,
+//!   `config.apply` (412 on a stale revision) and `machine.api` for the forms' other calls.
 //! - `POST   bridges/<id>/cmd {op, args}`   `status`, `probe`, `logs`, `detect`, `files`,
 //!   `start`, `stop`;
 //! - `POST   bridges/<id>/request {engine, card, method, path, body?}`   a test request through
@@ -79,12 +82,21 @@ pub async fn handle(
             if let Some(p) = body.get("priority").and_then(Value::as_i64) {
                 st.priority = p.clamp(-100, 100) as i32;
             }
+            if let Some(a) = body.get("enginesOff").and_then(Value::as_array) {
+                let mut off: Vec<String> = a
+                    .iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect();
+                off.sort();
+                off.dedup();
+                st.engines_off = off;
+            }
             match hub.set_settings(id, st.clone()) {
                 Ok(()) => {
                     audit("bridge.settings", id);
                     (
                         200,
-                        json!({"id": id, "enabled": st.enabled, "priority": st.priority}),
+                        json!({"id": id, "enabled": st.enabled, "priority": st.priority, "enginesOff": st.engines_off}),
                     )
                 }
                 Err(e) => (500, json!({"error": e})),
@@ -147,5 +159,68 @@ pub async fn handle(
             )
         }
         _ => (404, json!({"error": "no such bridges call"})),
+    }
+}
+
+/// `ANY bridges/<id>/machine/<rest>`: a call to the bridge's own admin API, made by the bridge
+/// itself (the router never writes the bridge's files). `who` is the admin, for both audits.
+#[allow(clippy::too_many_arguments)]
+pub async fn machine(
+    hub: &Arc<Hub>,
+    id: &str,
+    method: &Method,
+    rest: &str,
+    query: &str,
+    body: &Value,
+    if_match: Option<&str>,
+    who: &str,
+    audit: &(dyn Fn(&str, &str) + Send + Sync),
+) -> (u16, Value) {
+    if !hub.online(id) {
+        return (502, json!({"error": format!("bridge {id} is offline")}));
+    }
+    if !hub.remote_config(id) {
+        return (
+            403,
+            json!({"error": "Read-only: this machine doesn't allow remote config", "readOnly": true}),
+        );
+    }
+    let rest = rest.trim_matches('/');
+    let (op, args) = match (method.clone(), rest) {
+        (Method::GET, "config") => ("config.get", json!({"who": who})),
+        (Method::PUT, "config") => (
+            "config.apply",
+            json!({
+                "text": body.get("text"), "rev": if_match, "reason": body.get("reason"),
+                "who": who,
+            }),
+        ),
+        _ => (
+            "machine.api",
+            json!({
+                "method": method.as_str(), "path": rest, "query": query, "body": body,
+                "ifMatch": if_match, "who": who,
+            }),
+        ),
+    };
+    if *method != Method::GET {
+        audit(
+            "bridge.config",
+            &format!("{id}: {} {rest}", method.as_str()),
+        );
+    }
+    let timeout = Duration::from_secs(120);
+    match hub.call(id, op, args, timeout).await {
+        // The bridge answers `{status, body}`: its own admin API's status (412 on a stale
+        // revision, 403 with remote config turned off since the last descriptor, 202 pending).
+        Ok(v) => {
+            let status = v
+                .get("status")
+                .and_then(Value::as_u64)
+                .and_then(|s| u16::try_from(s).ok())
+                .unwrap_or(200);
+            (status, v.get("body").cloned().unwrap_or(Value::Null))
+        }
+        Err(e) => (502, json!({"error": e})),
     }
 }

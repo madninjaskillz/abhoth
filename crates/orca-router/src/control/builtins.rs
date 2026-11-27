@@ -99,9 +99,10 @@ pub fn clean_path(p: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A fixed argv, run directly (no shell: it works where there is no `sh`, a Windows PC).
 async fn sh(argv: &[&str], timeout: Duration, cancel: &Cancel) -> Result<ExecOutput, ExecError> {
-    let words: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
-    run_shell("sh", &argv_to_shell(&words), None, timeout, cancel).await
+    let words: Vec<String> = argv[1..].iter().map(|s| s.to_string()).collect();
+    super::exec::run_program(argv[0], &words, None, timeout, cancel).await
 }
 
 async fn pause(d: Duration, cancel: &Cancel) -> Result<(), ExecError> {
@@ -242,7 +243,7 @@ pub async fn run(
             )
             .await?
         }
-        "cpu-info" => ExecOutput::ok_with(&cpu_info().to_string()),
+        "cpu-info" => ExecOutput::ok_with(&cpu_info_any().await.to_string()),
         "compute-apps" => compute_apps(timeout, cancel).await?,
         "gpu-free-wait" => {
             let a: GpuFreeArgs = args_of(name, args)?;
@@ -564,6 +565,23 @@ fn mounts_contain(mounts: &str, path: &str) -> bool {
 /// `(node, free GiB, page cache GiB)` from sysfs.
 /// The host's CPU and memory (D153: CPU cards): model, threads, cores, RAM, free RAM, the
 /// SIMD flags engines care about. Reads `/proc/cpuinfo` and `/proc/meminfo` only.
+/// [`cpu_info`] on Linux; elsewhere (a Windows or macOS PC) the bridge's detection, in the
+/// same shape.
+pub async fn cpu_info_any() -> Value {
+    if cfg!(target_os = "linux") {
+        return cpu_info();
+    }
+    let c = orca_bridge::detect::cpu().await;
+    let threads = std::thread::available_parallelism().map_or(0, |n| n.get()) as u32;
+    json!({
+        "model": std::env::var("PROCESSOR_IDENTIFIER").ok().filter(|s| !s.is_empty()),
+        "threads": if threads > 0 { threads } else { c.cores },
+        "cores": (c.cores > 0).then_some(c.cores),
+        "ramGib": (c.ram_gib > 0.0).then_some(c.ram_gib),
+        "simd": c.simd,
+    })
+}
+
 pub fn cpu_info() -> Value {
     let cpuinfo = std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
     let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();

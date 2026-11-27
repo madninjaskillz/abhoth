@@ -313,6 +313,28 @@ impl Executor for LocalExecutor {
             return Err(ExecError::Cancelled);
         }
         let out = match &req.op {
+            Op::Command { text, .. } if cfg!(windows) && !has_program(&self.shell) => {
+                // A Windows PC without `sh` (the desktop app's own server, D155): a plain
+                // command line runs directly; anything needing a shell is refused.
+                let (cwd, argv) = simple_argv(text).ok_or_else(|| {
+                    ExecError::Refused(format!(
+                        "this command needs a POSIX shell, and there is no `{}` here: {text}",
+                        self.shell
+                    ))
+                })?;
+                let (program, args) = argv
+                    .split_first()
+                    .ok_or_else(|| ExecError::Refused("an empty command".into()))?;
+                run_program_in(
+                    program,
+                    args,
+                    cwd.as_deref(),
+                    req.stdin.as_deref(),
+                    req.timeout,
+                    cancel,
+                )
+                .await?
+            }
             Op::Command { text, .. } => {
                 run_shell(&self.shell, text, req.stdin.as_deref(), req.timeout, cancel).await?
             }
@@ -338,11 +360,162 @@ pub async fn run_shell(
     timeout: Duration,
     cancel: &Cancel,
 ) -> Result<ExecOutput, ExecError> {
+    run_program(
+        shell,
+        &["-c".to_string(), text.to_string()],
+        stdin,
+        timeout,
+        cancel,
+    )
+    .await
+}
+
+/// Spawn `program args…` without a shell (builtins whose argv is fixed: `nvidia-smi`, so they
+/// also work on a host with no `sh`, a Windows PC), with the same timeout, cancel and capture
+/// as [`run_shell`].
+pub async fn run_program(
+    program: &str,
+    args: &[String],
+    stdin: Option<&[u8]>,
+    timeout: Duration,
+    cancel: &Cancel,
+) -> Result<ExecOutput, ExecError> {
+    run_program_in(program, args, None, stdin, timeout, cancel).await
+}
+
+/// Whether `name` is on the PATH (or is a path that exists).
+pub fn has_program(name: &str) -> bool {
+    if std::path::Path::new(name).is_absolute() {
+        return std::path::Path::new(name).exists();
+    }
+    let exts: Vec<String> = if cfg!(windows) {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".EXE;.CMD;.BAT".into())
+            .split(';')
+            .map(|e| e.to_ascii_lowercase())
+            .chain([String::new()])
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+    std::env::var_os("PATH").is_some_and(|p| {
+        std::env::split_paths(&p)
+            .any(|d| exts.iter().any(|e| d.join(format!("{name}{e}")).is_file()))
+    })
+}
+
+/// A command line with no shell features (pipes, redirects, `$`, globs, `;`, `&&` other than a
+/// leading `cd DIR &&`) as `(cwd, argv)`, with POSIX quoting undone. `None`: it needs a shell.
+pub fn simple_argv(text: &str) -> Option<(Option<String>, Vec<String>)> {
+    let words = split_words(text)?;
+    let mut cwd = None;
+    let mut w: &[Word] = &words;
+    if w.len() >= 3 && w[0] == Word::Plain("cd".into()) && w[2] == Word::Op("&&".into()) {
+        let Word::Plain(d) = &w[1] else { return None };
+        cwd = Some(d.clone());
+        w = &w[3..];
+    }
+    let mut argv = Vec::new();
+    for x in w {
+        match x {
+            Word::Plain(s) => argv.push(s.clone()),
+            Word::Op(_) => return None,
+        }
+    }
+    (!argv.is_empty()).then_some((cwd, argv))
+}
+
+#[derive(Debug, PartialEq)]
+enum Word {
+    Plain(String),
+    Op(String),
+}
+
+fn split_words(text: &str) -> Option<Vec<Word>> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_word = false;
+    let mut it = text.chars().peekable();
+    while let Some(c) = it.next() {
+        match c {
+            ' ' | '\t' | '\n' | '\r' => {
+                if in_word {
+                    out.push(Word::Plain(std::mem::take(&mut cur)));
+                    in_word = false;
+                }
+            }
+            '\'' => {
+                in_word = true;
+                loop {
+                    match it.next()? {
+                        '\'' => break,
+                        x => cur.push(x),
+                    }
+                }
+            }
+            '"' => {
+                in_word = true;
+                loop {
+                    match it.next()? {
+                        '"' => break,
+                        '\\' => match it.next()? {
+                            x @ ('"' | '\\' | '$' | '`') => cur.push(x),
+                            x => {
+                                cur.push('\\');
+                                cur.push(x);
+                            }
+                        },
+                        '$' | '`' => return None,
+                        x => cur.push(x),
+                    }
+                }
+            }
+            '\\' => {
+                in_word = true;
+                cur.push(it.next()?);
+            }
+            '&' if it.peek() == Some(&'&') && !in_word => {
+                it.next();
+                out.push(Word::Op("&&".into()));
+            }
+            '#' | '~' if in_word => cur.push(c),
+            '|' | '&' | ';' | '<' | '>' | '(' | ')' | '$' | '`' | '*' | '?' | '[' | '~' | '#' => {
+                return None;
+            }
+            x => {
+                in_word = true;
+                cur.push(x);
+            }
+        }
+    }
+    if in_word {
+        out.push(Word::Plain(cur));
+    }
+    Some(out)
+}
+
+/// [`run_program`] in a working folder.
+pub async fn run_program_in(
+    program: &str,
+    args: &[String],
+    cwd: Option<&str>,
+    stdin: Option<&[u8]>,
+    timeout: Duration,
+    cancel: &Cancel,
+) -> Result<ExecOutput, ExecError> {
     use tokio::io::AsyncWriteExt;
     let start = Instant::now();
-    let mut cmd = tokio::process::Command::new(shell);
-    cmd.arg("-c")
-        .arg(text)
+    let shell = program;
+    let mut cmd = tokio::process::Command::new(program);
+    if let Some(d) = cwd {
+        cmd.current_dir(d);
+    }
+    #[cfg(windows)]
+    {
+        // no console window flashing up from the desktop app
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd.args(args)
         .stdin(if stdin.is_some() {
             std::process::Stdio::piped()
         } else {
@@ -441,6 +614,50 @@ async fn read_capped<R: tokio::io::AsyncRead + Unpin>(r: Option<&mut R>) -> (Str
     }
     let (s, t) = cap(&buf);
     (s, t || over)
+}
+
+#[cfg(test)]
+mod simple_argv_tests {
+    use super::simple_argv;
+
+    #[test]
+    fn plain_command_lines_split_and_shell_features_are_refused() {
+        assert_eq!(
+            simple_argv("docker pull 'img:1' --quiet"),
+            Some((
+                None,
+                vec![
+                    "docker".into(),
+                    "pull".into(),
+                    "img:1".into(),
+                    "--quiet".into()
+                ]
+            ))
+        );
+        assert_eq!(
+            simple_argv("cd '/a b' && docker compose up -d"),
+            Some((
+                Some("/a b".into()),
+                vec!["docker".into(), "compose".into(), "up".into(), "-d".into()]
+            ))
+        );
+        assert_eq!(
+            simple_argv(r#"echo "a\"b" x#y"#).unwrap().1,
+            vec!["echo", "a\"b", "x#y"]
+        );
+        for bad in [
+            "a | b",
+            "a > f",
+            "a && b",
+            "echo $HOME",
+            "ls *",
+            "a; b",
+            "echo `x`",
+            "x 'open",
+        ] {
+            assert_eq!(simple_argv(bad), None, "{bad}");
+        }
+    }
 }
 
 #[cfg(unix)]

@@ -43,6 +43,9 @@ pub struct Entry {
     /// Why parts of its descriptor were left out of the overlay.
     pub issues: Vec<String>,
     pub events: VecDeque<Value>,
+    /// Per engine, why it cannot start (a failed image pull or install), from its events;
+    /// shown in the bridge's status so a refused request is not a bare 503.
+    pub engine_problems: BTreeMap<String, String>,
     mux: Option<Arc<Mux>>,
     /// Which connection this is (a stale connection's end must not mark a newer one offline).
     conn_no: u64,
@@ -137,6 +140,7 @@ impl Hub {
                     peer: String::new(),
                     issues: Vec::new(),
                     events: VecDeque::new(),
+                    engine_problems: BTreeMap::new(),
                     mux: None,
                     conn_no: 0,
                 },
@@ -218,6 +222,7 @@ impl Hub {
             peer: String::new(),
             issues: Vec::new(),
             events: VecDeque::new(),
+            engine_problems: BTreeMap::new(),
             mux: None,
             conn_no: 0,
         });
@@ -274,6 +279,25 @@ impl Hub {
 
     pub fn event(&self, id: &str, kind: &str, data: Value) {
         if let Some(e) = self.entries.lock().unwrap().get_mut(id) {
+            if kind == "engine-state"
+                && let Some(engine) = data["engine"].as_str()
+            {
+                let failed = data["prepare"]["state"] == "failed";
+                if failed {
+                    let why = data["prepare"]["error"]
+                        .as_str()
+                        .unwrap_or("it cannot start");
+                    e.engine_problems
+                        .insert(engine.to_string(), why.to_string());
+                } else if data["prepare"]["state"] == "ready" || data["state"] == "running" {
+                    e.engine_problems.remove(engine);
+                } else if data["state"] == "failed"
+                    && let Some(why) = data["error"].as_str()
+                {
+                    e.engine_problems
+                        .insert(engine.to_string(), why.to_string());
+                }
+            }
             e.events
                 .push_back(json!({"at": now(), "kind": kind, "data": data}));
             while e.events.len() > 50 {
@@ -352,6 +376,7 @@ impl Hub {
                     "id": id,
                     "enabled": s.enabled,
                     "priority": s.priority,
+                    "enginesOff": s.engines_off,
                     "token": t.map(|t| json!({"created": t.created})),
                     "online": false,
                     "seen": false,
@@ -379,9 +404,13 @@ impl Hub {
                             .collect::<Vec<_>>()
                     );
                     v["engines"] = json!(d.engines);
+                    v["models"] = json!(d.models);
+                    v["remoteConfig"] = json!(d.remote_config);
+                    v["configRev"] = json!(d.config_rev);
                     v["files"] = json!(d.files.values().map(Vec::len).sum::<usize>());
                     v["limits"] = json!(d.limits);
                     v["issues"] = json!(e.issues);
+                    v["engineProblems"] = json!(e.engine_problems);
                     v["events"] = json!(e.events.iter().rev().take(20).collect::<Vec<_>>());
                     v["streams"] = json!(e.mux.as_ref().map_or(0, |m| m.open_streams()));
                 }
@@ -389,6 +418,26 @@ impl Hub {
             })
             .collect();
         json!({ "bridges": list, "path": orca_bridge::proto::WS_PATH })
+    }
+
+    /// Why `engine` on bridge `id` cannot start, if its bridge said so (shown with a refusal).
+    pub fn engine_problem(&self, id: &str, engine: &str) -> Option<String> {
+        self.entries
+            .lock()
+            .unwrap()
+            .get(id)?
+            .engine_problems
+            .get(engine)
+            .cloned()
+    }
+
+    /// Whether a bridge said it takes remote config (MACHINE.md 8), as of its last descriptor.
+    pub fn remote_config(&self, id: &str) -> bool {
+        self.entries
+            .lock()
+            .unwrap()
+            .get(id)
+            .is_some_and(|e| e.descriptor.remote_config)
     }
 
     /// Bridges whose overlay is in use (seen, with a token), by id.
@@ -448,6 +497,15 @@ pub fn effective_with(hub: &Hub, base: &ControlConfig) -> ControlConfig {
             continue;
         }
         let s = hub.settings(&id);
+        let mut d = d;
+        // engines the router's admin turned off for this bridge (MACHINE.md 2.8)
+        if !s.engines_off.is_empty() {
+            orca_bridge::detect::share_only(
+                &mut d,
+                &|e| !s.engines_off.iter().any(|x| x == e),
+                &[],
+            );
+        }
         merge(&mut c, &id, &d, online && s.enabled, s.priority);
     }
     c
@@ -682,6 +740,71 @@ pub async fn forward(
         HeaderValue::from_str(bridge).unwrap_or(HeaderValue::from_static("bridge")),
     );
     r
+}
+
+/// Carry a raw TCP connection (Wyoming: whisper, piper) to `engine` on the bridge: `client`
+/// is the accepted socket (or any byte stream). Returns when either side closes; `Err` when the
+/// bridge could not reach the engine (nothing was sent, so the caller can fail over).
+pub async fn forward_tcp<S>(
+    hub: &Hub,
+    bridge: &str,
+    engine: &str,
+    card: &str,
+    client: S,
+) -> Result<(), String>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mux = hub
+        .mux(bridge)
+        .ok_or_else(|| format!("bridge {bridge} is offline"))?;
+    let card = local_card(bridge, card);
+    let (s, head) = mux.open(
+        engine,
+        card,
+        orca_bridge::proto::TCP_METHOD,
+        "",
+        Vec::new(),
+        false,
+    )?;
+    let (tx, mut rx) = s.split();
+    match tokio::time::timeout(hub.head_timeout, head).await {
+        Ok(Ok(h)) if h.status == 200 => {}
+        Ok(Ok(h)) => {
+            tx.reset("refused");
+            return Err(format!("{engine} on {bridge}/{card}: {}", h.status));
+        }
+        _ => {
+            tx.reset("no answer");
+            return Err(format!("{engine} on {bridge}/{card}: no answer"));
+        }
+    }
+    let (mut r, mut w) = tokio::io::split(client);
+    let up = async {
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            match r.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if tx.send(&buf[..n]).await.is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+        tx.end();
+    };
+    let down = async {
+        while let Some(Ok(b)) = rx.recv().await {
+            if w.write_all(&b).await.is_err() {
+                break;
+            }
+        }
+        let _ = w.shutdown().await;
+    };
+    tokio::join!(up, down);
+    Ok(())
 }
 
 /// Carry a client's WebSocket to `engine` on the bridge (ComfyUI's `/ws`).

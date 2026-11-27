@@ -491,6 +491,33 @@ pub async fn handle(
                 ),
             }
         }
+        // A bridge's own inventory, through the bridge (MACHINE.md 8).
+        (m, ["bridges", id, "machine", rest @ ..]) => match crate::bridges::installed() {
+            Some(hub) => {
+                let audit = |action: &str, target: &str| {
+                    b.record(&who, action, target, "", "", "", "");
+                };
+                let if_match = headers
+                    .get(header::IF_MATCH)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|v| v.trim_matches('"').to_string());
+                let query = path_q.split_once('?').map(|x| x.1).unwrap_or("");
+                let (status, v) = crate::bridges::api::machine(
+                    &hub,
+                    id,
+                    &m,
+                    &rest.join("/"),
+                    query,
+                    &body,
+                    if_match.as_deref(),
+                    &who,
+                    &audit,
+                )
+                .await;
+                json_resp(status, &v)
+            }
+            None => err(503, "bridges need the router started with --control"),
+        },
         // Bridges (ROUTER-MEDIA-PLAN.md 13): tokens, settings, commands, test requests.
         (m, ["bridges", rest @ ..]) => match crate::bridges::installed() {
             Some(hub) => {

@@ -208,6 +208,7 @@ fn speech_goes_to_deepthought_first_then_the_bridge() {
         orca_bridge::proto::Settings {
             enabled: false,
             priority: 0,
+            ..Default::default()
         },
     )
     .unwrap();

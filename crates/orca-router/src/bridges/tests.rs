@@ -119,6 +119,7 @@ fn offline_or_disabled_bridges_are_listed_but_not_placed_on() {
         orca_bridge::proto::Settings {
             enabled: false,
             priority: 5,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -401,5 +402,221 @@ async fn a_wrong_token_or_a_borrowed_one_is_refused() {
         h.status()
     );
     assert!(!hub.online("nas") && !hub.online("pc"));
+    h.stop();
+}
+
+#[test]
+fn engines_the_admin_turns_off_leave_the_overlay() {
+    let d = tempfile::tempdir().unwrap();
+    let hub = hub_in(d.path());
+    let (mux, _out) = orca_bridge::mux::Mux::new();
+    hub.upsert("nas", descriptor("nas"), "v", "", Some(mux));
+    hub.set_settings(
+        "nas",
+        orca_bridge::proto::Settings {
+            engines_off: vec!["chatterbox".into()],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let c = effective_with(&hub, &base());
+    assert!(!c.engines.contains_key("chatterbox"));
+    assert!(c.engines.contains_key("kokoro"));
+    let tts = &c.cards["NAS-GPU0"].engines.as_ref().unwrap()["tts"];
+    assert_eq!(tts, &vec!["kokoro".to_string()]);
+    assert_eq!(
+        hub.view()["bridges"][0]["enginesOff"],
+        json!(["chatterbox"])
+    );
+}
+
+/// A desktop app's machine config, as the bridge's embedder answers for it (MACHINE.md 8).
+struct FakeMachine {
+    rev: std::sync::Mutex<u32>,
+    seen: std::sync::Mutex<Vec<String>>,
+}
+
+#[async_trait::async_trait]
+impl orca_bridge::client::Remote for FakeMachine {
+    async fn call(
+        &self,
+        op: &str,
+        args: &serde_json::Value,
+    ) -> Option<Result<serde_json::Value, String>> {
+        self.seen
+            .lock()
+            .unwrap()
+            .push(format!("{op} {}", args["who"].as_str().unwrap_or("")));
+        let rev = format!("r{}", *self.rev.lock().unwrap());
+        Some(Ok(match op {
+            "config.get" => json!({"status": 200, "body": {"rev": rev, "text": "version = 1\n"}}),
+            "config.apply" if args["rev"].as_str() != Some(rev.as_str()) => {
+                json!({"status": 412, "body": {"error": "stale", "currentRev": rev}})
+            }
+            "config.apply" => {
+                *self.rev.lock().unwrap() += 1;
+                json!({"status": 200, "body": {"ok": true}})
+            }
+            "machine.api" => {
+                json!({"status": 200, "body": {"path": args["path"], "query": args["query"]}})
+            }
+            _ => return None,
+        }))
+    }
+}
+
+#[tokio::test]
+async fn remote_config_goes_through_the_bridge_with_a_revision() {
+    let rd = tempfile::tempdir().unwrap();
+    let bd = tempfile::tempdir().unwrap();
+    let hub = hub_in(rd.path());
+    let token = tokens::mint(rd.path(), "nas", false).unwrap();
+    let addr = router_with(hub.clone()).await;
+    let fake = Arc::new(FakeMachine {
+        rev: std::sync::Mutex::new(1),
+        seen: Default::default(),
+    });
+    let allow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let a2 = allow.clone();
+    let opts = orca_bridge::client::Options {
+        remote: Some(fake.clone()),
+        shape: Some(Arc::new(move |d: &mut Descriptor| {
+            d.remote_config = a2.load(std::sync::atomic::Ordering::SeqCst);
+        })),
+        ..Default::default()
+    };
+    let h = client::spawn_with(
+        bridge_config(bd.path(), addr, 9, &token),
+        "test",
+        Arc::new(|_: &str| {}),
+        fast(),
+        opts,
+    );
+    until("the bridge to register", || {
+        hub.online("nas") && h.status().connected
+    })
+    .await;
+    let audit = |_: &str, _: &str| {};
+    let call = |m: axum::http::Method,
+                rest: &'static str,
+                body: serde_json::Value,
+                rev: Option<&'static str>| {
+        let hub = hub.clone();
+        async move {
+            api::machine(
+                &hub,
+                "nas",
+                &m,
+                rest,
+                "q=1",
+                &body,
+                rev,
+                "admin:ann",
+                &audit,
+            )
+            .await
+        }
+    };
+    // off: read-only, and the bridge is never asked
+    let (s, v) = call(axum::http::Method::GET, "config", json!(null), None).await;
+    assert_eq!(s, 403, "{v}");
+    assert_eq!(v["readOnly"], json!(true));
+    assert!(fake.seen.lock().unwrap().is_empty());
+
+    allow.store(true, std::sync::atomic::Ordering::SeqCst);
+    h.refresh();
+    until("the new descriptor", || hub.remote_config("nas")).await;
+    let (s, v) = call(axum::http::Method::GET, "config", json!(null), None).await;
+    assert_eq!((s, v["rev"].as_str()), (200, Some("r1")));
+    let (s, _) = call(
+        axum::http::Method::PUT,
+        "config",
+        json!({"text": "x"}),
+        Some("r1"),
+    )
+    .await;
+    assert_eq!(s, 200);
+    // the same revision again is stale now
+    let (s, v) = call(
+        axum::http::Method::PUT,
+        "config",
+        json!({"text": "x"}),
+        Some("r1"),
+    )
+    .await;
+    assert_eq!((s, v["currentRev"].as_str()), (412, Some("r2")));
+    let (s, v) = call(axum::http::Method::GET, "inventory", json!(null), None).await;
+    assert_eq!(
+        (s, v["path"].as_str(), v["query"].as_str()),
+        (200, Some("inventory"), Some("q=1"))
+    );
+    let seen = fake.seen.lock().unwrap().clone();
+    assert_eq!(seen[0], "config.get admin:ann");
+    assert!(seen.iter().all(|x| x.ends_with("admin:ann")), "{seen:?}");
+    h.stop();
+}
+
+#[tokio::test]
+async fn a_raw_tcp_stream_goes_through_the_bridge() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    // a Wyoming-like engine: echoes with a prefix
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = l.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut c, _)) = l.accept().await {
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1024];
+                while let Ok(n) = c.read(&mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    let mut out = b"echo:".to_vec();
+                    out.extend_from_slice(&buf[..n]);
+                    if c.write_all(&out).await.is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    let rd = tempfile::tempdir().unwrap();
+    let bd = tempfile::tempdir().unwrap();
+    let hub = hub_in(rd.path());
+    let token = tokens::mint(rd.path(), "nas", false).unwrap();
+    let addr = router_with(hub.clone()).await;
+    let h = client::spawn(
+        bridge_config(bd.path(), addr, port, &token),
+        "test",
+        Arc::new(|_: &str| {}),
+        fast(),
+    );
+    until("the bridge to register", || {
+        hub.online("nas") && h.status().connected
+    })
+    .await;
+    let (mut ours, theirs) = tokio::io::duplex(4096);
+    let hub2 = hub.clone();
+    let fwd =
+        tokio::spawn(async move { forward_tcp(&hub2, "nas", "kokoro", "NAS-CPU", theirs).await });
+    ours.write_all(b"describe").await.unwrap();
+    let mut got = vec![0u8; 13];
+    tokio::time::timeout(Duration::from_secs(10), ours.read_exact(&mut got))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&got, b"echo:describe");
+    drop(ours);
+    tokio::time::timeout(Duration::from_secs(10), fwd)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    // an engine that is not there: an error before any byte, so the caller can fail over
+    let (_a, b) = tokio::io::duplex(64);
+    assert!(
+        forward_tcp(&hub, "nas", "nope", "NAS-CPU", b)
+            .await
+            .is_err()
+    );
     h.stop();
 }
