@@ -9,7 +9,9 @@
 //! OpenSSH connection sharing on unix.
 //!
 //! A pinned `SHA256:` fingerprint is checked against `ssh-keyscan` output before the key is
-//! written to `known_hosts`; a full `ssh-ed25519 AAAA…` line is written as is.
+//! written to `known_hosts` (retried once when the scan finds no match; a line already
+//! written for the same pin is reused, so new executors do not rescan); a full
+//! `ssh-ed25519 AAAA…` line is written as is.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -87,24 +89,38 @@ impl SshExecutor {
         let line = if hk.starts_with("ssh-") || hk.starts_with("ecdsa-") {
             format!("{} {hk}\n", self.host_pattern())
         } else if let Some(want) = hk.strip_prefix("SHA256:") {
-            let out = tokio::process::Command::new(&self.keyscan_bin)
-                .args([
-                    "-T",
-                    &self.target.connect_timeout.to_string(),
-                    "-p",
-                    &self.target.port.to_string(),
-                    &self.target.host,
-                ])
-                .output()
-                .await
-                .map_err(|e| ExecError::Unreachable(format!("ssh-keyscan: {e}")))?;
-            let text = String::from_utf8_lossy(&out.stdout);
-            let found = text.lines().find_map(|l| {
-                let mut f = l.split_whitespace();
-                let (_host, kind, blob) = (f.next()?, f.next()?, f.next()?);
-                (fingerprint(blob)? == want.trim_end_matches('='))
-                    .then(|| format!("{} {kind} {blob}\n", self.host_pattern()))
-            });
+            let want = want.trim_end_matches('=');
+            let pattern = self.host_pattern();
+            // An earlier executor for this server already checked the pin and wrote the line:
+            // reuse it rather than scanning again (every new executor would rescan, and one
+            // empty answer failed a download).
+            if let Ok(t) = std::fs::read_to_string(self.known_hosts())
+                && pinned_line(&t, Some(&pattern), want, &pattern).is_some()
+            {
+                *done = true;
+                return Ok(());
+            }
+            let mut found = None;
+            for attempt in 0..2 {
+                if attempt > 0 {
+                    tokio::time::sleep(KEYSCAN_RETRY).await;
+                }
+                let out = tokio::process::Command::new(&self.keyscan_bin)
+                    .args([
+                        "-T",
+                        &self.target.connect_timeout.to_string(),
+                        "-p",
+                        &self.target.port.to_string(),
+                        &self.target.host,
+                    ])
+                    .output()
+                    .await
+                    .map_err(|e| ExecError::Unreachable(format!("ssh-keyscan: {e}")))?;
+                found = pinned_line(&String::from_utf8_lossy(&out.stdout), None, want, &pattern);
+                if found.is_some() {
+                    break;
+                }
+            }
             found.ok_or_else(|| {
                 ExecError::Unreachable(format!(
                     "{}: no host key matches the pinned fingerprint (refusing to connect)",
@@ -244,6 +260,28 @@ impl Executor for SshExecutor {
 }
 
 /// `SHA256:` fingerprint (unpadded base64 of the SHA-256 of the key blob) of a base64 key.
+/// How long to wait before the one retry of an `ssh-keyscan` that found no matching key.
+const KEYSCAN_RETRY: Duration = Duration::from_millis(500);
+
+/// The `known_hosts` line (`<pattern> <kind> <blob>`) for the first key in `text` (keyscan
+/// output or a `known_hosts` file) whose fingerprint is `want` (`SHA256:` stripped, no
+/// padding). `host`: only lines for this host pattern count (a `known_hosts` file).
+fn pinned_line(text: &str, host: Option<&str>, want: &str, pattern: &str) -> Option<String> {
+    text.lines().find_map(|l| {
+        let mut f = l.split_whitespace();
+        let (h, kind, blob) = (f.next()?, f.next()?, f.next()?);
+        if host.is_some_and(|x| x != h) {
+            return None;
+        }
+        (fingerprint(blob)? == want).then(|| {
+            format!(
+                "{pattern} {kind} {blob}
+"
+            )
+        })
+    })
+}
+
 pub fn fingerprint(blob_b64: &str) -> Option<String> {
     let blob = b64_decode(blob_b64)?;
     Some(
@@ -366,6 +404,77 @@ mod tests {
         // sha256("hello") = 2cf24dba…; its base64 without padding:
         let fp = b64_encode(&Sha256::digest(b"hello"));
         assert_eq!(fingerprint("aGVsbG8=").unwrap(), fp.trim_end_matches('='));
+    }
+
+    #[test]
+    fn pinned_lines_from_keyscan_and_known_hosts() {
+        let fp = fingerprint("aGVsbG8=").unwrap();
+        let scan = "# h:22 SSH-2.0
+h ssh-rsa d29ybGQ=
+h ssh-ed25519 aGVsbG8=
+";
+        assert_eq!(
+            pinned_line(scan, None, &fp, "[h]:2222").as_deref(),
+            Some(
+                "[h]:2222 ssh-ed25519 aGVsbG8=
+"
+            )
+        );
+        assert!(
+            pinned_line("", None, &fp, "h").is_none(),
+            "an empty scan finds nothing"
+        );
+        assert!(pinned_line(scan, None, "other", "h").is_none());
+        // a known_hosts file counts only for its own host pattern
+        let known = "h ssh-ed25519 aGVsbG8=
+";
+        assert!(pinned_line(known, Some("h"), &fp, "h").is_some());
+        assert!(pinned_line(known, Some("[h]:2222"), &fp, "[h]:2222").is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn keyscan_is_retried_once_and_its_answer_reused() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = std::env::temp_dir().join(format!("abhoth-keyscan-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        // a keyscan that answers nothing the first time, then the key
+        let scan = d.join("fake-keyscan");
+        let flag = d.join("scanned-once");
+        std::fs::write(
+            &scan,
+            format!(
+                "#!/bin/sh
+if [ -f {f} ]; then echo 'h ssh-ed25519 aGVsbG8='; else touch {f}; fi
+",
+                f = flag.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&scan, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let target = SshTarget {
+            server: "gpu".into(),
+            host: "h".into(),
+            port: 22,
+            user: "u".into(),
+            key_file: "/k".into(),
+            host_key: format!("SHA256:{}", fingerprint("aGVsbG8=").unwrap()),
+            connect_timeout: 5,
+            keepalive: 15,
+        };
+        let mut ex = SshExecutor::new(target.clone(), d.clone(), Scrubber::default());
+        ex.keyscan_bin = scan.to_string_lossy().into_owned();
+        ex.ensure_known_host().await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(d.join("known_hosts-gpu")).unwrap(),
+            "h ssh-ed25519 aGVsbG8=
+"
+        );
+        // a new executor reuses the checked line: its keyscan never runs
+        let mut ex2 = SshExecutor::new(target, d.clone(), Scrubber::default());
+        ex2.keyscan_bin = "/nonexistent/ssh-keyscan".into();
+        ex2.ensure_known_host().await.unwrap();
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
