@@ -114,7 +114,7 @@ function BridgeCardView({ b, onRotate, onRevoke, onChanged }: { b: BridgeView; o
           </label>
           <label className="flex items-center gap-1" title="Higher goes first among bridges that can take a request">
             priority
-            <input className={`${input} h-7 w-14`} value={priority} onChange={(e) => setPriority(e.target.value)}
+            <input className={`${input} h-7 max-w-16`} value={priority} onChange={(e) => setPriority(e.target.value)}
               onBlur={() => { const n = Number(priority); if (Number.isFinite(n) && n !== b.priority) settings.mutate({ priority: Math.round(n) }); }} />
           </label>
           <Button size="sm" variant="ghost" onClick={onRotate} title="Make a new token (the old one stops working)"><RefreshCw /></Button>
@@ -144,7 +144,7 @@ function BridgeCardView({ b, onRotate, onRevoke, onChanged }: { b: BridgeView; o
                     return (
                       <span key={card} className="flex items-center gap-1 rounded border px-1.5 py-0.5">
                         <span className="font-mono">{card}:{port}</span>
-                        <span className={running ? "text-success" : s?.state === "failed" ? "text-destructive" : "text-muted-foreground"} title={s?.error ?? ""}>{s?.state ?? "?"}</span>
+                        <span className={running ? "text-success" : s?.state === "failed" ? "text-destructive" : "text-muted-foreground"} title={s?.error ?? ""}>{e.method === "external" ? "runs outside the bridge" : s?.state ?? "?"}</span>
                         {b.online && e.method !== "external" && (running
                           ? <Button size="sm" variant="ghost" className="h-5 px-1" onClick={() => cmd.mutate({ op: "stop", engine: e.id, card })} aria-label="Stop"><Square className="size-3" /></Button>
                           : <Button size="sm" variant="ghost" className="h-5 px-1" disabled={cmd.isPending} onClick={() => cmd.mutate({ op: "start", engine: e.id, card })} aria-label="Start"><Play className="size-3" /></Button>)}
