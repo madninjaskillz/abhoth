@@ -61,6 +61,17 @@ pub struct CardView {
     pub on_demand: bool,
     /// Processes on this card that no layout owns.
     pub foreign: Vec<String>,
+    /// D153: "gpu" or "cpu" (a CPU card has no GPU UUID, telemetry or layouts).
+    #[serde(default = "gpu_word")]
+    pub device: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ram_gib: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cores: Option<u32>,
+}
+
+fn gpu_word() -> String {
+    "gpu".into()
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

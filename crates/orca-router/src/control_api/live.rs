@@ -317,6 +317,9 @@ impl ControlBackend for ConfigBackend {
                         leases: 0,
                         on_demand: card.on_demand,
                         foreign: vec![],
+                        device: if card.is_cpu() { "cpu" } else { "gpu" }.into(),
+                        ram_gib: card.ram_gib,
+                        cores: card.cores,
                     }
                 })
                 .collect();

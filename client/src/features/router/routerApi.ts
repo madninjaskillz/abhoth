@@ -121,7 +121,7 @@ export const routerApi = {
   // D152: the inventory, engine capabilities, Hugging Face and downloads.
   inventory: () => call<Inventory>("GET", `${R()}/inventory`),
   catalog: () => call<CatalogKind[]>("GET", `${R()}/catalog`),
-  detect: (server: string) => call<{ server: string; gpus: DetectedGpu[]; cpu?: DetectedCpu | null }>("POST", `${R()}/inventory/detect`, { server }),
+  detect: (server: string) => call<{ server: string; gpus: DetectedGpu[]; cpu?: DetectedCpu | null; gpuError?: string | null }>("POST", `${R()}/inventory/detect`, { server }),
   ggufMeta: (server: string, path: string) => call<Record<string, string>>("POST", `${R()}/inventory/gguf`, { server, path }),
   browse: (server: string, path: string, offset = 0) =>
     call<DirListing>("GET", `${R()}/inventory/browse?server=${encodeURIComponent(server)}&path=${encodeURIComponent(path)}&offset=${offset}&limit=200`),

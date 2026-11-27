@@ -47,6 +47,10 @@ export interface CardView {
   leases: number;
   onDemand: boolean;
   foreign: string[];
+  /** D153: "cpu" for a CPU card (no GPU UUID, telemetry or layouts). */
+  device?: "gpu" | "cpu";
+  ramGib?: number;
+  cores?: number;
 }
 
 export interface ServerView {

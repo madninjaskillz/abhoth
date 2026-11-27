@@ -195,7 +195,11 @@ export function serverValue(f: ServerForm, original: Json | undefined): Obj {
 export interface CardForm {
   id: string;
   server: string;
+  /** D153: a GPU, or the server's CPU (cores and a RAM budget; no UUID, never switched). */
+  device: "gpu" | "cpu";
   gpuUuid: string;
+  ramGib: string;
+  cores: string;
   label: string;
   vramGib: string;
   reserveGib: string;
@@ -206,23 +210,32 @@ export interface CardForm {
 
 export function cardForm(id: string, c: Json | undefined): CardForm {
   const o = obj(c);
+  const cpu = o.device === "cpu";
   return {
     id,
     server: str(o.server),
-    gpuUuid: str(o.gpu_uuid),
+    device: cpu ? "cpu" : "gpu",
+    gpuUuid: cpu ? "" : str(o.gpu_uuid),
+    ramGib: numText(o.ram_gib),
+    cores: numText(o.cores),
     label: str(o.label),
-    vramGib: numText(o.vram_gib),
+    vramGib: cpu ? "" : numText(o.vram_gib),
     reserveGib: numText(o.reserve_gib),
     cpus: str(o.cpus),
-    managed: o.managed !== false,
-    onDemand: o.on_demand === true,
+    managed: cpu ? false : o.managed !== false,
+    onDemand: cpu ? false : o.on_demand === true,
   };
 }
 
 export function validateCard(f: CardForm, existing: string[], original: string | null, servers: string[]): Errors {
   const e: Errors = { ...idErrors(f.id, existing, original, "card") };
   if (!servers.includes(f.server)) e.server = servers.length ? "Pick the server the card is in." : "Add a server first.";
-  if (f.managed && !/^GPU-[0-9a-fA-F-]{8,}$/.test(f.gpuUuid.trim())) e.gpuUuid = "The GPU's UUID as nvidia-smi -L prints it (GPU-…).";
+  if (f.device === "cpu") {
+    const r = parseNum(f.ramGib);
+    if (r === undefined || Number.isNaN(r) || r <= 0) e.ramGib = "The RAM engines on this CPU may use, in GiB (leave the host some).";
+    const n = parseNum(f.cores);
+    if (n !== undefined && (Number.isNaN(n) || n < 1 || !Number.isInteger(n))) e.cores = "A whole number of cores.";
+  } else if (f.managed && !/^GPU-[0-9a-fA-F-]{8,}$/.test(f.gpuUuid.trim())) e.gpuUuid = "The GPU's UUID as nvidia-smi -L prints it (GPU-…).";
   for (const [k, v] of [["vramGib", f.vramGib], ["reserveGib", f.reserveGib]] as const) {
     const n = parseNum(v);
     if (n !== undefined && (Number.isNaN(n) || n < 0)) e[k] = "GiB, a number ≥ 0.";
@@ -234,11 +247,25 @@ export function validateCard(f: CardForm, existing: string[], original: string |
 export function cardValue(f: CardForm, original: Json | undefined): Obj {
   const o: Obj = { ...obj(original) };
   put(o, "server", f.server);
-  put(o, "gpu_uuid", f.gpuUuid.trim() || undefined);
   put(o, "label", f.label.trim() || undefined);
-  put(o, "vram_gib", parseNum(f.vramGib));
   put(o, "reserve_gib", parseNum(f.reserveGib));
   put(o, "cpus", f.cpus.trim() || undefined);
+  if (f.device === "cpu") {
+    // never GPU fields; never managed or switched in this release (the router refuses on_demand)
+    put(o, "device", "cpu");
+    delete o.gpu_uuid;
+    delete o.vram_gib;
+    put(o, "ram_gib", parseNum(f.ramGib));
+    put(o, "cores", parseNum(f.cores));
+    o.managed = false;
+    if (o.on_demand !== undefined) o.on_demand = false;
+    return o;
+  }
+  delete o.device;
+  delete o.ram_gib;
+  delete o.cores;
+  put(o, "gpu_uuid", f.gpuUuid.trim() || undefined);
+  put(o, "vram_gib", parseNum(f.vramGib));
   put(o, "managed", f.managed ? undefined : false);
   put(o, "on_demand", f.onDemand ? true : undefined);
   return o;

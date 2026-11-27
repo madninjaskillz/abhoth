@@ -143,3 +143,51 @@ test("the page's URLs are relative to it (any proxy prefix)", () => {
   assert.equal(pageUrl("api", "https://h/router/admin/#keys"), "/router/admin/api");
   assert.equal(pageUrl("login", "http://h/api/settings/connection/router-admin/ui/"), "/api/settings/connection/router-admin/ui/login");
 });
+
+test("D153: a CPU card round trip: load, edit, the edits, save: never a GPU field", () => {
+  const original: Obj = {
+    server: "gpu", device: "cpu", label: "EPYC (CPU)", cores: 96, ram_gib: 64.0,
+    managed: false, on_demand: false, engines: { music: ["sa3"] },
+  };
+  const f = cardForm("DT-CPU", original);
+  assert.equal(f.device, "cpu");
+  assert.equal(f.gpuUuid, "");
+  assert.equal(f.vramGib, "");
+  assert.equal(f.ramGib, "64");
+  assert.equal(f.cores, "96");
+  assert.equal(f.managed, false);
+  assert.equal(f.onDemand, false);
+  assert.deepEqual(validateCard(f, ["DT-CPU"], "DT-CPU", ["gpu"]), {}, "no GPU UUID is asked for");
+  // saving unchanged changes nothing
+  assert.deepEqual(cardValue(f, original), original);
+  // an edit: only the RAM budget changes, and no GPU field comes back
+  const edits = sectionEdits("cards", "DT-CPU", "DT-CPU", cardValue({ ...f, ramGib: "96", reserveGib: "4" }, original));
+  assert.equal(edits.length, 1);
+  assert.deepEqual(edits[0].path, ["cards", "DT-CPU"]);
+  const v = edits[0].value as Obj;
+  assert.deepEqual(v, { ...original, ram_gib: 96, reserve_gib: 4 });
+  for (const k of ["gpu_uuid", "vram_gib"]) assert.equal(k in v, false, k);
+  // what the user saw live: a stray value in the UUID field is dropped, never validated
+  const stray = cardForm("DT-CPU", { ...original, gpu_uuid: "CPU" });
+  assert.equal(stray.gpuUuid, "");
+  assert.deepEqual(validateCard(stray, [], "DT-CPU", ["gpu"]), {});
+  assert.equal("gpu_uuid" in cardValue(stray, { ...original, gpu_uuid: "CPU" }), false);
+  // a CPU card cannot be made managed or switchable from the form
+  const forced = cardValue({ ...f, managed: true, onDemand: true }, original);
+  assert.equal(forced.managed, false);
+  assert.equal(forced.on_demand, false);
+  // the RAM budget is required, cores must be whole
+  assert.ok(validateCard({ ...f, ramGib: "" }, [], null, ["gpu"]).ramGib);
+  assert.ok(validateCard({ ...f, cores: "1.5" }, [], null, ["gpu"]).cores);
+});
+
+test("D153: a new CPU card from a blank form; GPU cards keep no CPU fields", () => {
+  const blank = { ...cardForm("", {}), id: "GPU-CPU", server: "gpu", device: "cpu" as const, ramGib: "32", cores: "8" };
+  assert.deepEqual(validateCard(blank, [], null, ["gpu"]), {});
+  const v = cardValue(blank, undefined);
+  assert.deepEqual(v, { server: "gpu", device: "cpu", ram_gib: 32, cores: 8, managed: false });
+  const a = cardForm("A", (data.cards as Obj).A);
+  assert.equal(a.device, "gpu");
+  const g = cardValue(a, (data.cards as Obj).A);
+  for (const k of ["device", "ram_gib", "cores"]) assert.equal(k in g, false, k);
+});

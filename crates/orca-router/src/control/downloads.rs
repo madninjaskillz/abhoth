@@ -320,24 +320,27 @@ impl Service {
             )
             .await
             .map_err(|e| e.to_string())?;
-        if !o.ok() {
-            return Err(format!("nvidia-smi on {server}: {}", o.summary()));
-        }
-        let gpus: Vec<Value> = super::telemetry::parse(&o.stdout)
-            .into_iter()
-            .map(|g| {
-                let known = c
-                    .cards
-                    .iter()
-                    .find(|(_, cd)| cd.gpu_uuid.eq_ignore_ascii_case(&g.uuid))
-                    .map(|(k, _)| k.clone());
-                json!({
-                    "index": g.index, "uuid": g.uuid, "name": g.name,
-                    "vramGib": g.mem_total_mib.map(|m| ((m as f64) / 1024.0 * 10.0).round() / 10.0),
-                    "card": known,
-                })
+        // D153: no nvidia-smi (a CPU-only server) is not an error when the CPU answers
+        let gpu_error = (!o.ok()).then(|| format!("nvidia-smi on {server}: {}", o.summary()));
+        let gpus: Vec<Value> = super::telemetry::parse(if gpu_error.is_some() {
+            ""
+        } else {
+            &o.stdout
+        })
+        .into_iter()
+        .map(|g| {
+            let known = c
+                .cards
+                .iter()
+                .find(|(_, cd)| cd.gpu_uuid.eq_ignore_ascii_case(&g.uuid))
+                .map(|(k, _)| k.clone());
+            json!({
+                "index": g.index, "uuid": g.uuid, "name": g.name,
+                "vramGib": g.mem_total_mib.map(|m| ((m as f64) / 1024.0 * 10.0).round() / 10.0),
+                "card": known,
             })
-            .collect();
+        })
+        .collect();
         // D153: the CPU as a card too (an older host without the builtin: no CPU line)
         let cpu = match ex
             .run(
@@ -359,7 +362,10 @@ impl Service {
                 }),
             _ => None,
         };
-        Ok(json!({"server": server, "gpus": gpus, "cpu": cpu}))
+        if let (Some(e), None) = (&gpu_error, &cpu) {
+            return Err(e.clone());
+        }
+        Ok(json!({"server": server, "gpus": gpus, "cpu": cpu, "gpuError": gpu_error}))
     }
 
     // ── folder browsing ────────────────────────────────────────────────────────────────────

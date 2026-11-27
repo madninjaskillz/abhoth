@@ -174,8 +174,11 @@ function CardRow({ id, c, data, onEdit, onRemove }: { id: string; c: Obj; data: 
       <div className="min-w-0 flex-1 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-mono font-medium">{id}</span>
+          {c.device === "cpu" && <Badge variant="secondary" data-testid="card-row-cpu">CPU</Badge>}
           <span>{str(c.label)}</span>
-          {typeof c.vram_gib === "number" && <Badge variant="outline">{c.vram_gib} GiB</Badge>}
+          {c.device === "cpu"
+            ? typeof c.ram_gib === "number" && <Badge variant="outline">{c.ram_gib} GiB RAM{typeof c.cores === "number" ? ` · ${c.cores} cores` : ""}</Badge>
+            : typeof c.vram_gib === "number" && <Badge variant="outline">{c.vram_gib} GiB</Badge>}
           {c.managed === false && <Badge variant="outline">not managed</Badge>}
           {c.on_demand === true && <Badge variant="outline">on demand</Badge>}
         </div>
@@ -237,10 +240,13 @@ function CardDialog({ state, existing, servers, data, busy, error, onClose, onSu
   const [errs, setErrs] = useState<Errors>({});
   const set = (k: keyof CardForm) => (v: string) => setF({ ...f, [k]: v });
   const runs = state.original ? cardRuns(data, state.original) : [];
+  const cpu = f.device === "cpu";
   return (
     <FormDialog
       title={state.original ? `Card ${state.original}` : "New card"}
-      description="A GPU the router manages, by its UUID. What it runs and with how many lanes comes from the layouts and the engines' profiles."
+      description={cpu
+        ? "The server's CPU as a card: engines that run on the CPU (Stable Audio, small speech models) fit against its RAM budget. It is never part of a layout switch."
+        : "A GPU the router manages, by its UUID. What it runs and with how many lanes comes from the layouts and the engines' profiles."}
       onClose={onClose}
       busy={busy}
       error={error}
@@ -254,13 +260,35 @@ function CardDialog({ state, existing, servers, data, busy, error, onClose, onSu
       <Grid>
         <Field label="Id" hint="A short name clients see (A, B…)." error={errs.id}><Text value={f.id} onChange={set("id")} mono testid="card-id" /></Field>
         <Field label="Server" error={errs.server}><Select value={f.server} onChange={set("server")} options={["", ...servers]} testid="card-server" /></Field>
-        <Field label="GPU UUID" hint="nvidia-smi -L" error={errs.gpuUuid} wide><Text value={f.gpuUuid} onChange={set("gpuUuid")} mono placeholder="GPU-…" testid="card-uuid" /></Field>
+        <Field label="Device" hint={state.original ? "Fixed for an existing card: add a new card to change it." : "A GPU, or the server's CPU."}>
+          {state.original
+            ? <div className="py-1.5 text-xs" data-testid="card-device-fixed"><Badge variant="secondary">{cpu ? "CPU" : "GPU"}</Badge></div>
+            : <Select value={f.device} onChange={(v) => setF({ ...f, device: v === "cpu" ? "cpu" : "gpu", ...(v === "cpu" ? { managed: false, onDemand: false } : { managed: true }) })} options={["gpu", "cpu"]} testid="card-device" />}
+        </Field>
         <Field label="Label"><Text value={f.label} onChange={set("label")} testid="card-label" /></Field>
-        <Field label="Memory (GiB)" error={errs.vramGib}><Text value={f.vramGib} onChange={set("vramGib")} mono testid="card-vram" /></Field>
+        {cpu ? (
+          <>
+            <Field label="Cores" hint="Physical cores, as Find GPUs reports them." error={errs.cores}><Text value={f.cores} onChange={set("cores")} mono testid="card-cores" /></Field>
+            <Field label="RAM budget (GiB)" hint="What engines on this CPU may use; leave the host the rest." error={errs.ramGib}><Text value={f.ramGib} onChange={set("ramGib")} mono testid="card-ram" /></Field>
+          </>
+        ) : (
+          <>
+            <Field label="GPU UUID" hint="nvidia-smi -L" error={errs.gpuUuid} wide><Text value={f.gpuUuid} onChange={set("gpuUuid")} mono placeholder="GPU-…" testid="card-uuid" /></Field>
+            <Field label="Memory (GiB)" error={errs.vramGib}><Text value={f.vramGib} onChange={set("vramGib")} mono testid="card-vram" /></Field>
+          </>
+        )}
         <Field label="Reserve (GiB)" hint="Kept free when placing models." error={errs.reserveGib}><Text value={f.reserveGib} onChange={set("reserveGib")} mono /></Field>
-        <Field label="CPUs" hint="Pinned CPUs, e.g. 0-23." error={errs.cpus}><Text value={f.cpus} onChange={set("cpus")} mono /></Field>
-        <Check2 checked={f.managed} onChange={(v) => setF({ ...f, managed: v })} label="Managed (the router starts and stops engines here)" testid="card-managed" />
-        <Check2 checked={f.onDemand} onChange={(v) => setF({ ...f, onDemand: v })} label="May switch on demand" />
+        <Field label="CPUs" hint={cpu ? "Pin its engines to these CPUs, e.g. 48-95 (optional)." : "Pinned CPUs, e.g. 0-23."} error={errs.cpus}><Text value={f.cpus} onChange={set("cpus")} mono testid="card-cpus" /></Field>
+        {cpu ? (
+          <p className="text-[11px] text-muted-foreground sm:col-span-2" data-testid="card-cpu-note">
+            Not managed: in this release the router probes engines on a CPU card but does not start or stop them, and a CPU card never switches layouts.
+          </p>
+        ) : (
+          <>
+            <Check2 checked={f.managed} onChange={(v) => setF({ ...f, managed: v })} label="Managed (the router starts and stops engines here)" testid="card-managed" />
+            <Check2 checked={f.onDemand} onChange={(v) => setF({ ...f, onDemand: v })} label="May switch on demand" />
+          </>
+        )}
       </Grid>
       {runs.length > 0 && (
         <div className="rounded-md border p-2 text-xs" data-testid="card-runs">
@@ -386,7 +414,8 @@ function EngineDialog({ state, existing, busy, error, onClose, onSubmit }: { sta
 function LayoutsSection({ d, submit, busy, error }: SectionProps) {
   const data = d.data as Obj;
   const layouts = obj(data.layouts);
-  const cardIds = ids(data, "cards");
+  // D153: CPU cards never run a layout
+  const cardIds = ids(data, "cards").filter((c) => obj(obj(data.cards)[c]).device !== "cpu");
   const [editing, setEditing] = useState<{ form: LayoutForm; original: string | null } | null>(null);
   return (
     <section className="space-y-2">

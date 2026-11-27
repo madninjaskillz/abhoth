@@ -235,6 +235,7 @@ function DetectDialog({ server, inv, busy, onClose, submit }: { server: InvServe
     <FormDialog title={`GPUs on ${server.title || server.id}`} description="What nvidia-smi reports on the server. New ones become cards (by UUID, so a reboot's reordering is harmless)." onClose={onClose}
       onSubmit={add} busy={busy || q.isLoading} error={q.isError ? errText(q.error) : chosen.length === 0 && !addCpu && q.data ? "every GPU (and the CPU) here is already a card" : null} submitLabel={`Add ${chosen.length + (addCpu ? 1 : 0)} card${chosen.length + (addCpu ? 1 : 0) === 1 ? "" : "s"}`} testid="inv-detect-dialog">
       {q.isLoading && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> Asking the server…</div>}
+      {q.data?.gpuError && <div className="text-[11px] text-muted-foreground" data-testid="inv-gpu-none">No GPUs found ({q.data.gpuError}); the CPU can still be a card.</div>}
       {(q.data?.gpus ?? []).map((g) => (
         <div key={g.uuid} className="flex items-center gap-2 rounded border px-2 py-1.5 text-xs" data-testid="inv-gpu">
           {g.card ? <Badge variant="success">card {g.card}</Badge> : <input type="checkbox" checked={pick[g.uuid] ?? true} onChange={(e) => setPick({ ...pick, [g.uuid]: e.target.checked })} />}

@@ -1035,3 +1035,8 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     `/system_stats` and `/models/<folder>`; SA3 `/health`; `x-abhoth-no-switch`, every 10 min);
     presence per server and "needs met"; component downloads go flat into their ComfyUI folder.
     The observe loop only asks an engine about cards it has a port on.
+  - **0.16.22 (fixes):** the Card form is device-aware: a CPU card shows cores, a RAM budget,
+    reserve and pinned CPUs, never asks for a GPU UUID, is never managed or switchable, and never
+    appears in layouts; the cards list, Overview tiles and Find GPUs show CPU cards as CPUs. The
+    `gpus-visible` ready check leaves CPU cards out (0.16.17 waited the whole ready timeout at
+    start-up). Find GPUs on a server without nvidia-smi still offers its CPU.

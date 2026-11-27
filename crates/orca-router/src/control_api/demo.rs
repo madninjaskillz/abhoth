@@ -168,6 +168,9 @@ fn card(id: &str, label: &str, engine: Option<EngineView>, t: Telemetry, lanes: 
         leases: 0,
         on_demand: true,
         foreign: vec![],
+        device: "gpu".into(),
+        ram_gib: None,
+        cores: None,
     }
 }
 

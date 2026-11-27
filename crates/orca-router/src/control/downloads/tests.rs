@@ -195,3 +195,38 @@ async fn detect_reads_the_servers_gpus() {
     assert!(g[1]["card"].is_null());
     assert_eq!(g[1]["name"], "RTX 4090");
 }
+
+#[tokio::test]
+async fn detect_on_a_cpu_only_server_still_offers_the_cpu() {
+    use crate::control::exec::{ExecOutput, FakeExecutor};
+    let (_dir, s0, _) = setup().await;
+    let fake = Arc::new(FakeExecutor::new());
+    fake.on(
+        "telemetry",
+        vec![Ok(ExecOutput::fail(127, "sh: 1: nvidia-smi: not found"))],
+    );
+    fake.on(
+        "cpu-info",
+        vec![Ok(ExecOutput::ok_with(
+            r#"{"model":"Test CPU","threads":16,"cores":8,"ramGib":32.0,"availableGib":20.0,"simd":["avx2"]}"#,
+        ))],
+    );
+    let f2 = fake.clone();
+    let exec_for: ExecFor =
+        Arc::new(move |_c: &ControlConfig, _s: &str| Ok(f2.clone() as Arc<dyn Executor>));
+    let s = Service::new(&s0.main, &s0.state_dir, s0.backend.clone(), exec_for);
+    let v = s.detect("gpu").await.unwrap();
+    assert!(v["gpus"].as_array().unwrap().is_empty());
+    assert_eq!(v["cpu"]["model"], "Test CPU");
+    assert!(v["gpuError"].as_str().unwrap().contains("nvidia-smi"));
+
+    // neither answers: an error, as before
+    let fake = Arc::new(FakeExecutor::new());
+    fake.on("telemetry", vec![Ok(ExecOutput::fail(127, "not found"))]);
+    fake.on("cpu-info", vec![Ok(ExecOutput::fail(1, "no such builtin"))]);
+    let f3 = fake.clone();
+    let exec_for: ExecFor =
+        Arc::new(move |_c: &ControlConfig, _s: &str| Ok(f3.clone() as Arc<dyn Executor>));
+    let s = Service::new(&s0.main, &s0.state_dir, s0.backend.clone(), exec_for);
+    assert!(s.detect("gpu").await.unwrap_err().contains("nvidia-smi"));
+}

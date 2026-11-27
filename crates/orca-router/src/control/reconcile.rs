@@ -57,7 +57,8 @@ pub async fn wait_ready(
                     let uuids: Vec<String> = c
                         .cards
                         .values()
-                        .filter(|x| x.server == server)
+                        // D153: a CPU card has no GPU to be visible
+                        .filter(|x| x.server == server && !x.is_cpu())
                         .map(|x| x.gpu_uuid.clone())
                         .collect();
                     args.insert("uuids".into(), serde_json::json!(uuids));
@@ -389,6 +390,39 @@ mod tests {
             .unwrap();
         assert!(matches!(r.cards[0].1, CardVerdict::Unknown { .. }));
         assert!(r.actions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn gpus_visible_leaves_out_cpu_cards() {
+        let mut c = sample();
+        let mut cpu = c.cards["A"].clone();
+        cpu.device = crate::control::schema::DeviceKind::Cpu;
+        cpu.gpu_uuid = String::new();
+        cpu.managed = false;
+        cpu.on_demand = false;
+        cpu.ram_gib = Some(64.0);
+        c.cards.insert("GPU-CPU".into(), cpu);
+        c.servers.get_mut("gpu").unwrap().ready = vec![crate::control::schema::Hook {
+            builtin: Some("gpus-visible".into()),
+            ..Default::default()
+        }];
+        let fake = FakeExecutor::new();
+        fake.on("gpus-visible", vec![Ok(ExecOutput::ok_with(""))]);
+        wait_ready(&c, "gpu", &fake, Duration::from_millis(10), &Cancel::new())
+            .await
+            .unwrap();
+        let r = fake.requests();
+        let crate::control::exec::Op::Builtin { args, .. } = &r[0].op else {
+            panic!("{:?}", r[0].op)
+        };
+        let uuids: Vec<&str> = args["uuids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert!(!uuids.is_empty());
+        assert!(uuids.iter().all(|u| u.starts_with("GPU-")), "{uuids:?}");
     }
 
     #[tokio::test]

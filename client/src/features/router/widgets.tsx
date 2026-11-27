@@ -80,8 +80,9 @@ export function CardTile({ card, actions, compact }: { card: CardView; actions?:
       <div className="flex items-start gap-2">
         <div className={cn("grid size-8 shrink-0 place-items-center rounded-md bg-muted text-sm font-semibold", levelText[h.level])}>{card.id}</div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium" title={card.label}>{card.label || t?.name || card.gpuUuid}</div>
-          <div className="truncate text-[11px] text-muted-foreground" title={card.gpuUuid}>
+          <div className="truncate text-sm font-medium" title={card.label}>{card.device === "cpu" && <Badge variant="secondary" className="mr-1">CPU</Badge>}{card.label || t?.name || (card.device === "cpu" ? "CPU" : card.gpuUuid)}</div>
+          <div className="truncate text-[11px] text-muted-foreground" title={card.device === "cpu" ? undefined : card.gpuUuid}>
+            {card.device === "cpu" ? `${card.ramGib != null ? `${card.ramGib} GiB RAM` : "CPU"}${card.cores ? ` · ${card.cores} cores` : ""} · never switched · ` : ""}
             {card.managed ? (card.adminState === "online" ? (card.onDemand ? "managed · on-demand allowed" : "managed") : card.adminState) : "not managed"}
             {card.adminNote ? ` · ${card.adminNote}` : ""}
           </div>
