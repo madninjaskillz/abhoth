@@ -133,24 +133,29 @@ pub async fn cpu() -> Cpu {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 fn simd() -> Vec<String> {
-    #[allow(unused_mut)]
     let mut v: Vec<String> = Vec::new();
-    #[cfg(target_arch = "x86_64")]
-    {
-        if std::arch::is_x86_feature_detected!("avx2") {
-            v.push("avx2".into());
-        }
-        if std::arch::is_x86_feature_detected!("fma") {
-            v.push("fma".into());
-        }
-        if std::arch::is_x86_feature_detected!("avx512f") {
-            v.push("avx512f".into());
-        }
+    if std::arch::is_x86_feature_detected!("avx2") {
+        v.push("avx2".into());
     }
-    #[cfg(target_arch = "aarch64")]
-    v.push("neon".into());
+    if std::arch::is_x86_feature_detected!("fma") {
+        v.push("fma".into());
+    }
+    if std::arch::is_x86_feature_detected!("avx512f") {
+        v.push("avx512f".into());
+    }
     v
+}
+
+#[cfg(target_arch = "aarch64")]
+fn simd() -> Vec<String> {
+    vec!["neon".into()]
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn simd() -> Vec<String> {
+    Vec::new()
 }
 
 pub fn os() -> &'static str {
