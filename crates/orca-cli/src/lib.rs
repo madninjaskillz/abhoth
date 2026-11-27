@@ -677,6 +677,10 @@ pub async fn main_with_args(mut raw: Vec<String>) -> Result<i32> {
     if raw.first().map(String::as_str) == Some("router") {
         return orca_router::cli::run(raw[1..].to_vec()).await;
     }
+    // `abhoth engine validate|index|fit|schema` (engine packages, docs/ENGINE-PACKAGES.md).
+    if raw.first().map(String::as_str) == Some("engine") {
+        return Ok(orca_engines::cli::main(&raw[1..]).await);
+    }
     // `abhoth supervisor run|check --config FILE` (docs/design/SUPERVISOR.md).
     #[cfg(feature = "supervisor")]
     if raw.first().map(String::as_str) == Some("supervisor") {

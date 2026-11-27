@@ -1,0 +1,57 @@
+{
+  "$schema": "../../schema/abhoth-engine.schema.json",
+  "schema": 1,
+  "id": "kokoro",
+  "name": "Kokoro TTS",
+  "version": "0.9.4",
+  "description": "Kokoro-82M text to speech over the OpenAI speech API (POST /v1/audio/speech).\nThe docker methods run Kokoro-FastAPI; the pip method runs the kokoro package behind a small server (server.py in this package).",
+  "kinds": ["tts"],
+  "caps": { "inherits": "kokoro" },
+  "hardware": { "gpu": ["cuda"], "cpu_ok": true, "min_vram_gib": 1.5, "min_ram_gib": 2 },
+  "params": {
+    "voice": { "type": "string", "default": "af_bella", "description": "The default voice." },
+    "lang": { "type": "string", "default": "a", "description": "Kokoro language code (a = American English, b = British English)." }
+  },
+  "api": "openai-speech",
+  "probe": "http",
+  "endpoints": { "health": "/health", "voices": "/v1/audio/voices" },
+  "models": { "layout": "hf", "env": "HF_HOME", "mount": "/models", "read_only": false },
+  "methods": [
+    {
+      "type": "docker",
+      "label": "Kokoro-FastAPI (GPU)",
+      "platforms": ["linux/amd64"],
+      "gpu": ["cuda"],
+      "image": "ghcr.io/remsky/kokoro-fastapi-gpu:v0.2.4@sha256:79d81c41d8883611291c5785e47db2ba00765e9b89dd59de05d9f28e1945f905",
+      "ports": [ { "id": "http", "container": 8880 } ],
+      "health": { "http": "/health", "start_seconds": 300 }
+    },
+    {
+      "type": "docker",
+      "label": "Kokoro-FastAPI (CPU)",
+      "platforms": ["linux/amd64"],
+      "gpu": ["cpu"],
+      "image": "ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.4@sha256:c8812546d358cbfd6a5c4087a28795b2b001d8e32d7a322eedd246e6bc13cb55",
+      "ports": [ { "id": "http", "container": 8880 } ],
+      "health": { "http": "/health", "start_seconds": 300 }
+    },
+    {
+      "type": "pip",
+      "label": "pip (host)",
+      "platforms": ["linux/amd64", "windows/amd64", "macos/arm64"],
+      "gpu": ["cuda", "cpu"],
+      "python": "3.12",
+      "requirements": ["kokoro==0.9.4", "soundfile==0.13.1"],
+      "files": ["server.py"],
+      "run": ["{{python}}", "{{install}}/server.py", "--host", "{{host}}", "--port", "{{port}}", "--voice", "{{param.voice}}", "--lang", "{{param.lang}}"],
+      "ports": [ { "id": "http" } ],
+      "health": { "http": "/health", "start_seconds": 600 }
+    }
+  ],
+  "licence": "Apache-2.0",
+  "source": "https://github.com/hexgrad/kokoro",
+  "notes": [
+    "Kokoro-FastAPI is https://github.com/remsky/Kokoro-FastAPI (Apache-2.0).",
+    "The pip method gets PyTorch through the kokoro package; on a CUDA host, install a CUDA build of torch first if pip picks the CPU one."
+  ]
+}

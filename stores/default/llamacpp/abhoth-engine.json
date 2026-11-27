@@ -1,0 +1,212 @@
+{
+  "$schema": "../../schema/abhoth-engine.schema.json",
+  "schema": 1,
+  "id": "llamacpp-bin",
+  "name": "llama.cpp (release build)",
+  "version": "b12292",
+  "description": "llama-server from the official llama.cpp release builds: GGUF models over the OpenAI chat API.",
+  "kinds": [
+    "llm",
+    "embedding"
+  ],
+  "caps": {
+    "inherits": "llamacpp"
+  },
+  "hardware": {
+    "gpu": [
+      "cuda"
+    ],
+    "cpu_ok": true
+  },
+  "params": {
+    "ctx": {
+      "type": "int",
+      "default": 8192,
+      "per_model": true,
+      "description": "Context size (-c)."
+    },
+    "ngl": {
+      "type": "int",
+      "default": 999,
+      "per_model": true,
+      "description": "Layers on the GPU (-ngl); 0 on a CPU card."
+    },
+    "parallel": {
+      "type": "int",
+      "default": 1,
+      "description": "Parallel slots (-np)."
+    }
+  },
+  "api": "openai-chat",
+  "also_speaks": [
+    "openai-embeddings"
+  ],
+  "probe": "props",
+  "models": {
+    "layout": "flat"
+  },
+  "methods": [
+    {
+      "type": "binary",
+      "label": "Windows CUDA 12.4",
+      "platforms": [
+        "windows/amd64"
+      ],
+      "gpu": [
+        "cuda"
+      ],
+      "assets": [
+        {
+          "platform": "windows/amd64",
+          "gpu": [
+            "cuda"
+          ],
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12292/llama-b12292-bin-win-cuda-12.4-x64.zip",
+          "sha256": "078a43924a90f5d93c77727743f36b8cfa5da59795a8f2651c09d1b734e87088",
+          "size": 317119579
+        },
+        {
+          "platform": "windows/amd64",
+          "gpu": [
+            "cuda"
+          ],
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12292/cudart-llama-bin-win-cuda-12.4-x64.zip",
+          "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+          "size": 391443627
+        }
+      ],
+      "run": [
+        "{{install}}/llama-server.exe",
+        "-m",
+        "{{model_file}}",
+        "--host",
+        "{{host}}",
+        "--port",
+        "{{port}}",
+        "-c",
+        "{{param.ctx}}",
+        "-ngl",
+        "{{param.ngl}}",
+        "-np",
+        "{{param.parallel}}"
+      ],
+      "ports": [
+        {
+          "id": "http"
+        }
+      ],
+      "health": {
+        "http": "/health",
+        "start_seconds": 300
+      }
+    },
+    {
+      "type": "binary",
+      "label": "CPU build",
+      "platforms": [
+        "windows/amd64",
+        "linux/amd64",
+        "macos/arm64"
+      ],
+      "gpu": [
+        "cpu",
+        "metal"
+      ],
+      "assets": [
+        {
+          "platform": "windows/amd64",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12292/llama-b12292-bin-win-cpu-x64.zip",
+          "sha256": "12017843d67f560ce1bacf771dccdb189ff651a2dde684cbb49634c29df5b751",
+          "size": 25057882
+        },
+        {
+          "platform": "linux/amd64",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12292/llama-b12292-bin-ubuntu-x64.tar.gz",
+          "sha256": "ffaf53f17a4601493e6ffb5869c9f0c7d400bb7e124fe0096eee3b65a5862568",
+          "strip": 1,
+          "size": 23283641
+        },
+        {
+          "platform": "macos/arm64",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12292/llama-b12292-bin-macos-arm64.tar.gz",
+          "sha256": "94b860a529a64aecfe20c4b9ccb9ca6fb4cf9126b019f3380ee02d7951ca11ef",
+          "strip": 1,
+          "size": 16870580
+        }
+      ],
+      "run": [
+        "{{install}}/llama-server{{exe}}",
+        "-m",
+        "{{model_file}}",
+        "--host",
+        "{{host}}",
+        "--port",
+        "{{port}}",
+        "-c",
+        "{{param.ctx}}",
+        "-ngl",
+        "0",
+        "-np",
+        "{{param.parallel}}"
+      ],
+      "ports": [
+        {
+          "id": "http"
+        }
+      ],
+      "health": {
+        "http": "/health",
+        "start_seconds": 300
+      }
+    },
+    {
+      "type": "existing",
+      "label": "llama-server on PATH",
+      "platforms": [
+        "*"
+      ],
+      "gpu": [
+        "cuda",
+        "rocm",
+        "metal",
+        "cpu"
+      ],
+      "detect": {
+        "command": "llama-server",
+        "paths": [
+          "~/llama.cpp/build/bin/llama-server"
+        ],
+        "version_args": [
+          "--version"
+        ],
+        "version_regex": "version: (\\d+)"
+      },
+      "run": [
+        "{{bin}}",
+        "-m",
+        "{{model_file}}",
+        "--host",
+        "{{host}}",
+        "--port",
+        "{{port}}",
+        "-c",
+        "{{param.ctx}}",
+        "-ngl",
+        "{{param.ngl}}",
+        "-np",
+        "{{param.parallel}}"
+      ],
+      "ports": [
+        {
+          "id": "http"
+        }
+      ],
+      "health": {
+        "http": "/health",
+        "start_seconds": 300
+      }
+    }
+  ],
+  "licence": "MIT",
+  "source": "https://github.com/ggml-org/llama.cpp"
+}

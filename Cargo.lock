@@ -3246,6 +3246,7 @@ dependencies = [
  "image",
  "orca-abstractions",
  "orca-core",
+ "orca-engines",
  "orca-router",
  "orca-supervisor",
  "orca-testkit",
@@ -3326,6 +3327,24 @@ dependencies = [
  "vt100",
  "walkdir",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "orca-engines"
+version = "0.16.17"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "indexmap",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "zip 9.8.2",
 ]
 
 [[package]]

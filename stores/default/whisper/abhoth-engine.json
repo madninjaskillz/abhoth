@@ -1,0 +1,44 @@
+{
+  "$schema": "../../schema/abhoth-engine.schema.json",
+  "schema": 1,
+  "id": "whisper",
+  "name": "Whisper (Wyoming faster-whisper)",
+  "version": "3.8.1",
+  "description": "Speech to text with faster-whisper behind the Wyoming protocol (Home Assistant's voice pipeline).\nThe compose method runs the rhasspy/wyoming-whisper image on the CPU; the pip method runs wyoming-faster-whisper on the host, on a GPU or the CPU.",
+  "kinds": ["stt"],
+  "caps": { "inherits": "whisper", "add": { "formats": ["ct2"] } },
+  "hardware": { "gpu": ["cuda"], "cpu_ok": true, "min_ram_gib": 2 },
+  "params": {
+    "model": { "type": "string", "default": "small.en", "per_model": true, "description": "A faster-whisper model name (tiny.en, small.en, medium.en, large-v3-turbo) or a Hugging Face repo." },
+    "language": { "type": "string", "default": "en", "description": "The spoken language." },
+    "beam": { "type": "int", "default": 1, "min": 1, "max": 10, "description": "Beam size." }
+  },
+  "api": "wyoming",
+  "probe": "wyoming",
+  "models": { "layout": "flat", "mount": "/data", "read_only": false },
+  "methods": [
+    {
+      "type": "compose",
+      "label": "compose (CPU image)",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "gpu": ["cpu"],
+      "compose_file": "compose.yml",
+      "ports": [ { "id": "wyoming", "container": 10300, "protocol": "tcp" } ],
+      "health": { "tcp": true, "start_seconds": 600 }
+    },
+    {
+      "type": "pip",
+      "label": "pip (host)",
+      "platforms": ["linux/amd64", "windows/amd64", "macos/arm64"],
+      "gpu": ["cuda", "cpu"],
+      "python": "3.12",
+      "package": "wyoming-faster-whisper==3.8.1",
+      "run": ["{{python}}", "-m", "wyoming_faster_whisper", "--uri", "tcp://{{host}}:{{port}}", "--model", "{{param.model}}", "--language", "{{param.language}}", "--beam-size", "{{param.beam}}", "--data-dir", "{{models}}", "--download-dir", "{{models}}"],
+      "ports": [ { "id": "wyoming", "protocol": "tcp" } ],
+      "health": { "tcp": true, "start_seconds": 600 }
+    }
+  ],
+  "licence": "MIT",
+  "source": "https://github.com/rhasspy/wyoming-faster-whisper",
+  "notes": ["Models download into the model folder on first use unless they are already there."]
+}

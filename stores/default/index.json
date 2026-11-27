@@ -1,0 +1,121 @@
+{
+  "schema": 1,
+  "name": "default",
+  "description": "",
+  "packages": [
+    {
+      "id": "chatterbox",
+      "version": "0.1.7",
+      "path": "chatterbox",
+      "sha256": "7636d8754cf28a16993a7c551e9215feabfc757c3d1cda7200bf8e4edda42bbd",
+      "name": "Chatterbox TTS",
+      "kinds": [
+        "tts"
+      ],
+      "methods": [
+        "existing",
+        "pip"
+      ],
+      "summary": "Resemble AI Chatterbox text to speech, with voice cloning from reference clips.",
+      "files": [
+        {
+          "path": "server.py",
+          "sha256": "c7d9aef7c0494ee26b1fc7aa5c6063cae8bdfd667ed11fac730e54a124e9769b"
+        }
+      ]
+    },
+    {
+      "id": "comfyui",
+      "version": "0.45.0",
+      "path": "comfyui",
+      "sha256": "05b1757c23fd047f187ce3ecebf430283c536e88ccf61c63f358bb9df5fb82d3",
+      "name": "ComfyUI",
+      "kinds": [
+        "image",
+        "video"
+      ],
+      "methods": [
+        "docker",
+        "git"
+      ],
+      "summary": "Node-based image and video generation. The router reads its /object_info and /models probes to learn which loaders and files it has.",
+      "files": []
+    },
+    {
+      "id": "kokoro",
+      "version": "0.9.4",
+      "path": "kokoro",
+      "sha256": "7ba792e0c4519b0753699b1657ace11788e812e6d5ccb4885b95ce10c271cecd",
+      "name": "Kokoro TTS",
+      "kinds": [
+        "tts"
+      ],
+      "methods": [
+        "docker",
+        "docker",
+        "pip"
+      ],
+      "summary": "Kokoro-82M text to speech over the OpenAI speech API (POST /v1/audio/speech).",
+      "files": [
+        {
+          "path": "server.py",
+          "sha256": "f62ca0fe5a0528a3dc2263cdc6e97fa6a766c5f3c6ab7818cb8b509acee2d274"
+        }
+      ]
+    },
+    {
+      "id": "llamacpp-bin",
+      "version": "b12292",
+      "path": "llamacpp",
+      "sha256": "0a8e184eeafa97befef70fee15c572cd40f7e4e727b1e30d05133b05f57c89df",
+      "name": "llama.cpp (release build)",
+      "kinds": [
+        "llm",
+        "embedding"
+      ],
+      "methods": [
+        "binary",
+        "binary",
+        "existing"
+      ],
+      "summary": "llama-server from the official llama.cpp release builds: GGUF models over the OpenAI chat API.",
+      "files": []
+    },
+    {
+      "id": "sa3",
+      "version": "1",
+      "path": "sa3",
+      "sha256": "e77e457c36a472ebd30d03920dcfe5af6359320e22c03ea213068051d166bab4",
+      "name": "Stable Audio 3 (CPU service)",
+      "kinds": [
+        "music"
+      ],
+      "methods": [
+        "existing"
+      ],
+      "summary": "Stable Audio 3 medium (LiteRT/TFLite) music generation on the CPU: POST /generate, GET /health.",
+      "files": []
+    },
+    {
+      "id": "whisper",
+      "version": "3.8.1",
+      "path": "whisper",
+      "sha256": "118a5640ad5921a82450b322b4eddc80fe8117be4fe8d590d9830bdf6e00c093",
+      "name": "Whisper (Wyoming faster-whisper)",
+      "kinds": [
+        "stt"
+      ],
+      "methods": [
+        "compose",
+        "pip"
+      ],
+      "summary": "Speech to text with faster-whisper behind the Wyoming protocol (Home Assistant's voice pipeline).",
+      "files": [
+        {
+          "path": "compose.yml",
+          "sha256": "1560c71a8423ef00ea7499665f7099d144b22c9a9092bc4820d5721fa5256fdf"
+        }
+      ]
+    }
+  ]
+}

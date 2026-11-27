@@ -34,6 +34,8 @@ orca-webui.workspace = true
 orca-tools-common.workspace = true
 orca-tools-archive = { workspace = true, optional = true }
 orca-router = { workspace = true, optional = true }
+# `abhoth engine validate|index|fit|schema` (engine packages, D153).
+orca-engines.workspace = true
 orca-supervisor = { workspace = true, optional = true }
 orca-tools-network = { workspace = true, optional = true }
 async-trait.workspace = true

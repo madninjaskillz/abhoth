@@ -1,0 +1,777 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/madninjaskillz/abhoth/stores/schema/abhoth-engine.schema.json",
+  "title": "Abhoth engine package (abhoth-engine.json), schema 1",
+  "description": "An engine package: what the engine is and the methods that install and run it, most preferred first. See docs/ENGINE-PACKAGES.md. The Rust types in crates/orca-engines are the authority; `abhoth engine validate` checks more than this schema (templates, pins, mounts, metadata only).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "name",
+    "version",
+    "kinds",
+    "api",
+    "methods"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "kinds": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "llm",
+          "tts",
+          "stt",
+          "image",
+          "music",
+          "embedding",
+          "video"
+        ]
+      },
+      "minItems": 1
+    },
+    "caps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inherits": {
+          "type": "string"
+        },
+        "kinds": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "llm",
+              "tts",
+              "stt",
+              "image",
+              "music",
+              "embedding",
+              "video"
+            ]
+          }
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "archs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "quants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "add": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kinds": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "llm",
+                  "tts",
+                  "stt",
+                  "image",
+                  "music",
+                  "embedding",
+                  "video"
+                ]
+              }
+            },
+            "formats": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "archs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "quants": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "remove": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kinds": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "llm",
+                  "tts",
+                  "stt",
+                  "image",
+                  "music",
+                  "embedding",
+                  "video"
+                ]
+              }
+            },
+            "formats": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "archs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "quants": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "max_context": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gpu": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "cuda",
+              "rocm",
+              "metal",
+              "cpu"
+            ]
+          }
+        },
+        "min_vram_gib": {
+          "type": "number"
+        },
+        "cpu_ok": {
+          "type": "boolean"
+        },
+        "min_ram_gib": {
+          "type": "number"
+        },
+        "min_cores": {
+          "type": "integer"
+        },
+        "simd": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "params": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]{0,40}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "string",
+              "int",
+              "float",
+              "bool",
+              "enum",
+              "path"
+            ]
+          },
+          "default": {},
+          "description": {
+            "type": "string"
+          },
+          "per_model": {
+            "type": "boolean"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "boolean"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "min": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "api": {
+      "type": "string"
+    },
+    "also_speaks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "probe": {
+      "enum": [
+        "props",
+        "models",
+        "comfyui",
+        "sa3",
+        "wyoming",
+        "http",
+        "none"
+      ]
+    },
+    "endpoints": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layout"
+      ],
+      "properties": {
+        "mount": {
+          "type": "string"
+        },
+        "layout": {
+          "enum": [
+            "flat",
+            "hf",
+            "comfyui",
+            "repo"
+          ]
+        },
+        "folders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "string"
+        },
+        "read_only": {
+          "type": "boolean"
+        }
+      }
+    },
+    "methods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "compose",
+              "docker",
+              "pip",
+              "uv",
+              "conda",
+              "binary",
+              "git",
+              "existing"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(\\*|(linux|windows|macos|\\*)/(amd64|arm64|\\*))$"
+            }
+          },
+          "gpu": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "cuda",
+                "rocm",
+                "metal",
+                "cpu"
+              ]
+            }
+          },
+          "requires": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "commands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "simd": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "min_vram_gib": {
+                "type": "number"
+              },
+              "min_ram_gib": {
+                "type": "number"
+              }
+            }
+          },
+          "run": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "workdir": {
+            "type": "string"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "container": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "protocol": {
+                  "enum": [
+                    "http",
+                    "tcp"
+                  ]
+                }
+              }
+            }
+          },
+          "health": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "http": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "tcp": {
+                "type": "boolean"
+              },
+              "start_seconds": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "mounts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "target"
+              ],
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "read_only": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "update": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "run"
+              ],
+              "properties": {
+                "run": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "cwd": {
+                  "type": "string"
+                },
+                "env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "platforms": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "uninstall": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "run"
+              ],
+              "properties": {
+                "run": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "cwd": {
+                  "type": "string"
+                },
+                "env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "platforms": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "image": {
+            "type": "string",
+            "description": "name[:tag]@sha256:<64 hex>"
+          },
+          "entrypoint": {
+            "type": "string"
+          },
+          "docker_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "compose": {
+            "type": "string"
+          },
+          "compose_file": {
+            "type": "string"
+          },
+          "python": {
+            "type": "string"
+          },
+          "package": {
+            "type": "string"
+          },
+          "requirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requirements_file": {
+            "type": "string"
+          },
+          "extra_index_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "environment_file": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "platform",
+                "url",
+                "sha256"
+              ],
+              "properties": {
+                "platform": {
+                  "type": "string"
+                },
+                "gpu": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "cuda",
+                      "rocm",
+                      "metal",
+                      "cpu"
+                    ]
+                  }
+                },
+                "url": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "unpack": {
+                  "enum": [
+                    "zip",
+                    "tar.gz",
+                    "tar.xz",
+                    "none"
+                  ]
+                },
+                "strip": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "repo": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "build": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "run"
+              ],
+              "properties": {
+                "run": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "cwd": {
+                  "type": "string"
+                },
+                "env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "platforms": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "detect": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "version_args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "version_regex": {
+                "type": "string"
+              },
+              "image": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "privileged": {
+          "type": "boolean"
+        },
+        "host_network": {
+          "type": "boolean"
+        },
+        "host_mounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "target",
+              "why"
+            ],
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string"
+              },
+              "read_only": {
+                "type": "boolean"
+              },
+              "why": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cap_add": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "licence": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "homepage": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "private": {
+      "type": "boolean"
+    }
+  }
+}

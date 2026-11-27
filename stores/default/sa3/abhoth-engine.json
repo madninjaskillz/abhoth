@@ -1,0 +1,53 @@
+{
+  "$schema": "../../schema/abhoth-engine.schema.json",
+  "schema": 1,
+  "id": "sa3",
+  "name": "Stable Audio 3 (CPU service)",
+  "version": "1",
+  "description": "Stable Audio 3 medium (LiteRT/TFLite) music generation on the CPU: POST /generate, GET /health.\nThis describes the locally built sa3 service image as it runs today: the image already on the host, its service folder, the stable-audio-3 source and the Hugging Face cache mounted at the paths the image expects.",
+  "kinds": ["music"],
+  "caps": { "inherits": "sa3" },
+  "hardware": { "cpu_ok": true, "min_ram_gib": 16, "min_cores": 8, "simd": ["avx2"] },
+  "params": {
+    "service_dir": { "type": "path", "required": true, "description": "The sa3 service folder (server.py, runtime/, out/); mounted read-write at the same path." },
+    "src_dir": { "type": "path", "required": true, "description": "The stable-audio-3 source checkout; mounted read-only at the same path." },
+    "hf_cache": { "type": "path", "required": true, "description": "The Hugging Face cache holding stabilityai/stable-audio-3-optimized; mounted read-only at the same path." },
+    "threads": { "type": "int", "default": 24, "min": 1, "description": "CPU threads per job." },
+    "max_queue": { "type": "int", "default": 6, "min": 1, "description": "Jobs waiting at most." },
+    "min_avail_gb": { "type": "int", "default": 12, "description": "Refuse a job when less RAM than this is available." }
+  },
+  "api": "sa3",
+  "probe": "sa3",
+  "endpoints": { "health": "/health", "generate": "/generate" },
+  "methods": [
+    {
+      "type": "existing",
+      "label": "local image (sa3)",
+      "platforms": ["linux/amd64"],
+      "gpu": ["cpu"],
+      "detect": { "image": "local/sa3:1" },
+      "env": {
+        "SA3_PORT": "8095",
+        "SA3_THREADS": "{{param.threads}}",
+        "SA3_NICE": "10",
+        "SA3_MAX_QUEUE": "{{param.max_queue}}",
+        "SA3_MIN_AVAIL_GB": "{{param.min_avail_gb}}"
+      },
+      "ports": [ { "id": "http", "container": 8095 } ],
+      "health": { "http": "/health", "start_seconds": 120 }
+    }
+  ],
+  "security": {
+    "host_mounts": [
+      { "source": "{{param.service_dir}}", "target": "{{param.service_dir}}", "why": "the service code and its output folder (the image runs server.py from here)" },
+      { "source": "{{param.src_dir}}", "target": "{{param.src_dir}}", "read_only": true, "why": "the stable-audio-3 source the service runs" },
+      { "source": "{{param.hf_cache}}", "target": "{{param.hf_cache}}", "read_only": true, "why": "the model weights (Hugging Face cache)" }
+    ]
+  },
+  "licence": "other",
+  "source": "https://github.com/Stability-AI/stable-audio-tools",
+  "notes": [
+    "The model is under the Stability AI Community License; check it before use.",
+    "The image must already be on the host (built from the service folder); nothing is fetched or verified."
+  ]
+}

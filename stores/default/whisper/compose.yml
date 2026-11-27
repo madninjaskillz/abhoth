@@ -1,0 +1,14 @@
+# Wyoming faster-whisper on the CPU (abhoth engine package `whisper`, compose method).
+# Rendered per instance (name, host, port, model_dir and the params are filled in).
+services:
+  whisper:
+    image: docker.io/rhasspy/wyoming-whisper:3.8.1@sha256:ba6fcb6056ebe237d15a325381763a80af2fc8fcedaa04f6a714a7375eb20d80
+    container_name: {{name}}
+    command: ["--model", "{{param.model}}", "--language", "{{param.language}}", "--beam-size", "{{param.beam}}"]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "void"
+    ports:
+      - "{{host}}:{{port}}:10300"
+    volumes:
+      - {{model_dir}}:/data
+    restart: on-failure:5

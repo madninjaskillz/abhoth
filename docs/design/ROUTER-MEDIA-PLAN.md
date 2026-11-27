@@ -824,17 +824,27 @@ pub struct RunSpec { engine: String, card: CardSel, port: u16, host: String /* b
 pub struct Limits { cpus: Option<f64>, mem_gib: Option<f64> }
 pub fn plan_start(m: &Manifest, i: &Installed, s: &RunSpec, ok: &Approvals) -> Result<StartPlan, String>;
 pub enum StartPlan {
-    Docker { argv: Vec<String> },                    // the full `docker run -d --name … image args`
+    Docker { name: String, argv: Vec<String> },      // the full `docker run -d --name … image args`
     Compose { project: String, yaml: String, up: Vec<String>, down: Vec<String> },
-    Process { program: String, args: Vec<String>, env: Vec<(String, String)>, cwd: Option<PathBuf> },
+    Process { name: String, program: String, args: Vec<String>, env: Vec<(String, String)>,
+              cwd: Option<String>, limits: Limits },
+    External { name: String, url: String },          // `existing` with `detect.url`: nothing to run
 }
 ```
+
+`RunSpec` also has `ports` (extra ports by id), `state` (the instance's data folder **on the
+host**) and `package_dir` (the installed package folder on the host, mountable read-only), so a
+router whose state dir is inside its own container passes host paths. In a compose plan, `up`
+and `down` contain the literal `{{compose_file}}`, which the caller replaces with wherever it
+wrote `yaml`.
 
 Template names: `{{port}}`, `{{host}}`, `{{gpu_index}}`, `{{gpu_uuid}}`, `{{cpus}}`,
 `{{mem_limit}}` (e.g. `6g`), `{{model_dir}}`, `{{model_file}}`, `{{model_id}}`, `{{state}}` (the
 engine's own state dir), `{{install}}` (the unpacked binary or git checkout), `{{venv}}`,
 `{{python}}` (the venv's interpreter, per OS), `{{exe}}` (`.exe` on Windows, else empty),
-`{{name}}`, `{{param.<id>}}`. Device selection: a `cuda` method on a GPU card gets
+`{{name}}`, `{{bin}}` (an `existing` program), `{{models}}` (the model folder as the engine sees
+it: the container mount, or the host path), `{{package}}`, `{{port.<id>}}`, `{{param.<id>}}`.
+Device selection: a `cuda` method on a GPU card gets
 `CUDA_VISIBLE_DEVICES={{gpu_index}}` (host processes) or `--gpus device=<uuid>` (docker) unless
 it sets them itself; on a CPU card GPUs are hidden (`CUDA_VISIBLE_DEVICES=""`, no `--gpus`).
 
@@ -849,8 +859,10 @@ pub fn verify_file(path: &Path, sha256: &str) -> Result<(), String>;
     async fn run(&self, argv: &[String], o: &ExecOpts) -> Result<ExecResult, String>; // or through
 }                                                         // the router's hostctl/ssh executor
 #[async_trait] pub trait Runner: Send + Sync {
-    async fn install(&self, m: &Manifest, method: usize, ok: &Approvals) -> Result<Installed, RunError>;
-    async fn update(&self, old: &Installed, m: &Manifest, method: usize, ok: &Approvals) -> Result<Installed, RunError>;
+    // Package = the manifest plus its text files (templates, shims), its store and trust.
+    // The card picks the build to fetch (a binary method's CUDA or CPU asset).
+    async fn install(&self, p: &Package, method: usize, card: &CardSel, ok: &Approvals) -> Result<Installed, RunError>;
+    async fn update(&self, old: &Installed, p: &Package, method: usize, card: &CardSel, ok: &Approvals) -> Result<Installed, RunError>;
     async fn uninstall(&self, m: &Manifest, i: &Installed) -> Result<(), RunError>;
     async fn start(&self, m: &Manifest, i: &Installed, s: &RunSpec) -> Result<Handle, RunError>;
     async fn stop(&self, h: &Handle, grace: Duration) -> Result<(), RunError>;
@@ -870,7 +882,7 @@ pub enum Handle { Container { name: String }, Compose { project: String, file: P
 ```
 
 - **State dir layout** (router and bridge alike): `<state>/engines/<id>/<version>/installed.json`
-  (+ `venv/`, `bin/`, `src/`, `compose.yml`), `<state>/engines/run/<name>.json` (the `Handle`),
+  (+ `package/` (the manifest and templates as installed), `venv/`, `bin/`, `src/`, `app/`), `<state>/engines/run/<name>.json` (the `Handle`),
   `<state>/engines/logs/<name>.log` (rotated at 8 MiB, 2 kept), `<state>/packages/` (My packages).
 - **Supervision** (host processes): restart on exit with backoff 1 s, 2 s, 4 s … 60 s, reset
   after 10 min up; at most 5 restarts in 10 min, then `Failed`. Stop is SIGTERM (Windows:
@@ -912,11 +924,14 @@ pub enum Handle { Container { name: String }, Compose { project: String, file: P
 ```toml
 [engines.comfyui]
 driver  = "package"
-package = "comfyui@0.39.0"        # installed: <state>/engines/comfyui/0.39.0/installed.json
-method  = "docker"                # optional: pin a method type, else the first that fits
-params  = { preview = "auto" }    # the manifest's params
 port    = { X2 = 8188 }
+# installed: <router state>/engines/<server>/comfyui/0.45.0/installed.json
+package = { id = "comfyui", version = "0.45.0", method = "docker", params = { preview = "auto" } }
 ```
+
+`method` (optional) pins a method type, else the installed one is used; `params` are the
+manifest's params (the engine's existing `params` table is the request params, so they live
+here).
 
 `driver = "package"` reads the installed manifest and asks `plan_start` for the card. `Docker`
 and `Compose` plans run as the same hostctl commands the `docker` and `compose` drivers use.

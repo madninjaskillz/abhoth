@@ -1,0 +1,69 @@
+{
+  "$schema": "../../schema/abhoth-engine.schema.json",
+  "schema": 1,
+  "id": "comfyui",
+  "name": "ComfyUI",
+  "version": "0.45.0",
+  "description": "Node-based image and video generation. The router reads its /object_info and /models probes to learn which loaders and files it has.\nThe docker method runs the yanwk/comfyui-boot image (CUDA 12.6, so it also runs on Maxwell and Volta cards); the git method runs ComfyUI from source on the host.",
+  "kinds": ["image", "video"],
+  "caps": { "inherits": "comfyui" },
+  "hardware": { "gpu": ["cuda"], "min_vram_gib": 6, "cpu_ok": false },
+  "params": {
+    "extra_args": { "type": "string", "default": "", "description": "Extra ComfyUI arguments (for example --lowvram)." },
+    "preview": { "type": "enum", "choices": ["none", "auto", "latent2rgb", "taesd"], "default": "none", "description": "Preview method shown in the ComfyUI page." }
+  },
+  "api": "comfyui",
+  "probe": "comfyui",
+  "endpoints": { "stats": "/system_stats", "nodes": "/object_info", "models": "/models" },
+  "models": {
+    "mount": "/models",
+    "layout": "comfyui",
+    "folders": ["checkpoints", "diffusion_models", "text_encoders", "vae", "loras", "controlnet", "clip_vision", "upscale_models", "embeddings"],
+    "read_only": true
+  },
+  "methods": [
+    {
+      "type": "docker",
+      "label": "docker (cu126)",
+      "platforms": ["linux/amd64"],
+      "gpu": ["cuda"],
+      "image": "docker.io/yanwk/comfyui-boot:cu126-slim-20261109@sha256:2860c103583fbbd03f2e324116395a47e68ad0ef84fc3689f03b42a63fba41a6",
+      "env": {
+        "CLI_ARGS": "--extra-model-paths-config /root/abhoth/extra_model_paths.yaml --preview-method {{param.preview}} {{param.extra_args}}",
+        "NVIDIA_DRIVER_CAPABILITIES": "compute,utility"
+      },
+      "ports": [ { "id": "http", "container": 8188 } ],
+      "mounts": [
+        { "source": "{{state}}/root", "target": "/root" },
+        { "source": "{{state}}/abhoth", "target": "/root/abhoth", "read_only": true }
+      ],
+      "docker_args": ["--shm-size=2g"],
+      "health": { "http": "/system_stats", "start_seconds": 900 }
+    },
+    {
+      "type": "git",
+      "label": "from source (host)",
+      "platforms": ["linux/amd64", "windows/amd64"],
+      "gpu": ["cuda"],
+      "repo": "https://github.com/comfyanonymous/ComfyUI",
+      "commit": "989d93d0d968e704c589ce0146bb18c77f6b50cc",
+      "python": "3.12",
+      "requirements": ["torch==2.7.1", "torchvision==0.22.1", "torchaudio==2.7.1"],
+      "extra_index_urls": ["https://download.pytorch.org/whl/cu126"],
+      "build": [
+        { "run": ["{{python}}", "-m", "pip", "install", "--no-input", "-r", "requirements.txt"] }
+      ],
+      "run": ["{{python}}", "main.py", "--listen", "{{host}}", "--port", "{{port}}", "--preview-method", "{{param.preview}}", "--output-directory", "{{state}}/output"],
+      "ports": [ { "id": "http" } ],
+      "health": { "http": "/system_stats", "start_seconds": 600 }
+    }
+  ],
+  "licence": "GPL-3.0",
+  "source": "https://github.com/comfyanonymous/ComfyUI",
+  "homepage": "https://www.comfy.org",
+  "notes": [
+    "The router writes extra_model_paths.yaml (an abhoth: section with base_path = the model mount) into {{state}}/abhoth before the first start.",
+    "Custom nodes (ComfyUI-GGUF for GGUF models) are added through ComfyUI-Manager in the docker image, or into the checkout's custom_nodes for the git method.",
+    "The git method's ComfyUI requirements.txt is not hash-pinned upstream: pip resolves it at install."
+  ]
+}

@@ -1,0 +1,27 @@
+[package]
+name = "orca-engines"
+description = "Engine packages (ROUTER-MEDIA-PLAN.md 10 and 13.3, D153): the abhoth-engine.json manifest, its validator, method choice for a host and card, template rendering, pin checks, the metadata-only store, and the runner that installs and supervises engines. Shared by the router and the bridge."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+futures-util.workspace = true
+indexmap.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
