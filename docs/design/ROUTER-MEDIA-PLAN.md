@@ -1,4 +1,6 @@
-# Media engines under the router (D153)
+# Media engines under Sothoth, the router (D153)
+
+**Names ([NAMES.md](../NAMES.md)):** Sothoth is the router, Nodens the supervisor and Migo the bridge. The old command and file names (`abhoth router`, `abhoth supervisor`, `abhoth bridge`, `router.toml`, `supervisor.toml`, `bridge.toml`) still work; this design keeps them where it was written with them.
 
 Status (2026-11-26): **decided (section 0); phase 1 built.** It is based on a read-only survey of DeepThought
 and the user's PC, made at 22:40-23:00 UK on 2026-11-26.
@@ -699,7 +701,7 @@ upstream; such a package cannot be published to a store.
 | Area | Owner | Status |
 |---|---|---|
 | Core: CPU cards, media and video kinds, roles and components, media routes on `:8010` (`/v1/images`, `/v1/audio/*`, music, `/comfyui/` with WebSocket and streaming), placement and failover for media, model sync, the DeepThought migration, retiring the TrueNAS apps, closing `:8188`, moving the pipelines | 🟩B | Phase 1 shipped in 0.16.17 (`local/abhoth:16`, live): inventory only |
-| Headless bridge: `abhoth bridge`, the protocol (13.1), the descriptor (13.2), its Docker image, PC bridge mode in the desktop app, the truenas.local deploy, supervising engines on the bridge's host; router side: `/bridge/ws`, tokens, the overlay and tunnel (13.4), the Bridges admin page | 🟧E | Shipped: bridge, protocol, image, PC Bridge mode, router side (tokens, overlay, tunnel, admin page); client routing waits on the media routes calling `upstream_for` |
+| Headless bridge: `abhoth bridge`, the protocol (13.1), the descriptor (13.2), its Docker image, PC Migo mode (bridge mode) in the desktop app, the truenas.local deploy, supervising engines on the bridge's host; router side: `/bridge/ws`, tokens, the overlay and tunnel (13.4), the Bridges admin page | 🟧E | Shipped: bridge, protocol, image, PC Migo mode (formerly Bridge mode), router side (tokens, overlay, tunnel, admin page); client routing waits on the media routes calling `upstream_for` |
 | This machine (MACHINE.md, D155): the desktop app's own inventory and engines on an in-process router, bridge sharing (`models`, `remote_config`, `engines_off`), remote config through the bridge, bridged machines as their own group in the router admin, raw TCP streams (13.1), images fetched ahead of time, ZFS ARC in free RAM | 🟪D | In abhoth-v0.16.30 |
 | Engine packages: the manifest schema and methods, `abhoth engine validate`, the shared runner (13.3), the metadata-only `stores/`, the Engine store tab and the wizard, manual engines first-class, packages for ComfyUI, Chatterbox, whisper, Kokoro, sa3 and llama.cpp | 🟥F | Shipped in abhoth-v0.16.20: crate `orca-engines`, `driver = "package"`, `/admin/api/engine-store/`, the Engine store tab and wizard, docs/ENGINE-PACKAGES.md. The router runs container methods only; host methods run under the bridge. |
 

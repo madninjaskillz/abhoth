@@ -1,8 +1,10 @@
-# Router mode (D149)
+# Router mode: the app on Sothoth (D149)
+
+**Names ([NAMES.md](../NAMES.md)):** Sothoth is the router, Nodens the supervisor and Migo the bridge. The old command and file names (`abhoth router`, `abhoth supervisor`, `abhoth bridge`, `router.toml`, `supervisor.toml`, `bridge.toml`) still work; this design keeps them where it was written with them.
 
 Status (2026-11-26): **built.** The app's settings know two kinds of model server:
 
-- **Abhoth router** (`lmStudio.connection: "router"`): an `abhoth router`. It knows each model's
+- **Abhoth router (Sothoth)** (`lmStudio.connection: "router"`): Sothoth (`abhoth sothoth`). It knows each model's
   context window, output limit, vision, tool calling and reasoning levels, fails over between
   cards and routes, holds the slot leases and owns the GPU layouts. The app needs its URL, a key
   (when the router asks for one) and which model to use; everything else comes from the router.
@@ -82,15 +84,15 @@ Unauthenticated, no secrets, CORS `*`, read-only (a GET never switches: `switch:
 `tests/probe_safety.rs`'s every-path, every-method, every-listener sweep).
 
 ```json
-{"service": "abhoth-router", "api": 1, "name": "Abhoth router on gpu-host", "version": "0.16.9",
+{"service": "abhoth-router", "api": 1, "name": "Sothoth on Gpu-host", "version": "0.16.9",
  "capabilities": ["chat", "models", "model-meta", "user-view", "keys", "claude", "mdns"],
  "auth": {"required": true, "keys": true, "keyPrefix": "abk_", "keyUrl": "https://…"},
  "paths": {"openai": "/v1", "models": "/v1/abhoth/models", "view": "/v1/abhoth/view"}}
 ```
 
 `auth.required` is for a caller from where this request came from (anonymous LAN callers may
-be allowed; `access.anonymous_lan`). `name`: `--name`, else `ABHOTH_ROUTER_NAME`, else "Abhoth router on <Host>" (short host
-name, capitalised; "Abhoth router" for a container id);
+be allowed; `access.anonymous_lan`). `name`: `--name`, else `ABHOTH_SOTHOTH_NAME` or `ABHOTH_ROUTER_NAME`, else "Sothoth on <Host>" (short host
+name, capitalised; "Sothoth" for a container id);
 `keyUrl`: `--key-url` (where users make keys, the public web UI). The client never probes
 anything else on an unknown URL: LiteLLM's `/health` sends a real request to every model.
 
@@ -216,7 +218,7 @@ Docker container with host networking on TrueNAS SCALE).
 
 ## 6. Router admin (D151)
 
-When the app's router key is an admin key (a router admin key from `abhoth router admin-key
+When the app's router key is an admin key (a router admin key from `abhoth sothoth admin-key
 create`, or an admin's key from the linked web server), the Connection panel shows **Router
 admin**: the router's own admin pages (servers, cards, engines, layouts, the model list, admin
 keys) in a dialog, through the app's server, which adds the key (it never reaches the browser),

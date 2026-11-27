@@ -1,8 +1,10 @@
 # This machine: local engines in the desktop app (D155)
 
+**Names ([NAMES.md](../NAMES.md)):** Sothoth is the router, Nodens the supervisor and Migo the bridge. The old command and file names (`abhoth router`, `abhoth supervisor`, `abhoth bridge`, `router.toml`, `supervisor.toml`, `bridge.toml`) still work; this design keeps them where it was written with them.
+
 The desktop app gets the router's management for one server: the PC it runs on. The same
 pages (Inventory, Engine store, folder browser, review-then-save) edit an app-owned config; the
-app runs those engines itself; in Bridge mode the same inventory is what the PC shares with a
+app runs those engines itself; in Migo mode the same inventory is what the PC shares with a
 router. Owner: 🟧E. Builds on ROUTER-MEDIA-PLAN.md (D153) sections 11 and 13.
 
 ## 1. What the user asked for (2026-11-27)
@@ -37,7 +39,7 @@ router. Owner: 🟧E. Builds on ROUTER-MEDIA-PLAN.md (D153) sections 11 and 13.
    engine is a command line. *Why not a new API:* the router's form edits, checks, Engine store
    jobs, Hugging Face downloads and folder browsing are already written and tested; a second
    copy would drift.
-4. **Engines run under the bridge's supervisor**, in-process, whether or not Bridge mode is on.
+4. **Engines run under the bridge's supervisor**, in-process, whether or not Migo mode is on.
    The router's own drivers are shell-command templates written for Linux hosts; the bridge's
    supervisor (`orca-bridge`: docker, process, engine packages through 🟥F's `orca_engines`
    runner, on demand with an idle stop and a free-RAM floor) already runs on Windows, Linux and
@@ -48,7 +50,7 @@ router. Owner: 🟧E. Builds on ROUTER-MEDIA-PLAN.md (D153) sections 11 and 13.
    engines (primary first), on a card that allows that engine for the model's kind, has its
    files and fits. The supervisor starts it on demand, then the app proxies the request.
 6. **Sharing.** Each engine and model has *Share with router* (`share.json`). An engine added
-   while Bridge mode is on is shared by default; one added while it is off is not. Unshared
+   while Migo mode is on is shared by default; one added while it is off is not. Unshared
    engines and models are local-only: the bridge's descriptor leaves them out (unshared models'
    files are left out of `files`), so the router never places on them.
 7. **Migration.** If *Bridge: engines file* names a readable file when `machine/` is first made,
@@ -80,7 +82,7 @@ on demand here (`idle_stop_seconds` from the engine's `idle_stop_seconds` param,
 
 ## 4. What the app shows
 
-Settings → **This machine** (admins, desktop app only; whether or not Bridge mode is on) is its
+Settings → **This machine** (admins, desktop app only; whether or not Migo mode is on) is its
 own page, `machine.html`, in a frame: the router admin forms' transport points at
 `/api/admin/machine` there, so it never meets the app's router-mode admin pages.
 
@@ -93,7 +95,7 @@ own page, `machine.html`, in a frame: the router admin forms' transport points a
 - **Manual engines**: `engines.toml` as JSON (process, docker, external), saved with a revision
   and mirrored into the inventory as external engines labelled `abhoth.machine = "manual"`.
 - **Engine store**: install from a store, and the Create package wizard, on this machine.
-- **Sharing & bridge**: Bridge mode's status (the router, connected or why not, remote config on
+- **Sharing & bridge**: Migo mode's status (the router, connected or why not, remote config on
   or off), the share toggles, changes waiting for approval (Approve and apply / Refuse), and the
   change log ("Changed by router admin X …", Undo).
 
@@ -125,7 +127,7 @@ own page, `machine.html`, in a frame: the router admin forms' transport points a
 1. The machine folder, the in-process router, `/api/admin/machine`, the page (Inventory, Engine
    store, Engines), migration. Builtins that shelled out (`nvidia-smi`, `cpu-info`) run without
    a shell, so Find GPUs and the CPU card work on Windows.
-2. Translation and the shared supervisor; Bridge mode reports the machine's shared inventory;
+2. Translation and the shared supervisor; Migo mode reports the machine's shared inventory;
    share toggles; status. Router: per-bridge engines on/off.
 3. Local serving: `/api/machine/v1`, placement, the model picker.
 
@@ -139,7 +141,7 @@ own page, `machine.html`, in a frame: the router admin forms' transport points a
   forward slashes.
 - **Docker on Windows** needs Docker Desktop; package and docker engines fail to start without
   it, with docker's own error shown. Process engines need nothing.
-- **Two supervisors on one PC** (the desktop app's and a separately run `abhoth bridge`) would
+- **Two supervisors on one PC** (the desktop app's and a separately run `abhoth migo`) would
   fight over ports; the page warns when the bridge state folder is locked by another process.
 
 ## 8. Remote config: "Allow router to config" (added 2026-11-27)
@@ -211,5 +213,5 @@ for approval), else "Read-only: this machine doesn't allow remote config". Their
 wherever cards are listed for placement, labelled with their bridge (`NAS-GPU0 (bridge nas)`),
 and install pickers say "(bridged)"; they are never in router.toml, so never in the layout
 editor. The separate
-**Bridges** tab stays, for tokens only (mint, rotate, revoke): tokens are a different job from
+**Migo machines** tab (formerly Bridges) stays, for tokens only (mint, rotate, revoke): tokens are a different job from
 describing a server, and folding them in would put secrets next to the inventory.

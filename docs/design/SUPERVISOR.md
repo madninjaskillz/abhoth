@@ -1,7 +1,9 @@
-# The Abhoth Supervisor (design)
+# Nodens, the Abhoth Supervisor (design)
+
+**Names ([NAMES.md](../NAMES.md)):** Sothoth is the router, Nodens the supervisor and Migo the bridge. The old command and file names (`abhoth router`, `abhoth supervisor`, `abhoth bridge`, `router.toml`, `supervisor.toml`, `bridge.toml`) still work; this design keeps them where it was written with them.
 
 Status (2026-11-26): **design; building started.** The open questions of section 15 are resolved (15). This document grows the router control
-plane of [ROUTER-CONFIG.md](ROUTER-CONFIG.md) into **`abhoth supervisor`**, a single control
+plane of [ROUTER-CONFIG.md](ROUTER-CONFIG.md) into **Nodens** (**`abhoth nodens`**, formerly `abhoth supervisor`), a single control
 plane for the GPU host. The router, which handles layouts, engines, routes, leases and
 adapters, becomes one subsystem of it. The new subsystems are:
 

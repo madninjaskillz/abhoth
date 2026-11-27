@@ -13,6 +13,15 @@ is no longer needed; see [`CUTOVER.md`](CUTOVER.md).
 
 Developed with AI assistance (Claude).
 
+## Names
+
+Three parts have names from the lore Abhoth comes from ([`docs/NAMES.md`](docs/NAMES.md) has
+every alias). The old names still work everywhere.
+
+- **Sothoth** is the router. The name comes from Yog-Sothoth, "the Gate and the Key": the gateway every request passes through.
+- **Nodens** is the supervisor. The guardian Elder God watches fans, thermals, clocks and GPU health.
+- **Migo** is the bridge. The Mi-Go ferry things between worlds, and the bridge brings other machines in.
+
 ## Build
 
 Needs the toolchain in `rust-toolchain.toml` (rustup installs it). The web client is embedded
@@ -140,8 +149,8 @@ The web UI (`--hostui`, `--desktop`, Docker) has accounts, kept in SQLite at
 ## Docker
 
 The simplest way to run Abhoth on a server is **one image, one container**: the root
-`Dockerfile` builds `abhoth` with the web UI, the router (gateway and control plane) and the
-supervisor (telemetry hub, Home Assistant, the Glance page's feed). They run in one process, each
+`Dockerfile` builds `abhoth` with the web UI, Sothoth (the router: gateway and control plane) and
+Nodens (the supervisor: telemetry hub, Home Assistant, the Glance page's feed). They run in one process, each
 on its own thread pool, ports and config; only the web UI is on unless you configure the other
 two (D148).
 
@@ -164,21 +173,24 @@ it needs goes in `abhoth-data/secrets/strata-api-key`.
 - **Volumes:** `/data/web` (accounts, sessions, Claude/Codex logins), `/data/router`,
   `/data/supervisor`, `/data/projects` (or one volume at `/data`) and read-only `/run/secrets`. Everything runs as uid 568 on a
   read-only root filesystem.
-- **The router:** set `ROUTER_ARGS` to its flags, as for `abhoth router`, e.g.
-  `--config /data/router/router.json --port 8010 --control /data/router/router.toml`.
+- **Sothoth (the router):** set `SOTHOTH_ARGS` (or the old `ROUTER_ARGS`) to its flags, as for
+  `abhoth sothoth`, e.g.
+  `--config /data/router/sothoth.json --port 8010 --control /data/router/sothoth.toml`.
+  A missing `sothoth.*` file reads the folder's `router.*` file, so existing setups need no change.
   [`ROUTER.md`](ROUTER.md) and [`ROUTER-CONFIG.md`](ROUTER-CONFIG.md) describe the config;
-  `abhoth router import` writes a `router.toml` from existing layout files.
-- **The supervisor:** set `SUPERVISOR_CONFIG` to its file (example:
+  `abhoth sothoth import` writes the control-plane file from existing layout files.
+- **Nodens (the supervisor):** set `NODENS_CONFIG` (or `SUPERVISOR_CONFIG`) to its file (example:
   `crates/orca-supervisor/deploy/supervisor.example.toml`). The Glance page then follows its
-  feed (`ABHOTH_SUPERVISOR_URL`, default `http://127.0.0.1:9890`; `GLANCE=0` turns it off).
+  feed (`ABHOTH_NODENS_URL` or `ABHOTH_SUPERVISOR_URL`, default `http://127.0.0.1:9890`;
+  `GLANCE=0` turns it off).
 - **Health:** the image's health check asks every part that is on (`deploy/abhoth/healthcheck.sh`).
-  A router or supervisor that fails (a startup error such as a missing secret, an error later on,
+  A Sothoth or Nodens that fails (a startup error such as a missing secret, an error later on,
   or a panic) is restarted inside the container with backoff (1 s doubling to 60 s) while the
   other parts keep serving; the container is unhealthy meanwhile, and `/api/parts` (admins)
   shows each part's state, restarts and last error. Only the web UI stopping exits the container.
 - **Fans and clocks (optional):** `abhoth-hostd` needs root, so it is installed on the host, not
   in the container: [`crates/orca-hostd/deploy/install.sh`](crates/orca-hostd/deploy). Mount
-  `/run/abhoth` into the container and add the socket's group (`group_add`) so the supervisor can
+  `/run/abhoth` into the container and add the socket's group (`group_add`) so Nodens can
   reach it.
 - **Build options:** `--build-arg FEATURES=claude-engine` adds the router's Claude engine
   ([`ROUTER.md`](ROUTER.md) 12); `CLAUDE_CODE_VERSION` and `CODEX_VERSION` pin the CLIs.
@@ -189,8 +201,10 @@ The parts also ship alone, for setups that split them across hosts:
 
 - `deploy/docker/` is the web UI image: `docker build -f deploy/docker/Dockerfile -t local/abhoth-web:<n> .`
   and `deploy/docker/compose.yaml`. Its state is under `/state`.
-- `deploy/router/` is the router-only image (`abhoth-router`).
-- The supervisor runs from the `abhoth-supervisor` binary or as `abhoth supervisor run --config FILE`.
+- `deploy/router/` is the Sothoth-only image (`local/abhoth-sothoth:1`, also tagged `abhoth-router`).
+- `deploy/bridge/` is the Migo image (`local/abhoth-migo:1`, also tagged `abhoth-bridge`).
+- Nodens runs from the `abhoth-nodens` binary (or `abhoth-supervisor`) or as
+  `abhoth nodens run --config FILE`.
 - The entrypoint runs `abhoth --hostui=0.0.0.0:$PORT --hostui-login`; `/app/openorca` is a
   symlink to `/app/abhoth`, so `docker exec <c> /app/openorca --hostui-set-password <user>` still
   works (it now sets that account's password in `abhoth.db`; `abhoth admin ...` is the new form).
@@ -199,20 +213,22 @@ The parts also ship alone, for setups that split them across hosts:
 - Rollback: point the app back at the previous OpenOrca image; the state formats are shared.
   The full procedure is in [`CUTOVER.md`](CUTOVER.md), section 4.
 
-## Router
+## Sothoth (the router)
 
-`abhoth router` is an OpenAI-compatible gateway in front of your model servers (failover, slots,
-the model list) and, with `--control router.toml`, the control plane for the GPUs behind it
-(which engine and model each card runs, layouts, switching). It runs inside the single Docker
-image or on its own (`abhoth router --config router.json --port 8010 --control router.toml`).
+`abhoth sothoth` (or the old `abhoth router`) is an OpenAI-compatible gateway in front of your
+model servers (failover, slots, the model list) and, with `--control sothoth.toml`, the control
+plane for the GPUs behind it (which engine and model each card runs, layouts, switching). It runs
+inside the single Docker image or on its own
+(`abhoth sothoth --config sothoth.json --port 8010 --control sothoth.toml`; `router.json` and
+`router.toml` are found under either name).
 
-- **Its own admin pages:** `http://<router>:8010/admin/`, so a router without the Abhoth web app
+- **Its own admin pages (Sothoth admin):** `http://<router>:8010/admin/`, so a router without the Abhoth web app
   can still be set up in a browser: forms for servers, cards, engines, layouts and the model
   list (with the raw files under Advanced), live state, jobs and the audit. Make the first admin
-  key with `abhoth router admin-key create <name> --control router.toml --out <file>` and sign
+  key with `abhoth sothoth admin-key create <name> --control sothoth.toml --out <file>` and sign
   in with it.
 - **From the app:** Settings → Models → Connection finds routers on the LAN and switches the app
-  to router mode; with an admin key there it also shows **Router admin**, the same pages inside
+  to router mode; with an admin key there it also shows **Sothoth admin**, the same pages inside
   the app.
 - Docs: [`ROUTER.md`](ROUTER.md) (running it; section 14 for the admin pages),
   [`ROUTER-CONFIG.md`](ROUTER-CONFIG.md) (the control plane's `router.toml`),

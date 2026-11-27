@@ -1,4 +1,6 @@
-# The router's own admin pages (D151)
+# Sothoth admin: the router's own admin pages (D151)
+
+**Names ([NAMES.md](../NAMES.md)):** Sothoth is the router, Nodens the supervisor and Migo the bridge. The old command and file names (`abhoth router`, `abhoth supervisor`, `abhoth bridge`, `router.toml`, `supervisor.toml`, `bridge.toml`) still work; this design keeps them where it was written with them.
 
 User request (2026-11-26): "it feels like you might run the router without abhoth on the server,
 so it should have its own webui — but that should be accessible if you are connected to the
@@ -28,7 +30,7 @@ the model list) should be possible with proper forms, not only raw TOML/JSON ove
   **admin-only plane**: `router.toml` and `router.json` editing, admin keys, sign-in, the audit;
   plans and switches answer 501 and nothing switches. A first-time standalone setup is: a minimal
   `router.toml` (`version = 1`, `[router] state_dir`, `[control] enabled = false`), add servers,
-  cards, engines and layouts with the forms, then turn the control plane on. `abhoth router
+  cards, engines and layouts with the forms, then turn the control plane on. `abhoth sothoth
   init` writes that starting point (section 6). Without `--control`
   the page says how to start the router for it.
 
@@ -41,9 +43,9 @@ The router decides itself; the Abhoth web server is not needed.
   use, revoked). Only the hash is stored; a key is shown once. A local key is always an admin
   key. They are checked before the web server's keys (no network) and a revoked one stops at
   once (its sessions end on their next request).
-- **First key:** `abhoth router admin-key create <name> --control router.toml [--out FILE]`
+- **First key:** `abhoth sothoth admin-key create <name> --control sothoth.toml [--out FILE]`
   (`--out` writes it to a new file, mode 600, instead of printing it; in Docker,
-  `docker exec <c> /app/abhoth router admin-key create …`). `admin-key list` and `admin-key
+  `docker exec <c> /app/abhoth sothoth admin-key create …`). `admin-key list` and `admin-key
   revoke <id|name>` too. While no key exists the router says so in its log at start-up. Admins
   can also make and revoke keys on the page (Admin keys).
 - **Sign-in** (`POST /admin/login`, JSON only, so a cross-site form can't post it): the router's
@@ -144,7 +146,7 @@ Jobs & audit, **Admin keys**.
 
 ## 6. Standalone router
 
-A router on its own (no Abhoth web server) starts from one command, `abhoth router init [DIR]`
+A router on its own (no Abhoth web server) starts from one command, `abhoth sothoth init [DIR]`
 (`crates/orca-router/src/init.rs`; usage in ROUTER.md 17). User request (2026-11-27): one
 command, interactive by default with a `--yes` mode, that leaves a router ready to start and sign
 in to.

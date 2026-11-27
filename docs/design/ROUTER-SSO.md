@@ -1,4 +1,6 @@
-# Sign in with Abhoth on the router's admin pages (D154)
+# Sign in with Abhoth on Sothoth admin, the router's admin pages (D154)
+
+**Names ([NAMES.md](../NAMES.md)):** Sothoth is the router, Nodens the supervisor and Migo the bridge. The old command and file names (`abhoth router`, `abhoth supervisor`, `abhoth bridge`, `router.toml`, `supervisor.toml`, `bridge.toml`) still work; this design keeps them where it was written with them.
 
 The router's own admin pages (`/admin/`, D151) accept admin keys. When a router runs beside an
 Abhoth web UI, its admins should be able to sign in with their web UI account instead. This is a
@@ -61,7 +63,7 @@ created, last used) in `abhoth.db` (migration 3). Codes and link requests are in
   container network; 20 waiting, 3 per address, 15 minutes) → `{id, code, poll}`; an admin sees
   the code in Settings → Service keys → Router sign-in and approves (a client with its own random
   id, so a request can't take over a registered one) or denies; the poll collects the credentials
-  once. `abhoth router sso link` does this and writes `<state_dir>/sso-client.json` (0600).
+  once. `abhoth sothoth sso link` does this and writes `<state_dir>/sso-client.json` (0600).
 - **Secrets** never appear in logs, the audit or the terminal. The CLI prints the code to
   compare, not the secret.
 

@@ -1,4 +1,6 @@
-# The router inventory (D152)
+# The Sothoth (router) inventory (D152)
+
+**Names ([NAMES.md](../NAMES.md)):** Sothoth is the router, Nodens the supervisor and Migo the bridge. The old command and file names (`abhoth router`, `abhoth supervisor`, `abhoth bridge`, `router.toml`, `supervisor.toml`, `bridge.toml`) still work; this design keeps them where it was written with them.
 
 User request (2026-11-26): redesign the router admin around an inventory. A **server** (how the
 router reaches it, its model folder) has **cards** (GPU, VRAM); each card says which **engines**

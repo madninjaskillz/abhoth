@@ -1,4 +1,9 @@
-# `abhoth router`: a gateway to replace LiteLLM on DeepThought (design)
+# Sothoth (`abhoth sothoth`): a gateway to replace LiteLLM on DeepThought (design)
+
+**Names (docs/NAMES.md):** Sothoth is the router, Migo the bridge and Nodens the supervisor.
+`abhoth router`, `abhoth bridge`, `abhoth-router`, `abhoth-bridge`, `router.toml`, `router.json`,
+`bridge.toml` and `/bridge/ws` all still work. The sections below use the new names in commands;
+the historical sections (1-12) keep the names they were written with.
 
 Status (2026-11-25): **phases 1-3 built** in `crates/orca-router` (`abhoth router`), tested
 against fake engines and a local LiteLLM 1.106.6 shadow replay; see section 10 for the
@@ -931,25 +936,25 @@ Design and the per-setting table: [`docs/design/ROUTER-MODE.md`](docs/design/ROU
   on engines that need an option for images (`vision`, llama.cpp `mmproj`), whether the
   on-demand pick's profile sets it. `supports_vision` in a deployment's `model_info` overrides.
 - mDNS / DNS-SD `_abhoth-router._tcp` (TXT `v`, `api`, `path`, `name`): `--mdns auto|on|off`
-  (auto: on unless the gateway is loopback-only), `--name NAME` (else `ABHOTH_ROUTER_NAME`, else "Abhoth router on
-  <Host>": the short host name, capitalised; plain "Abhoth router" for a container id), `--key-url URL` (where users make API keys).
+  (auto: on unless the gateway is loopback-only), `--name NAME` (else `ABHOTH_SOTHOTH_NAME` or `ABHOTH_ROUTER_NAME`, else "Sothoth on
+  <Host>": the short host name, capitalised; plain "Sothoth" for a container id), `--key-url URL` (where users make API keys).
 
 The app's settings (Models → Connection) use them for "router mode": the router then supplies
 everything model-specific, and the client's failover, slots and inference profiles are off.
 
-## 14. The admin pages (D151)
+## 14. The admin pages: Sothoth admin (D151)
 
 The router serves its own admin UI at **`http://<router>:8010/admin/`** (the gateway's port),
 so a router running without the Abhoth web app can still be set up and watched in a browser.
 Design: [`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md).
 
-- **Start the router with `--control router.toml`.** A router with no GPU control yet needs only
+- **Start Sothoth with `--control sothoth.toml`** (or an existing `router.toml`). A router with no GPU control yet needs only
   a minimal file: `version = 1`, `[router] state_dir = "/data/router/state"`,
   `[control] enabled = false`; the forms then add servers, cards, engines and layouts.
 - **Make an admin key** (shown once; only its hash is kept):
-  `abhoth router admin-key create <name> --control router.toml [--out FILE]`
+  `abhoth sothoth admin-key create <name> --control sothoth.toml [--out FILE]`
   (`--out` writes it to a new file with mode 600). `admin-key list`, `admin-key revoke <id|name>`.
-  In Docker: `docker exec <container> /app/abhoth router admin-key create …`.
+  In Docker: `docker exec <container> /app/abhoth sothoth admin-key create …`.
 - **Sign in** at `/admin/` with that key (or a web-server admin's `abk_` key). The session is a
   cookie (HttpOnly, SameSite=Strict, Secure over HTTPS) for 8 hours, 2 hours idle. Ten wrong
   keys from one address in 15 minutes lock that address out for the rest of the window.
@@ -963,7 +968,7 @@ Design: [`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md).
   `X-Forwarded-Proto: https` so the cookie is marked Secure. A request with forwarding headers
   is never treated as a loopback admin.
 - **From the Abhoth app:** in router mode with an admin key, Settings → Models → Connection →
-  Router admin.
+  Sothoth admin.
 
 ### Sign in with Abhoth (D154)
 
@@ -979,8 +984,8 @@ Design: [`docs/design/ROUTER-SSO.md`](docs/design/ROUTER-SSO.md).
   opened at when that is an IP address or `localhost`, and for every `access.public_urls` entry
   (list a host name you reach it by, e.g. `public_urls = ["https://router.example.org"]`). People
   are sent to `access.sso_url`, or by default to the origin of `--key-url`.
-- **Any other router**: `abhoth router sso link --webui https://abhoth.example.org
-  --public-url http://router.lan:8010 --control router.toml` prints a code; an Abhoth admin
+- **Any other router**: `abhoth sothoth sso link --webui https://abhoth.example.org
+  --public-url http://router.lan:8010 --control sothoth.toml` prints a code; an Abhoth admin
   compares it in Settings → Service keys → Router sign-in and approves. Then set
   `[access] sso_url = "https://abhoth.example.org"` and `public_urls = [...]` and restart.
   `sso status` shows the registration, `sso unlink` forgets it.
@@ -1084,7 +1089,7 @@ When every engine fails, the answer (503, or 429 when the last one said so, with
 `Retry-After`) names each one tried and why, including the reason in an engine's or bridge's
 own "not now" answer (for example a bridge whose engine image could not be pulled).
 
-**Wyoming ports (phase 5, 0.16.31):** `abhoth router ... --control router.toml --wyoming
+**Wyoming ports (phase 5, 0.16.31):** `abhoth sothoth ... --control sothoth.toml --wyoming
 stt=0.0.0.0:10300 --wyoming tts=0.0.0.0:10203` opens raw Wyoming ports for Home Assistant and
 other Wyoming clients. Each connection is passed untouched to the first engine of that kind
 with `media_api = "wyoming"` that takes it: this server's own engines first, then bridges'
@@ -1103,13 +1108,13 @@ and Engine store → Installed.
 - Not yet: router-side queues
   and `/v1/jobs`, MP3 or Opus from engines that only make WAV.
 
-## 17. Setting up a new router (`abhoth router init`)
+## 17. Setting up a new router (`abhoth sothoth init`)
 
 One command sets up a standalone router in one folder (design:
 [`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md) section 6):
 
 ```text
-abhoth router init [DIR] [--yes] [--force] [--listen ADDR] [--state-dir DIR] [--id ID]
+abhoth sothoth init [DIR] [--yes] [--force] [--listen ADDR] [--state-dir DIR] [--id ID]
                    [--local | --no-local] [--server-id ID] [--key-name NAME | --no-key]
                    [--key-file FILE] [--print-key] [--service systemd|compose|windows|none]
 ```
@@ -1117,10 +1122,13 @@ abhoth router init [DIR] [--yes] [--force] [--listen ADDR] [--state-dir DIR] [--
 - **Interactive by default** (folder, listen address, whether to add this machine, the admin
   key's name, a service file, then a last "go ahead"); nothing is written before that answer.
   `--yes` takes the defaults and the flags without asking; without a terminal it needs `--yes`.
-  `DIR` defaults to `./abhoth-router`. The image's `abhoth-router init …` is the same.
-- **It writes** `DIR/router.toml` (`version = 1`, `[router]` id, listen and an absolute
-  `state_dir`, `[control] enabled = false`, `[inventory] version = 1`), `DIR/router.json` (no
+  `DIR` defaults to `./abhoth-router`. The image's `abhoth-sothoth init …` (or `abhoth-router
+  init …`) is the same.
+- **It writes** `DIR/sothoth.toml` (`version = 1`, `[router]` id, listen and an absolute
+  `state_dir`, `[control] enabled = false`, `[inventory] version = 1`), `DIR/sothoth.json` (no
   models yet) and the state folder (`DIR/state`), then checks both with the router's own loaders.
+  A folder that already has `router.toml` or `router.json` (and no `sothoth.*`) keeps the old
+  names, so one folder never mixes them.
 - **This machine as the first server** (default; `--no-local` skips it): `[servers.local]` with
   `exec = "local"`, one card per GPU (`A`, `B`, … in `nvidia-smi` index order, by UUID, with its
   name and VRAM, from the same `nvidia-smi` telemetry query the router polls hosts with) and a
@@ -1132,11 +1140,12 @@ abhoth router init [DIR] [--yes] [--force] [--listen ADDR] [--state-dir DIR] [--
   macOS (on Windows it inherits the folder's permissions; keep it under your profile). The key is
   **never printed** unless you pass `--print-key`.
 - **Then it prints** the exact start command
-  (`abhoth router --config DIR/router.json --control DIR/router.toml --listen ADDR`, with this
+  (`abhoth router --config DIR/sothoth.json --control DIR/sothoth.toml --listen ADDR`, with this
   binary's full path) and the `/admin/` URL(s) to sign in at.
 - **Service files** (`--service`, repeatable): `abhoth-router.service` (a systemd unit with that
-  command), `compose.router.yaml` (the router-only image from `deploy/router/Dockerfile`, the
-  folder mounted at the same path so the paths in `router.toml` hold, uid 568), or
+  command), `compose.router.yaml` (service `sothoth`, the Sothoth-only image from
+  `deploy/router/Dockerfile`, the folder mounted at the same path so the config's paths hold,
+  uid 568), or
   `windows-service.txt` (a start-up scheduled task, or a wrapper such as NSSM; abhoth is not a
   native Windows service).
 - **Idempotent:** if any file it would write exists it refuses and lists them, writing nothing.
@@ -1144,18 +1153,19 @@ abhoth router init [DIR] [--yes] [--force] [--listen ADDR] [--state-dir DIR] [--
   its mode) and writes new ones; the state folder and `router.db` are kept, so keys made before
   still work until revoked (`admin-key list` / `revoke`).
 
-## 18. Bridges (D153)
+## 18. Migo: bridges (D153)
 
-A bridge makes another machine a server this router manages, without opening a port on it: the
-bridge **dials** the router (`ws://<router>:8010/bridge/ws`, a bridge token as `Authorization:
-Bearer`), describes itself (server, cards, engines; ROUTER-MEDIA-PLAN.md 13.2), and then runs the
+A bridge (Migo) makes another machine a server this router manages, without opening a port on
+it: the bridge **dials** the router (`ws://<router>:8010/bridge/ws`, or the same endpoint as
+`/migo/ws`; a bridge token as `Authorization: Bearer`), describes itself (server, cards, engines; ROUTER-MEDIA-PLAN.md 13.2), and then runs the
 router's commands (status, start, stop, probe, logs, detect, files, download) and its requests
 through the same connection (13.1: streams with credit flow control, WebSocket included).
 Design: [`docs/design/ROUTER-MEDIA-PLAN.md`](docs/design/ROUTER-MEDIA-PLAN.md) sections 11 and
 13.
 
-- **Tokens.** A router admin mints one per bridge id: the admin pages (**Bridges** tab: *Make
-  token*, shown once) or `abhoth router bridge-token create ID --control router.toml --out FILE`
+- **Tokens.** A router admin mints one per bridge id: the admin pages (**Migo machines** tab:
+  *Make token*, shown once) or
+  `abhoth sothoth bridge-token create ID --control sothoth.toml --out FILE`
   (`list`, `revoke ID`; `--rotate` replaces one and drops its connection). The router keeps only
   the token's SHA-256 (`<state_dir>/secrets/bridges/<id>.sha256`); tokens are never printed or
   logged. A token works for its own bridge id only.
@@ -1167,22 +1177,23 @@ Design: [`docs/design/ROUTER-MEDIA-PLAN.md`](docs/design/ROUTER-MEDIA-PLAN.md) s
   (`bridges::upstream_for` / `forward`, which the media routes use as they land; today the admin's
   *test request* and commands); an engine with `lifecycle = "on_demand"` starts on the first
   request and stops after `idle_stop_seconds`.
-- **Headless:** `abhoth bridge --config bridge.toml` (or the `abhoth-bridge` binary). `check`
-  prints the descriptor it would send, `detect` the cards it finds, `init --id ID --router URL
-  --out bridge.toml [--token-stdin]` writes a starting config. Every `[bridge]` key also comes
-  from `ABHOTH_BRIDGE_<KEY>` (`ABHOTH_BRIDGE_ROUTER`, `ABHOTH_BRIDGE_TOKEN_FILE`, …). Logs go to
-  stdout. Example: [`deploy/bridge/bridge.example.toml`](deploy/bridge/bridge.example.toml).
+- **Headless:** `abhoth migo --config migo.toml` (or the `abhoth-migo` binary; `abhoth bridge`,
+  `abhoth-bridge` and `bridge.toml` still work). `check` prints the descriptor it would send,
+  `detect` the cards it finds, `init --id ID --router URL --out migo.toml [--token-stdin]` writes
+  a starting config. Every `[bridge]` key also comes from `ABHOTH_MIGO_<KEY>` or the old
+  `ABHOTH_BRIDGE_<KEY>` (`ABHOTH_MIGO_ROUTER`, `ABHOTH_MIGO_TOKEN_FILE`, …). Logs go to stdout. Example: [`deploy/bridge/migo.example.toml`](deploy/bridge/migo.example.toml).
 - **Engines** on a bridge are `docker` (a container through the host's docker CLI, published on
   127.0.0.1 only; `--privileged`, host networking, `--pid`, `--cap-add` are refused), `process`
   (a command it supervises), `package = "kokoro"` (an engine package from the default store, run
   by the shared runner, docker/compose methods unless `host_processes = true`), or `external`
   (already running; never started or stopped). `min_free_ram_gib` refuses a start while the host
   is short of RAM, so the router sends the request elsewhere.
-- **Docker image:** `docker build -f deploy/bridge/Dockerfile -t local/abhoth-bridge:N .` (no
+- **Docker image:** `docker build -f deploy/bridge/Dockerfile -t local/abhoth-migo:N
+  -t local/abhoth-bridge:N .` (no
   router, no web UI, no Claude engine). Run it as in
   [`deploy/bridge/compose.yaml`](deploy/bridge/compose.yaml): host networking, the docker socket,
   and `runtime: nvidia` on a GPU host so `nvidia-smi` is there for detection.
-- **The desktop app's Bridge mode** (Settings, Desktop: *Bridge mode*, *Bridge: router*,
-  *Bridge: token*, optionally *Bridge: id* and *Bridge: engines file*) runs the same
+- **The desktop app's Migo mode** (formerly Bridge mode; Settings, Desktop: *Migo mode*,
+  *Migo: Sothoth URL*, *Migo: token*, optionally *Migo: id* and *Advanced: Migo engines file*) runs the same
   bridge inside the app while it is on; turning it off (or closing the app) disconnects, and the
   router stops using the PC. Its state is in `<home>/bridge/status.json`.
