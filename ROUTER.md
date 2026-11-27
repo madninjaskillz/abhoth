@@ -1084,7 +1084,16 @@ When every engine fails, the answer (503, or 429 when the last one said so, with
 `Retry-After`) names each one tried and why, including the reason in an engine's or bridge's
 own "not now" answer (for example a bridge whose engine image could not be pulled).
 
-- Not yet: Wyoming through a bridge (the tunnel carries HTTP and WebSockets), router-side queues
+**Wyoming ports (phase 5, 0.16.31):** `abhoth router ... --control router.toml --wyoming
+stt=0.0.0.0:10300 --wyoming tts=0.0.0.0:10203` opens raw Wyoming ports for Home Assistant and
+other Wyoming clients. Each connection is passed untouched to the first engine of that kind
+with `media_api = "wyoming"` that takes it: this server's own engines first, then bridges'
+(through the bridge's TCP streams). A refused engine is cooled and the next one tried; when none
+takes it the client gets a Wyoming `error` event naming each reason. Wyoming has no
+credentials, so only peers in `access.anonymous_lan` (and loopback) are served.
+
+- Not yet: `/v1/audio/transcriptions` to a Wyoming engine through a bridge (the Wyoming ports do
+  reach bridges), router-side queues
   and `/v1/jobs`, MP3 or Opus from engines that only make WAV.
 
 ## 17. Setting up a new router (`abhoth router init`)

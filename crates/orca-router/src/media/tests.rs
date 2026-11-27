@@ -1327,3 +1327,70 @@ engines = {{ stt = [\"whisper\"] }}
     .unwrap_err();
     assert!(err.contains("whisper/D@deepthought"), "{err}");
 }
+
+#[tokio::test]
+async fn the_wyoming_port_falls_back_to_a_bridge() {
+    let rd = tempfile::tempdir().unwrap();
+    let bd = tempfile::tempdir().unwrap();
+    // DeepThought's whisper is down; the bridge's engine speaks Wyoming
+    let st = crate::state::AppState::new(
+        Snapshot::build(RouterConfig::default(), None).unwrap(),
+        None,
+    );
+    let hub = Hub::new(
+        rd.path(),
+        Arc::new(config(&live_like(dead_port(), dead_port(), 3, 4, 5))),
+    );
+    st.bridges.set(hub.clone()).ok();
+    let addr = serve(crate::server::app(st.clone(), crate::server::Mode::Gateway)).await;
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = l.local_addr().unwrap();
+    tokio::spawn(super::wyoming_listen::serve(l, st, ModelKind::Stt));
+    let token = bridges::tokens::mint(rd.path(), "nas", false).unwrap();
+    let w = super::wyoming::fake_engine("via the bridge").await;
+    let tf = bd.path().join("t");
+    std::fs::write(&tf, &token).unwrap();
+    let bc: BridgeConfig = toml::from_str(&format!(
+        r#"
+        [bridge]
+        id = "nas"
+        router = "http://{addr}"
+        token_file = "{}"
+        state_dir = "{}"
+        [detect]
+        nvidia = false
+        [cards.CPU]
+        cores = 2
+        ram_gib = 4
+        engines = {{ stt = ["whisper"] }}
+        [engines.whisper]
+        kinds = ["stt"]
+        cards = ["CPU"]
+        port = {}
+        lifecycle = "external"
+        "#,
+        tf.display().to_string().replace('\\', "/"),
+        bd.path().display().to_string().replace('\\', "/"),
+        w.port()
+    ))
+    .unwrap();
+    let _h = client::spawn(bc, "test", Arc::new(|_: &str| {}), fast());
+    let end = std::time::Instant::now() + Duration::from_secs(30);
+    while !hub.online("nas") {
+        assert!(
+            std::time::Instant::now() < end,
+            "the bridge never registered"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let got = super::wyoming::transcribe(
+        &port.to_string(),
+        &vec![0u8; 32_000],
+        16_000,
+        None,
+        Duration::from_secs(10),
+    )
+    .await
+    .unwrap();
+    assert_eq!(got, "via the bridge 32000");
+}

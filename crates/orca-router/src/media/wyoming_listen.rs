@@ -1,6 +1,6 @@
 //! A router-side Wyoming port (D153 phase 5): raw TCP for Home Assistant and other Wyoming
 //! clients, passed to the first engine of that kind (`media_api = "wyoming"`) that takes the
-//! connection, DeepThought's own first and then bridges'. Wyoming has no credentials, so only
+//! connection, DeepThought's own first and then bridges' (through `bridges::forward_tcp`). Wyoming has no credentials, so only
 //! peers the access settings let in anonymously (the LAN, loopback) or with no access control.
 //!
 //! Failover is at connection time: a target that refuses (or a bridge that cannot start its
@@ -104,7 +104,7 @@ pub fn targets(st: &AppState, kind: ModelKind) -> Vec<Target> {
 async fn one(
     st: &AppState,
     kind: ModelKind,
-    sock: TcpStream,
+    mut sock: TcpStream,
     peer: SocketAddr,
 ) -> Result<(), String> {
     if let Err(why) = allowed(st, peer).await {
@@ -135,7 +135,6 @@ async fn one(
                     Ok(Ok(mut up)) => {
                         let _busy = place::begin(t);
                         tracing::info!("wyoming {} from {peer}: to {}", kind.as_str(), t.key());
-                        let mut sock = sock;
                         let _ = up.set_nodelay(true);
                         let _ = sock.set_nodelay(true);
                         let _ = tokio::io::copy_bidirectional(&mut sock, &mut up).await;
@@ -145,12 +144,20 @@ async fn one(
                     Err(_) => failed.push(format!("{}: did not answer", t.key())),
                 }
             }
-            Some(Upstream::Bridge { .. }) => {
-                failed.push(format!(
-                    "{}: Wyoming through a bridge is not here yet",
-                    t.key()
-                ));
-                continue;
+            Some(Upstream::Bridge {
+                bridge,
+                engine,
+                card,
+            }) => {
+                let _busy = place::begin(t);
+                // an Err means nothing reached the engine: the next one can be tried
+                match crate::bridges::forward_tcp(&hub, &bridge, &engine, &card, &mut sock).await {
+                    Ok(()) => {
+                        tracing::info!("wyoming {} from {peer}: to {}", kind.as_str(), t.key());
+                        return Ok(());
+                    }
+                    Err(e) => failed.push(format!("{}: {e}", t.key())),
+                }
             }
             None => {
                 failed.push(format!("{} has no address", t.key()));
