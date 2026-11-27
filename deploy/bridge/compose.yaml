@@ -1,0 +1,23 @@
+# abhoth-bridge on a GPU host. The router admin mints the token (admin pages, Bridges; or
+# `abhoth router bridge-token create ID --control router.toml --out FILE`); put it in
+# ./state/bridge.token (mode 600). Engines it starts are sibling containers named
+# abhoth-bridge-<id>-<engine>-<card>, published on 127.0.0.1 only.
+services:
+  abhoth-bridge:
+    image: local/abhoth-bridge:1
+    restart: unless-stopped
+    # Host networking: the bridge reaches the engines it starts on 127.0.0.1 and dials the router
+    # out; nothing listens on the bridge itself.
+    network_mode: host
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all          # or one GPU's UUID
+      NVIDIA_DRIVER_CAPABILITIES: utility
+      # ABHOTH_BRIDGE_ROUTER: http://router-host:8010
+    volumes:
+      - ./bridge.toml:/config/bridge.toml:ro
+      - ./state:/state
+      - ./models:/models
+      - /var/run/docker.sock:/var/run/docker.sock
+    cpus: 1
+    mem_limit: 256m

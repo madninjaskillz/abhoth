@@ -1048,3 +1048,46 @@ abhoth router init [DIR] [--yes] [--force] [--listen ADDR] [--state-dir DIR] [--
   `--force` first moves each existing one to `DIR/backups/<name>.bak-<time>` (a key file keeps
   its mode) and writes new ones; the state folder and `router.db` are kept, so keys made before
   still work until revoked (`admin-key list` / `revoke`).
+
+## 18. Bridges (D153)
+
+A bridge makes another machine a server this router manages, without opening a port on it: the
+bridge **dials** the router (`ws://<router>:8010/bridge/ws`, a bridge token as `Authorization:
+Bearer`), describes itself (server, cards, engines; ROUTER-MEDIA-PLAN.md 13.2), and then runs the
+router's commands (status, start, stop, probe, logs, detect, files, download) and its requests
+through the same connection (13.1: streams with credit flow control, WebSocket included).
+Design: [`docs/design/ROUTER-MEDIA-PLAN.md`](docs/design/ROUTER-MEDIA-PLAN.md) sections 11 and
+13.
+
+- **Tokens.** A router admin mints one per bridge id: the admin pages (**Bridges** tab: *Make
+  token*, shown once) or `abhoth router bridge-token create ID --control router.toml --out FILE`
+  (`list`, `revoke ID`; `--rotate` replaces one and drops its connection). The router keeps only
+  the token's SHA-256 (`<state_dir>/secrets/bridges/<id>.sha256`); tokens are never printed or
+  logged. A token works for its own bridge id only.
+- **In the inventory** a bridge is the server `<id>` (`exec = "bridge"`, which `router.toml`
+  itself may not use), its cards `<ID>-<card>` (`NAS-GPU0`, `NAS-CPU`), its engines merged into
+  the engine of the same id or added as external engines. Read-only ("managed by bridge X"):
+  admins can only turn a bridge off and set its priority (`<state_dir>/bridges.json`). Its cards
+  are managed while it is online and enabled. Requests reach its engines through the tunnel
+  (`bridges::upstream_for` / `forward`, which the media routes use as they land; today the admin's
+  *test request* and commands); an engine with `lifecycle = "on_demand"` starts on the first
+  request and stops after `idle_stop_seconds`.
+- **Headless:** `abhoth bridge --config bridge.toml` (or the `abhoth-bridge` binary). `check`
+  prints the descriptor it would send, `detect` the cards it finds, `init --id ID --router URL
+  --out bridge.toml [--token-stdin]` writes a starting config. Every `[bridge]` key also comes
+  from `ABHOTH_BRIDGE_<KEY>` (`ABHOTH_BRIDGE_ROUTER`, `ABHOTH_BRIDGE_TOKEN_FILE`, …). Logs go to
+  stdout. Example: [`deploy/bridge/bridge.example.toml`](deploy/bridge/bridge.example.toml).
+- **Engines** on a bridge are `docker` (a container through the host's docker CLI, published on
+  127.0.0.1 only; `--privileged`, host networking, `--pid`, `--cap-add` are refused), `process`
+  (a command it supervises), `package = "kokoro"` (an engine package from the default store, run
+  by the shared runner, docker/compose methods unless `host_processes = true`), or `external`
+  (already running; never started or stopped). `min_free_ram_gib` refuses a start while the host
+  is short of RAM, so the router sends the request elsewhere.
+- **Docker image:** `docker build -f deploy/bridge/Dockerfile -t local/abhoth-bridge:N .` (no
+  router, no web UI, no Claude engine). Run it as in
+  [`deploy/bridge/compose.yaml`](deploy/bridge/compose.yaml): host networking, the docker socket,
+  and `runtime: nvidia` on a GPU host so `nvidia-smi` is there for detection.
+- **The desktop app's Bridge mode** (Settings, Desktop: *Bridge mode*, *Bridge: router*,
+  *Bridge: token*, optionally *Bridge: id* and *Bridge: engines file*) runs the same
+  bridge inside the app while it is on; turning it off (or closing the app) disconnects, and the
+  router stops using the PC. Its state is in `<home>/bridge/status.json`.

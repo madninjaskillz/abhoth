@@ -1,0 +1,57 @@
+# abhoth bridge: a speech backup on a small GPU host (ROUTER-MEDIA-PLAN.md 11).
+# `abhoth-bridge check --config bridge.toml` prints what it would tell the router.
+[bridge]
+id = "nas"
+title = "nas.local"
+router = "http://router-host:8010"
+token_file = "/state/bridge.token"
+state_dir = "/state"
+# Engine containers mount host paths: give the host's path to the models here.
+model_dir = "/mnt/pool/abhoth-bridge/models"
+
+[detect]
+nvidia = true
+cpu = true
+
+[cards.GPU0]
+shared = true            # something else on the host also uses this GPU
+engines = { tts = ["kokoro"], stt = ["whisper"] }
+
+[cards.CPU]
+cores = 4
+ram_gib = 6
+engines = { tts = ["kokoro"] }
+
+[limits]
+max_concurrent = 2
+
+[engines.kokoro]
+kinds = ["tts"]
+api = "openai-speech"
+caps = { inherits = "kokoro" }
+cards = ["GPU0", "CPU"]
+ports = { GPU0 = 18880, CPU = 18890 }
+lifecycle = "on_demand"
+idle_stop_seconds = 600
+health = "/health"
+min_free_ram_gib = 2.0
+[engines.kokoro.docker]
+image = "ghcr.io/remsky/kokoro-fastapi-gpu@sha256:<digest>"
+container_port = 8880
+cpus = "4"
+memory = "3g"
+
+[engines.whisper]
+kinds = ["stt"]
+api = "openai-transcription"
+caps = { inherits = "whisper" }
+cards = ["GPU0"]
+port = 18881
+health = "/health"
+min_free_ram_gib = 2.0
+[engines.whisper.docker]
+image = "example/whisper-server@sha256:<digest>"
+container_port = 8000
+mounts = ["{model_dir}/whisper:/models:ro"]
+cpus = "4"
+memory = "3g"
