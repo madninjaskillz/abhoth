@@ -11,6 +11,7 @@
 //! stream back; request bodies have a limit per route.
 
 pub mod comfy;
+pub mod images;
 pub mod multipart;
 pub mod music;
 pub mod place;
@@ -78,7 +79,7 @@ pub fn route_of(method: &Method, path: &str) -> Option<Route> {
         "/v1/audio/speech" | "/audio/speech" if post => Some(Route::Speech),
         "/v1/audio/transcriptions" | "/audio/transcriptions" if post => Some(Route::Transcribe),
         p if p == "/v1/audio/music" || p.starts_with("/v1/audio/music/") => Some(Route::Music),
-        p if p.starts_with("/v1/images/") => Some(Route::Images),
+        p if p.starts_with("/v1/images/") || p == "/compat/image-api/health" => Some(Route::Images),
         p if p == comfy::PREFIX || p.starts_with("/comfyui/") => Some(Route::Comfy),
         _ => None,
     }
@@ -273,6 +274,23 @@ pub async fn handle(st: Arc<AppState>, ctx: RequestCtx, route: Route, req: Reque
             stt::run(&cx, ct, &raw).await
         }
         Route::Music => music::run(&cx, method.as_str(), &path, query, &raw).await,
+        Route::Images if path == "/compat/image-api/health" => send::Tried {
+            response: crate::proxy::json_response(200, &images::health(&cx).await),
+            target: None,
+            failed: vec![],
+        },
+        // the router renders itself when it has a recipe and a ComfyUI; else the shim
+        Route::Images
+            if method == Method::POST
+                && matches!(path.as_str(), "/v1/images/generations" | "/v1/images/edits")
+                && images::handles(&c) =>
+        {
+            let ct = headers
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            images::run(&cx, &path, ct, &raw).await
+        }
         Route::Images => images(&cx, method.as_str(), &path_q, &headers, &raw).await,
         Route::Comfy => comfy::http(&cx, method.as_str(), &path_q, &headers, &raw).await,
     };

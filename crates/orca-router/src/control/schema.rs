@@ -1170,6 +1170,30 @@ pub struct Model {
     /// Engine id -> the artifact that engine loads.
     #[serde(default)]
     pub artifacts: IndexMap<String, Artifact>,
+    /// How `/v1/images` renders this recipe (D153 phase 4); unset: the defaults of its `arch`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe: Option<Recipe>,
+}
+
+/// An image recipe's workflow settings (ROUTER-MEDIA-PLAN.md 4.3). Its files are its `needs`, by
+/// role (`diffusion`, `text_encoder`, `vae`, `lora`).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Recipe {
+    /// The workflow family (`qwen21`); unset: from the model's `arch` (`qwen-image` = `qwen21`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
+    /// The sampler's sigma schedule (ComfyUI `ManualSigmas`); unset: the family's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sigmas: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cfg: Option<f64>,
+    /// `/v1/images/edits` with this recipe (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edits: Option<bool>,
+    /// Asked for without a model (or by a name no model has): the default recipe.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub default: bool,
 }
 
 impl Model {

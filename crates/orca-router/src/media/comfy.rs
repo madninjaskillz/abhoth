@@ -131,6 +131,83 @@ fn affine(path: &str, path_q: &str, body: &[u8]) -> Option<Target> {
     client.and_then(|c| client_owner(&c))
 }
 
+const MODEL_EXT: &[&str] = &[
+    ".safetensors",
+    ".gguf",
+    ".ckpt",
+    ".pt",
+    ".pth",
+    ".bin",
+    ".sft",
+    ".onnx",
+];
+
+/// The model files an API-format workflow loads: string inputs naming a model file.
+pub fn workflow_files(body: &[u8]) -> Vec<String> {
+    let Ok(v) = serde_json::from_slice::<Value>(body) else {
+        return vec![];
+    };
+    let mut out: Vec<String> = Vec::new();
+    for node in v["prompt"].as_object().into_iter().flat_map(|o| o.values()) {
+        for (_, x) in node["inputs"].as_object().into_iter().flatten() {
+            if let Some(s) = x.as_str()
+                && MODEL_EXT
+                    .iter()
+                    .any(|e| s.to_ascii_lowercase().ends_with(e))
+                && !out.iter().any(|o| o == s)
+            {
+                out.push(s.to_string());
+            }
+        }
+    }
+    out
+}
+
+fn base_name(f: &str) -> &str {
+    f.rsplit(['/', '\\']).next().unwrap_or(f)
+}
+
+/// The candidates whose last probe lists every file the prompt loads (those never probed are
+/// kept: ComfyUI itself will say). None left: why, for the client.
+fn with_files(all: &[Target], body: &[u8]) -> Result<Vec<Target>, String> {
+    let files = workflow_files(body);
+    if files.is_empty() || all.is_empty() {
+        return Ok(all.to_vec());
+    }
+    let mut missing: Vec<String> = Vec::new();
+    let keep: Vec<Target> = all
+        .iter()
+        .filter(
+            |t| match crate::control::caps::files_on(&t.engine, &t.server) {
+                None => true,
+                Some(folders) => {
+                    let has = |f: &String| {
+                        folders
+                            .values()
+                            .flatten()
+                            .any(|x| x == f || base_name(x) == base_name(f))
+                    };
+                    let gone: Vec<&String> = files.iter().filter(|f| !has(f)).collect();
+                    for g in &gone {
+                        if !missing.contains(g) {
+                            missing.push((*g).clone());
+                        }
+                    }
+                    gone.is_empty()
+                }
+            },
+        )
+        .cloned()
+        .collect();
+    if keep.is_empty() {
+        return Err(format!(
+            "no server has every file this workflow loads (missing: {})",
+            missing.join(", ")
+        ));
+    }
+    Ok(keep)
+}
+
 fn is_prompt(method: &str, path: &str) -> bool {
     method == "POST" && matches!(path, "/prompt" | "/api/prompt")
 }
@@ -147,6 +224,16 @@ pub async fn http(
     let all = targets(cx.c, pin.as_deref(), &cx.bridge_priority());
     let ts: Vec<Target> = match affine(&path, &rest, raw) {
         Some(t) if all.contains(&t) => vec![t],
+        _ if is_prompt(method, &path) => match with_files(&all, raw) {
+            Ok(v) => v,
+            Err(msg) => {
+                return Tried {
+                    response: super::error(400, &msg),
+                    target: None,
+                    failed: vec![],
+                };
+            }
+        },
         _ => all,
     };
     let mut h = send::engine_headers(headers);

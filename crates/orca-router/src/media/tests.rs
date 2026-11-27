@@ -870,3 +870,245 @@ async fn speech_falls_back_to_the_bridge() {
         "nas-kokoro:Through the tunnel:\"bm_fable\""
     );
 }
+
+// ── phase 4: images in the router ───────────────────────────────────────────────────────────
+
+fn image_config(comfy_a: u16, comfy_b: u16) -> String {
+    format!(
+        r#"
+        version = 1
+        [servers.deepthought]
+        host = "127.0.0.1"
+        [servers.spare]
+        host = "127.0.0.1"
+        [cards.C]
+        server = "deepthought"
+        gpu_uuid = "GPU-c"
+        engines = {{ image = ["comfyui"] }}
+        [cards.S1]
+        server = "spare"
+        gpu_uuid = "GPU-s"
+        engines = {{ image = ["comfyui"] }}
+        [engines.comfyui]
+        driver = "external"
+        port = {{ C = {comfy_a}, S1 = {comfy_b} }}
+        [models.qwen-image]
+        kind = "image"
+        arch = "qwen-image"
+        primary = "comfyui"
+        needs = ["unet", "te", "vae"]
+        aliases = ["juggernaut", "qwen-image-2.1"]
+        [models.qwen-image-uncensored]
+        kind = "image"
+        arch = "qwen-image"
+        primary = "comfyui"
+        needs = ["unet2", "te", "vae", "lora"]
+        recipe = {{ sigmas = "1.0, 0.5, 0", edits = false }}
+        [models.unet]
+        kind = "image"
+        role = "diffusion"
+        artifacts.comfyui = {{ file = "turbo-Q4_K_M.gguf" }}
+        [models.unet2]
+        kind = "image"
+        role = "diffusion"
+        servers = ["deepthought"]
+        artifacts.comfyui = {{ file = "omni-Q4_K_M.gguf" }}
+        [models.te]
+        kind = "image"
+        role = "text_encoder"
+        artifacts.comfyui = {{ file = "qwen3vl.safetensors" }}
+        [models.vae]
+        kind = "image"
+        role = "vae"
+        artifacts.comfyui = {{ file = "vae.safetensors" }}
+        [models.lora]
+        kind = "image"
+        role = "lora"
+        servers = ["deepthought"]
+        artifacts.comfyui = {{ file = "turbo-lora.safetensors" }}
+        "#
+    )
+}
+
+#[test]
+fn recipes_resolve_by_name_alias_or_default() {
+    use super::images::{bucket, resolve};
+    let c = config(&image_config(1, 2));
+    let (p, r) = resolve(&c, Some("Juggernaut")).unwrap();
+    assert_eq!((p.model.as_str(), r), ("qwen-image", None));
+    assert_eq!(p.unet, "turbo-Q4_K_M.gguf");
+    assert_eq!(p.sigmas, super::images::QWEN21_SIGMAS);
+    assert!(p.lora.is_none() && p.edits);
+    let (p, r) = resolve(&c, Some("sdxl")).unwrap();
+    assert_eq!(p.model, "qwen-image");
+    assert_eq!(r.as_deref(), Some("sdxl"));
+    let (p, _) = resolve(&c, Some("qwen-image-uncensored")).unwrap();
+    assert_eq!(p.lora.as_deref(), Some("turbo-lora.safetensors"));
+    assert_eq!(p.sigmas, "1.0, 0.5, 0");
+    assert!(!p.edits);
+    assert_eq!(
+        resolve(&c, Some("unet")).unwrap().0.model,
+        "qwen-image",
+        "a component name is not a recipe: the default"
+    );
+    assert_eq!(bucket(Some("1920x1080")), (1376, 768));
+    assert_eq!(bucket(Some("512x512")), (1024, 1024));
+    assert_eq!(bucket(Some("1080x1920")), (768, 1376));
+    assert_eq!(bucket(Some("junk")), (1024, 1024));
+    assert_eq!(bucket(None), (1024, 1024));
+}
+
+#[test]
+fn workflows_match_the_shims() {
+    use super::images::{edit_workflow, plan, workflow};
+    let c = config(&image_config(1, 2));
+    let p = plan(&c, "qwen-image").unwrap();
+    let wf = workflow(&p, "a cat", 1184, 896, 7);
+    assert_eq!(wf["1"]["class_type"], "UnetLoaderGGUF");
+    assert_eq!(wf["5"]["inputs"]["width"], 1184);
+    assert_eq!(wf["9"]["inputs"]["noise_seed"], 7);
+    assert_eq!(wf["6"]["inputs"]["model"], json!(["1", 0]));
+    assert!(wf.get("13").is_none());
+    let p = plan(&c, "qwen-image-uncensored").unwrap();
+    let wf = workflow(&p, "a cat", 1024, 1024, 1);
+    assert_eq!(wf["13"]["inputs"]["lora_name"], "turbo-lora.safetensors");
+    assert_eq!(wf["6"]["inputs"]["model"], json!(["13", 0]));
+    assert_eq!(wf["8"]["inputs"]["sigmas"], "1.0, 0.5, 0");
+    let wf = edit_workflow(&p, "make it blue", &["a.png".into(), "b.png".into()], 1);
+    assert_eq!(wf["21"]["inputs"]["image"], "a.png");
+    assert_eq!(wf["4"]["inputs"]["images.image_2"], json!(["22", 0]));
+    assert_eq!(wf["10"]["inputs"]["latent_image"], json!(["4", 2]));
+    // the files a raw workflow loads, for /comfyui/prompt
+    let body = json!({ "prompt": wf }).to_string();
+    let files = super::comfy::workflow_files(body.as_bytes());
+    assert!(files.contains(&"turbo-lora.safetensors".to_string()));
+    assert!(files.contains(&"omni-Q4_K_M.gguf".to_string()));
+    assert!(!files.iter().any(|f| f.ends_with(".png")));
+}
+
+fn history(id: String, fail: bool) -> Value {
+    if fail {
+        let msg = json!(["execution_error", {"exception_type": "OutOfMemoryError",
+                                             "exception_message": "CUDA out of memory"}]);
+        return json!({ id: {"status": {"status_str": "error", "messages": [msg]}} });
+    }
+    let img = json!({"filename": "o.png", "subfolder": "", "type": "output"});
+    json!({ id: {"status": {"status_str": "success"}, "outputs": {"12": {"images": [img]}}} })
+}
+
+/// A ComfyUI that renders a fixed PNG, or fails every job.
+async fn fake_comfy(fail: bool) -> SocketAddr {
+    serve(
+        Router::new()
+            .route(
+                "/queue",
+                get(|| async { axum::Json(json!({"queue_running": [], "queue_pending": []})) }),
+            )
+            .route(
+                "/upload/image",
+                post(|body: Bytes| async move {
+                    assert!(body.windows(5).any(|w| w == b"IMAGE"));
+                    axum::Json(json!({"name": "up.png", "subfolder": "", "type": "input"}))
+                }),
+            )
+            .route(
+                "/prompt",
+                post(|body: Bytes| async move {
+                    let v: Value = serde_json::from_slice(&body).unwrap();
+                    assert_eq!(v["prompt"]["12"]["class_type"], "SaveImage");
+                    let id = if v["prompt"].get("21").is_some() {
+                        "edit-1"
+                    } else {
+                        "p-1"
+                    };
+                    axum::Json(json!({"prompt_id": id, "number": 1}))
+                }),
+            )
+            .route(
+                "/history/{id}",
+                get(
+                    move |axum::extract::Path(id): axum::extract::Path<String>| async move {
+                        axum::Json(history(id, fail))
+                    },
+                ),
+            )
+            .route(
+                "/view",
+                get(|u: axum::http::Uri| async move {
+                    assert!(u.query().unwrap().contains("filename=o.png"));
+                    ([("content-type", "image/png")], b"PNGDATA".to_vec())
+                }),
+            ),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn images_render_in_the_router_and_fail_over() {
+    let bad = fake_comfy(true).await;
+    let good = fake_comfy(false).await;
+    let d = tempfile::tempdir().unwrap();
+    let (addr, _hub) = router_for(config(&image_config(bad.port(), good.port())), d.path()).await;
+    let http = reqwest::Client::new();
+    let r = http
+        .post(format!("http://{addr}/v1/images/generations"))
+        .json(&json!({"model": "juggernaut", "prompt": "a red cube", "size": "1920x1080"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers()["x-abhoth-server"], "spare");
+    assert_eq!(r.headers()["x-abhoth-failovers"], "1");
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["model"], "qwen-image");
+    assert_eq!(
+        v["data"][0]["b64_json"],
+        crate::control::ssh::b64_encode(b"PNGDATA")
+    );
+    // the uncensored recipe's files are on DeepThought only (which fails every job): 500
+    let r = http
+        .post(format!("http://{addr}/v1/images/generations"))
+        .json(&json!({"model": "qwen-image-uncensored", "prompt": "x"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 500);
+    let v: Value = r.json().await.unwrap();
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("OutOfMemoryError"),
+        "{v}"
+    );
+    // an edit, pinned to the healthy server, from JSON base64
+    let r = http
+        .post(format!("http://{addr}/v1/images/edits"))
+        .json(
+            &json!({"model": "qwen-image@spare", "prompt": "make it blue",
+                      "image": crate::control::ssh::b64_encode(b"IMAGE bytes")}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers()["x-abhoth-server"], "spare");
+    // URLs are never fetched
+    let r = http
+        .post(format!("http://{addr}/v1/images/edits"))
+        .json(&json!({"prompt": "x", "image": "http://169.254.169.254/"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let v: Value = http
+        .get(format!("http://{addr}/compat/image-api/health"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["status"], "ok");
+    assert_eq!(v["backends"].as_array().unwrap().len(), 2);
+}
