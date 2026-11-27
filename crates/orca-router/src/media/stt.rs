@@ -109,16 +109,9 @@ pub async fn run(cx: &super::Cx<'_>, content_type: &str, raw: &Bytes) -> Tried {
     for t in &ts {
         match t.api {
             MediaApi::Wyoming => {
-                let addr = match crate::bridges::upstream_for(cx.c, &t.server, &t.engine, &t.card) {
-                    Some(Upstream::Http(u)) => u.trim_start_matches("http://").to_string(),
-                    // the bridge tunnel carries HTTP and WebSockets only
-                    Some(Upstream::Bridge { .. }) => {
-                        failed.push(format!(
-                            "{}: Wyoming through a bridge is not supported",
-                            t.key()
-                        ));
-                        continue;
-                    }
+                // a Wyoming engine on a bridge: its raw TCP stream (13.1)
+                let up = match crate::bridges::upstream_for(cx.c, &t.server, &t.engine, &t.card) {
+                    Some(u) => u,
                     None => continue,
                 };
                 let p = pcm.get_or_insert_with(|| super::wav::decode(&a.audio, 16_000));
@@ -130,14 +123,37 @@ pub async fn run(cx: &super::Cx<'_>, content_type: &str, raw: &Bytes) -> Tried {
                     }
                 };
                 let busy = place::begin(t);
-                let got = super::wyoming::transcribe(
-                    &addr,
-                    &p.data,
-                    p.rate,
-                    a.language.as_deref(),
-                    Duration::from_secs(300),
-                )
-                .await;
+                let patience = Duration::from_secs(300);
+                let got = match &up {
+                    Upstream::Http(u) => {
+                        super::wyoming::transcribe(
+                            u.trim_start_matches("http://"),
+                            &p.data,
+                            p.rate,
+                            a.language.as_deref(),
+                            patience,
+                        )
+                        .await
+                    }
+                    Upstream::Bridge {
+                        bridge,
+                        engine,
+                        card,
+                    } => match cx.hub {
+                        Some(hub) => {
+                            super::wyoming::transcribe_bridged(
+                                hub,
+                                (bridge, engine, card),
+                                &p.data,
+                                p.rate,
+                                a.language.as_deref(),
+                                patience,
+                            )
+                            .await
+                        }
+                        None => Err(format!("{}: no bridges here", t.key())),
+                    },
+                };
                 drop(busy);
                 match got {
                     Ok(text) => {

@@ -753,7 +753,9 @@ version from main at release time.
   `bridges::forward_tcp(hub, bridge, engine, card, socket)`. Chosen over an HTTP endpoint on the
   whisper package: Wyoming clients (Home Assistant) speak TCP, and one stream mode covers every
   Wyoming engine. A bridge older than 0.16.30 answers `TCP` with a 400 or an HTTP error: treat
-  anything but 200 as "not available here".
+  anything but 200 as "not available here". `/v1/audio/transcriptions` uses it for a Wyoming
+  engine on a bridge (`wyoming::transcribe_bridged`, 0.16.31); a `:10300` listener for Home
+  Assistant would call `forward_tcp` the same way.
 - **Images and packages at install time** (0.16.30): the bridge fetches every docker image and
   package of its engines when it starts and after a config change (`docker image inspect`, else
   `docker pull`; a package install), not at the first request. Each result is an `event`

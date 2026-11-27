@@ -872,6 +872,72 @@ async fn speech_falls_back_to_the_bridge() {
     );
 }
 
+#[tokio::test]
+async fn transcription_falls_back_to_wyoming_on_the_bridge() {
+    let rd = tempfile::tempdir().unwrap();
+    let bd = tempfile::tempdir().unwrap();
+    // DeepThought's whisper is down; the bridge's answers over its raw TCP stream (13.1)
+    let (addr, hub) = router_for(config(&live_like(1, dead_port(), 3, 4, 5)), rd.path()).await;
+    let token = bridges::tokens::mint(rd.path(), "nas", false).unwrap();
+    let w = super::wyoming::fake_engine("from nas").await;
+    let tf = bd.path().join("t");
+    std::fs::write(&tf, &token).unwrap();
+    let cfg: BridgeConfig = toml::from_str(&format!(
+        r#"
+        [bridge]
+        id = "nas"
+        router = "http://{addr}"
+        token_file = "{}"
+        state_dir = "{}"
+        [detect]
+        nvidia = false
+        [cards.CPU]
+        cores = 2
+        ram_gib = 4
+        engines = {{ stt = ["whisper"] }}
+        [engines.whisper]
+        kinds = ["stt"]
+        api = "wyoming"
+        cards = ["CPU"]
+        port = {}
+        health = "tcp"
+        lifecycle = "external"
+        "#,
+        tf.display().to_string().replace('\\', "/"),
+        bd.path().display().to_string().replace('\\', "/"),
+        w.port()
+    ))
+    .unwrap();
+    let _h = client::spawn(cfg, "test", Arc::new(|_: &str| {}), fast());
+    let end = std::time::Instant::now() + Duration::from_secs(30);
+    while !hub.online("nas") {
+        assert!(
+            std::time::Instant::now() < end,
+            "the bridge never registered"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let wav = super::wav::encode(&vec![100i16; 4000], 16000);
+    let body = form(
+        "b0und",
+        &[("model", None, b"whisper-1"), ("file", Some("a.wav"), &wav)],
+    );
+    let r = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/audio/transcriptions"))
+        .header("content-type", "multipart/form-data; boundary=b0und")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    let status = r.status();
+    let headers = r.headers().clone();
+    let text = r.text().await.unwrap();
+    assert_eq!(status, 200, "{text}");
+    assert_eq!(headers["x-abhoth-server"], "nas");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["text"], "from nas 8000");
+}
+
 // ── phase 4: images in the router ───────────────────────────────────────────────────────────
 
 fn image_config(comfy_a: u16, comfy_b: u16) -> String {

@@ -77,19 +77,35 @@ pub async fn transcribe(
     language: Option<&str>,
     patience: Duration,
 ) -> Result<String, String> {
+    let s = tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(addr))
+        .await
+        .map_err(|_| format!("{addr} did not accept the connection"))?
+        .map_err(|e| format!("{addr}: {e}"))?;
+    transcribe_on(addr, s, pcm, rate, language, patience).await
+}
+
+/// [`transcribe`] over a stream already open to the engine (a TCP connection, or a bridge's
+/// raw stream, 13.1); `label` names the engine in errors.
+pub async fn transcribe_on<S>(
+    label: &str,
+    stream: S,
+    pcm: &[u8],
+    rate: u32,
+    language: Option<&str>,
+    patience: Duration,
+) -> Result<String, String>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
     let work = async {
-        let s = tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(addr))
-            .await
-            .map_err(|_| format!("{addr} did not accept the connection"))?
-            .map_err(|e| format!("{addr}: {e}"))?;
-        let (rd, mut wr) = s.into_split();
+        let (rd, mut wr) = tokio::io::split(stream);
         let mut rd = BufReader::new(rd);
         let fmt = json!({"rate": rate, "width": 2, "channels": 1});
         let mut t = json!({});
         if let Some(l) = language {
             t["language"] = json!(l);
         }
-        let io = |e: std::io::Error| format!("{addr}: {e}");
+        let io = |e: std::io::Error| format!("{label}: {e}");
         write_event(&mut wr, "transcribe", t, &[])
             .await
             .map_err(io)?;
@@ -117,7 +133,7 @@ pub async fn transcribe(
                 "transcript-stop" => return Ok(chunks.trim().to_string()),
                 "error" => {
                     return Err(format!(
-                        "{addr}: {}",
+                        "{label}: {}",
                         data["text"].as_str().unwrap_or("an error")
                     ));
                 }
@@ -127,7 +143,31 @@ pub async fn transcribe(
     };
     tokio::time::timeout(patience, work)
         .await
-        .map_err(|_| format!("{addr} gave no transcript in time"))?
+        .map_err(|_| format!("{label} gave no transcript in time"))?
+}
+
+/// [`transcribe_on`] through a bridge's raw TCP stream to `(bridge, engine, card)` (13.1).
+pub async fn transcribe_bridged(
+    hub: &crate::bridges::Hub,
+    (bridge, engine, card): (&str, &str, &str),
+    pcm: &[u8],
+    rate: u32,
+    language: Option<&str>,
+    patience: Duration,
+) -> Result<String, String> {
+    let label = format!("{engine} on {bridge}/{card}");
+    let (ours, theirs) = tokio::io::duplex(64 * 1024);
+    let fwd = crate::bridges::forward_tcp(hub, bridge, engine, card, theirs);
+    let tr = transcribe_on(&label, ours, pcm, rate, language, patience);
+    tokio::pin!(fwd, tr);
+    tokio::select! {
+        r = &mut tr => r,
+        // the stream was refused (or ended): say why, else let the client finish reading
+        r = &mut fwd => match r {
+            Err(e) => Err(e),
+            Ok(()) => tr.await,
+        },
+    }
 }
 
 /// A Wyoming engine for tests: answers every `audio-stop` with `transcript` = `text` followed by
