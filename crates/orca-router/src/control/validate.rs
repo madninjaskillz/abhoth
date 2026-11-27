@@ -855,7 +855,11 @@ fn layouts(c: &ControlConfig, v: &mut Vec<Issue>) {
                     ),
                 )),
                 (Some(_), Some(a)) => {
-                    if !a.profiles.is_empty() && !a.profiles.contains(&s.profile) {
+                    // (a spanning profile is never a one-card pick, so artifacts leave it out)
+                    if !a.profiles.is_empty()
+                        && !a.profiles.contains(&s.profile)
+                        && s.devices.is_empty()
+                    {
                         v.push(Issue::warn(
                             format!("{cp}.profile"),
                             format!(
