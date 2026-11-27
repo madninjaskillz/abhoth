@@ -353,6 +353,24 @@ async fn concurrent_setups_have_exactly_one_winner() {
 
 // ---- sign-in, sessions, CSRF ----
 
+/// Settings → This Machine is /machine.html in a frame of the app's own page: it must allow
+/// same-origin framing (WebView2 showed "content blocked" under the default DENY), while
+/// every other page still refuses to be framed.
+#[tokio::test(flavor = "multi_thread")]
+async fn machine_page_may_be_framed_by_the_app_and_nothing_else_may() {
+    let site = Site::start(Setup::default()).await;
+    let b = site.admin().await;
+    let page = b.req(Method::GET, "/machine.html").send().await.unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    assert_eq!(page.headers()["x-frame-options"], "SAMEORIGIN");
+    let csp = page.headers()["content-security-policy"].to_str().unwrap();
+    assert!(csp.contains("frame-ancestors 'self'"), "{csp}");
+    let index = b.req(Method::GET, "/").send().await.unwrap();
+    assert_eq!(index.headers()["x-frame-options"], "DENY");
+    let api = b.req(Method::GET, "/api/projects").send().await.unwrap();
+    assert_eq!(api.headers()["x-frame-options"], "DENY");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn sign_in_sets_a_lax_httponly_cookie_and_wrong_answers_look_alike() {
     let site = Site::start(Setup::default()).await;

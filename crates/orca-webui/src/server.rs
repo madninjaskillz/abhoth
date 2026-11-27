@@ -681,6 +681,9 @@ pub(crate) fn client_file_in(client_dir: Option<&std::path::Path>, rel: &str) ->
     }
 }
 
+/// Client pages the app shows in a frame of its own page (same origin only).
+const FRAMED_PAGES: [&str; 1] = ["machine.html"];
+
 /// Static files (hashed assets cached for a year, index.html never), else index.html for
 /// client-side routes; unknown /api and /hub paths are 404.
 async fn static_or_index(State(state): State<Arc<AppState>>, method: Method, uri: Uri) -> Response {
@@ -706,11 +709,17 @@ async fn static_or_index(State(state): State<Arc<AppState>>, method: Method, uri
             } else {
                 "public, max-age=31536000, immutable"
             };
-            return Response::builder()
+            let mut r = Response::builder()
                 .header(header::CONTENT_TYPE, mime.as_ref())
-                .header(header::CACHE_CONTROL, cache)
-                .body(Body::from(bytes))
-                .unwrap();
+                .header(header::CACHE_CONTROL, cache);
+            // This Machine is shown in a frame of the settings (same origin); without this
+            // the default DENY made WebView2 block it.
+            if FRAMED_PAGES.contains(&rel.as_str()) {
+                r = r
+                    .header(header::X_FRAME_OPTIONS, "SAMEORIGIN")
+                    .header(header::CONTENT_SECURITY_POLICY, "frame-ancestors 'self'");
+            }
+            return r.body(Body::from(bytes)).unwrap();
         }
     }
     match client_file(&state, "index.html") {

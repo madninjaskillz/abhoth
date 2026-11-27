@@ -705,7 +705,11 @@ fn harden(mut r: Response) -> Response {
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),
     );
-    h.insert("x-frame-options", HeaderValue::from_static("DENY"));
+    // Pages meant to be framed by the app itself (This Machine in the settings, the HTML
+    // preview, attachments) say SAMEORIGIN themselves; everything else may not be framed.
+    if !h.contains_key("x-frame-options") {
+        h.insert("x-frame-options", HeaderValue::from_static("DENY"));
+    }
     h.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
     r
 }

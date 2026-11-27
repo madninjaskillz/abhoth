@@ -227,3 +227,11 @@ test("tab ids are unique, and the labels name the parts in full", () => {
   const texts = SETTINGS_TABS.flatMap((t) => [t.label, t.blurb, ...(t.groups ?? []).flatMap((g) => [g.title, g.blurb ?? ""])]);
   for (const x of texts) assert.doesNotMatch(x, /\b(Migo(?! Bridge)|Sothoth(?! Router)|Nodens(?! Supervisor))\b/, x);
 });
+
+test("the desktop owner sees This Machine and Migo Bridge in router mode too (a Sothoth Router linked or connected)", () => {
+  // Router mode is a connection setting: it never changes who sees the PC's own tabs.
+  const routerMode = { admin: true, desktop: true, router: true };
+  const tabs = ids(visibleTabs(routerMode, schema));
+  for (const id of ["desktop", "migo", "machine"]) assert.ok(tabs.includes(id), id);
+  assert.equal(pickTab("machine", visibleTabs(routerMode, schema)), "machine");
+});
