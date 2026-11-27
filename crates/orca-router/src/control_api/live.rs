@@ -134,6 +134,13 @@ fn cold_text(c: &ColdPolicy) -> &'static str {
 fn spec_text(c: &LayoutCard) -> String {
     match c {
         LayoutCard::Word(w) => w.clone(),
+        LayoutCard::Spec(s) if !s.devices.is_empty() => format!(
+            "{} / {} / {} (over {})",
+            s.engine,
+            s.profile,
+            s.model,
+            s.devices.join("+")
+        ),
         LayoutCard::Spec(s) => format!("{} / {} / {}", s.engine, s.profile, s.model),
     }
 }
@@ -283,6 +290,17 @@ impl ControlBackend for ConfigBackend {
                     let inst = instances
                         .iter()
                         .find(|i| &i.card == cid && &i.server == sid);
+                    let own = inst.filter(|i| !i.engine.is_empty());
+                    // A card another card's instance spans (tensor parallel) shows that one.
+                    let holder = instances.iter().find(|i| {
+                        &i.server == sid
+                            && &i.card != cid
+                            && !i.engine.is_empty()
+                            && i.spec
+                                .as_ref()
+                                .is_some_and(|s| s.devices.iter().any(|d| d == cid))
+                    });
+                    let held_by = own.is_none().then_some(holder).flatten();
                     CardView {
                         id: cid.clone(),
                         server: sid.clone(),
@@ -300,8 +318,13 @@ impl ControlBackend for ConfigBackend {
                         admin_note: admin
                             .as_ref()
                             .filter(|a| !a.reason.is_empty())
-                            .map(|a| format!("{} ({})", a.reason, a.by)),
-                        engine: inst.filter(|i| !i.engine.is_empty()).map(|i| EngineView {
+                            .map(|a| format!("{} ({})", a.reason, a.by))
+                            .or_else(|| {
+                                held_by.map(|h| {
+                                    format!("held by card {} (one server over both)", h.card)
+                                })
+                            }),
+                        engine: own.or(held_by).map(|i| EngineView {
                             engine: i.engine.clone(),
                             profile: i
                                 .spec
@@ -310,7 +333,11 @@ impl ControlBackend for ConfigBackend {
                                 .unwrap_or_default(),
                             model: i.spec.as_ref().map(|s| s.model.clone()).unwrap_or_default(),
                             served_id: String::new(),
-                            state: i.state.as_str().to_string(),
+                            state: if held_by.is_some_and(|h| std::ptr::eq(h, i)) {
+                                format!("held by {}", i.card)
+                            } else {
+                                i.state.as_str().to_string()
+                            },
                             since: i.since * 1000,
                             healthy: !i.unhealthy,
                         }),
@@ -807,6 +834,63 @@ mod tests {
     fn diffs_are_minimal() {
         assert_eq!(line_diff("a\nb\nc\n", "a\nx\nc\n"), "-b\n+x\n");
         assert_eq!(line_diff("a\n", "a\nb\n"), "+b\n");
+    }
+
+    #[tokio::test]
+    async fn a_held_card_shows_the_instance_that_spans_it() {
+        let d = tempfile::tempdir().unwrap();
+        let main = d.path().join("router.toml");
+        let text = format!(
+            "{FIXTURE}
+[layouts.dense-tp]
+title = \"Dense over both\"
+             cards = {{ A = {{ engine = \"ninfer\", profile = \"4lane\", model = \"dense\", devices = [\"A\", \"B\"] }}, B = \"held\" }}
+"
+        );
+        std::fs::write(&main, text).unwrap();
+        let store = Arc::new(Store::memory().unwrap());
+        let spec = crate::control::schema::CardSpec {
+            engine: "ninfer".into(),
+            profile: "4lane".into(),
+            model: "dense".into(),
+            devices: vec!["A".into(), "B".into()],
+        };
+        store
+            .put_instance(&crate::control::lifecycle::Instance {
+                server: "gpu".into(),
+                card: "A".into(),
+                engine: "ninfer".into(),
+                spec: Some(spec),
+                state: crate::control::lifecycle::InstanceState::Ready,
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .put_instance(&crate::control::lifecycle::Instance::off("gpu", "B"))
+            .unwrap();
+        let b = ConfigBackend::new(&main, d.path(), store);
+        let st = b.state();
+        assert!(st.config_error.is_none(), "{:?}", st.config_error);
+        let card = |id: &str| {
+            st.servers[0]
+                .cards
+                .iter()
+                .find(|c| c.id == id)
+                .cloned()
+                .unwrap()
+        };
+        let a = card("A").engine.unwrap();
+        assert_eq!((a.model.as_str(), a.state.as_str()), ("dense", "ready"));
+        let bv = card("B");
+        let be = bv.engine.unwrap();
+        assert_eq!(
+            (be.model.as_str(), be.state.as_str()),
+            ("dense", "held by A")
+        );
+        assert!(bv.admin_note.unwrap().contains("held by card A"));
+        let l = st.layouts.iter().find(|l| l.id == "dense-tp").unwrap();
+        assert_eq!(l.cards["A"], "ninfer / 4lane / dense (over A+B)");
+        assert_eq!(l.cards["B"], "held");
     }
 
     #[tokio::test]

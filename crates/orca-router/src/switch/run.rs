@@ -6,8 +6,8 @@ use tokio::time::Instant;
 
 use super::job::{JobRecord, JobSink, Step, now_iso};
 use super::{
-    CardSpec, Health, HostOps, OnMismatch, Plane, Spec, SwitchConfig, estimate, restart_set,
-    slot_names,
+    CardSpec, Health, HostOps, OnMismatch, Plane, Spec, SwitchConfig, estimate, overlaps,
+    restart_set, slot_names,
 };
 use crate::guards::{Action, Caller};
 use crate::leases::SlotView;
@@ -154,6 +154,14 @@ impl<H: HostOps, P: Plane> Orchestrator<H, P> {
         let prev = obs.spec.clone();
         let prev_name = req.active.clone().filter(|_| !prev.is_empty());
         r.job.from = prev_name.clone();
+        let clash = overlaps(&req.target);
+        if !clash.is_empty() {
+            return Err(Fail::Refused(format!(
+                "{}: {}",
+                req.layout,
+                clash.join("; ")
+            )));
+        }
         let moving = restart_set(&self.cfg, &prev, &req.target);
         r.job.estimate_seconds = Some(estimate(&self.cfg, &req.target, &moving));
         for c in &moving {
@@ -425,10 +433,16 @@ impl<H: HostOps, P: Plane> Orchestrator<H, P> {
                 r.step(format!("card {c}: gone after {tries} tries"));
             }
         }
+        // Every GPU a starting instance uses must be free (a tensor-parallel one spans cards).
+        let mut need_free: Vec<String> = Vec::new();
         for c in moving {
-            if target.get(c).is_none_or(|t| t.is_off()) {
-                continue;
+            for d in target.get(c).map(|t| t.cards_on(c)).unwrap_or_default() {
+                if !need_free.contains(&d) {
+                    need_free.push(d);
+                }
             }
+        }
+        for c in &need_free {
             let end = Instant::now() + self.cfg.gpu_free_timeout;
             loop {
                 let used = self

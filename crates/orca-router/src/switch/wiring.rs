@@ -76,8 +76,8 @@ pub fn switch_config(cfg: &ControlConfig, server: &str) -> SwitchConfig {
     out
 }
 
-/// A layout's target spec on `server`'s managed cards, with offline cards off. `None` for an
-/// unknown layout.
+/// A layout's target spec on `server`'s managed cards, with offline cards off (and an instance
+/// that spans an offline card off too). `None` for an unknown layout.
 pub fn target_spec(
     cfg: &ControlConfig,
     server: &str,
@@ -91,7 +91,11 @@ pub fn target_spec(
             .iter()
             .find(|(k, _)| k == c)
             .and_then(|(_, s)| s.clone())
-            .filter(|_| !offline.iter().any(|o| o == c));
+            .filter(|s| {
+                s.cards_on(c)
+                    .iter()
+                    .all(|d| !offline.iter().any(|o| o == d))
+            });
         out.insert(
             c.to_string(),
             s.map(|s| spec_of(cfg, &s)).unwrap_or_else(CardSpec::off),
@@ -108,7 +112,9 @@ pub fn spec_of(cfg: &ControlConfig, s: &schema::CardSpec) -> CardSpec {
         .and_then(|e| e.profiles.get(&s.profile))
         .map(|p| p.lanes)
         .unwrap_or(1);
-    CardSpec::new(&s.engine, &s.profile, &s.model, lanes)
+    let mut out = CardSpec::new(&s.engine, &s.profile, &s.model, lanes);
+    out.devices = s.devices.clone();
+    out
 }
 
 fn action(a: GuardAction) -> Action {

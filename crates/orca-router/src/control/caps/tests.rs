@@ -161,6 +161,7 @@ fn a_fork_runs_every_matching_model_with_no_model_edits() {
         engine: "llamacpp-fork".into(),
         profile: "x".into(),
         model: "qwen-gguf".into(),
+        devices: Vec::new(),
     };
     assert!(
         crate::control::resolve::resolve(&c2, "A", &spec).is_ok()

@@ -1511,7 +1511,8 @@ pub struct Layout {
     pub extra: IndexMap<String, Value>,
 }
 
-/// `"same"` (as the previous card), `"off"`, or a spec.
+/// `"same"` (as the previous card), `"off"`, `"held"` (used by an earlier card's instance that
+/// spans it: that card's spec lists it in `devices`), or a spec.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum LayoutCard {
@@ -1525,6 +1526,27 @@ pub struct CardSpec {
     pub engine: String,
     pub profile: String,
     pub model: String,
+    /// One instance over several cards (tensor parallel): every card it uses, its own card
+    /// first (`["A", "B"]`). The others are `"held"` in the layout and run nothing of their
+    /// own. Empty = just its own card.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<String>,
+}
+
+impl CardSpec {
+    /// The cards an instance of this spec on `own` uses: its `devices`, or just `own`.
+    pub fn cards_on(&self, own: &str) -> Vec<String> {
+        if self.devices.is_empty() {
+            vec![own.to_string()]
+        } else {
+            self.devices.clone()
+        }
+    }
+
+    /// The other cards it holds (`devices` without its own card).
+    pub fn held(&self, own: &str) -> Vec<String> {
+        self.devices.iter().filter(|d| *d != own).cloned().collect()
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
@@ -1919,8 +1941,8 @@ impl Default for OnDemandSection {
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
 impl ControlConfig {
-    /// The layout's cards with `"same"` resolved (to the previous card's spec) and `"off"` as
-    /// `None`, in card order.
+    /// The layout's cards with `"same"` resolved (to the previous card's spec) and `"off"` and
+    /// `"held"` as `None` (a held card runs nothing of its own), in card order.
     pub fn resolve_layout(&self, layout: &str) -> Option<Vec<(String, Option<CardSpec>)>> {
         let l = self.layouts.get(layout)?;
         Some(resolve_cards(l))

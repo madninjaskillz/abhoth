@@ -158,11 +158,7 @@ impl RouteSink for LiveRoutes {
             let cards = spec
                 .iter()
                 .map(|(c, s)| {
-                    let v = (!s.is_off()).then(|| schema::CardSpec {
-                        engine: s.engine.clone(),
-                        profile: s.profile.clone(),
-                        model: s.model.clone(),
-                    });
+                    let v = (!s.is_off()).then(|| s.to_schema());
                     (c.clone(), v)
                 })
                 .collect();
@@ -177,6 +173,7 @@ impl RouteSink for LiveRoutes {
             if let Err(e) = self.store.set_active_layout(&row) {
                 tracing::warn!("router.db: active layout: {e}");
             }
+            put_instances(&self.store, &self.server, spec, Some(ready), "switched");
             if let Some(d) = &self.legacy {
                 let mut slots = Vec::new();
                 for (c, s) in spec {
@@ -359,6 +356,17 @@ pub fn overlay(c: &ControlConfig, server: &str, run: &Running, rc: &mut RouterCo
     if !run.known {
         return;
     }
+    // `/status` and the LB show the layout that runs, not the one the file was written for.
+    if run.layout.is_some() {
+        rc.layout = run.layout.clone();
+    }
+    // What each card served before (the file's, or the last overlay's), to move deployments
+    // that follow their cards' engine id along with it.
+    let served_before: std::collections::HashMap<String, String> = rc
+        .upstreams
+        .iter()
+        .map(|(k, u)| (k.clone(), u.served_id.clone()))
+        .collect();
     for (card, s) in &run.spec {
         let Some(up) = rc.upstreams.get_mut(card) else {
             continue;
@@ -370,12 +378,7 @@ pub fn overlay(c: &ControlConfig, server: &str, run: &Running, rc: &mut RouterCo
         }
         up.online = run.ready.contains(card);
         up.catalog_model = Some(s.model.clone());
-        let ss = schema::CardSpec {
-            engine: s.engine.clone(),
-            profile: s.profile.clone(),
-            model: s.model.clone(),
-        };
-        if let Ok(r) = super::resolve::resolve(c, card, &ss) {
+        if let Ok(r) = super::resolve::resolve(c, card, &s.to_schema()) {
             if !up.served_id.is_empty() {
                 up.served_id = r.served_id.clone();
             }
@@ -398,6 +401,25 @@ pub fn overlay(c: &ControlConfig, server: &str, run: &Running, rc: &mut RouterCo
             .collect();
         if !keep.is_empty() {
             d.cards = keep;
+        }
+        // A deployment that sends its cards' engine id (it equals what one of them served)
+        // follows the id they serve now: a dense layout after an Inkling one must not be asked
+        // for `inkling-2-mini`. Ids the cards disagree on, or other ids, are left alone.
+        let follows = d.cards.iter().any(|c| {
+            served_before
+                .get(c)
+                .is_some_and(|b| !b.is_empty() && *b == d.served_id)
+        });
+        let now: std::collections::BTreeSet<&str> = d
+            .cards
+            .iter()
+            .filter(|c| serving.contains(c))
+            .filter_map(|c| rc.upstreams.get(c))
+            .map(|u| u.served_id.as_str())
+            .filter(|x| !x.is_empty())
+            .collect();
+        if follows && now.len() == 1 {
+            d.served_id = now.iter().next().unwrap().to_string();
         }
     }
 }
@@ -737,6 +759,19 @@ struct OrchEnsure {
 #[async_trait::async_trait]
 impl super::reconcile::Ensure for OrchEnsure {
     async fn ensure(&self, server: &str, layout: &str) -> Result<(), String> {
+        // The reconcile looked at the cards a while ago: a switch that ran (or runs) since is
+        // what the admin asked for, so it is never undone from that stale look.
+        if self.orch.busy() {
+            return Err("skipped: a switch is running".into());
+        }
+        if let Some(now) = self.store.active_layout(server).ok().flatten()
+            && now.layout != layout
+        {
+            return Err(format!(
+                "skipped: the active layout is {} now (switched meanwhile)",
+                now.layout
+            ));
+        }
         let offline = self.store.offline_cards().unwrap_or_default();
         let target = wiring::target_spec(&self.c, server, layout, &offline)
             .ok_or_else(|| format!("no layout {layout}"))?;
@@ -782,12 +817,7 @@ impl CallerResolver for ViaControl {
 /// `router.db` as found at startup: the active layout (when none is recorded yet) and an
 /// adopted instance per card, so the admin API and the `:8098` shim show what runs.
 fn seed_store(store: &Store, server: &str, run: &Running) {
-    let now = chrono::Utc::now().timestamp();
-    let schema_of = |s: &CardSpec| schema::CardSpec {
-        engine: s.engine.clone(),
-        profile: s.profile.clone(),
-        model: s.model.clone(),
-    };
+    let schema_of = |s: &CardSpec| s.to_schema();
     if store.active_layout(server).ok().flatten().is_none()
         && let Some(l) = &run.layout
     {
@@ -808,18 +838,35 @@ fn seed_store(store: &Store, server: &str, run: &Running) {
             tracing::warn!("router.db: active layout: {e}");
         }
     }
-    for (card, s) in &run.spec {
+    put_instances(store, server, &run.spec, None, "adopted");
+}
+
+/// One instance row per card for what runs (`ready` = the cards that answer; `None` = all of
+/// them), so the admin state, the `:8098` shim and the user view show it, a card another card's
+/// instance spans included.
+fn put_instances(store: &Store, server: &str, spec: &Spec, ready: Option<&[String]>, why: &str) {
+    let now = chrono::Utc::now().timestamp();
+    for (card, s) in spec {
         let i = if s.is_off() {
             super::lifecycle::Instance::off(server, card)
         } else {
+            let up = ready.is_none_or(|r| r.contains(card));
             super::lifecycle::Instance {
                 server: server.into(),
                 card: card.clone(),
                 engine: s.engine.clone(),
-                spec: Some(schema_of(s)),
-                state: super::lifecycle::InstanceState::Ready,
+                spec: Some(s.to_schema()),
+                state: if up {
+                    super::lifecycle::InstanceState::Ready
+                } else {
+                    super::lifecycle::InstanceState::Failed
+                },
                 since: now,
-                detail: "adopted".into(),
+                detail: if up {
+                    why.into()
+                } else {
+                    "not answering".into()
+                },
                 ..Default::default()
             }
         };
@@ -1162,6 +1209,7 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
                     engine: m.engine.clone(),
                     profile,
                     model: m.model.clone(),
+                    devices: Vec::new(),
                 },
             ))
         })
@@ -1258,7 +1306,8 @@ mod tests {
             rc.upstreams.insert(
                 card.into(),
                 serde_json::from_value(serde_json::json!({
-                    "url": format!("http://h:{port}"), "engine": "ninfer", "lanes": 4
+                    "url": format!("http://h:{port}"), "engine": "ninfer", "lanes": 4,
+                    "servedId": "m"
                 }))
                 .unwrap(),
             );
@@ -1269,8 +1318,14 @@ mod tests {
             cards: vec!["A".into(), "B".into()],
             ..Deployment::default()
         });
+        rc.deployments.push(Deployment {
+            name: "pinned".into(),
+            served_id: "other".into(),
+            cards: vec!["A".into()],
+            ..Deployment::default()
+        });
         let mut spec = Spec::new();
-        spec.insert("A".into(), CardSpec::new("ninfer", "p", "m", 4));
+        spec.insert("A".into(), CardSpec::new("ninfer", "4lane", "dense", 4));
         spec.insert("B".into(), CardSpec::off());
         let run = Running {
             layout: Some("L".into()),
@@ -1280,8 +1335,20 @@ mod tests {
         };
         overlay(&c, &server, &run, &mut rc);
         assert!(!rc.upstreams["B"].online);
-        assert_eq!(rc.upstreams["A"].catalog_model.as_deref(), Some("m"));
+        assert_eq!(rc.upstreams["A"].catalog_model.as_deref(), Some("dense"));
         assert_eq!(rc.deployments[0].cards, ["A"]);
+        assert_eq!(
+            rc.layout.as_deref(),
+            Some("L"),
+            "the running layout, not the file's"
+        );
+        // the engine id ("m" in the file) became the card's: the sample's served id
+        assert_eq!(rc.upstreams["A"].served_id, "dense-27b");
+        assert_eq!(rc.deployments[0].served_id, "dense-27b");
+        assert_eq!(
+            rc.deployments[1].served_id, "other",
+            "not the cards' id: left alone"
+        );
         assert!(!rc.on_demand.dry_run);
         assert!(rc.on_demand.profiles_api.is_empty());
         crate::config::validate(&rc).unwrap();

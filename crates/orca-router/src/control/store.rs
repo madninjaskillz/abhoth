@@ -860,6 +860,7 @@ mod tests {
             engine: "ninfer".into(),
             profile: "p".into(),
             model: "m".into(),
+            devices: Vec::new(),
         };
         let mut cards = indexmap::IndexMap::new();
         cards.insert("A".to_string(), Some(spec.clone()));

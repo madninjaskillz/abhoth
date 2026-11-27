@@ -25,6 +25,12 @@ use crate::switch::{
 /// The header that marks a request that must never trigger an on-demand switch.
 pub const NO_SWITCH_HEADER: &str = "x-abhoth-no-switch";
 
+/// How long a model restore from the archive may run. Never over the host's default limit
+/// (hostctl refuses longer requests: "timeout over the host's 7200 s limit"), so a switch that
+/// restores a model is not refused before it starts.
+pub(crate) const RESTORE_TIMEOUT: Duration =
+    Duration::from_secs(super::hostctl::DEFAULT_MAX_TIMEOUT_SECONDS);
+
 pub struct ExecHost {
     cfg: RwLock<Arc<ControlConfig>>,
     pub server: String,
@@ -85,6 +91,7 @@ impl ExecHost {
             engine: s.engine.clone(),
             profile: s.profile.clone(),
             model: s.model.clone(),
+            devices: s.devices.clone(),
         }
     }
 
@@ -472,7 +479,7 @@ impl HostOps for ExecHost {
                 "restore-file",
                 json!({"path": path, "manifest": manifest}),
                 true,
-                Duration::from_secs(4 * 3600),
+                RESTORE_TIMEOUT,
             )
             .await?;
         Ok(match out.stdout.trim() {

@@ -8,7 +8,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use super::{CardSpec, HostOps, Orchestrator, Plane, Spec, SwitchRequest, restart_set};
+use super::{CardSpec, HostOps, Orchestrator, Plane, Spec, SwitchRequest, holder_of, restart_set};
 use crate::config::OnDemandModel;
 use crate::guards::{Action, Caller};
 
@@ -98,6 +98,10 @@ impl<H: HostOps + 'static, P: Plane + 'static> OnDemandSwitcher for InProcess<H,
             };
             let (active, now) = self.current.lock().unwrap().clone();
             let mut to = now.clone();
+            // An instance that spans this card (tensor parallel) has to go for it.
+            while let Some(h) = holder_of(&to, card) {
+                to.insert(h, CardSpec::off());
+            }
             to.insert(card.to_string(), want);
             let layout = format!("on-demand:{card}={target}");
             if to == now {

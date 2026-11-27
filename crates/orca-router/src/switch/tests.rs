@@ -816,3 +816,146 @@ async fn on_demand_runs_through_the_orchestrator() {
         Ask::Refused(_)
     ));
 }
+
+// ── one instance over two cards (tensor parallel) ───────────────────────────────────────────
+
+/// The dense model as one server over A+B: A's spec spans B, B runs nothing of its own.
+fn tp() -> CardSpec {
+    let mut s = CardSpec::new("ninfer", "merged-tp-4lane", "dense-stock", 4);
+    s.devices = vec!["A".into(), "B".into()];
+    s
+}
+
+#[test]
+fn a_spanning_instance_holds_its_cards() {
+    let cfg = SwitchConfig::deepthought_like(&["A", "B"]);
+    let off = CardSpec::off;
+    // into and out of it, both cards move (B's own server goes or comes back)
+    assert_eq!(
+        restart_set(&cfg, &spec(ink(), ink()), &spec(tp(), off())),
+        ["A", "B"]
+    );
+    assert_eq!(
+        restart_set(&cfg, &spec(tp(), off()), &spec(ink(), ink())),
+        ["A", "B"]
+    );
+    // to an A-only layout: just A
+    assert_eq!(
+        restart_set(&cfg, &spec(tp(), off()), &spec(ink(), off())),
+        ["A"]
+    );
+    assert!(restart_set(&cfg, &spec(tp(), off()), &spec(tp(), off())).is_empty());
+    // who holds what, and a spec that gives B twice
+    assert_eq!(holder_of(&spec(tp(), off()), "B").as_deref(), Some("A"));
+    assert_eq!(holder_of(&spec(tp(), off()), "A"), None);
+    assert_eq!(holder_of(&spec(ink(), ink()), "B"), None);
+    assert!(overlaps(&spec(tp(), off())).is_empty());
+    assert_eq!(
+        overlaps(&spec(tp(), ink())),
+        ["card B is used by both A and B"]
+    );
+    // slots: one upstream with A's lanes, no B slots
+    assert_eq!(
+        slot_names(&cfg, &spec(tp(), off())),
+        ["A1", "A2", "A3", "A4"]
+    );
+    assert_eq!(tp().cards_on("A"), ["A", "B"]);
+    assert!(off().cards_on("B").is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn switching_to_one_server_over_both_cards() {
+    let r = rig(spec(ink(), ink()));
+    // B's memory takes a while to drop after its server stops
+    r.host
+        .st
+        .lock()
+        .unwrap()
+        .gpu_used
+        .insert("B".into(), vec![30000, 9000, 200]);
+    let j = r
+        .orch
+        .switch(req("merged-dense-tp", spec(tp(), CardSpec::off())))
+        .await;
+    assert_eq!(j.state, "done", "{}", steps(&j));
+    let c = r.host.calls();
+    // the model files once, both servers stopped, both GPUs free before the one start
+    assert_eq!(r.host.calls_like("restore"), ["restore A dense-stock"]);
+    assert!(pos(&c, "stop A").is_some() && pos(&c, "stop B").is_some());
+    assert_eq!(r.host.calls_like("gpu B").len(), 3);
+    let start = pos(&c, "start A").unwrap();
+    assert!(c[..start].iter().filter(|x| *x == "gpu B").count() == 3);
+    assert!(pos(&c, "start B").is_none());
+    assert_eq!(r.host.calls_like("chat"), ["chat A"]);
+    // one upstream with 4 lanes: A1-A4, no B slots
+    let v = r.plane.view.lock().unwrap().clone();
+    assert_eq!(v.slots, ["A1", "A2", "A3", "A4"]);
+    assert_eq!(
+        r.plane.commits.lock().unwrap().last().unwrap().1,
+        ["A".to_string()]
+    );
+    assert_eq!(r.host.st.lock().unwrap().running["A"].devices, ["A", "B"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn switching_back_to_two_servers() {
+    let r = rig(spec(tp(), CardSpec::off()));
+    // the spanning server's memory on B goes with A's stop
+    r.host
+        .st
+        .lock()
+        .unwrap()
+        .gpu_used
+        .insert("B".into(), vec![15000, 100]);
+    let j = r
+        .orch
+        .switch(req("merged-x2", spec(dense(), dense())))
+        .await;
+    assert_eq!(j.state, "done", "{}", steps(&j));
+    let c = r.host.calls();
+    // B ran nothing of its own: only A is stopped; B starts once its GPU is free
+    assert_eq!(r.host.calls_like("stop"), ["stop A"]);
+    assert_eq!(r.host.calls_like("gpu B").len(), 2);
+    assert!(pos(&c, "gpu B").unwrap() < pos(&c, "start B").unwrap());
+    let mut chats = r.host.calls_like("chat");
+    chats.sort();
+    assert_eq!(chats, ["chat A", "chat B"]);
+    let v = r.plane.view.lock().unwrap().clone();
+    assert_eq!(v.slots, ["A1", "A2", "B1", "B2"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_target_that_gives_a_card_twice_is_refused() {
+    let r = rig(spec(ink(), ink()));
+    let j = r.orch.switch(req("bad", spec(tp(), ink()))).await;
+    assert_eq!(j.state, "refused");
+    assert!(
+        j.error
+            .as_deref()
+            .unwrap()
+            .contains("card B is used by both A and B"),
+        "{:?}",
+        j.error
+    );
+    assert!(r.host.calls_like("stop").is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_spanning_start_rolls_back_to_two_servers() {
+    let r = rig(spec(ink(), ink()));
+    r.host.st.lock().unwrap().exits.insert(
+        ("A".into(), "dense-stock".into()),
+        ("peer access failed".into(), None),
+    );
+    let j = r
+        .orch
+        .switch(req("merged-dense-tp", spec(tp(), CardSpec::off())))
+        .await;
+    assert_eq!(j.state, "rolled-back", "{}", steps(&j));
+    let st = r.host.st.lock().unwrap();
+    assert_eq!(st.running["A"], ink());
+    assert_eq!(st.running["B"], ink());
+    drop(st);
+    let v = r.plane.view.lock().unwrap().clone();
+    assert_eq!(v.slots, ["A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4"]);
+}
