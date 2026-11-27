@@ -1026,6 +1026,9 @@ each (engine, card) every 15 seconds:
   rather than as a foreign holder. So no pipeline run or LLM switch can lose one.
 - **Foreign:** if a container with that name exists without the label, it is left alone and
   reported as `foreign`.
+- **Changes:** a running container is never replaced, so a changed `[engines.x]` or package
+  takes effect when the operator removes the container (`docker rm -f <name>`); the next tick
+  creates it again from the new config.
 
 `memory_gib` is what the engine holds on its card: VRAM on a GPU card, RAM on a CPU card. It
 comes off the card's room in placement and in layout validation, and validation fails if a
