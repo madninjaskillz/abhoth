@@ -584,6 +584,8 @@ pub fn view(c: &ControlConfig) -> Value {
                 "id": sid, "title": s.title, "host": s.host,
                 "exec": match s.exec { super::schema::ExecKind::Local => "local", super::schema::ExecKind::Ssh => "ssh", super::schema::ExecKind::Bridge => "bridge" },
                 "modelDir": s.model_dir, "comfyRoot": s.comfy_root, "cards": cards,
+                // `bridge:<id>`: read-only here, managed by that bridge (ROUTER-MEDIA-PLAN.md 13.4).
+                "origin": s.origin,
             })
         })
         .collect();

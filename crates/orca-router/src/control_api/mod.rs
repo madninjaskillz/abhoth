@@ -533,7 +533,8 @@ async fn inventory_api(
     let fail = |e: String| err(422, &e);
     match (m, first, rest) {
         (Method::GET, "inventory", []) => {
-            let mut v = inventory::view(&c);
+            // router.toml with the connected bridges' servers, cards and engines merged in.
+            let mut v = inventory::view(&crate::bridges::effective(&c));
             v["restartNeeded"] = json!(svc.restart_needed(&c));
             v["hf"] = svc.token_view(&c);
             ok(&v)

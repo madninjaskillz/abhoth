@@ -89,6 +89,16 @@ fn the_overlay_adds_the_bridge_server_cards_and_engines() {
     // the bridge's server never serialises with its origin
     let text = toml::to_string(&c).unwrap();
     assert!(!text.contains("origin"));
+    // the admin's inventory view lists it, marked as the bridge's
+    let v = crate::control::inventory::view(&c);
+    let nas = v["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["id"] == "nas")
+        .expect("nas in the inventory view");
+    assert_eq!(nas["exec"], "bridge");
+    assert_eq!(nas["origin"], "bridge:nas");
 }
 
 #[test]
