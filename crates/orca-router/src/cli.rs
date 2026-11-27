@@ -36,7 +36,7 @@ USAGE:
   abhoth router import-litellm --litellm config.yaml --lb nginx.conf [--gateway gateway.json]
                 [--key-file PATH] [--base router.json] --out router.json [--watch SECONDS]
   abhoth router check --config router.json
-  abhoth router admin-demo --listen 127.0.0.1:8010 --link-token-file FILE [--accounts-url URL]
+  abhoth router admin-demo --listen 127.0.0.1:8010 --link-token-file FILE [--accounts-url URL] [--loopback-admin] [--state-dir DIR]
                 (the admin API on an in-memory demo host, for the web UI's admin pages)
   abhoth router import --from DIR --out router.toml [--report report.md] [--seed seed.json]
                 [--key-delivery file_flag|wrapper|argv] [--key-file-build ENGINE=BUILD]... [--enable-on-demand] [--server ID]
@@ -132,6 +132,8 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
 async fn admin_demo(args: &[String]) -> Result<i32> {
     let (mut listen, mut token_file, mut accounts, mut calendar) =
         ("127.0.0.1:8010".to_string(), None, None, None::<String>);
+    let mut loopback_admin = false;
+    let mut state_dir: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -140,6 +142,10 @@ async fn admin_demo(args: &[String]) -> Result<i32> {
             "--accounts-url" => accounts = Some(take(args, &mut i, "--accounts-url")?),
             // A calendar.toml for the calendar page (in-memory store, the demo's cards A-D).
             "--calendar" => calendar = Some(take(args, &mut i, "--calendar")?),
+            // Screenshots: requests from this machine act as an admin (no sign-in).
+            "--loopback-admin" => loopback_admin = true,
+            // The inventory and engine store keep their files here (default: a temp folder).
+            "--state-dir" => state_dir = Some(take(args, &mut i, "--state-dir")?),
             a => bail!("unknown argument {a}"),
         }
         i += 1;
@@ -171,12 +177,24 @@ async fn admin_demo(args: &[String]) -> Result<i32> {
     let st = AppState::new(snap, None);
     let demo = crate::control_api::demo::DemoControl::new();
     demo.spawn_ticker();
+    {
+        // The inventory, downloads and engine store against the demo's config; nothing runs.
+        use crate::control_api::ControlBackend;
+        let dir = state_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("abhoth-admin-demo"));
+        let _ = std::fs::create_dir_all(&dir);
+        let main = PathBuf::from(demo.config().path);
+        let no_exec: crate::control::downloads::ExecFor =
+            Arc::new(|_c, s| Err(format!("admin-demo: nothing runs on `{s}`")));
+        crate::control::downloads::install_with(&main, &dir, demo.clone(), no_exec);
+    }
     let settings = crate::access::AccessSettings {
         accounts_token: accounts
             .as_ref()
             .map(|_| "secret:accounts_token".to_string()),
         accounts_url: accounts,
-        loopback_admin: false,
+        loopback_admin,
         ..Default::default()
     };
     let _ = st.control.set(Arc::new(crate::control_api::ControlPlane {
