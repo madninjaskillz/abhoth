@@ -240,7 +240,17 @@ jobs:
             --packAuthors Abhoth --runtime win-x64 --channel win --shortcuts StartMenuRoot \
             --packDir "$out/win" --mainExe abhoth-desktop.exe \
             --icon assets/abhoth/icons/abhoth.ico --outputDir "$out/vpk-win"
-          vpk '[linux]' pack --packId Abhoth --packVersion "$VERSION" --packTitle Abhoth \
+          # The Linux package is one file, the AppImage, and vpk squashes it with gzip: every
+          # compressed block changes between builds, so zstd's delta saved ~10% (66 of 74 MB).
+          # An uncompressed squashfs (mksquashfs -noI -noD -noF -noX, via a wrapper ahead of it
+          # on PATH) lets the delta see the binaries (~14 MB); the nupkg is still zipped, so the
+          # full download stays ~69 MB, but the AppImage itself is ~177 MB. Stripped first: the
+          # symbol tables are ~25 MB of each binary (the Windows exes carry none either).
+          strip "$out/linux/abhoth" "$out/linux/abhoth-desktop"
+          sq="$RUNNER_TEMP/mksquashfs-raw"; mkdir -p "$sq"
+          printf '#!/bin/sh\nexec %s "$@" -noI -noD -noF -noX\n' "$(command -v mksquashfs)" > "$sq/mksquashfs"
+          chmod +x "$sq/mksquashfs"
+          PATH="$sq:$PATH" vpk '[linux]' pack --packId Abhoth --packVersion "$VERSION" --packTitle Abhoth \
             --packAuthors Abhoth --runtime linux-x64 --channel linux \
             --packDir "$out/linux" --mainExe abhoth-desktop \
             --icon assets/abhoth/icons/abhoth-256.png --outputDir "$out/vpk-linux"
