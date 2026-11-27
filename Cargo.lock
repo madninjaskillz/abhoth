@@ -3221,7 +3221,7 @@ dependencies = [
 
 [[package]]
 name = "orca-bridge"
-version = "0.16.19"
+version = "0.16.20"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
