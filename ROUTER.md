@@ -1058,7 +1058,7 @@ is inventory only:
   and that client's `/ws` reach the server that took it.
 - `GET /v1/models?kind=image|tts|stt|music|video|media` lists the inventory's media models (not
   components); without `kind` the list is the chat models', as before.
-**Images in the router (phase 4, 0.16.28):** `POST /v1/images/generations` and `/edits` are
+**Images in the router (phase 4, 0.16.29):** `POST /v1/images/generations` and `/edits` are
 rendered by the router on the ComfyUI engines (the image API shim's logic), whenever a recipe
 and a ComfyUI engine are configured (else they go to an `openai-images` engine as before):
 
