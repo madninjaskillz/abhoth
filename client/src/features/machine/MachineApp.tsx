@@ -33,7 +33,7 @@ export function MachineApp() {
       </header>
       {pending > 0 && (
         <button className="border-b bg-warning/10 px-4 py-2 text-left text-xs" onClick={() => setTab("sharing")} data-testid="machine-pending-banner">
-          A router admin asked for {pending} change{pending > 1 ? "s" : ""} that need{pending > 1 ? "" : "s"} your approval: open <b>Sharing & bridge</b>.
+          A Sothoth admin asked for {pending} change{pending > 1 ? "s" : ""} that need{pending > 1 ? "" : "s"} your approval: open <b>Sharing & Migo</b>.
         </button>
       )}
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
@@ -43,7 +43,7 @@ export function MachineApp() {
             <TabsTrigger value="running" data-testid="machine-tab-running"><Play className="mr-1 size-3.5" />Running</TabsTrigger>
             <TabsTrigger value="manual" data-testid="machine-tab-manual"><Wrench className="mr-1 size-3.5" />Manual engines</TabsTrigger>
             <TabsTrigger value="store" data-testid="machine-tab-store"><Package className="mr-1 size-3.5" />Engine store</TabsTrigger>
-            <TabsTrigger value="sharing" data-testid="machine-tab-sharing"><Cable className="mr-1 size-3.5" />Sharing & bridge{pending > 0 && <Badge variant="warning" className="ml-1">{pending}</Badge>}</TabsTrigger>
+            <TabsTrigger value="sharing" data-testid="machine-tab-sharing"><Cable className="mr-1 size-3.5" />Sharing & Migo{pending > 0 && <Badge variant="warning" className="ml-1">{pending}</Badge>}</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="inventory" className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"><InventoryForms single /></TabsContent>
@@ -60,8 +60,8 @@ const Spinner = () => <Loader2 className="m-4 size-4 animate-spin text-muted-for
 
 function BridgeBadge({ s }: { s: MachineStatus }) {
   if (!s.bridgeMode) return <Badge variant="outline">runs its engines itself</Badge>;
-  if (s.bridge?.connected) return <Badge variant="success" data-testid="machine-bridge-online">bridged to {s.bridge.router ?? s.bridgeRouter} · online</Badge>;
-  return <Badge variant="warning" title={s.bridge?.lastError ?? ""}>bridged · offline{s.bridge?.lastError ? `: ${s.bridge.lastError}` : ""}</Badge>;
+  if (s.bridge?.connected) return <Badge variant="success" data-testid="machine-bridge-online">Migo to {s.bridge.router ?? s.bridgeRouter} · online</Badge>;
+  return <Badge variant="warning" title={s.bridge?.lastError ?? ""}>Migo · offline{s.bridge?.lastError ? `: ${s.bridge.lastError}` : ""}</Badge>;
 }
 
 function Running({ s }: { s: MachineStatus }) {

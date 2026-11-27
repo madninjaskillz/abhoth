@@ -247,7 +247,7 @@ function MachineConfig({ b }: { b: BridgeView }) {
   return (
     <section className="space-y-1" data-testid="bridged-config">
       <h4 className="font-semibold">Its inventory (router.toml on the machine)</h4>
-      <p className="text-muted-foreground">The bridge checks each change, keeps a backup and logs it as yours. Turning on anything that needs approval there (privileged containers, host network or folders, host processes) waits for its user to approve. The router address, the token and this setting cannot be changed from here.</p>
+      <p className="text-muted-foreground">Migo checks each change, keeps a backup and logs it as yours. Turning on anything that needs approval there (privileged containers, host network or folders, host processes) waits for its user to approve. The router address, the token and this setting cannot be changed from here.</p>
       {doc.isLoading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
       {doc.isError && <div className="text-destructive">{errText(doc.error)}</div>}
       {doc.data && (

@@ -47,7 +47,7 @@ export function BridgesForms() {
       {error && <div className="text-xs text-destructive">{error}</div>}
       {made && (
         <div className="space-y-1 rounded-md border border-warning/50 p-2 text-xs" data-testid="bridge-token-made">
-          <div className="font-medium">Token for bridge {made.id}: copy it now, it is not shown again. Put it in the bridge's token file (mode 600) or the desktop app's Bridge token setting.</div>
+          <div className="font-medium">Token for Migo machine {made.id}: copy it now, it is not shown again. Put it in its Migo token file (mode 600) or the desktop app's Migo: token setting.</div>
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 break-all rounded bg-muted px-2 py-1">{made.token}</code>
             <Button size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText(made.token)} aria-label="Copy"><Copy /></Button>
@@ -55,14 +55,14 @@ export function BridgesForms() {
           </div>
         </div>
       )}
-      {bridges.length === 0 && <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">No bridges yet. Make a token above, then start the bridge with it.</div>}
+      {bridges.length === 0 && <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">No Migo machines yet. Make a token above, then start Migo with it.</div>}
       {bridges.map((b) => (
         <BridgeTokenRow key={b.id} b={b} onRotate={() => mint.mutate({ id: b.id, rotate: true })} onRevoke={() => setRevoking(b.id)} />
       ))}
       {revoking && (
         <ConfirmDialog
           open
-          title={`Remove bridge ${revoking}?`}
+          title={`Remove Migo machine ${revoking}?`}
           body="Its token stops working at once and it disconnects. Its server and cards leave the inventory."
           confirm="Remove"
           destructive
