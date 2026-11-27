@@ -27,7 +27,7 @@ pub struct Approvals {
     /// The package comes from an untrusted store, and the admin installs it anyway.
     #[serde(default)]
     pub untrusted: bool,
-    /// Who approved, for the audit (`admin:james`).
+    /// Who approved, for the audit (`admin:alice`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub by: String,
 }
