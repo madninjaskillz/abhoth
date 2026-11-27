@@ -260,7 +260,8 @@ fn fast() -> Timing {
 }
 
 async fn until(what: &str, f: impl Fn() -> bool) {
-    let end = std::time::Instant::now() + Duration::from_secs(10);
+    // detection runs first (on Windows a PowerShell query): be generous
+    let end = std::time::Instant::now() + Duration::from_secs(30);
     while !f() {
         assert!(
             std::time::Instant::now() < end,
@@ -284,8 +285,11 @@ async fn a_bridge_registers_answers_commands_and_carries_requests() {
         Arc::new(|_: &str| {}),
         fast(),
     );
-    until("the bridge to register", || hub.online("nas")).await;
-    assert!(h.status().connected);
+    // the hub knows it a moment before the bridge has read the welcome
+    until("the bridge to register", || {
+        hub.online("nas") && h.status().connected
+    })
+    .await;
     assert_eq!(h.status().server.as_deref(), Some("nas"));
 
     // the overlay sees it
