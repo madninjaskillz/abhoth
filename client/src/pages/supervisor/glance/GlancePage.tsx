@@ -92,7 +92,7 @@ function SlotRow({ s, inst, lease, h, now, version }: { s: NonNullable<Instance[
       <div className="lbl" role="rowheader">{s.label}</div>
       <div className={"chip " + s.state} title={chip} role="cell">{chip}</div>
       <div className="sparkcell" role="cell">{busy && <Spark ring={ring} now={now} version={version} label={`${s.label} tok/s`} height={18} unit=" t/s" digits={1} />}</div>
-      <div className="tok" role="cell">{s.state === "generating" || (s.tok_s ?? 0) > 0 ? fmt(s.tok_s, 1) : "–"}{s.estimated ? "*" : ""}</div>
+      <div className="tok" role="cell">{s.state === "generating" || (s.tok_s ?? 0) > 0 ? <>{fmt(s.tok_s, 1)}{s.estimated ? "*" : ""}</> : "–"}</div>
       <div className="ctx" role="cell" title="tokens in context">{s.prompt_tokens ? kTok(s.prompt_tokens + (s.generated || 0)) : ""}</div>
       {lease && <div className="lease" role="cell">{lease}</div>}
     </div>
@@ -193,7 +193,7 @@ const GpuCard = memo(function GpuCard({ g, s, h, version }: { g: Gpu; s: GlanceS
             <dd className="small">{[g.clock.serving, g.clock.phase === "low" ? "idle-low" : g.clock.phase, g.clock.cap_mhz ? `cap ${g.clock.cap_mhz} MHz` : null, g.clock.pinned ? "pinned" : null].filter(Boolean).join(" · ")}{g.clock.saved_wh != null && <span className="muted"> · saved {fmt(g.clock.saved_wh, 1)} Wh</span>}</dd>
           </div>
         )}
-        <div className="stat"><dt>PCIe</dt><dd>gen{fmt(g.pcie_link_gen_current)} ×{fmt(g.pcie_link_width_current)}</dd></div>
+        <div className="stat"><dt>PCIe</dt><dd>{g.pcie_link_gen_current != null ? `gen${fmt(g.pcie_link_gen_current)} ×${fmt(g.pcie_link_width_current)}` : "–"}</dd></div>
         <div className="stat">
           <dt>Throttle</dt>
           <dd>{thr.length ? <><Dot level="serious" /><span>{thr.join(", ")}</span></> : <span className="muted">none</span>}</dd>
@@ -249,7 +249,7 @@ function CardsPanel({ s, admin }: { s: GlanceState; admin: boolean }) {
           <div className="cardrow" key={v.card}>
             <div><Dot level={lvl} /> <b>Card {v.card}</b> <span className="muted small">{v.gpu}</span></div>
             <div className="small t2">
-              {v.offline ? <><b>OFFLINE</b>{v.since ? ` since ${new Date(v.since).toLocaleTimeString()}` : ""} · layout wants {v.layoutEngine}</> : `${v.engine} · ${v.slots} slots · ${v.detail}`}
+              {v.offline ? <><b>OFFLINE</b>{v.since ? ` since ${new Date(v.since).toLocaleTimeString()}` : ""} · layout wants {v.layoutEngine}</> : [v.engine, v.slots != null ? `${v.slots} slots` : null, v.detail].filter((x) => x != null && x !== "").join(" · ") || "–"}
             </div>
             <div className="small muted">{v.model || "–"}</div>
             <div className="small num t2">{g ? `VRAM ${gib(g.memory_used_bytes)} / ${gib(g.memory_total_bytes)} GiB · util ${fmt((g.utilization_gpu_ratio || 0) * 100)}%` : "no GPU metrics"}</div>

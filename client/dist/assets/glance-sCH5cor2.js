@@ -1,0 +1,1 @@
+import{c as t,j as e,R as r,G as a}from"./index-CI_2-124.js";import"./cjs-CqkleIqs.js";t.createRoot(document.getElementById("root")).render(e.jsx(r.StrictMode,{children:e.jsx(a,{streamUrl:"/public/glance/stream",publicView:!0})}));
