@@ -700,6 +700,7 @@ upstream; such a package cannot be published to a store.
 |---|---|---|
 | Core: CPU cards, media and video kinds, roles and components, media routes on `:8010` (`/v1/images`, `/v1/audio/*`, music, `/comfyui/` with WebSocket and streaming), placement and failover for media, model sync, the DeepThought migration, retiring the TrueNAS apps, closing `:8188`, moving the pipelines | 🟩B | Phase 1 shipped in 0.16.17 (`local/abhoth:16`, live): inventory only |
 | Headless bridge: `abhoth bridge`, the protocol (13.1), the descriptor (13.2), its Docker image, PC bridge mode in the desktop app, the truenas.local deploy, supervising engines on the bridge's host; router side: `/bridge/ws`, tokens, the overlay and tunnel (13.4), the Bridges admin page | 🟧E | Shipped: bridge, protocol, image, PC Bridge mode, router side (tokens, overlay, tunnel, admin page); client routing waits on the media routes calling `upstream_for` |
+| This machine (MACHINE.md, D155): the desktop app's own inventory and engines on an in-process router, bridge sharing (`models`, `remote_config`, `engines_off`), remote config through the bridge, bridged machines as their own group in the router admin, raw TCP streams (13.1), images fetched ahead of time, ZFS ARC in free RAM | 🟪D | In abhoth-v0.16.30 |
 | Engine packages: the manifest schema and methods, `abhoth engine validate`, the shared runner (13.3), the metadata-only `stores/`, the Engine store tab and the wizard, manual engines first-class, packages for ComfyUI, Chatterbox, whisper, Kokoro, sa3 and llama.cpp | 🟥F | Shipped in abhoth-v0.16.20: crate `orca-engines`, `driver = "package"`, `/admin/api/engine-store/`, the Engine store tab and wizard, docs/ENGINE-PACKAGES.md. The router runs container methods only; host methods run under the bridge. |
 
 Rules: section 13 is the source of truth for the seams between the three. Change it in small
@@ -725,9 +726,9 @@ version from main at release time.
 | Direction | `t` | Fields | Meaning |
 |---|---|---|---|
 | bridge → router | `hello` | `v`, `bridge` (id), `version` (abhoth version), `descriptor` (13.2) | The first frame on every connection. |
-| router → bridge | `welcome` | `v`, `server` (the id the router gives it), `settings` (`enabled`, `priority`) | The connection is accepted. |
+| router → bridge | `welcome` | `v`, `server` (the id the router gives it), `settings` (`enabled`, `priority`, `engines_off`) | The connection is accepted. `engines_off` (added 0.16.30, skipped when empty): shared engines the router admin chose not to use; the router leaves them out of its overlay. |
 | bridge → router | `descriptor` | `descriptor` | The full descriptor again after a local change; it replaces the old one. |
-| router → bridge | `cmd` | `id`, `op`, `args` | `op`: `start`, `stop`, `status`, `logs`, `probe`, `detect`, `files`, `download`, `sync-receive`, `install`, `uninstall`. |
+| router → bridge | `cmd` | `id`, `op`, `args` | `op`: `start`, `stop`, `status`, `logs`, `probe`, `detect`, `files`, `download`, `sync-receive`, `install`, `uninstall`; with `remote_config` (MACHINE.md 8.1): `config.get`, `config.apply`, `machine.api`. |
 | bridge → router | `result` | `id`, `ok`, `data` or `error` | The answer to a `cmd`. |
 | bridge → router | `event` | `kind` (`engine-state`, `download`, `sync`, `log`), `data` | Unprompted state changes. |
 | router → bridge | `open` | `sid`, `engine`, `card`, `method`, `path`, `headers`, `ws` (bool) | Open a proxied HTTP request or WebSocket to a local engine. |
@@ -744,6 +745,26 @@ version from main at release time.
 - **Starting on demand:** an `open` for an engine with `lifecycle = "on_demand"` that is not
   running makes the bridge start it, wait for its health check, then proxy. The bridge stops it
   after `idle_stop_seconds` with no stream open. The router never has to send `start` first.
+- **Raw TCP streams** (added 0.16.30, for Wyoming: whisper on `:10300`, piper): an `open` with
+  `method: "TCP"` (and an empty `path`) asks the bridge to connect to the engine's port (starting
+  it on demand, as above). The head is `200` once connected, `503`/`502` when the engine cannot
+  start or be reached, with nothing sent, so the router can fail over. After that the binary
+  frames are the bytes each way and `end` is a half-close. The router side is
+  `bridges::forward_tcp(hub, bridge, engine, card, socket)`. Chosen over an HTTP endpoint on the
+  whisper package: Wyoming clients (Home Assistant) speak TCP, and one stream mode covers every
+  Wyoming engine. A bridge older than 0.16.30 answers `TCP` with a 400 or an HTTP error: treat
+  anything but 200 as "not available here".
+- **Images and packages at install time** (0.16.30): the bridge fetches every docker image and
+  package of its engines when it starts and after a config change (`docker image inspect`, else
+  `docker pull`; a package install), not at the first request. Each result is an `event`
+  `engine-state` with `{"engine", "prepare": {"state": "ready"|"fetching"|"failed", "detail"|"error"}}`,
+  replayed on every connection. The router keeps the failures per engine and shows them in the
+  bridge's status (`engineProblems` in `/admin/api/bridges`); a start that fails the same way
+  answers 503 with that reason in the body (`bridge_engine_unavailable`).
+- **Free RAM** (0.16.30): when `/proc/spl/kstat/zfs/arcstats` exists, the RAM a start may use is
+  `MemAvailable + max(0, size - max(c_min, arc_meta_min))` less a margin (`[limits]
+  count_zfs_arc`, default true with ZFS; `arc_margin_gib`, default 0.5). `status` reports
+  `ram {available_gib, arc_reclaimable_gib, text}` beside `free_ram_gib`.
 - **Library:** crate `orca-bridge` holds the frames, the descriptor types, the stream multiplexer
   (both ends), the bridge's dial loop, detection (GPUs through `nvidia-smi`, CPU and RAM) and the
   engine supervisor seam (13.3; a minimal docker/process runner until `orca-engines` lands).
@@ -771,6 +792,11 @@ version from main at release time.
   means something outside the bridge also uses the card (Frigate on truenas.local), so the router
   never assumes it holds all of the VRAM.
 - `engines[].package` is null for a manual engine. Placement never reads it.
+- Additive fields (0.16.30, still `v: 1`; older routers ignore them, there is no
+  `deny_unknown_fields`): `remote_config` (bool, omitted when false: the bridge takes
+  `config.get`/`config.apply`/`machine.api`, MACHINE.md 8), `config_rev` (the revision of its
+  `router.toml`), `models` (`[{id, kind, engines}]`, the models it shares). A desktop bridge
+  (MACHINE.md) sends only the engines and models its user shares.
 - The router gives bridge cards global ids `<SERVER>-<card>` (for example `TRUENAS-GPU0`). An id
   that clashes with `router.toml` is refused, with the reason sent back in `result`.
 
