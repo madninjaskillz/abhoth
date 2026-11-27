@@ -106,6 +106,9 @@ pub struct Glance {
     supervisor_calendar: AtomicBool,
     /// The router's calendar answered (then a recording's calendar is left out).
     router_calendar: AtomicBool,
+    /// Held while sections go into both hubs and while both are flushed, so a flush never
+    /// publishes a change on one hub and not yet on the other.
+    publish: std::sync::Mutex<()>,
 }
 
 impl Glance {
@@ -122,6 +125,7 @@ impl Glance {
             public_addr: Default::default(),
             supervisor_calendar: AtomicBool::new(false),
             router_calendar: AtomicBool::new(false),
+            publish: Default::default(),
         })
     }
 
@@ -146,6 +150,7 @@ impl Glance {
     /// Sets sections on the full hub, and redacted on the public one. Published at the next
     /// flush.
     pub fn set_sections(&self, sections: &serde_json::Map<String, Value>) {
+        let _both = self.publish.lock().unwrap();
         for (k, v) in sections {
             self.full.set_section(k, v.clone());
         }
@@ -177,13 +182,31 @@ impl Glance {
         }
     }
 
-    /// Flushes both hubs now (tests; the flushers do it every `flush`).
+    /// Flushes both hubs now (the flusher does it every `flush`). The public hub first: by the
+    /// time a change reaches a full-feed reader, the public view already has it too.
     pub fn flush(&self) {
+        let _both = self.publish.lock().unwrap();
         let now = orca_sensors::now_ms();
-        self.full.flush(now);
         if let Some(p) = &self.public {
             p.flush(now);
         }
+        self.full.flush(now);
+    }
+
+    /// One flusher for both hubs (two independent timers let the public view lag the full one
+    /// by up to a whole interval).
+    fn spawn_flusher(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
+        let weak = Arc::downgrade(self);
+        let every = self.options.flush;
+        tokio::spawn(async move {
+            let mut t = tokio::time::interval(every);
+            t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                t.tick().await;
+                let Some(me) = weak.upgrade() else { break };
+                me.flush();
+            }
+        })
     }
 
     /// An immediate event, to both feeds (the public one without error text).
@@ -225,10 +248,7 @@ impl Glance {
             let me = self.clone();
             tasks.push(tokio::spawn(async move { me.follow_calendar(link).await }));
         }
-        tasks.push(self.full.spawn_flusher(self.options.flush));
-        if let Some(p) = &self.public {
-            tasks.push(p.spawn_flusher(self.options.flush));
-        }
+        tasks.push(self.spawn_flusher());
         self.tasks.lock().unwrap().extend(tasks);
         Ok(())
     }
