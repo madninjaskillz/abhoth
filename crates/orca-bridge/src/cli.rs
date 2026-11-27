@@ -103,7 +103,8 @@ async fn run(args: &[String], version: &str) -> Result<i32, String> {
             Ok(0)
         }
         Some("check") => {
-            let c = load(&config)?;
+            let mut c = load(&config)?;
+            crate::package::fill(&mut c)?;
             let gpus = if c.detect.nvidia {
                 detect::gpus().await
             } else {

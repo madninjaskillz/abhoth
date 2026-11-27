@@ -132,13 +132,18 @@ pub async fn run(
 }
 
 async fn run_inner(
-    cfg: BridgeConfig,
+    mut cfg: BridgeConfig,
     version: String,
     log: Log,
     timing: Timing,
     status: Arc<Mutex<Status>>,
     mut stop: watch::Receiver<bool>,
 ) {
+    if let Err(e) = crate::package::fill(&mut cfg) {
+        log(&format!("config: {e}"));
+        status.lock().unwrap().last_error = Some(e);
+        return;
+    }
     let gpus = if cfg.detect.nvidia {
         detect::gpus().await
     } else {
