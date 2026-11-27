@@ -270,7 +270,9 @@ fn a_machine_without_gpus_gets_its_cpu_only() {
 #[test]
 fn paths_and_names_with_odd_characters_are_quoted() {
     let t = tempfile::tempdir().unwrap();
-    let mut o = opts(&t.path().join("a \"quoted\" dir"));
+    // A folder name with a space, an apostrophe and an ampersand (a double quote is not allowed
+    // in Windows names; the GPU name and host name below carry quotes and a backslash).
+    let mut o = opts(&t.path().join("it's a dir & more"));
     o.services = vec![Service::Compose, Service::Windows, Service::Systemd];
     let mut d = machine();
     d.gpus[0].name = "Weird \"GPU\" \\ name".into();
