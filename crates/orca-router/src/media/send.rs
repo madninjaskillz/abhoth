@@ -135,9 +135,70 @@ pub async fn send(
     let status = r.status().as_u16();
     let r = hold(r, busy);
     if retryable(status) {
-        return Sent::Retry(format!("{} answered {status}", t.key()), Some(r));
+        let (r, reason) = with_reason(r).await;
+        let why = match reason {
+            Some(reason) => format!("{} answered {status}: {reason}", t.key()),
+            None => format!("{} answered {status}", t.key()),
+        };
+        return Sent::Retry(why, Some(r));
     }
     Sent::Answer(r)
+}
+
+/// The longest engine reason kept in a failover note.
+const REASON_MAX: usize = 300;
+
+/// A "not now" answer's body read (it is small: a bridge's "image X is not on this host and
+/// pulling failed", a 429's message), the answer rebuilt with it, and the reason in it.
+async fn with_reason(r: Response) -> (Response, Option<String>) {
+    let (parts, body) = r.into_parts();
+    let bytes = tokio::time::timeout(
+        Duration::from_secs(10),
+        axum::body::to_bytes(body, 64 << 10),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .unwrap_or_default();
+    let reason = reason_in(&bytes);
+    (Response::from_parts(parts, Body::from(bytes)), reason)
+}
+
+/// The reason in an error body: an OpenAI-style `error.message`, a `detail` / `message` /
+/// `reason` / `error` string, else the text's first line; trimmed and cut to `REASON_MAX`.
+pub fn reason_in(body: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(body);
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let from_json = serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|v| {
+            let pick = |v: &serde_json::Value| -> Option<String> {
+                ["message", "detail", "reason", "error"]
+                    .iter()
+                    .find_map(|k| v.get(k).and_then(|x| x.as_str()).map(str::to_string))
+            };
+            v.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|x| x.as_str())
+                .map(str::to_string)
+                .or_else(|| pick(&v))
+        });
+    let reason = match from_json {
+        Some(r) => r,
+        None if text.starts_with('{') || text.starts_with('<') => return None,
+        None => text.lines().next().unwrap_or_default().to_string(),
+    };
+    let reason = reason.trim();
+    if reason.is_empty() {
+        return None;
+    }
+    Some(match reason.char_indices().nth(REASON_MAX) {
+        Some((i, _)) => format!("{}…", &reason[..i]),
+        None => reason.to_string(),
+    })
 }
 
 pub fn from_reqwest(resp: reqwest::Response) -> Response {
@@ -175,7 +236,7 @@ pub async fn try_all(
     prep: impl Fn(&Target) -> Result<Prepared, String>,
 ) -> Tried {
     let mut failed = Vec::new();
-    let mut last: Option<(Response, Target)> = None;
+    let mut last: Option<(u16, Option<HeaderValue>)> = None;
     for t in targets {
         let p = match prep(t) {
             Ok(p) => p,
@@ -197,17 +258,10 @@ pub async fn try_all(
                 place::cool(t);
                 failed.push(why);
                 if let Some(r) = r {
-                    last = Some((r, t.clone()));
+                    last = Some((r.status().as_u16(), r.headers().get("retry-after").cloned()));
                 }
             }
         }
-    }
-    if let Some((r, t)) = last {
-        return Tried {
-            response: r,
-            target: Some(t),
-            failed,
-        };
     }
     let msg = if targets.is_empty() {
         format!("no engine serves {what} here")
@@ -215,8 +269,22 @@ pub async fn try_all(
         format!("no engine for {what} answered: {}", failed.join("; "))
     };
     Tried {
-        response: super::error(503, &msg),
+        response: all_failed(&msg, last),
         target: None,
         failed,
     }
+}
+
+/// The answer when every candidate failed: 503 (429 when the last one said "too many"), with
+/// every failover's reason in the message and the last engine's `Retry-After`.
+pub fn all_failed(msg: &str, last: Option<(u16, Option<HeaderValue>)>) -> Response {
+    let status = match last {
+        Some((429, _)) => 429,
+        _ => 503,
+    };
+    let mut r = super::error(status, msg);
+    if let Some((_, Some(v))) = last {
+        r.headers_mut().insert("retry-after", v);
+    }
+    r
 }

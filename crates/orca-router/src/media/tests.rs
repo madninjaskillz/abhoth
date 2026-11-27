@@ -1112,3 +1112,64 @@ async fn images_render_in_the_router_and_fail_over() {
     assert_eq!(v["status"], "ok");
     assert_eq!(v["backends"].as_array().unwrap().len(), 2);
 }
+
+#[test]
+fn engine_reasons_are_read_from_their_bodies() {
+    use super::send::reason_in;
+    let r = |b: &str| reason_in(b.as_bytes());
+    assert_eq!(
+        r(r#"{"error":{"message":"image X is not on this host and pulling failed"}}"#).as_deref(),
+        Some("image X is not on this host and pulling failed")
+    );
+    assert_eq!(r(r#"{"detail":"busy"}"#).as_deref(), Some("busy"));
+    assert_eq!(r(r#"{"error":"no RAM"}"#).as_deref(), Some("no RAM"));
+    assert_eq!(r("starting up\nmore").as_deref(), Some("starting up"));
+    assert_eq!(r(""), None);
+    assert_eq!(r("<html>bad gateway</html>"), None);
+    assert_eq!(r(r#"{"other":1}"#), None);
+    let long = "x".repeat(400);
+    assert_eq!(r(&long).unwrap().chars().count(), 301);
+}
+
+async fn refusing_speech_engine(reason: &'static str, status: u16) -> SocketAddr {
+    serve(Router::new().route(
+        "/v1/audio/speech",
+        post(move || async move {
+            (
+                axum::http::StatusCode::from_u16(status).unwrap(),
+                [("retry-after", "7")],
+                reason,
+            )
+        }),
+    ))
+    .await
+}
+
+#[tokio::test]
+async fn when_every_engine_fails_the_answer_names_each_reason() {
+    let a =
+        refusing_speech_engine("image kokoro is not on this host and pulling failed", 503).await;
+    let b = refusing_speech_engine(r#"{"error":{"message":"too many at once"}}"#, 429).await;
+    let text = format!(
+        "{}\n[servers.pc]\nhost = \"127.0.0.1\"\n[cards.P1]\nserver = \"pc\"\ngpu_uuid = \"GPU-p\"\nengines = {{ tts = [\"kokoro\"] }}\n[servers.pc2]\nhost = \"127.0.0.1\"\n[cards.P2]\nserver = \"pc2\"\ngpu_uuid = \"GPU-q\"\nengines = {{ tts = [\"kokoro\"] }}\n[engines.kokoro]\ndriver = \"external\"\nport = {{ P1 = {}, P2 = {} }}\n",
+        live_like(dead_port(), 2, 3, 4, 5),
+        a.port(),
+        b.port()
+    );
+    let d = tempfile::tempdir().unwrap();
+    let (addr, _hub) = router_for(config(&text), d.path()).await;
+    let r = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/audio/speech"))
+        .json(&json!({"input": "x", "voice": "bm_fable"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.headers()["x-abhoth-failovers"], "3");
+    let status = r.status().as_u16();
+    let v: Value = r.json().await.unwrap();
+    let m = v["error"]["message"].as_str().unwrap().to_string();
+    assert!(m.contains("chatterbox/D@deepthought"), "{m}");
+    assert!(m.contains("pulling failed"), "{m}");
+    assert!(m.contains("too many at once"), "{m}");
+    assert!(status == 503 || status == 429, "{status}");
+}
