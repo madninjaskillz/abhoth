@@ -32,6 +32,26 @@ export function setRouterTransport(t: Partial<RouterTransport>) {
   transport = { ...transport, ...t };
 }
 
+// Bridges (ROUTER-MEDIA-PLAN.md 11): machines that dial /bridge/ws.
+export interface BridgeCard {
+  id: string; global: string; device: "gpu" | "cpu"; label: string; gpu_uuid?: string;
+  vram_gib?: number; cores?: number; ram_gib?: number; shared?: boolean; engines: Record<string, string[]>;
+}
+export interface BridgeEngine {
+  id: string; package?: string | null; method?: string; kinds: string[]; api?: string;
+  ports: Record<string, number>; lifecycle: string; idle_stop_seconds?: number;
+}
+export interface BridgeView {
+  id: string; enabled: boolean; priority: number; token: { created: number } | null;
+  online: boolean; seen: boolean; version?: string; since?: number; lastSeen?: number; peer?: string;
+  title?: string; os?: string; arch?: string; modelDir?: string | null; cards?: BridgeCard[];
+  engines?: BridgeEngine[]; files?: number; issues?: string[]; streams?: number;
+}
+export interface BridgeEngineState {
+  engine: string; card: string; state: "stopped" | "starting" | "running" | "failed"; error?: string | null;
+  active: number; idle_seconds?: number | null; up_seconds?: number | null; port?: number | null;
+}
+
 export class RouterApiError extends Error {
   constructor(message: string, public status: number, public data?: Record<string, unknown>) {
     super(message);
@@ -92,6 +112,12 @@ export const routerApi = {
   adminKeys: () => call<{ keys: AdminKey[]; local: boolean }>("GET", `${R()}/admin-keys`),
   createAdminKey: (name: string) => call<NewAdminKey>("POST", `${R()}/admin-keys`, { name }),
   revokeAdminKey: (id: number) => call<{ ok: boolean }>("DELETE", `${R()}/admin-keys/${id}`),
+  // Bridges: tokens (shown once), settings, commands.
+  bridges: () => call<{ bridges: BridgeView[]; path: string }>("GET", `${R()}/bridges`),
+  mintBridgeToken: (id: string, rotate = false) => call<{ id: string; token: string }>("POST", `${R()}/bridges`, { id, rotate }),
+  revokeBridge: (id: string) => call<{ ok: boolean }>("DELETE", `${R()}/bridges/${encodeURIComponent(id)}`),
+  bridgeSettings: (id: string, s: { enabled?: boolean; priority?: number }) => call<{ id: string; enabled: boolean; priority: number }>("PUT", `${R()}/bridges/${encodeURIComponent(id)}/settings`, s),
+  bridgeCmd: <T = unknown>(id: string, op: string, args: Record<string, unknown> = {}) => call<T>("POST", `${R()}/bridges/${encodeURIComponent(id)}/cmd`, { op, args }),
   // D152: the inventory, engine capabilities, Hugging Face and downloads.
   inventory: () => call<Inventory>("GET", `${R()}/inventory`),
   catalog: () => call<CatalogKind[]>("GET", `${R()}/catalog`),
