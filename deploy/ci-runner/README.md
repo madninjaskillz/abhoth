@@ -9,7 +9,7 @@ the same box.
 
 | File | What |
 |---|---|
-| `Dockerfile` | The image `abhoth-ci-runner`: Ubuntu 24.04, the runner, Rust (rust-toolchain.toml + the `x86_64-pc-windows-msvc` target), cargo-xwin with clang/lld/llvm, the WebKitGTK/GTK/D-Bus/Wayland dev packages, Node 22, .NET 10 + `vpk` (Velopack), zstd, squashfs-tools, gh |
+| `Dockerfile` | The image `abhoth-ci-runner`: Ubuntu 24.04, the runner, Rust (rust-toolchain.toml + the `x86_64-pc-windows-msvc` target), cargo-xwin with clang/lld/llvm, the WebKitGTK/GTK/D-Bus/Wayland dev packages, Node 22, .NET 10 + `vpk` (Velopack), zstd 1.5.7 (built from source: Ubuntu's 1.5.5 fails vpk's delta call), squashfs-tools, gh |
 | `entrypoint.sh` | Unpacks and registers the runner on first start, then runs it |
 | `job-started.sh` | Runs before every job (`ACTIONS_RUNNER_HOOK_JOB_STARTED`): keeps the runner's caches under 14 GB, empties its TMPDIR |
 | `compose.yaml` | The two runners: 16 threads each on NUMA node 1 (`cpuset`), 24 GB of memory each |

@@ -221,10 +221,10 @@ jobs:
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/pkg"; rm -rf "$out"; mkdir -p "$out/win" "$out/linux" "$out/dist"
-          # The previous release's full package is fetched into the output folder (none before
-          # the first Velopack release). Deltas are off (`--delta none`): vpk's zstd
-          # `--patch-from ... --long=27` fails on the runner ("missing command argument",
-          # v0.16.10), so installed apps download the full package until that is fixed.
+          # A release carries a delta from the previous one: vpk makes it when the previous
+          # full package is in its output folder (none before the first Velopack release).
+          # The delta needs the zstd 1.5.7 the runner image builds (Ubuntu 24.04's 1.5.5
+          # fails vpk's `--patch-from ... --long=27` with "missing command argument").
           if [[ "$GITHUB_REF" == refs/tags/abhoth-v* ]]; then
             for ch in win linux; do
               vpk download github --repoUrl "$REPO_URL" --token "$GH_TOKEN" --channel "$ch" \
@@ -239,11 +239,11 @@ jobs:
           vpk '[win]' pack --packId Abhoth --packVersion "$VERSION" --packTitle Abhoth \
             --packAuthors Abhoth --runtime win-x64 --channel win --shortcuts StartMenuRoot \
             --packDir "$out/win" --mainExe abhoth-desktop.exe \
-            --icon assets/abhoth/icons/abhoth.ico --outputDir "$out/vpk-win" --delta none
+            --icon assets/abhoth/icons/abhoth.ico --outputDir "$out/vpk-win"
           vpk '[linux]' pack --packId Abhoth --packVersion "$VERSION" --packTitle Abhoth \
             --packAuthors Abhoth --runtime linux-x64 --channel linux \
             --packDir "$out/linux" --mainExe abhoth-desktop \
-            --icon assets/abhoth/icons/abhoth-256.png --outputDir "$out/vpk-linux" --delta none
+            --icon assets/abhoth/icons/abhoth-256.png --outputDir "$out/vpk-linux"
           ls -la "$out/vpk-win" "$out/vpk-linux"
 
           # Found by glob: vpk's file names carry the channel and can change with a release.
@@ -272,7 +272,7 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-      # The Velopack feed (releases.<channel>.json, full .nupkg, Setup, Portable) is
+      # The Velopack feed (releases.<channel>.json, full and delta .nupkg, Setup, Portable) is
       # what installed apps update from (D136); then the renamed downloads and SHA256SUMS.
       - name: GitHub Release
         if: startsWith(github.ref, 'refs/tags/abhoth-v')
