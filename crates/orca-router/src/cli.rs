@@ -356,13 +356,29 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
         bail!("--wyoming needs --control (its engines come from the control plane)");
     }
     for (kind, addr) in wyoming {
-        let std_l =
-            std::net::TcpListener::bind(&addr).with_context(|| format!("binding {addr}"))?;
-        std_l.set_nonblocking(true)?;
-        let l = tokio::net::TcpListener::from_std(std_l)?;
-        eprintln!("abhoth router: Wyoming {} on {addr}", kind.as_str());
-        // not awaited on shutdown: a held Wyoming connection would only delay it
-        tokio::spawn(crate::media::wyoming_listen::serve(l, st.clone(), kind));
+        // not awaited on shutdown (a held Wyoming connection would only delay it); a port still
+        // taken (the old app during a handover) is retried, and never keeps the gateway down
+        let st = st.clone();
+        tokio::spawn(async move {
+            let mut said = false;
+            let l = loop {
+                match tokio::net::TcpListener::bind(&addr).await {
+                    Ok(l) => break l,
+                    Err(e) => {
+                        if !said {
+                            eprintln!(
+                                "abhoth router: Wyoming {} on {addr} not open yet ({e}); retrying",
+                                kind.as_str()
+                            );
+                            said = true;
+                        }
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                }
+            };
+            eprintln!("abhoth router: Wyoming {} on {addr}", kind.as_str());
+            crate::media::wyoming_listen::serve(l, st, kind).await;
+        });
     }
     if let Some(p) = profiles_port {
         let Some(shim) = shim.clone() else {

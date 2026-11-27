@@ -1394,3 +1394,31 @@ async fn the_wyoming_port_falls_back_to_a_bridge() {
     .unwrap();
     assert_eq!(got, "via the bridge 32000");
 }
+
+#[tokio::test]
+async fn the_wyoming_port_never_dials_itself() {
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let own = l.local_addr().unwrap().port();
+    let d = tempfile::tempdir().unwrap();
+    let st = crate::state::AppState::new(
+        Snapshot::build(RouterConfig::default(), None).unwrap(),
+        None,
+    );
+    st.bridges
+        .set(Hub::new(
+            d.path(),
+            Arc::new(config(&live_like(1, own, 3, 4, 5))),
+        ))
+        .ok();
+    tokio::spawn(super::wyoming_listen::serve(l, st, ModelKind::Stt));
+    let err = super::wyoming::transcribe(
+        &format!("127.0.0.1:{own}"),
+        &[0u8; 3200],
+        16_000,
+        None,
+        Duration::from_secs(10),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.contains("is this Wyoming port"), "{err}");
+}

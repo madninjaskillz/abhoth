@@ -46,8 +46,9 @@ pub async fn serve(l: TcpListener, st: Arc<AppState>, kind: ModelKind) {
             }
         };
         let st = st.clone();
+        let own = l.local_addr().map(|a| a.port()).unwrap_or(0);
         tokio::spawn(async move {
-            if let Err(why) = one(&st, kind, sock, peer).await {
+            if let Err(why) = one(&st, kind, sock, peer, own).await {
                 tracing::info!("wyoming {} from {peer}: {why}", kind.as_str());
             }
         });
@@ -106,6 +107,7 @@ async fn one(
     kind: ModelKind,
     mut sock: TcpStream,
     peer: SocketAddr,
+    own: u16,
 ) -> Result<(), String> {
     if let Err(why) = allowed(st, peer).await {
         refuse(
@@ -131,6 +133,11 @@ async fn one(
                     .trim_start_matches("tcp://")
                     .trim_end_matches('/')
                     .to_string();
+                // an engine configured at this very port (a handover half done) would loop
+                if is_self(&addr, own).await {
+                    failed.push(format!("{} is this Wyoming port", t.key()));
+                    continue;
+                }
                 match tokio::time::timeout(CONNECT, TcpStream::connect(&addr)).await {
                     Ok(Ok(mut up)) => {
                         let _busy = place::begin(t);
@@ -177,4 +184,25 @@ async fn one(
     };
     refuse(sock, "unavailable", &why).await;
     Err(why)
+}
+
+/// Whether `addr` is this machine's listener on port `own`.
+async fn is_self(addr: &str, own: u16) -> bool {
+    let Ok(addrs) = tokio::net::lookup_host(addr).await else {
+        return false;
+    };
+    for a in addrs {
+        if a.port() != own {
+            continue;
+        }
+        let ip = a.ip();
+        if ip.is_loopback() || ip.is_unspecified() {
+            return true;
+        }
+        // one of this host's own addresses: binding it means it is ours
+        if std::net::TcpListener::bind((ip, 0)).is_ok() {
+            return true;
+        }
+    }
+    false
 }
