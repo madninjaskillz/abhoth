@@ -735,6 +735,18 @@ version from main at release time.
 | either | binary frame | 4-byte big-endian `sid`, then the payload | Body bytes, or one WebSocket message. |
 | either | `credit` | `sid`, `bytes` | Flow control: each side may send at most 1 MiB of unacknowledged body bytes per stream. |
 | either | `end` / `reset` | `sid` (`reset` adds `error`) | A clean end, or an abort. |
+| either | `ping` / `pong` | `at` (ms) | Application keepalive, beside WebSocket pings (some proxies drop those). |
+
+- **Stream ids:** the router picks `sid`s (odd numbers, from 1). A stream's request body follows
+  `open` as binary frames, then `end`. A response body follows `head`, then `end`.
+- **WebSocket streams** (`ws: true`): each binary frame's payload is one message, with its first
+  byte the opcode (`1` text, `2` binary) and the rest the message. `end` is a close.
+- **Starting on demand:** an `open` for an engine with `lifecycle = "on_demand"` that is not
+  running makes the bridge start it, wait for its health check, then proxy. The bridge stops it
+  after `idle_stop_seconds` with no stream open. The router never has to send `start` first.
+- **Library:** crate `orca-bridge` holds the frames, the descriptor types, the stream multiplexer
+  (both ends), the bridge's dial loop, detection (GPUs through `nvidia-smi`, CPU and RAM) and the
+  engine supervisor seam (13.3; a minimal docker/process runner until `orca-engines` lands).
 
 ### 13.2 Bridge descriptor (v1)
 
@@ -793,7 +805,16 @@ pub trait Runner {                                            // async
   process methods (`pip`, `binary`, `git`) run only where the runner is local: on a bridge, or a
   router with `exec = "local"`.
 
-### 13.4 Inventory hooks (🟩B, used by 🟧E)
+### 13.4 Inventory hooks (🟩B places and proxies; 🟧E builds the bridge side of them)
+
+Split: 🟧E writes `orca-router/src/bridges/` (the `/bridge/ws` endpoint, tokens, the registry of
+connected bridges, the overlay below, `upstream_for` and the tunnel client, the bridges admin API
+and page). 🟩B's placement and media proxy call `bridges::effective(&config)` for the merged
+config and `bridges::upstream_for(...)` / `bridges::forward(...)` to send a request. Bridge
+servers carry `origin: Some("bridge:<id>")` (a `#[serde(skip)]` field: never read from or
+written to `router.toml`) and `exec = "bridge"` (refused in `router.toml`). A bridge engine whose
+id is already an engine in `router.toml` gets the bridge's cards added to its `port` map; an
+unknown id becomes a new `driver = "external"` engine.
 
 - **Bridge-owned servers are an overlay** on the `router.toml` config: `servers`, `cards` and
   `engines` with `origin = bridge:<id>`. They are never written to `router.toml`. The same
