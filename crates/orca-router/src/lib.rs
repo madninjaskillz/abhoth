@@ -17,6 +17,7 @@ pub mod import;
 pub mod init;
 pub mod key_requests;
 pub mod leases;
+pub mod media;
 pub mod metrics;
 pub mod observe;
 pub mod ondemand;

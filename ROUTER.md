@@ -1008,6 +1008,35 @@ is inventory only:
   and shows where each component is; it never starts, stops or observes it.
 - The `video` kind exists for cards and models; no video engine yet.
 
+**Media routes (phase 3, 0.16.27)** on `:8010`:
+
+| Path | Kind | Engine API (`engines.x.media_api`) |
+|---|---|---|
+| `POST /v1/audio/speech` (OpenAI) | tts | `openai-speech` (store Kokoro/Chatterbox, Kokoro-FastAPI) or `synth` (tts-nano's `GET /synth`) |
+| `POST /v1/audio/transcriptions` (OpenAI, multipart, WAV) | stt | `wyoming` (the router speaks Wyoming itself; WAV is mixed to 16 kHz mono) or `openai-stt` |
+| `POST /v1/audio/music` (`{prompt, seconds, bpm, seed, negative}`) | music | `sa3`: waits and answers with the MP3; `?async=1` gives `202 {id, status_url}`, then `GET /v1/audio/music/<id>` and `/<id>.mp3` from the server that ran it |
+| `/v1/images/*` | image | `openai-images` (the image API shim, until phase 4 brings its logic in) |
+| `/comfyui/*`, `/comfyui/@<server>/*`, `/comfyui/ws` | image, video | `comfyui`, passed through (redirects kept under the prefix); signed in only (an access key or the web UI session; a session only from this site) |
+
+- **Placement**: the cards whose `engines` list the kind and whose engine has a port there;
+  servers the router reaches itself first, then bridges by priority (lower first; disabled or
+  offline bridges never), then fewest requests in flight. A model named in the request that is in
+  the inventory narrows it to that model's engines (`primary`, artifacts, `allow`); `name@server`
+  pins a server. An engine that refuses, times out or answers 429/502/503/504 is cooled for 30 s
+  and the next one is tried (`x-abhoth-failovers`); answers say where they ran
+  (`x-abhoth-server`, `-card`, `-engine`).
+- `media_api` defaults from the catalog kind (`comfyui`, `sa3`, `whisper` = `wyoming`, `kokoro`
+  and `chatterbox` = `openai-speech`). A bridge's engine with the same id as one in `router.toml`
+  uses that engine's `media_api`.
+- Answers stream back. Request bodies have per-route limits (speech 1 MiB, music 64 KiB,
+  transcriptions and images 100 MiB, ComfyUI 512 MiB).
+- ComfyUI affinity: a `/prompt`'s `prompt_id` and `client_id` are remembered, so `/history/<id>`
+  and that client's `/ws` reach the server that took it.
+- `GET /v1/models?kind=image|tts|stt|music|video|media` lists the inventory's media models (not
+  components); without `kind` the list is the chat models', as before.
+- Not yet: Wyoming through a bridge (the tunnel carries HTTP and WebSockets), router-side queues
+  and `/v1/jobs`, MP3 or Opus from engines that only make WAV.
+
 ## 17. Setting up a new router (`abhoth router init`)
 
 One command sets up a standalone router in one folder (design:

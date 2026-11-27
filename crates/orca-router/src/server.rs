@@ -86,6 +86,13 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
     {
         return crate::bridges::ws::upgrade(st.bridges.get().cloned(), req).await;
     }
+    // D153: media routes, before the body is read (each has its own limit; answers stream).
+    if cx.mode == Mode::Gateway
+        && st.bridges.get().is_some()
+        && let Some(route) = crate::media::route_of(req.method(), req.uri().path())
+    {
+        return crate::media::handle(st, ctx, route, req).await;
+    }
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     let path_q = req
@@ -116,7 +123,14 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
         (Method::POST, "/v1/chat/completions" | "/chat/completions") => {
             proxy::chat(st, ctx, headers, raw).await
         }
-        (Method::GET, "/v1/models" | "/models") => json_response(200, &models(&snap)),
+        (Method::GET, "/v1/models" | "/models") => match media_kind(&path_q) {
+            // D153: `?kind=image|tts|stt|music|video|media` lists the inventory's media models
+            Some(k) if st.bridges.get().is_some() => {
+                let c = st.bridges.get().expect("checked").config();
+                json_response(200, &crate::media::models(&c, &k))
+            }
+            _ => json_response(200, &models(&snap)),
+        },
         (Method::GET, "/v1/model/info" | "/model/info") => json_response(200, &model_info(&snap)),
         // D149: what this server is, and the models with their metadata (read-only).
         (Method::GET, orca_core::router_mode::WELL_KNOWN_PATH) => {
@@ -198,6 +212,14 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
             None => not_found(),
         },
     }
+}
+
+fn media_kind(path_q: &str) -> Option<String> {
+    let q = path_q.split_once('?')?.1;
+    q.split('&').find_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        (k == "kind" && !v.is_empty() && v != "llm" && v != "chat").then(|| v.to_string())
+    })
 }
 
 /// An admin key file, when configured, also allows admin calls from the LAN.

@@ -1040,3 +1040,9 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     appears in layouts; the cards list, Overview tiles and Find GPUs show CPU cards as CPUs. The
     `gpus-visible` ready check leaves CPU cards out (0.16.17 waited the whole ready timeout at
     start-up). Find GPUs on a server without nvidia-smi still offers its CPU.
+  - **Phase 3 (0.16.27), the media routes:** `/v1/audio/speech`, `/v1/audio/transcriptions`
+    (a Wyoming client in the router), `/v1/audio/music` (waiting or a job, sticky to its server),
+    `/v1/images/*` (to the shim) and `/comfyui/*` with its WebSocket, on `:8010`; placement over
+    every card listing the kind, DeepThought before bridges, failover with a 30 s cool-off, so
+    speech falls back to truenas.local through the bridge tunnel. `engines.x.media_api` names an
+    engine's surface. Saving `router.toml` now also refreshes the bridges' base config.

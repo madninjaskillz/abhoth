@@ -91,6 +91,13 @@ impl Hub {
         *self.base.write().unwrap() = base;
     }
 
+    /// `router.toml` as last loaded, with the bridges merged in ([`effective_with`]): what the
+    /// media routes place on (D153).
+    pub fn config(&self) -> ControlConfig {
+        let base = self.base.read().unwrap().clone();
+        effective_with(self, &base)
+    }
+
     fn seen_dir(&self) -> PathBuf {
         self.state_dir.join("bridges")
     }

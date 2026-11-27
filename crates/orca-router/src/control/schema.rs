@@ -530,6 +530,41 @@ pub enum ApiKind {
     AnthropicMessages,
 }
 
+/// A media engine's HTTP (or Wyoming) surface, for `/v1/audio/*`, `/v1/images/*` and
+/// `/comfyui/` (D153, ROUTER-MEDIA-PLAN.md 4.2).
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum MediaApi {
+    /// `POST /v1/audio/speech` (the store's Kokoro and Chatterbox servers, Kokoro-FastAPI).
+    OpenaiSpeech,
+    /// `GET /synth?text=&voice=&mode=whole` (the tts-nano Chatterbox service).
+    Synth,
+    /// Wyoming over TCP (whisper): the router speaks the protocol itself.
+    Wyoming,
+    /// `POST /v1/audio/transcriptions` (multipart, OpenAI's shape).
+    OpenaiStt,
+    /// Stable Audio 3's service: `POST /generate`, `GET /jobs/<id>`, `GET /audio/<id>.mp3`.
+    Sa3,
+    /// ComfyUI's own API and UI (`/prompt`, `/ws`, `/view`...).
+    Comfyui,
+    /// `POST /v1/images/generations` and `/edits` (the image API shim until phase 4).
+    OpenaiImages,
+}
+
+impl MediaApi {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MediaApi::OpenaiSpeech => "openai-speech",
+            MediaApi::Synth => "synth",
+            MediaApi::Wyoming => "wyoming",
+            MediaApi::OpenaiStt => "openai-stt",
+            MediaApi::Sa3 => "sa3",
+            MediaApi::Comfyui => "comfyui",
+            MediaApi::OpenaiImages => "openai-images",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum DriverKind {
@@ -565,6 +600,10 @@ pub struct Engine {
     pub api: ApiKind,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub also_speaks: Vec<ApiKind>,
+    /// How the media routes talk to it (D153); unset: from its catalog kind (`comfyui`,
+    /// `sa3`, `whisper` = Wyoming, `kokoro` and `chatterbox` = OpenAI speech).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_api: Option<MediaApi>,
     #[serde(default)]
     pub driver: DriverKind,
     /// Docker image (may use `{build_image}`).

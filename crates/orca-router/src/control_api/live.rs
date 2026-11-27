@@ -193,6 +193,10 @@ impl ConfigBackend {
                     .collect();
                 if errs.is_empty() {
                     let rev = l.rev.clone();
+                    // The bridges' overlay and the media routes read the saved file too.
+                    if let Some(h) = crate::bridges::installed() {
+                        h.set_base(Arc::new(l.config.clone()));
+                    }
                     *self.loaded.lock().unwrap() = Some(l);
                     *self.error.lock().unwrap() = None;
                     self.publish(Event {
