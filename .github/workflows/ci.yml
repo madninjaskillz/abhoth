@@ -79,6 +79,14 @@ jobs:
       - name: Install toolchain
         run: rustup show active-toolchain || rustup toolchain install
 
+      # Neutral paths in the binaries (home, cargo registry, checkout), as on the self-hosted
+      # runners (their RUSTFLAGS is in deploy/ci-runner/compose.yaml).
+      - name: Path remapping
+        shell: bash
+        run: |
+          w() { if command -v cygpath > /dev/null; then cygpath -w "$1"; else echo "$1"; fi; }
+          echo "RUSTFLAGS=--remap-path-prefix=$(w "$HOME")=/home --remap-path-prefix=$(w "${CARGO_HOME:-$HOME/.cargo}")=/cargo --remap-path-prefix=$GITHUB_WORKSPACE=/src" >> "$GITHUB_ENV"
+
       # Swatinem/rust-cache v2.9.3: the dependency builds survive between runs, which is
       # most of this job's minutes.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
@@ -98,6 +106,14 @@ jobs:
 
       - name: Install toolchain
         run: rustup show active-toolchain || rustup toolchain install
+
+      # Neutral paths in the binaries (home, cargo registry, checkout), as on the self-hosted
+      # runners (their RUSTFLAGS is in deploy/ci-runner/compose.yaml).
+      - name: Path remapping
+        shell: bash
+        run: |
+          w() { if command -v cygpath > /dev/null; then cygpath -w "$1"; else echo "$1"; fi; }
+          echo "RUSTFLAGS=--remap-path-prefix=$(w "$HOME")=/home --remap-path-prefix=$(w "${CARGO_HOME:-$HOME/.cargo}")=/cargo --remap-path-prefix=$GITHUB_WORKSPACE=/src" >> "$GITHUB_ENV"
 
       - name: Clippy
         run: cargo clippy -p orca-cli --all-targets --features desktop --locked -- -D warnings

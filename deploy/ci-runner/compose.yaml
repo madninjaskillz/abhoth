@@ -52,6 +52,15 @@ services:
       XWIN_CACHE_DIR: ${ABHOTH_CI_ROOT:?}/cache/1/xwin
       npm_config_cache: ${ABHOTH_CI_ROOT:?}/cache/1/npm
       TMPDIR: ${ABHOTH_CI_ROOT:?}/cache/1/tmp
+      # Neutral paths in the binaries: no ${ABHOTH_CI_ROOT} (cargo registry, checkout, target)
+      # in panic locations or C __FILE__s (cc-rs maps these to -ffile-prefix-map). The last
+      # matching prefix wins, so the catch-all comes first. Set here, not in ci.yml, so every
+      # job on this runner builds with the same flags and shares one target dir.
+      RUSTFLAGS: >-
+        --remap-path-prefix=${ABHOTH_CI_ROOT:?}=/ci
+        --remap-path-prefix=${ABHOTH_CI_ROOT:?}/runners/1/_work/abhoth/abhoth=/src
+        --remap-path-prefix=${ABHOTH_CI_ROOT:?}/cache/1/cargo=/cargo
+        --remap-path-prefix=${ABHOTH_CI_ROOT:?}/cache/1/target=/target
   runner-2:
     <<: *runner
     cpuset: "80-87,176-183"
@@ -65,3 +74,12 @@ services:
       XWIN_CACHE_DIR: ${ABHOTH_CI_ROOT:?}/cache/2/xwin
       npm_config_cache: ${ABHOTH_CI_ROOT:?}/cache/2/npm
       TMPDIR: ${ABHOTH_CI_ROOT:?}/cache/2/tmp
+      # Neutral paths in the binaries: no ${ABHOTH_CI_ROOT} (cargo registry, checkout, target)
+      # in panic locations or C __FILE__s (cc-rs maps these to -ffile-prefix-map). The last
+      # matching prefix wins, so the catch-all comes first. Set here, not in ci.yml, so every
+      # job on this runner builds with the same flags and shares one target dir.
+      RUSTFLAGS: >-
+        --remap-path-prefix=${ABHOTH_CI_ROOT:?}=/ci
+        --remap-path-prefix=${ABHOTH_CI_ROOT:?}/runners/2/_work/abhoth/abhoth=/src
+        --remap-path-prefix=${ABHOTH_CI_ROOT:?}/cache/2/cargo=/cargo
+        --remap-path-prefix=${ABHOTH_CI_ROOT:?}/cache/2/target=/target
