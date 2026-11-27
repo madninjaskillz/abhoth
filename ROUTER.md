@@ -1092,8 +1092,7 @@ with `media_api = "wyoming"` that takes it: this server's own engines first, the
 takes it the client gets a Wyoming `error` event naming each reason. Wyoming has no
 credentials, so only peers in `access.anonymous_lan` (and loopback) are served.
 
-- Not yet: `/v1/audio/transcriptions` to a Wyoming engine through a bridge (the Wyoming ports do
-  reach bridges), router-side queues
+- Not yet: router-side queues
   and `/v1/jobs`, MP3 or Opus from engines that only make WAV.
 
 ## 17. Setting up a new router (`abhoth router init`)
