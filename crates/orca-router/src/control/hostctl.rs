@@ -77,8 +77,11 @@ pub struct Allowlist {
     pub commands: Vec<AllowedCommand>,
 }
 
+/// The longest a host runs one request for, unless its allowlist says otherwise.
+pub const DEFAULT_MAX_TIMEOUT_SECONDS: u64 = 7200;
+
 fn d_max_timeout() -> u64 {
-    7200
+    DEFAULT_MAX_TIMEOUT_SECONDS
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -715,6 +718,24 @@ mod tests {
             root,
             stdin: None,
         }
+    }
+
+    #[test]
+    fn a_model_restore_fits_the_hosts_default_time_limit() {
+        let c = sample();
+        let al = Allowlist::parse(&export(&c, "gpu", suggested_paths(&c, "gpu")).unwrap()).unwrap();
+        let mut r = req(
+            Op::Builtin {
+                name: "restore-file".into(),
+                args: json!({"path": "/x", "manifest": "/y"}),
+            },
+            true,
+        );
+        r.timeout = crate::control::host::RESTORE_TIMEOUT;
+        let why = al.check(&r).err().unwrap_or_default();
+        assert!(!why.contains("timeout over"), "{why}");
+        r.timeout += Duration::from_secs(1);
+        assert!(al.check(&r).unwrap_err().contains("timeout over"));
     }
 
     #[test]
