@@ -700,7 +700,7 @@ upstream; such a package cannot be published to a store.
 |---|---|---|
 | Core: CPU cards, media and video kinds, roles and components, media routes on `:8010` (`/v1/images`, `/v1/audio/*`, music, `/comfyui/` with WebSocket and streaming), placement and failover for media, model sync, the DeepThought migration, retiring the TrueNAS apps, closing `:8188`, moving the pipelines | 🟩B | Phase 1 shipped in 0.16.17 (`local/abhoth:16`, live): inventory only |
 | Headless bridge: `abhoth bridge`, the protocol (13.1), the descriptor (13.2), its Docker image, PC bridge mode in the desktop app, the truenas.local deploy, supervising engines on the bridge's host; router side: `/bridge/ws`, tokens, the overlay and tunnel (13.4), the Bridges admin page | 🟧E | In progress |
-| Engine packages: the manifest schema and methods, `abhoth engine validate`, the shared runner (13.3), the metadata-only `stores/`, the Engine store tab and the wizard, manual engines first-class, packages for ComfyUI, Chatterbox, whisper, Kokoro, sa3 and llama.cpp | 🟥F | Not started |
+| Engine packages: the manifest schema and methods, `abhoth engine validate`, the shared runner (13.3), the metadata-only `stores/`, the Engine store tab and the wizard, manual engines first-class, packages for ComfyUI, Chatterbox, whisper, Kokoro, sa3 and llama.cpp | 🟥F | In progress: interfaces fixed (13.3) |
 
 Rules: section 13 is the source of truth for the seams between the three. Change it in small
 commits on main, before the code that depends on the change. Take the next free D-number and
@@ -776,34 +776,154 @@ version from main at release time.
 
 ### 13.3 Engine manifest and runner (🟥F, used by 🟩B and 🟧E)
 
-- **Manifest:** section 10, `schema: 1`, at `stores/schema/abhoth-engine.schema.json`.
-- **Shared crate:** `orca-engines`, used by the router and the bridge:
+Revised by 🟥F on 2026-11-27; this is what the code implements. Changes go here first.
+
+**Manifest** (section 10): `abhoth-engine.json`, `"schema": 1`. JSON Schema at
+`stores/schema/abhoth-engine.schema.json`; the Rust types are the authority and a test checks the
+schema against them. Unknown top-level and method keys are errors, so typos fail loudly. Worked
+examples: `docs/ENGINE-PACKAGES.md` and `stores/default/*/abhoth-engine.json`.
+
+**Crate `orca-engines`** (no dependency on `orca-router`; the router and the bridge both use it):
 
 ```rust
-pub struct Manifest { /* serde of abhoth-engine.json */ }
-pub fn validate(path: &Path) -> Result<Report, Error>;        // `abhoth engine validate`
-pub struct HostFacts { os, arch, docker: bool, gpus: Vec<Gpu>, cpu: Cpu }  // from detect + cpu-info
-pub fn choose_method<'a>(m: &'a Manifest, h: &HostFacts) -> Result<&'a Method, Vec<String>>;
-pub struct RunSpec { engine: String, card: String, port: u16, model: Option<ModelRef>,
-                     params: BTreeMap<String, Value>, gpu: Option<GpuSel>, limits: Limits }
-pub trait Runner {                                            // async
-    fn install(&self, m: &Manifest, method: &Method, ok: &Approvals) -> Result<Installed>;
-    fn start(&self, i: &Installed, s: &RunSpec) -> Result<Handle>;
-    fn stop(&self, h: &Handle, grace: Duration) -> Result<()>;
-    fn status(&self, h: &Handle) -> Result<State>;            // running, healthy, restarts, since
-    fn logs(&self, h: &Handle, lines: u32) -> Result<String>; // secrets scrubbed
-    fn uninstall(&self, i: &Installed) -> Result<()>;
+// manifest.rs
+pub struct Manifest { schema, id, name, version, description, kinds: Vec<String>, caps: Caps,
+    hardware: Hardware, params: IndexMap<String, Param>, api: String, probe: Option<String>,
+    models: Option<ModelsLayout>, methods: Vec<Method>, security: Security, licence, source }
+pub struct Caps { inherits, kinds, formats, archs, quants, add, remove }   // = router EngineCaps
+pub struct Method { r#type: MethodType, platforms, gpu: Vec<GpuKind>, requires: Requires,
+    run: Vec<String>, env: IndexMap<String, String>, workdir, ports: Vec<PortDecl>,
+    health: Health, mounts: Vec<Mount>, update: Vec<Step>, uninstall: Vec<Step>,
+    /* per type: */ image, compose, compose_file, python, requirements, package,
+    assets: Vec<Asset>, repo, commit, build: Vec<Step>, detect: Option<Detect> }
+pub enum MethodType { Compose, Docker, Pip, Uv, Conda, Binary, Git, Existing }
+pub enum GpuKind { Cuda, Rocm, Metal, Cpu }
+impl Manifest { pub fn parse(text: &str) -> Result<Manifest, Vec<Issue>>; }
+
+// validate.rs: `abhoth engine validate <dir|file> [--private]`
+pub fn validate_path(path: &Path, mode: Mode /* Store | Private */) -> Report;
+pub struct Report { ok: bool, manifest: Option<Manifest>, issues: Vec<Issue> } // Issue {level, at, message}
+
+// host.rs: what a host is (bridge: from detect; router: the server's telemetry + cpu-info)
+pub struct HostFacts { os: String /* linux|windows|macos */, arch: String /* amd64|arm64 */,
+    docker: bool, compose: bool, python: Option<String>, gpus: Vec<Gpu>, cpu: Cpu,
+    path_tools: Vec<String> /* found on PATH, for `existing` */ }
+pub struct Gpu { index: u32, uuid: String, vendor: GpuKind, name: String, vram_gib: f64 }
+pub struct Cpu { cores: u32, ram_gib: f64, simd: Vec<String> /* avx, avx2, avx512f, neon */ }
+pub enum CardSel { Gpu { card: String, index: u32, uuid: String, vendor: GpuKind, vram_gib: f64 },
+                   Cpu { card: String, cores: u32, ram_gib: f64 } }
+pub struct MethodFilter { host_processes: bool /* false: only docker/compose */, only: Option<MethodType> }
+pub fn choose_method<'a>(m: &'a Manifest, h: &HostFacts, card: &CardSel, f: &MethodFilter)
+    -> Result<(usize, &'a Method), Vec<Rejection>>;   // Rejection { method: usize, reasons: Vec<String> }
+pub fn fit(m: &Manifest, h: &HostFacts, card: &CardSel, f: &MethodFilter) -> Fit; // store tab check
+
+// render.rs: templates are {{name}}; an unknown name is an error, never left in place
+pub struct RunSpec { engine: String, card: CardSel, port: u16, host: String /* bind, 127.0.0.1 */,
+    model: Option<ModelRef>, params: BTreeMap<String, Value>, limits: Limits,
+    model_dir: Option<String>, name: String /* container/process name: "abhoth-comfyui-x2" */ }
+pub struct Limits { cpus: Option<f64>, mem_gib: Option<f64> }
+pub fn plan_start(m: &Manifest, i: &Installed, s: &RunSpec, ok: &Approvals) -> Result<StartPlan, String>;
+pub enum StartPlan {
+    Docker { argv: Vec<String> },                    // the full `docker run -d --name … image args`
+    Compose { project: String, yaml: String, up: Vec<String>, down: Vec<String> },
+    Process { program: String, args: Vec<String>, env: Vec<(String, String)>, cwd: Option<PathBuf> },
 }
 ```
 
-- **`Handle`** serialises into the state dir, so a restarted router or bridge adopts what is
-  already running: the container name, or the PID plus its start time (which guards against PID
-  reuse).
-- **In the router:** `driver = "package"` with `package = "<id>@<version>"` is a new driver kind
-  beside docker, compose, systemd, process, template and external. On DeepThought it renders the
-  `docker` and `compose` methods into the same hostctl commands the existing drivers use. Host
-  process methods (`pip`, `binary`, `git`) run only where the runner is local: on a bridge, or a
-  router with `exec = "local"`.
+Template names: `{{port}}`, `{{host}}`, `{{gpu_index}}`, `{{gpu_uuid}}`, `{{cpus}}`,
+`{{mem_limit}}` (e.g. `6g`), `{{model_dir}}`, `{{model_file}}`, `{{model_id}}`, `{{state}}` (the
+engine's own state dir), `{{install}}` (the unpacked binary or git checkout), `{{venv}}`,
+`{{python}}` (the venv's interpreter, per OS), `{{exe}}` (`.exe` on Windows, else empty),
+`{{name}}`, `{{param.<id>}}`. Device selection: a `cuda` method on a GPU card gets
+`CUDA_VISIBLE_DEVICES={{gpu_index}}` (host processes) or `--gpus device=<uuid>` (docker) unless
+it sets them itself; on a CPU card GPUs are hidden (`CUDA_VISIBLE_DEVICES=""`, no `--gpus`).
+
+```rust
+// pins.rs
+pub fn check_pins(m: &Method, mode: Mode) -> Vec<Issue>;  // image@sha256:<64 hex>; pip `==` + --hash;
+                                                         // asset sha256; git 40-hex commit
+pub fn verify_file(path: &Path, sha256: &str) -> Result<(), String>;
+
+// runner.rs
+#[async_trait] pub trait HostExec: Send + Sync {          // how a command runs on the host: locally
+    async fn run(&self, argv: &[String], o: &ExecOpts) -> Result<ExecResult, String>; // or through
+}                                                         // the router's hostctl/ssh executor
+#[async_trait] pub trait Runner: Send + Sync {
+    async fn install(&self, m: &Manifest, method: usize, ok: &Approvals) -> Result<Installed, RunError>;
+    async fn update(&self, old: &Installed, m: &Manifest, method: usize, ok: &Approvals) -> Result<Installed, RunError>;
+    async fn uninstall(&self, m: &Manifest, i: &Installed) -> Result<(), RunError>;
+    async fn start(&self, m: &Manifest, i: &Installed, s: &RunSpec) -> Result<Handle, RunError>;
+    async fn stop(&self, h: &Handle, grace: Duration) -> Result<(), RunError>;
+    async fn status(&self, h: &Handle) -> Result<State, RunError>;   // Running/Exited/Backoff/Failed…
+    async fn logs(&self, h: &Handle, lines: u32) -> Result<String, RunError>; // secrets scrubbed
+    async fn adopt(&self) -> Vec<Handle>;                             // after a restart
+}
+pub struct LocalRunner { /* state_dir, Arc<dyn HostExec>, Arc<dyn Fetch>, supervisor */ }
+impl LocalRunner { pub fn new(state_dir: PathBuf, exec: Arc<dyn HostExec>, fetch: Arc<dyn Fetch>,
+    host_processes: bool /* false in the router container: pip/uv/binary/git/existing refused */) -> Self; }
+pub struct Approvals { host_run: bool, privileged: bool, host_network: bool,
+    host_mounts: Vec<String>, devices: Vec<String>, untrusted: bool } // each an explicit admin click
+pub struct Installed { id, version, method: usize, method_type, dir: PathBuf, venv: Option<PathBuf>,
+    install: Option<PathBuf>, image: Option<String>, pins: Vec<String>, at: i64, approvals }
+pub enum Handle { Container { name: String }, Compose { project: String, file: PathBuf },
+    Process { pid: u32, started: u64 /* OS start time: guards PID reuse */, name: String } }
+```
+
+- **State dir layout** (router and bridge alike): `<state>/engines/<id>/<version>/installed.json`
+  (+ `venv/`, `bin/`, `src/`, `compose.yml`), `<state>/engines/run/<name>.json` (the `Handle`),
+  `<state>/engines/logs/<name>.log` (rotated at 8 MiB, 2 kept), `<state>/packages/` (My packages).
+- **Supervision** (host processes): restart on exit with backoff 1 s, 2 s, 4 s … 60 s, reset
+  after 10 min up; at most 5 restarts in 10 min, then `Failed`. Stop is SIGTERM (Windows:
+  `taskkill /PID <pid> /T`), then a kill after `grace`, always by exact PID checked against
+  `started`. Limits: on Linux, `prlimit --as` and `nice` when `mem_gib` is set; on Windows none
+  yet (reported in `State.notes`).
+- **Docker/compose** run through `HostExec`, so the router uses its hostctl executor on
+  DeepThought and the bridge runs `docker` locally. The runner never adds `--privileged`,
+  `--network host`, devices, or bind mounts outside `{{model_dir}}` and `{{state}}` unless
+  `security` declares them **and** `Approvals` approves each one.
+
+**Store** (`orca_engines::store`):
+- A store is a folder or URL with `index.json`: `{"schema": 1, "name", "packages": [{"id",
+  "version", "path", "sha256", "name", "kinds", "methods", "summary"}]}`; `sha256` is the
+  manifest file's, checked when fetched. `abhoth engine index <store-dir>` rebuilds it.
+- The default store is `stores/default/`, embedded in the router at build time (works offline)
+  and **trusted**. Store URLs the admin adds (a static `index.json` over https, or a GitHub repo
+  URL, read as `raw.githubusercontent.com/<owner>/<repo>/<ref>/index.json`) are **untrusted**
+  unless the admin marks them trusted. The list is `<state_dir>/engine-stores.json`.
+
+**Router API** (🟥F; `/admin/api/engine-store/…`, admins only):
+
+| Call | Does |
+|---|---|
+| `GET stores`, `POST stores {url, trusted}`, `DELETE stores/<id>` | The store list. |
+| `GET packages` | Every package from every store, plus My packages, with trust and methods. |
+| `GET package?store=&id=` | The manifest, its templates and the validation report. |
+| `POST fit {store, id, server, card}` | Hardware fit, the method that would be chosen, and why each other one was refused. |
+| `POST validate {manifest, files}` | The wizard's live check. |
+| `POST install {store, id, server, card, approvals, engine?}` | Installs, then adds `[engines.<id>]` with `driver = "package"`. 202 + a job. |
+| `POST update {engine}`, `POST remove {engine}` | Update to the store's newer version; uninstall and remove the engine. |
+| `GET installed` | Installed packages per server, with versions and available updates. |
+| `POST wizard/probe-image {image}` | Registry metadata only (digest, ports, env, labels, licence); runs nothing. |
+| `POST wizard/test-run {image, server, card, confirm: true}` | A throwaway `--rm` container with no mounts, probed (`/v1/models`, `/object_info`, `/health`, `/system_stats`), then removed. Refused without `confirm`. |
+| `GET my`, `PUT my/<id>`, `DELETE my/<id>`, `GET my/<id>/export` | My packages (`<state_dir>/packages/<id>/`); export is a zip. |
+
+**In `router.toml`** (🟥F adds the schema; 🟩B uses it for the migration):
+
+```toml
+[engines.comfyui]
+driver  = "package"
+package = "comfyui@0.39.0"        # installed: <state>/engines/comfyui/0.39.0/installed.json
+method  = "docker"                # optional: pin a method type, else the first that fits
+params  = { preview = "auto" }    # the manifest's params
+port    = { X2 = 8188 }
+```
+
+`driver = "package"` reads the installed manifest and asks `plan_start` for the card. `Docker`
+and `Compose` plans run as the same hostctl commands the `docker` and `compose` drivers use.
+`Process` plans run only where the runner is local (a bridge, or `exec = "local"`). Kinds,
+caps, api and health come from the manifest unless the engine entry overrides them. Nothing else
+in placement or routing reads `package`: manual engines (`docker`, `compose`, `process`,
+`external`, …) keep working with no package.
 
 ### 13.4 Inventory hooks (🟩B places and proxies; 🟧E builds the bridge side of them)
 
