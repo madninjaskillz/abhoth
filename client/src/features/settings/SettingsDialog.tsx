@@ -17,6 +17,7 @@ import { openSettings, useSettingsNav } from "./settingsNav";
 import { ConnectionPanel } from "./ConnectionPanel";
 import { modeOf, visibleInMode } from "./connection";
 import { MigoPanel } from "@/features/machine/MigoSharing";
+import { LocalEnginesPane } from "@/features/machine/LocalEnginesPane";
 import { AboutPane } from "./AboutPane";
 import { TAB_GROUPS, groupsOfTab, nextTabIndex, pickTab, searchTabs, unsavedByTab, visibleTabs, type Group, type SearchHit, type TabDef } from "./settingsTabs";
 
@@ -81,7 +82,8 @@ export function SettingsDialog({ project, requested, onClose }: { project: Proje
   const router = !!info.data?.router;
   // Desktop-only tabs (Desktop app, Migo Bridge, This Machine): in the desktop window, or a browser on the desktop app's own server.
   const desktop = inDesktop() || !!info.data?.desktop;
-  const tabs = useMemo(() => visibleTabs({ admin, desktop, router }, doc.data ? all : undefined), [admin, all, doc.data, router, desktop]);
+  const machine = !!info.data?.machine;
+  const tabs = useMemo(() => visibleTabs({ admin, desktop, router, machine }, doc.data ? all : undefined), [admin, all, doc.data, router, desktop, machine]);
   const active = pickTab(requested, tabs) ?? "account";
   const activeTab = tabs.find((t) => t.id === active) ?? tabs[0];
   // The URL says which tab is open (and the first one when it asked for none or one this user can't see).
@@ -351,6 +353,7 @@ function Pane({ id }: { id: string }) {
   if (id === "account") return <div className="flex h-full flex-col"><AccountPane /></div>;
   if (id === "users") return <div className="flex h-full flex-col"><UsersPane /></div>;
   if (id === "about") return <AboutPane />;
+  if (id === "local-engines") return <LocalEnginesPane />;
   if (id === "machine") return <iframe src="/machine.html" title="This Machine" className="h-full min-h-[480px] w-full border-0" data-testid="settings-machine-frame" />;
   if (id === "inference") return <div className="flex h-full flex-col"><RouterOverviewPane /></div>;
   if (id === "routes") return <div className="flex h-full flex-col"><RouterRoutesPane /></div>;

@@ -102,7 +102,7 @@ test("settings go where their group says; unknown keys follow their section; unk
 
 test("admins see the app's tabs; desktop-only tabs only in the desktop app; Advanced only when a section needs it", () => {
   assert.deepEqual(ids(visibleTabs(admin, schema)), ["general", "connection", "models", "agent", "images", "account", "users", "about"]);
-  assert.deepEqual(ids(visibleTabs(desk, schema)), ["general", "connection", "models", "agent", "images", "desktop", "migo", "machine", "account", "users", "about"]);
+  assert.deepEqual(ids(visibleTabs(desk, schema)), ["general", "connection", "models", "agent", "images", "desktop", "migo", "local-engines", "machine", "account", "users", "about"]);
   const more = [...schema, { name: "Something New", settings: [s("x.y")] }];
   assert.ok(ids(visibleTabs(admin, more)).includes("advanced"));
   // Before the schema loads the tabs are there already (no jump when it arrives).
@@ -196,6 +196,8 @@ test("old links keep working: every earlier tab id still opens, and old names ma
   assert.equal(pickTab("bridge", tabs), "migo");
   assert.equal(pickTab("router", tabs), "connection");
   assert.equal(pickTab("this-machine", tabs), "machine");
+  assert.equal(pickTab("engines", tabs), "local-engines");
+  assert.equal(pickTab("cloud", tabs), "local-engines");
   assert.equal(tabById("sothoth")?.id, "connection");
   for (const to of Object.values(TAB_ALIASES)) assert.ok(tabById(to), to);
 });
@@ -232,6 +234,18 @@ test("the desktop owner sees This Machine and Migo Bridge in router mode too (a 
   // Router mode is a connection setting: it never changes who sees the PC's own tabs.
   const routerMode = { admin: true, desktop: true, router: true };
   const tabs = ids(visibleTabs(routerMode, schema));
-  for (const id of ["desktop", "migo", "machine"]) assert.ok(tabs.includes(id), id);
+  for (const id of ["desktop", "migo", "local-engines", "machine"]) assert.ok(tabs.includes(id), id);
   assert.equal(pickTab("machine", visibleTabs(routerMode, schema)), "machine");
+});
+
+test("Local Engines and This Machine are on every host that runs them, for admins only; Migo Bridge and the window stay desktop-only", () => {
+  const web = { admin: true, desktop: false, machine: true };
+  const tabs = ids(visibleTabs(web, schema));
+  for (const id of ["local-engines", "machine"]) assert.ok(tabs.includes(id), id);
+  for (const id of ["desktop", "migo"]) assert.ok(!tabs.includes(id), id);
+  assert.ok(!ids(visibleTabs({ admin: false, desktop: false, machine: true }, schema)).includes("local-engines"));
+  assert.ok(!ids(visibleTabs({ admin: true, desktop: false, machine: false }, schema)).includes("local-engines"));
+  // found by search for what it holds
+  const hits = searchTabs(visibleTabs(web, schema), schema, "ollama").map((h) => h.tab.id);
+  assert.ok(hits.includes("local-engines"), hits.join(","));
 });

@@ -327,6 +327,8 @@ export interface ServerInfo {
   glance?: boolean;
   /** Served to the desktop window (`abhoth --desktop`): native folder dialog available. */
   desktop?: boolean;
+  /** Admins: this host runs This Machine and Local Engines (/api/machine, D156). */
+  machine?: boolean;
 }
 
 /** One card of a server layout: which engine, how many slots, which model file. */

@@ -19,6 +19,8 @@ export interface TabContext {
   desktop: boolean;
   /** A Sothoth Router control plane is linked to this server (its admin tabs). */
   router?: boolean;
+  /** This server runs This Machine and Local Engines (every host unless turned off; D156). */
+  machine?: boolean;
 }
 
 /** The headings of the tab list, in order. */
@@ -62,6 +64,7 @@ export interface TabDef {
 const admins = (c: TabContext) => c.admin;
 const desktopAdmins = (c: TabContext) => c.admin && c.desktop;
 const routerAdmins = (c: TabContext) => c.admin && !!c.router;
+const machineAdmins = (c: TabContext) => c.admin && (c.desktop || !!c.machine);
 
 export const SETTINGS_TABS: TabDef[] = [
   {
@@ -186,13 +189,22 @@ export const SETTINGS_TABS: TabDef[] = [
     visible: desktopAdmins,
   },
   {
+    id: "local-engines",
+    label: "Local Engines",
+    kind: "pane",
+    group: "pc",
+    blurb: "Every engine this machine uses: managed ones, ones that already run (a kind, a name and a URL), and Cloud providers.",
+    keywords: ["local engines", "engines", "unmanaged", "lm studio", "ollama", "comfyui", "cloud", "anthropic", "openai", "openrouter", "provider", "api key", "expose as tool", "tools", "generate_image", "speak", "transcribe", "make_music", "url"],
+    visible: machineAdmins,
+  },
+  {
     id: "machine",
     label: "This Machine",
     kind: "pane",
     group: "pc",
     blurb: "This PC's cards, engines and models: run them here, and pick what Migo Bridge shares with your Sothoth Router.",
     keywords: ["this machine", "local", "engines", "cards", "gpu", "kokoro", "comfyui", "engine store", "manual engines", "inventory", "running", "huggingface", "models"],
-    visible: desktopAdmins,
+    visible: machineAdmins,
   },
   {
     id: "account",
@@ -297,6 +309,9 @@ export const TAB_ALIASES: Record<string, string> = {
   approvals: "migo",
   "remote-config": "migo",
   "this-machine": "machine",
+  engines: "local-engines",
+  "local-engine": "local-engines",
+  cloud: "local-engines",
   window: "desktop",
   context: "models",
   permissions: "agent",
