@@ -157,7 +157,7 @@ fn standing(c: &ControlConfig, v: &mut Vec<Issue>) {
         }
     }
     for (card_id, card) in &c.cards {
-        let held = c.standing_gib(&card_id, None);
+        let held = c.standing_gib(card_id, None);
         if let Some(mem) = card.memory_gib()
             && held > mem - card.reserve_gib + 1e-9
         {
