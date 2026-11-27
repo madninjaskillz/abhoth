@@ -1270,3 +1270,68 @@ fn scrub_hides_tokens() {
         "{t}"
     );
 }
+
+#[test]
+fn wizard_drafts_parse_sources_and_export_zips() {
+    use crate::wizard::*;
+    assert_eq!(
+        parse_image("nginx").unwrap(),
+        ("docker.io".into(), "library/nginx".into(), "latest".into())
+    );
+    assert_eq!(
+        parse_image("ghcr.io/a/b:v1@sha256:00").unwrap(),
+        ("ghcr.io".into(), "a/b".into(), "sha256:00".into())
+    );
+    assert!(parse_image("bad image").is_err());
+    assert_eq!(slug("Kokoro FastAPI (GPU)"), "kokoro-fastapi-gpu");
+    let probe = ImageProbe {
+        reference: "docker.io/x/tts:1.2".into(),
+        digest: format!("sha256:{}", "a".repeat(64)),
+        pinned: format!("docker.io/x/tts:1.2@sha256:{}", "a".repeat(64)),
+        platforms: vec!["linux/amd64".into()],
+        ports: vec!["8880/tcp".into()],
+        licence: Some("MIT".into()),
+        ..Default::default()
+    };
+    let d = draft_docker("x/tts:1.2", Some(probe), None);
+    assert_eq!(d.manifest["version"], "1.2");
+    assert_eq!(d.manifest["methods"][0]["ports"][0]["container"], 8880);
+    assert!(crate::pins::image_pinned(
+        d.manifest["methods"][0]["image"].as_str().unwrap()
+    ));
+    // Complete the draft the way the form would; it then validates as a private package.
+    let mut m = d.manifest.clone();
+    m["kinds"] = serde_json::json!(["tts"]);
+    let r =
+        crate::validate::validate_text(&m.to_string(), &Default::default(), crate::Mode::Private);
+    assert!(r.ok, "{}", r.text());
+    let assets = vec![
+        ReleaseAsset {
+            name: "srv-linux-x64.tar.gz".into(),
+            url: "https://example.org/a.tgz".into(),
+            sha256: Some("b".repeat(64)),
+            size: 10,
+        },
+        ReleaseAsset {
+            name: "srv-win-cuda-x64.zip".into(),
+            url: "https://example.org/b.zip".into(),
+            sha256: None,
+            size: 10,
+        },
+        ReleaseAsset {
+            name: "checksums.txt".into(),
+            url: "https://example.org/c".into(),
+            sha256: None,
+            size: 1,
+        },
+    ];
+    let d = draft_release("o", "srv", "v2.0", &assets);
+    let a = d.manifest["methods"][0]["assets"].as_array().unwrap();
+    assert_eq!(a.len(), 2);
+    assert_eq!(a[1]["gpu"], "cuda");
+    assert!(d.notes.iter().any(|n| n.contains("srv-win-cuda-x64.zip")));
+    let mut files = crate::validate::Files::new();
+    files.insert("abhoth-engine.json".into(), "{}".into());
+    let z = zip_files("srv", &files).unwrap();
+    assert_eq!(&z[..2], b"PK");
+}

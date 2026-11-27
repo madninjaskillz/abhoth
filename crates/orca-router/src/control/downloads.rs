@@ -243,6 +243,12 @@ impl Service {
         Value::Object(out)
     }
 
+    /// The server's executor (the engine store runs its installs through it).
+    pub fn exec(&self, server: &str) -> Result<Arc<dyn Executor>, String> {
+        let c = self.config()?;
+        (self.exec_for)(&c, server)
+    }
+
     /// The config as the file says now.
     pub fn config(&self) -> Result<ControlConfig, String> {
         let doc = self.backend.config();

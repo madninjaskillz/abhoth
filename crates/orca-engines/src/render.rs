@@ -235,10 +235,7 @@ pub fn vars(m: &Manifest, i: &Installed, s: &RunSpec) -> Result<Vars, String> {
         CardSel::Cpu { cores, .. } if *cores > 0 => Some(f64::from(*cores)),
         _ => None,
     });
-    v.insert(
-        "cpus".into(),
-        cpus.map(trim_float).unwrap_or_default(),
-    );
+    v.insert("cpus".into(), cpus.map(trim_float).unwrap_or_default());
     v.insert(
         "mem_limit".into(),
         s.limits

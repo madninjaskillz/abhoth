@@ -3430,6 +3430,7 @@ dependencies = [
  "orca-alerts",
  "orca-calendar",
  "orca-core",
+ "orca-engines",
  "orca-hostd",
  "reqwest",
  "rusqlite",

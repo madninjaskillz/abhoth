@@ -38,6 +38,14 @@ pub fn base_vars(c: &ControlConfig, card_id: &str, engine_id: &str) -> Result<Va
     v.insert("cpus".into(), w(card.cpus.as_deref().unwrap_or("")));
     v.insert("engine".into(), w(engine_id));
     v.insert("state_dir".into(), w(&c.router.state_dir));
+    v.insert(
+        "device".into(),
+        w(if card.is_cpu() { "cpu" } else { "gpu" }),
+    );
+    v.insert(
+        "server_model_dir".into(),
+        w(server.model_dir.as_deref().unwrap_or("")),
+    );
     if let Some(p) = engine.port.get(card_id) {
         v.insert("port".into(), w(&p.to_string()));
     }
@@ -83,10 +91,11 @@ fn instance_name(c: &ControlConfig, e: &Engine, card: &str, v: &Vars) -> Result<
             .as_ref()
             .map(|s| s.unit.clone())
             .unwrap_or_default(),
-        DriverKind::Process | DriverKind::Template | DriverKind::External => e
-            .container
-            .clone()
-            .unwrap_or_else(|| "{engine}-{card_lc}".into()),
+        DriverKind::Process | DriverKind::Template | DriverKind::External | DriverKind::Package => {
+            e.container
+                .clone()
+                .unwrap_or_else(|| "{engine}-{card_lc}".into())
+        }
     };
     template::render_word(&t, v).map_err(|x| x.to_string())
 }

@@ -19,6 +19,7 @@ pub fn for_engine(e: &Engine) -> Box<dyn EngineDriver> {
         DriverKind::Process => Box::new(Process::from(e)),
         DriverKind::Template => Box::new(Template::from(e)),
         DriverKind::External => Box::new(External),
+        DriverKind::Package => Box::new(super::packages::Package::from(e)),
     }
 }
 

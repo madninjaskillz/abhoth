@@ -215,6 +215,7 @@ fn admin_only_read(sub: &str) -> bool {
         || first == "hf"
         || first == "downloads"
         || first == "catalog"
+        || first == "engine-store"
         || (first == "calendar" && sub != "calendar/now")
 }
 
@@ -451,6 +452,42 @@ pub async fn handle(
             match crate::control::downloads::installed_for(std::path::Path::new(&b.config().path)) {
                 Some(svc) => inventory_api(&svc, m, first, rest, &qs, &body, &who).await,
                 None => err(503, "the inventory needs the router started with --control"),
+            }
+        }
+        // D153: the engine store and the package wizard.
+        (m, ["engine-store", rest @ ..]) => {
+            match crate::control::downloads::installed_for(std::path::Path::new(&b.config().path)) {
+                Some(svc) => {
+                    if m == Method::GET
+                        && let ["my", id, "export"] = rest
+                    {
+                        return match crate::control::engine_store::export_my(&svc.state_dir, id) {
+                            Ok(bytes) => {
+                                let mut r = (StatusCode::OK, bytes).into_response();
+                                let h = r.headers_mut();
+                                h.insert(
+                                    header::CONTENT_TYPE,
+                                    header::HeaderValue::from_static("application/zip"),
+                                );
+                                if let Ok(v) = header::HeaderValue::from_str(&format!(
+                                    "attachment; filename=\"{id}.zip\""
+                                )) {
+                                    h.insert(header::CONTENT_DISPOSITION, v);
+                                }
+                                r
+                            }
+                            Err(e) => err(404, &e),
+                        };
+                    }
+                    let (status, v) =
+                        crate::control::engine_store::api(&svc, m.as_str(), rest, &qs, &body, &who)
+                            .await;
+                    json_resp(status, &v)
+                }
+                None => err(
+                    503,
+                    "the engine store needs the router started with --control",
+                ),
             }
         }
         (m, ["calendar", ..]) => match crate::calendar::installed() {

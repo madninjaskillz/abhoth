@@ -452,6 +452,17 @@ fn engines(c: &ControlConfig, v: &mut Vec<Issue>) {
                     }
                 }
             }
+            DriverKind::Package => match &e.package {
+                None => v.push(Issue::err(
+                    format!("{p}.package"),
+                    "driver = \"package\" needs package = { id, version } (an installed package)",
+                )),
+                Some(pr) if pr.id.is_empty() || pr.version.is_empty() => v.push(Issue::err(
+                    format!("{p}.package"),
+                    "package needs an id and a version",
+                )),
+                _ => {}
+            },
             DriverKind::Template if e.templates.is_none() => v.push(Issue::err(
                 format!("{p}.templates"),
                 "driver = \"template\" needs templates = { start, stop, status }",

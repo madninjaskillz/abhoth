@@ -22,6 +22,7 @@ pub mod runner;
 pub mod state;
 pub mod store;
 pub mod validate;
+pub mod wizard;
 
 pub use host::{CardSel, HostFacts, MethodFilter, choose_method, fit};
 pub use manifest::{Manifest, Method, MethodType};

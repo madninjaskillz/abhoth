@@ -535,6 +535,9 @@ pub enum DriverKind {
     /// Started outside the router (an endpoint that is already running, D153): the router
     /// probes and (later) routes to it, never starts, stops or observes it.
     External,
+    /// An installed engine package (D153, ROUTER-MEDIA-PLAN.md 13.3): `package = { id, version }`
+    /// names it; its docker and compose methods run as the same commands as those drivers.
+    Package,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -636,6 +639,26 @@ pub struct Engine {
     /// `caps.inherits`), refined by a live probe, then these overrides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caps: Option<EngineCaps>,
+    /// `driver = "package"`: the installed package it runs (D153).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<PackageRef>,
+}
+
+/// An installed engine package (`<state_dir>/engines/<server>/<id>/<version>/`).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PackageRef {
+    pub id: String,
+    pub version: String,
+    /// Pin a method type (`docker`); default: the one it was installed with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    /// The manifest's params (`preview = "auto"`).
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub params: IndexMap<String, Value>,
+    /// The store it came from (`default`, `my`, a store id), for updates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store: Option<String>,
 }
 
 /// An engine's capabilities, as overrides of its kind's (ROUTER-INVENTORY.md 3).

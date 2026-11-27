@@ -28,6 +28,8 @@ claude-engine = []
 orca-core.workspace = true
 orca-calendar.workspace = true
 orca-alerts.workspace = true
+# Engine packages (D153): manifests, the store, the runner.
+orca-engines.workspace = true
 chrono-tz.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
