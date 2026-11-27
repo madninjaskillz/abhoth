@@ -223,8 +223,12 @@ jobs:
       - name: Clippy (Windows target)
         run: cargo xwin clippy --target "$WIN" --workspace --all-targets --locked --features orca-cli/desktop -- -D warnings
 
+      # The runner's RUSTFLAGS remaps the CI paths (deploy/ci-runner/compose.yaml). cc-rs maps
+      # them for gcc on Linux but not for clang-cl, so the C sources (aws-lc-sys) kept their
+      # registry paths in the exes: the same prefixes as clang-cl file-prefix-maps.
       - name: Build abhoth.exe and abhoth-desktop.exe (cross-compiled)
-        run: cargo xwin build --release --locked --target "$WIN" -p orca-cli --features desktop --bins
+        run: |
+          CFLAGS="${RUSTFLAGS//--remap-path-prefix=//clang:-ffile-prefix-map=}"             cargo xwin build --release --locked --target "$WIN" -p orca-cli --features desktop --bins
 
       - name: Build abhoth and abhoth-desktop (Linux)
         run: cargo build --release --locked -p orca-cli --features desktop --bins
