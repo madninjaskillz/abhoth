@@ -127,6 +127,8 @@ tempfile = "=3.27.0"
 # The router control plane's config (ROUTER-CONFIG.md D-RC1): parse, and edit keeping comments.
 toml = { version = "=1.2.3", features = ["preserve_order"] }
 toml_edit = "=0.25.21"
+# The desktop app calls its in-process router (D155) as a service; already in the tree via axum.
+tower-service = "=0.3.3"
 tokio-tungstenite = "=0.29.0"
 # Supervisor HA (SUPERVISOR.md 11): the MQTT client; rumqttd is the in-process broker for tests only.
 rumqttc = { version = "=0.25.1", default-features = false, features = ["use-rustls"] }

@@ -85,6 +85,9 @@ pub struct WebUiOptions {
     pub glance: Option<crate::glance::GlanceOptions>,
     /// Set when the server backs the desktop window (`abhoth --desktop`, D110).
     pub desktop: Option<DesktopHooks>,
+    /// This machine (MACHINE.md) without the desktop window (`--hostui-machine`): its page at
+    /// /machine.html for the host's admins. The desktop app passes its handler in [`DesktopHooks`].
+    pub machine: Option<MachineFn>,
 }
 
 /// Picks a folder with the system dialog, starting in the given one; `None` when cancelled.
@@ -99,7 +102,19 @@ pub type PickFolderFn = Arc<
 #[derive(Clone)]
 pub struct DesktopHooks {
     pub pick_folder: PickFolderFn,
+    /// This machine (D155): `/api/admin/machine/*` and `/api/machine/*`, answered by the app's
+    /// own in-process router and engines. `None`: not available.
+    pub machine: Option<MachineFn>,
 }
+
+/// Answers a `/api/admin/machine/*` or `/api/machine/*` request (an admin's; checked first).
+pub type MachineFn = Arc<
+    dyn Fn(
+            axum::http::Request<axum::body::Body>,
+        ) -> futures_util::future::BoxFuture<'static, axum::response::Response>
+        + Send
+        + Sync,
+>;
 
 impl WebUiOptions {
     pub fn new(token: impl Into<String>) -> Self {
@@ -136,6 +151,7 @@ impl WebUiOptions {
             bench: None,
             glance: None,
             desktop: None,
+            machine: None,
         }
     }
 }
@@ -509,6 +525,11 @@ fn router(state: Arc<AppState>) -> Router {
     if state.options.desktop.is_some() {
         api = api.route("/api/desktop/pick-folder", post(pick_folder));
     }
+    if machine_fn(&state.options).is_some() {
+        api = api
+            .route("/api/admin/machine/{*rest}", axum::routing::any(machine))
+            .route("/api/machine/{*rest}", axum::routing::any(machine));
+    }
     if state.options.profiles_url.is_some() {
         api = api.merge(crate::profiles::routes());
     }
@@ -527,6 +548,31 @@ fn router(state: Arc<AppState>) -> Router {
             crate::login::login_auth,
         ))
         .with_state(state)
+}
+
+fn machine_fn(o: &WebUiOptions) -> Option<MachineFn> {
+    o.desktop
+        .as_ref()
+        .and_then(|d| d.machine.clone())
+        .or_else(|| o.machine.clone())
+}
+
+/// This machine (D155): admins only, then the app's handler.
+async fn machine(
+    State(state): State<Arc<AppState>>,
+    req: axum::http::Request<axum::body::Body>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let Some(f) = machine_fn(&state.options) else {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    };
+    if !crate::login::principal_of(&req).is_some_and(|p| p.admin) {
+        return crate::login::error(
+            axum::http::StatusCode::FORBIDDEN,
+            "Only an admin can do that.",
+        );
+    }
+    f(req).await
 }
 
 /// `POST /api/desktop/pick-folder` `{start}`: the system folder dialog (desktop window only).
@@ -653,9 +699,9 @@ async fn static_or_index(State(state): State<Arc<AppState>>, method: Method, uri
         }
         if let Some(bytes) = client_file(&state, &rel) {
             let mime = mime_guess::from_path(&rel).first_or_octet_stream();
-            // index.html and brand/ (branding.json, which a host may replace) are never cached;
-            // the images are hashed assets.
-            let cache = if rel.ends_with("index.html") || rel.starts_with("brand/") {
+            // Pages (index.html, glance.html, machine.html) and brand/ (branding.json, which a
+            // host may replace) are never cached; the images are hashed assets.
+            let cache = if rel.ends_with(".html") || rel.starts_with("brand/") {
                 "no-cache"
             } else {
                 "public, max-age=31536000, immutable"

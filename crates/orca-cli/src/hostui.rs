@@ -421,6 +421,15 @@ pub async fn run_with(
     // The desktop app makes its own local admin on the first start (D142).
     options.login.local_admin = hooks.is_some();
     options.desktop = hooks;
+    // --hostui-machine: This machine (MACHINE.md) without the window, for the host's admins at
+    // /machine.html (a headless PC, or screenshots and tests).
+    #[cfg(all(feature = "bridge", feature = "router"))]
+    if options.desktop.is_none() && std::env::args().any(|a| a == "--hostui-machine") {
+        options.machine = Some(crate::machine::spawn(
+            orca_core::config::default_config_dir(),
+            crate::machine::desktop_config,
+        ));
+    }
     let mut server = match WebUiServer::start(options, primary.clone()).await {
         Ok(s) => s,
         Err(e) => {

@@ -970,11 +970,20 @@ static ALL: LazyLock<Vec<SettingDef>> = LazyLock::new(|| {
         SettingDef::new(
             DESKTOP,
             "desktop.bridgeConfig",
-            "Bridge: engines file",
+            "Advanced: bridge engines file",
             T::Text,
-            "Optional bridge.toml listing the engines the router may start on this PC and card overrides (abhoth bridge init writes a starter).",
+            "Advanced. Usually empty: the engines and cards on Settings → This machine are what the bridge shares. A bridge.toml named here is used instead (headless-style setups); the app copied it into This machine once.",
             |c| V::Text(c.desktop.bridge_config.clone()),
             |c, v| c.desktop.bridge_config = v.into_string().unwrap_or_default().trim().to_string(),
+        ),
+        SettingDef::new(
+            DESKTOP,
+            "desktop.bridgeRemoteConfig",
+            "Bridge: allow router to config",
+            T::Bool,
+            "Bridge mode: a router admin may change this machine's cards, engines, models and sharing through the bridge (each change checked and backed up here, logged on This machine, undoable). Anything that needs approval waits for you. Off: the router sees this machine read-only.",
+            |c| V::Bool(c.desktop.bridge_remote_config),
+            |c, v| c.desktop.bridge_remote_config = v.as_bool(),
         ),
     ]
 });

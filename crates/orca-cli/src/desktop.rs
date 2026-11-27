@@ -309,9 +309,14 @@ pub fn run(raw: Vec<String>) -> i32 {
         }
     };
 
-    // Bridge mode (desktop.bridgeMode): this PC as a router-managed server while the app runs.
-    #[cfg(feature = "bridge")]
+    // This machine (D155): the app's own inventory and engines, and Bridge mode
+    // (desktop.bridgeMode: this PC as a router-managed server while the app runs).
+    #[cfg(all(feature = "bridge", feature = "router"))]
+    let machine = Some(crate::machine::spawn(home.clone(), chrome::desktop_config));
+    #[cfg(all(feature = "bridge", not(feature = "router")))]
     crate::bridge_mode::spawn_watcher(home.clone(), chrome::desktop_config);
+    #[cfg(not(all(feature = "bridge", feature = "router")))]
+    let machine = None;
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
@@ -324,6 +329,7 @@ pub fn run(raw: Vec<String>) -> i32 {
         stop: stop_rx,
         hooks: orca_webui::server::DesktopHooks {
             pick_folder: pick_folder_hook(),
+            machine,
         },
     });
     let args = host_args(&raw);

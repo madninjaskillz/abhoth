@@ -1038,9 +1038,34 @@ async fn the_desktop_folder_dialog_is_only_there_for_the_desktop_window() {
                 let r = a.lock().unwrap().take();
                 Box::pin(async move { r })
             }),
+            // This machine (D155): the app's handler sees the request as sent.
+            machine: Some(Arc::new(|req: axum::http::Request<axum::body::Body>| {
+                let path = req.uri().path().to_string();
+                Box::pin(async move {
+                    axum::response::IntoResponse::into_response(axum::Json(json!({"seen": path})))
+                })
+            })),
         });
     })
     .await;
+    let r: Value = host
+        .api(Method::GET, "/api/machine/status")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["seen"], "/api/machine/status");
+    let r: Value = host
+        .api(Method::GET, "/api/admin/machine/inventory")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["seen"], "/api/admin/machine/inventory");
     let info: Value = host
         .api(Method::GET, "/api/info")
         .send()

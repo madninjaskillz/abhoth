@@ -941,8 +941,12 @@ pub struct DesktopConfig {
     /// The bridge token a router admin minted (`abb_…`). Kept like the app's API keys; never
     /// logged.
     pub bridge_token: String,
-    /// Optional bridge.toml with this PC's engines and card overrides.
+    /// Advanced: a bridge.toml with this PC's engines and card overrides, used instead of the
+    /// app's own "This machine" config (D155; the app migrates it once, then manages its own).
     pub bridge_config: String,
+    /// Bridge mode: a router admin may change this machine's inventory through the bridge
+    /// (D155 8). Off by default; the router can never change this setting.
+    pub bridge_remote_config: bool,
 }
 
 impl Default for DesktopConfig {
@@ -955,6 +959,7 @@ impl Default for DesktopConfig {
             bridge_id: String::new(),
             bridge_token: String::new(),
             bridge_config: String::new(),
+            bridge_remote_config: false,
         }
     }
 }

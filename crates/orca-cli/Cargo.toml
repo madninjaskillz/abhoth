@@ -38,6 +38,11 @@ orca-router = { workspace = true, optional = true }
 orca-engines.workspace = true
 orca-bridge = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
+# This machine (D155): the in-process router's admin API, the manual engines' mirror.
+axum = { workspace = true, optional = true }
+tower-service = { workspace = true, optional = true }
+toml_edit = { workspace = true, optional = true }
+getrandom = { workspace = true, optional = true }
 orca-supervisor = { workspace = true, optional = true }
 orca-tools-network = { workspace = true, optional = true }
 async-trait.workspace = true
@@ -74,7 +79,7 @@ image = ["dep:orca-tools-image"]
 # `abhoth router`: the gateway that replaces LiteLLM on DeepThought (ROUTER.md).
 router = ["dep:orca-router"]
 # `abhoth bridge` and the desktop app's Bridge mode (ROUTER-MEDIA-PLAN.md 11).
-bridge = ["dep:orca-bridge", "dep:toml"]
+bridge = ["dep:orca-bridge", "dep:toml", "dep:axum", "dep:tower-service", "dep:toml_edit", "dep:getrandom", "dep:futures-util"]
 # `abhoth supervisor` and `--with-supervisor` (docs/design/SUPERVISOR.md; D148).
 supervisor = ["dep:orca-supervisor"]
 # `abhoth router` with the Claude engine (orca-router/claude-engine).
