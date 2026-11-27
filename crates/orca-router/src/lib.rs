@@ -13,6 +13,7 @@ pub mod discovery;
 pub mod effort;
 pub mod guards;
 pub mod import;
+pub mod init;
 pub mod key_requests;
 pub mod leases;
 pub mod metrics;

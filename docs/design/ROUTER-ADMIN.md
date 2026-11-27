@@ -28,7 +28,8 @@ the model list) should be possible with proper forms, not only raw TOML/JSON ove
   **admin-only plane**: `router.toml` and `router.json` editing, admin keys, sign-in, the audit;
   plans and switches answer 501 and nothing switches. A first-time standalone setup is: a minimal
   `router.toml` (`version = 1`, `[router] state_dir`, `[control] enabled = false`), add servers,
-  cards, engines and layouts with the forms, then turn the control plane on. Without `--control`
+  cards, engines and layouts with the forms, then turn the control plane on. `abhoth router
+  init` writes that starting point (section 6). Without `--control`
   the page says how to start the router for it.
 
 ## 2. Who is an admin (router-native auth)
@@ -140,3 +141,39 @@ Jobs & audit, **Admin keys**.
   URLs) and `test/connection.test.ts` (when Router admin shows).
 - CI: `npm run build` builds both bundles; the check that the checked-in `dist` matches a fresh
   build now covers `dist-router` too.
+
+## 6. Standalone router
+
+A router on its own (no Abhoth web server) starts from one command, `abhoth router init [DIR]`
+(`crates/orca-router/src/init.rs`; usage in ROUTER.md 17). User request (2026-11-27): one
+command, interactive by default with a `--yes` mode, that leaves a router ready to start and sign
+in to.
+
+- **What it makes**, in one folder: `router.toml` (`version = 1`; `[router]` id, listen, an
+  absolute `state_dir`; `[control] enabled = false`, so the admin-only plane of section 1;
+  `[inventory] version = 1`, so start-up has nothing to migrate), `router.json` (empty
+  `upstreams` and `deployments`), the state folder, and the first router admin key.
+- **This machine as the first server** (optional, default on): `[servers.local]`,
+  `exec = "local"`, `host = "127.0.0.1"`; GPUs from `nvidia-smi` with the telemetry query and
+  parser the router polls hosts with (`control/telemetry.rs`), as cards `A`, `B`, … by index,
+  pinned by UUID, with name and VRAM; the CPU (`control/builtins.rs` `cpu_info`) as a `cpu`
+  card. All `managed = false`: making a card managed is a decision for when its engines and
+  layouts exist, and the control plane is still off anyway.
+- **The key** is made with the same code as `admin-key create` (`access::LocalKeys`, audited as
+  `admin-key.create` by `cli`) and written to a new owner-only file (`DIR/secrets/router-admin-key`,
+  mode 600). It is shown only with `--print-key`; the summary names the file.
+- **Then** the summary prints the exact start command (this binary's path, `--config`,
+  `--control`, `--listen`) and the `/admin/` URL (loopback, and the host name when it listens on
+  every address). Optional service files: a systemd unit, a compose file for the router-only
+  image (the folder mounted at the same path, so `state_dir` holds inside the container), or a
+  Windows hint (a start-up scheduled task or a service wrapper).
+- **Idempotent:** it refuses, writing nothing, when any file it would write exists; `--force`
+  moves each to `DIR/backups/<name>.bak-<time>` first. The state folder and `router.db` are kept.
+- **Checked:** after writing, it loads and validates `router.toml` with the control plane's own
+  loader and validator and `router.json` with `Snapshot::load`; any error is a bug in init and
+  fails the command.
+- **Tests:** `init::tests` (the files and their checks, cards from a fake detection, the key's
+  file, mode and that it signs in, never printed without `--print-key`, refusal and forced
+  backups, quoting, the questions and `--yes`, no terminal without `--yes`) and
+  `tests/router_init.rs` (a router started from init's files answers `/admin/` and its key signs
+  in).

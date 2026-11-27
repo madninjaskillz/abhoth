@@ -8,6 +8,7 @@
 //! abhoth router import --from DIR --out router.toml [--report report.md] [--seed seed.json]
 //!               [--key-delivery file_flag|wrapper|argv] [--key-file-build ENGINE=BUILD]... [--enable-on-demand] [--server ID]
 //! abhoth router config-check --config router.toml
+//! abhoth router init [DIR] [--yes] [--force] ...   (a new standalone router; see init.rs)
 //! abhoth router calendar check|import-cron|import-ics --file calendar.toml ...
 //! ```
 
@@ -41,6 +42,9 @@ USAGE:
                 [--key-delivery file_flag|wrapper|argv] [--key-file-build ENGINE=BUILD]... [--enable-on-demand] [--server ID]
                 (router.toml for the control plane from a copy of the GPU host's layout files)
   abhoth router config-check --config router.toml
+  abhoth router init [DIR] [--yes] [--force] [--listen ADDR] [--no-local] [--no-key] [--print-key]
+                [--service systemd|compose|windows]   (a new standalone router: router.toml,
+                 router.json, the state folder, an admin key file; see init --help)
   abhoth router admin-key create NAME --control router.toml [--out FILE]
   abhoth router admin-key list|revoke ID|NAME --control router.toml
                 (the router's own admin keys, for its admin pages at /admin/; --out writes the
@@ -69,6 +73,7 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
         Some("import") => control_import_cmd(&args[1..]),
         Some("hostctl") => hostctl_cmd(&args[1..]).await,
         Some("admin-key") => admin_key_cmd(&args[1..]),
+        Some("init") => crate::init::run(&args[1..]),
         Some("config-check") => {
             let mut config = None;
             let mut i = 1;
@@ -637,7 +642,7 @@ fn admin_key_cmd(args: &[String]) -> Result<i32> {
 }
 
 /// Write a secret to a new file readable by its owner only.
-fn write_secret(path: &std::path::Path, secret: &str) -> std::io::Result<()> {
+pub(crate) fn write_secret(path: &std::path::Path, secret: &str) -> std::io::Result<()> {
     if let Some(d) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(d)?;
     }

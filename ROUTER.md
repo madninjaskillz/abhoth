@@ -1007,3 +1007,44 @@ is inventory only:
   app, say). The router probes it (ComfyUI lists its files per folder, Stable Audio its health)
   and shows where each component is; it never starts, stops or observes it.
 - The `video` kind exists for cards and models; no video engine yet.
+
+## 17. Setting up a new router (`abhoth router init`)
+
+One command sets up a standalone router in one folder (design:
+[`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md) section 6):
+
+```text
+abhoth router init [DIR] [--yes] [--force] [--listen ADDR] [--state-dir DIR] [--id ID]
+                   [--local | --no-local] [--server-id ID] [--key-name NAME | --no-key]
+                   [--key-file FILE] [--print-key] [--service systemd|compose|windows|none]
+```
+
+- **Interactive by default** (folder, listen address, whether to add this machine, the admin
+  key's name, a service file, then a last "go ahead"); nothing is written before that answer.
+  `--yes` takes the defaults and the flags without asking; without a terminal it needs `--yes`.
+  `DIR` defaults to `./abhoth-router`. The image's `abhoth-router init …` is the same.
+- **It writes** `DIR/router.toml` (`version = 1`, `[router]` id, listen and an absolute
+  `state_dir`, `[control] enabled = false`, `[inventory] version = 1`), `DIR/router.json` (no
+  models yet) and the state folder (`DIR/state`), then checks both with the router's own loaders.
+- **This machine as the first server** (default; `--no-local` skips it): `[servers.local]` with
+  `exec = "local"`, one card per GPU (`A`, `B`, … in `nvidia-smi` index order, by UUID, with its
+  name and VRAM, from the same `nvidia-smi` telemetry query the router polls hosts with) and a
+  `cpu` card (`device = "cpu"`, cores and RAM, the `cpu-info` builtin's reading). Every card is
+  written `managed = false`: nothing is touched until you set its engines and layouts and turn
+  the control plane on. No `nvidia-smi`: the CPU card only.
+- **The first admin key** (default name `admin`; `--no-key` skips it) goes into `router.db` and
+  into `DIR/secrets/router-admin-key` (or `--key-file`), a new file with mode 600 on Linux and
+  macOS (on Windows it inherits the folder's permissions; keep it under your profile). The key is
+  **never printed** unless you pass `--print-key`.
+- **Then it prints** the exact start command
+  (`abhoth router --config DIR/router.json --control DIR/router.toml --listen ADDR`, with this
+  binary's full path) and the `/admin/` URL(s) to sign in at.
+- **Service files** (`--service`, repeatable): `abhoth-router.service` (a systemd unit with that
+  command), `compose.router.yaml` (the router-only image from `deploy/router/Dockerfile`, the
+  folder mounted at the same path so the paths in `router.toml` hold, uid 568), or
+  `windows-service.txt` (a start-up scheduled task, or a wrapper such as NSSM; abhoth is not a
+  native Windows service).
+- **Idempotent:** if any file it would write exists it refuses and lists them, writing nothing.
+  `--force` first moves each existing one to `DIR/backups/<name>.bak-<time>` (a key file keeps
+  its mode) and writes new ones; the state folder and `router.db` are kept, so keys made before
+  still work until revoked (`admin-key list` / `revoke`).
