@@ -288,6 +288,7 @@ function TabList({
 function Pane({ id }: { id: string }) {
   if (id === "account") return <div className="flex h-full flex-col"><AccountPane /></div>;
   if (id === "users") return <div className="flex h-full flex-col"><UsersPane /></div>;
+  if (id === "machine") return <iframe src="/machine.html" title="This machine" className="h-full min-h-[480px] w-full border-0" data-testid="settings-machine-frame" />;
   if (id === "inference") return <div className="flex h-full flex-col"><RouterOverviewPane /></div>;
   if (id === "routes") return <div className="flex h-full flex-col"><RouterRoutesPane /></div>;
   if (id === "router-config") return <div className="flex h-full flex-col"><RouterConfigPane /></div>;

@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
 import { RouterApiError, engineStoreApi, routerApi } from "../routerApi";
 import { Check2, Field, Grid, Select, Text, area, errText } from "./formKit";
-import type { Inventory } from "./inventoryModel";
+import { serverLabel, type Inventory } from "./inventoryModel";
 import {
   APIS, GPU_KINDS, KINDS, LAYOUTS, METHOD_TYPES, PARAM_TYPES, PROBES, SOURCES, UNPACK, applyGuesses, emptyAsset, emptyForm, emptyMethod, firstImage, formProblems,
   formToManifest, isHostRun, manifestJson, manifestToForm, parseManifest, sortIssues,
@@ -262,7 +262,7 @@ export function ServerCardPicker({ inv, value, onChange }: { inv?: Inventory; va
   return (
     <div className="grid grid-cols-2 gap-2">
       <Field label="Server">
-        <Select value={value.server} onChange={(s) => onChange({ server: s, card: "" })} options={[["", "Pick…"], ...servers.map((s) => [s.id, s.title || s.id] as [string, string])]} testid="pkg-pick-server" />
+        <Select value={value.server} onChange={(s) => onChange({ server: s, card: "" })} options={[["", "Pick…"], ...servers.map((s) => [s.id, serverLabel(s)] as [string, string])]} testid="pkg-pick-server" />
       </Field>
       <Field label="Card">
         <Select

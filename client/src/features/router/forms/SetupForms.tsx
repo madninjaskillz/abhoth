@@ -4,7 +4,7 @@
 // the diff, and Save writes it through the same audited save as the text editor.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Layers, Loader2, Server } from "lucide-react";
+import { Cable, Cpu, Layers, Loader2, Server } from "lucide-react";
 import { Badge, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/misc";
 import { RouterApiError, routerApi } from "../routerApi";
 import {
@@ -13,6 +13,7 @@ import {
   type CardForm, type ConfigData, type EngineForm, type Errors, type FormEdit, type LayoutForm, type Obj, type ServerForm,
 } from "./formModel";
 import { Check2, Field, FormDialog, Grid, ReviewDialog, RowActions, SectionHead, Select, Text, area, errText, hasErrors, type Review } from "./formKit";
+import { BridgedMachinesPane } from "./BridgedMachines";
 
 const KEY = ["router-config-json"];
 
@@ -64,12 +65,19 @@ export function RouterSetupForms() {
         <div className="border-b px-4 py-2">
           <TabsList>
             <TabsTrigger value="servers" data-testid="setup-servers"><Server className="mr-1 size-3.5" />Servers & cards</TabsTrigger>
+            <TabsTrigger value="bridged" data-testid="setup-bridged"><Cable className="mr-1 size-3.5" />Bridged machines</TabsTrigger>
             <TabsTrigger value="engines" data-testid="setup-engines"><Cpu className="mr-1 size-3.5" />Engines</TabsTrigger>
             <TabsTrigger value="layouts" data-testid="setup-layouts"><Layers className="mr-1 size-3.5" />Layouts</TabsTrigger>
           </TabsList>
         </div>
         <div className="p-4">
           <TabsContent value="servers"><ServersSection d={d} submit={submit} busy={flow.prepare.isPending} error={flow.error} /></TabsContent>
+          <TabsContent value="bridged">
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Bridged machines are not in router.toml and never part of a layout: their bridge starts and stops their engines on demand.</p>
+              <BridgedMachinesPane />
+            </div>
+          </TabsContent>
           <TabsContent value="engines"><EnginesSection d={d} submit={submit} busy={flow.prepare.isPending} error={flow.error} /></TabsContent>
           <TabsContent value="layouts"><LayoutsSection d={d} submit={submit} busy={flow.prepare.isPending} error={flow.error} /></TabsContent>
         </div>

@@ -12,7 +12,7 @@ import { Badge, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui
 import { cn } from "@/lib/utils";
 import { engineStoreApi, routerApi } from "../routerApi";
 import { Check2, Field, Select, Text, errText, input } from "./formKit";
-import { KIND_LABELS, type ModelKind } from "./inventoryModel";
+import { KIND_LABELS, serverLabel, type ModelKind } from "./inventoryModel";
 import { PackageWizard, ReportView, fmtBytes } from "./PackageWizard";
 import {
   KINDS, allTicked, anyRunning, approvalItems, approvalsFrom, changedParams, filterPackages, fitLine, installedByServer, isHostRun, manualEngines, methodTypes,
@@ -327,7 +327,7 @@ function InstallFlow({ d, summary, onBack, onJob }: { d: PackageDetail; summary?
       <Step n={1} title="Where">
         <div className="w-60">
           <Field label="Server">
-            <Select value={server} onChange={(s) => { setServer(s); setCard(""); }} options={[["", "Pick…"], ...servers.map((s) => [s.id, s.title || s.id] as [string, string])]} testid="store-install-server" />
+            <Select value={server} onChange={(s) => { setServer(s); setCard(""); }} options={[["", "Pick…"], ...servers.map((s) => [s.id, serverLabel(s)] as [string, string])]} testid="store-install-server" />
           </Field>
         </div>
         {fit.isFetching && <div className="flex items-center gap-1.5 text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> Checking each card…</div>}

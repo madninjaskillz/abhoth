@@ -99,6 +99,14 @@ export const SETTINGS_TABS: TabDef[] = [
     visible: admins,
   },
   {
+    id: "machine",
+    label: "This machine",
+    kind: "pane",
+    blurb: "This PC's cards, engines and models: run them here, or share them with a router through Bridge mode.",
+    keywords: ["this machine", "local", "engines", "cards", "gpu", "bridge", "share", "kokoro", "comfyui", "engine store", "remote config"],
+    visible: (c) => c.admin && c.desktop,
+  },
+  {
     id: "inference",
     label: "Inference",
     kind: "pane",

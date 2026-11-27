@@ -5,7 +5,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, Check, Cpu, Download, ExternalLink, HardDrive, Loader2, Lock, Pause, Play, Plus, RefreshCw, Search, Server, Trash2, X,
+  AlertTriangle, ArrowDown, ArrowUp, Cable, Check, Cpu, Download, ExternalLink, HardDrive, Loader2, Lock, Pause, Play, Plus, RefreshCw, Search, Server, Trash2, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/misc";
@@ -15,17 +15,20 @@ import { obj, type FormEdit, type Obj } from "./formModel";
 import { Check2, Field, FormDialog, Grid, ReviewDialog, Select, Text, errText } from "./formKit";
 import { useEditFlow } from "./SetupForms";
 import { PathField } from "./FolderBrowser";
+import { BridgedMachinesPane } from "./BridgedMachines";
 import {
   KIND_LABELS, cardEnginesEdit, enginesFor, enginesForKind, fitSummary, fmtGib, modelEngineEdits, modelIdFromRepo, moved, newCardEdits, newModelEdits,
   cleanPath, newServerEdits, nextCardId, nextStep, pct, placementLine, repoDir, toggled, validModelDir, validateServerId,
-  newCpuCardEdits, presenceLine, needsLine,
+  newCpuCardEdits, presenceLine, needsLine, ownServers, bridgedServers, cardLabel,
   type DetectedGpu, type DownloadJob, type HfChoice, type HfDetails, type InvCard, type InvEngine, type InvModel, type InvServer, type Inventory, type ModelKind,
 } from "./inventoryModel";
 
 const KEY = ["router-inventory"];
 type Submit = (edits: FormEdit[], done?: () => void) => void;
 
-export function InventoryForms() {
+/** `single`: this machine's own inventory in the desktop app (MACHINE.md): one server, named
+ * after the host, with no "Add server" and no bridged machines. */
+export function InventoryForms({ onBridgeTokens, single }: { onBridgeTokens?: () => void; single?: boolean } = {}) {
   const inv = useQuery({ queryKey: KEY, queryFn: routerApi.inventory, refetchOnWindowFocus: false });
   const doc = useQuery({ queryKey: ["router-config-json"], queryFn: routerApi.configJson, refetchOnWindowFocus: false });
   const flow = useEditFlow();
@@ -36,7 +39,7 @@ export function InventoryForms() {
   const i = inv.data!;
   const raw = doc.data.data as Obj;
   const submit: Submit = (edits, done) => flow.prepare.mutate({ edits, rev: doc.data!.rev, done });
-  const step = nextStep(i);
+  const step = single ? null : nextStep(i);
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" data-testid="router-inventory">
       {!i.migrated && (
@@ -49,7 +52,8 @@ export function InventoryForms() {
       <Tabs value={tab} onValueChange={setTab} className="flex flex-col">
         <div className="overflow-x-auto border-b px-4 py-2">
           <TabsList>
-            <TabsTrigger value="servers" data-testid="inv-servers"><Server className="mr-1 size-3.5" />Servers & cards</TabsTrigger>
+            <TabsTrigger value="servers" data-testid="inv-servers"><Server className="mr-1 size-3.5" />Servers & cards{ownServers(i).length > 0 && <Badge variant="secondary" className="ml-1">{ownServers(i).length}</Badge>}</TabsTrigger>
+            {!single && <TabsTrigger value="bridged" data-testid="inv-bridged-tab"><Cable className="mr-1 size-3.5" />Bridged machines{bridgedServers(i).length > 0 && <Badge variant="secondary" className="ml-1">{bridgedServers(i).length}</Badge>}</TabsTrigger>}
             <TabsTrigger value="engines" data-testid="inv-engines"><Cpu className="mr-1 size-3.5" />Engines</TabsTrigger>
             <TabsTrigger value="models" data-testid="inv-models"><HardDrive className="mr-1 size-3.5" />Models</TabsTrigger>
             <TabsTrigger value="downloads" data-testid="inv-downloads"><Download className="mr-1 size-3.5" />Downloads</TabsTrigger>
@@ -57,7 +61,8 @@ export function InventoryForms() {
         </div>
         <div className="p-3 sm:p-4">
           {flow.error && !flow.pending && <div className="mb-2 text-xs text-destructive" data-testid="inventory-flow-error">{flow.error}</div>}
-          <TabsContent value="servers"><ServersPane inv={i} submit={submit} busy={flow.prepare.isPending} /></TabsContent>
+          <TabsContent value="servers"><ServersPane inv={i} submit={submit} busy={flow.prepare.isPending} single={single} /></TabsContent>
+          <TabsContent value="bridged"><BridgedMachinesPane onTokens={onBridgeTokens} /></TabsContent>
           <TabsContent value="engines"><EnginesPane inv={i} raw={raw} submit={submit} busy={flow.prepare.isPending} /></TabsContent>
           <TabsContent value="models"><ModelsPane inv={i} submit={submit} busy={flow.prepare.isPending} onDownloads={() => setTab("downloads")} /></TabsContent>
           <TabsContent value="downloads"><DownloadsPane /></TabsContent>
@@ -106,22 +111,23 @@ function Empty({ children }: { children: React.ReactNode }) {
 
 // ── servers & cards ──────────────────────────────────────────────────────────────────────────
 
-function ServersPane({ inv, submit, busy }: { inv: Inventory; submit: Submit; busy: boolean }) {
+function ServersPane({ inv, submit, busy, single }: { inv: Inventory; submit: Submit; busy: boolean; single?: boolean }) {
   const [adding, setAdding] = useState(false);
   const [detect, setDetect] = useState<InvServer | null>(null);
   const [engines, setEngines] = useState<InvCard | null>(null);
   const [folder, setFolder] = useState<InvServer | null>(null);
+  const [naming, setNaming] = useState<InvServer | null>(null);
   return (
     <div className="space-y-3" data-testid="inv-servers-pane">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Servers and their GPUs</h3>
+          <h3 className="text-sm font-semibold">{single ? "This machine and its cards" : "Servers and their GPUs"}</h3>
           <p className="text-xs text-muted-foreground">Each server holds model files in its model folder; each card says which engines may run each kind of model on it.</p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => setAdding(true)} data-testid="inv-server-add"><Plus /> Add server</Button>
+        {!single && <Button size="sm" variant="outline" onClick={() => setAdding(true)} data-testid="inv-server-add"><Plus /> Add server</Button>}
       </div>
-      {inv.servers.length === 0 && <Empty>No servers yet. Add the machine with your GPUs: the router reaches it over SSH (or runs commands locally).</Empty>}
-      {inv.servers.map((s) => (
+      {ownServers(inv).length === 0 && <Empty>No servers yet. Add the machine with your GPUs: the router reaches it over SSH (or runs commands locally). Machines that bridge in are listed under <b>Bridged machines</b>.</Empty>}
+      {ownServers(inv).map((s) => (
         <div key={s.id} className="rounded-md border" data-testid="inv-server" data-server={s.id}>
           <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
             <Server className="size-4 text-muted-foreground" />
@@ -133,6 +139,7 @@ function ServersPane({ inv, submit, busy }: { inv: Inventory; submit: Submit; bu
               </div>
             </div>
             <div className="flex gap-1">
+              {single && <Button size="sm" variant="ghost" onClick={() => setNaming(s)} data-testid="inv-rename">Rename</Button>}
               <Button size="sm" variant="ghost" onClick={() => setFolder(s)} data-testid="inv-folder">Model folder</Button>
               <Button size="sm" variant="outline" onClick={() => setDetect(s)} data-testid="inv-detect"><RefreshCw /> Find GPUs</Button>
             </div>
@@ -147,7 +154,18 @@ function ServersPane({ inv, submit, busy }: { inv: Inventory; submit: Submit; bu
       {detect && <DetectDialog server={detect} inv={inv} busy={busy} onClose={() => setDetect(null)} submit={submit} />}
       {engines && <CardEnginesDialog card={engines} inv={inv} busy={busy} onClose={() => setEngines(null)} submit={submit} />}
       {folder && <FolderDialog server={folder} busy={busy} onClose={() => setFolder(null)} submit={submit} />}
+      {naming && <TitleDialog server={naming} busy={busy} onClose={() => setNaming(null)} submit={submit} />}
     </div>
+  );
+}
+
+function TitleDialog({ server, busy, onClose, submit }: { server: InvServer; busy: boolean; onClose: () => void; submit: Submit }) {
+  const [title, setTitle] = useState(server.title || server.id);
+  return (
+    <FormDialog title="Rename this machine" description="The name the app and (when bridged) the router show. Its id stays the same." onClose={onClose} busy={busy} testid="inv-rename-dialog"
+      onSubmit={() => submit([{ path: ["servers", server.id, "title"], value: title.trim() || server.id }], onClose)}>
+      <Field label="Name"><Text value={title} onChange={setTitle} testid="inv-rename-title" /></Field>
+    </FormDialog>
   );
 }
 
@@ -539,7 +557,7 @@ function ModelEnginesDialog({ m, inv, busy, onClose, submit }: { m: InvModel; in
           {m.placement.map((p) => (
             <div key={`${p.card}-${p.engine}`} className={cn(!p.ok && "text-muted-foreground")}>
               {p.ok ? <Check className="mr-1 inline size-3 text-success" /> : <X className="mr-1 inline size-3" />}
-              card {p.card} · {p.engine || "no engine"}{p.profile ? ` (${p.profile})` : ""}{p.needGib != null ? ` · needs ${fmtGib(p.needGib)} of ${fmtGib(p.roomGib)}` : ""}{p.why?.length ? ` · ${p.why.join("; ")}` : ""}
+              card {cardLabel(inv, p.card)} · {p.engine || "no engine"}{p.profile ? ` (${p.profile})` : ""}{p.needGib != null ? ` · needs ${fmtGib(p.needGib)} of ${fmtGib(p.roomGib)}` : ""}{p.why?.length ? ` · ${p.why.join("; ")}` : ""}
             </div>
           ))}
         </div>

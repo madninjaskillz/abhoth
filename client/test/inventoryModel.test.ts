@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   cardEnginesEdit, enginesFor, fitSummary, mainFile, modelEngineEdits, modelIdFromRepo, moved, newCardEdits, newModelEdits, newServerEdits, nextCardId, nextStep, pct,
-  placementLine, repoDir, toggled, validModelDir, validateServerId, type HfDetails, type Inventory, type InvEngine, type InvModel,
+  placementLine, repoDir, toggled, validModelDir, validateServerId, ownServers, bridgedServers, cardLabel, serverLabel, type HfDetails, type Inventory, type InvEngine, type InvModel,
 } from "../src/features/router/forms/inventoryModel.ts";
 
 const engine = (id: string, kinds: InvEngine["kinds"], formats: string[], archs: string[] = [], base?: string): InvEngine => ({
@@ -104,6 +104,20 @@ test("the guided steps", () => {
   const withCard = { ...inv, servers: [{ ...inv.servers[0], cards: [{ id: "A", gpuUuid: "GPU-a", reserveGib: 0.5, managed: true, onDemand: true, explicit: true, engines: {} }] }] };
   assert.equal(nextStep({ ...withCard, engines: [] }), "engines");
   assert.equal(nextStep(withCard), "models");
+});
+
+test("bridged machines are a group of their own", () => {
+  const card = { id: "NAS-GPU0", gpuUuid: "GPU-n", reserveGib: 0, managed: true, onDemand: true, explicit: true, engines: {} };
+  const nas = { id: "nas", title: "truenas.local", exec: "bridge" as const, origin: "bridge:nas", cards: [card] };
+  const both = { ...inv, servers: [...inv.servers, nas] };
+  assert.deepEqual(ownServers(both).map((s) => s.id), inv.servers.map((s) => s.id));
+  assert.deepEqual(bridgedServers(both).map((s) => s.id), ["nas"]);
+  // a bridged machine with cards is not "a server with cards": the guide still asks for one
+  assert.equal(nextStep({ ...both, servers: [nas] }), "server");
+  assert.equal(nextStep(both), "cards");
+  assert.equal(cardLabel(both, "NAS-GPU0"), "NAS-GPU0 (bridge nas)");
+  assert.equal(cardLabel(both, "A"), "A");
+  assert.equal(serverLabel(nas), "truenas.local (bridged)");
 });
 
 test("a model whose download has not finished says so", () => {

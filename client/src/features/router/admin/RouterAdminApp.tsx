@@ -192,7 +192,7 @@ function Shell({ s, onSignedOut }: { s: RouterSession; onSignedOut: () => void }
       )}
       <main className="flex min-h-0 flex-1 flex-col">
         {tab === "overview" && <RouterOverviewPane />}
-        {tab === "inventory" && <InventoryForms />}
+        {tab === "inventory" && <InventoryForms onBridgeTokens={() => setTab("bridges")} />}
         {tab === "store" && <EngineStore />}
         {tab === "bridges" && <div className="min-h-0 flex-1 overflow-y-auto p-4"><BridgesForms /></div>}
         {tab === "setup" && <RouterSetupForms />}

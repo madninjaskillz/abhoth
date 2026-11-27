@@ -41,7 +41,9 @@ export interface InvServer {
   id: string;
   title?: string | null;
   host?: string | null;
-  exec: "local" | "ssh";
+  exec: "local" | "ssh" | "bridge";
+  /** `bridge:<id>`: a bridged machine, read-only here (its bridge manages it). */
+  origin?: string | null;
   modelDir?: string | null;
   /** D153: the ComfyUI model root (component downloads go to its role folders). */
   comfyRoot?: string | null;
@@ -395,10 +397,39 @@ export function placementLine(m: InvModel): string {
   return `${best.engine}${best.profile ? ` (${best.profile})` : ""} on ${ok.filter((p) => p.rank === best.rank).map((p) => p.card).join(", ")}`;
 }
 
-/** Where a step of the guided setup stands: what to do next. */
+/** A machine an `abhoth bridge` (or a desktop app in Bridge mode) brought in: not one of the
+ * router's own servers, and not edited here. */
+export function isBridged(s: InvServer): boolean {
+  return s.exec === "bridge" || (s.origin ?? "").startsWith("bridge:");
+}
+/** The bridge id of a bridged machine (`bridge:<id>`, else its server id). */
+export function bridgeOf(s: InvServer): string {
+  const o = s.origin ?? "";
+  return o.startsWith("bridge:") ? o.slice(7) : s.id;
+}
+/** The router's own servers (router.toml): what "Servers" lists, counts and the guide use. */
+export function ownServers(inv: Inventory): InvServer[] {
+  return inv.servers.filter((s) => !isBridged(s));
+}
+export function bridgedServers(inv: Inventory): InvServer[] {
+  return inv.servers.filter(isBridged);
+}
+/** A card's id for placement lists, with its bridge when a bridged machine holds it. */
+export function cardLabel(inv: Inventory, card: string): string {
+  const s = inv.servers.find((x) => x.cards.some((c) => c.id === card));
+  return s && isBridged(s) ? `${card} (bridge ${bridgeOf(s)})` : card;
+}
+/** A server's name for pickers: bridged machines say so. */
+export function serverLabel(s: InvServer): string {
+  return isBridged(s) ? `${s.title || s.id} (bridged)` : s.title || s.id;
+}
+
+/** Where a step of the guided setup stands: what to do next. Only the router's own servers
+ * count: a bridged machine is not a server you added (it has its own group). */
 export function nextStep(inv: Inventory): "server" | "cards" | "engines" | "models" | null {
-  if (inv.servers.length === 0) return "server";
-  if (inv.servers.every((s) => s.cards.length === 0)) return "cards";
+  const own = ownServers(inv);
+  if (own.length === 0) return "server";
+  if (own.every((s) => s.cards.length === 0)) return "cards";
   if (inv.engines.length === 0) return "engines";
   if (inv.models.length === 0) return "models";
   return null;

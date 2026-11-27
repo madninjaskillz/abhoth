@@ -17,7 +17,7 @@ export default defineConfig({
     assetsInlineLimit: (file) => (file.replace(/\\/g, "/").includes("/assets/brand/") ? false : undefined),
     rollupOptions: {
       // glance.html: the public Glance page's own bundle (SUPERVISOR.md 12.1).
-      input: { main: path.resolve(__dirname, "index.html"), glance: path.resolve(__dirname, "glance.html") },
+      input: { main: path.resolve(__dirname, "index.html"), glance: path.resolve(__dirname, "glance.html"), machine: path.resolve(__dirname, "machine.html") },
       output: {
         // By path, so shared helpers stay out of these chunks (the Glance page loads neither).
         manualChunks(id) {

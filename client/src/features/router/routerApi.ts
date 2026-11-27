@@ -46,6 +46,14 @@ export interface BridgeView {
   online: boolean; seen: boolean; version?: string; since?: number; lastSeen?: number; peer?: string;
   title?: string; os?: string; arch?: string; modelDir?: string | null; cards?: BridgeCard[];
   engines?: BridgeEngine[]; files?: number; issues?: string[]; streams?: number;
+  /** Shared engines this router's admin turned off for this bridge. */
+  enginesOff?: string[];
+  models?: { id: string; kind: string; engines: string[] }[];
+  /** The machine lets a router admin edit its inventory (MACHINE.md 8). */
+  remoteConfig?: boolean;
+  configRev?: string;
+  /** Per engine, why it cannot start (a failed image pull or install). */
+  engineProblems?: Record<string, string>;
 }
 export interface BridgeEngineState {
   engine: string; card: string; state: "stopped" | "starting" | "running" | "failed"; error?: string | null;
@@ -116,7 +124,11 @@ export const routerApi = {
   bridges: () => call<{ bridges: BridgeView[]; path: string }>("GET", `${R()}/bridges`),
   mintBridgeToken: (id: string, rotate = false) => call<{ id: string; token: string }>("POST", `${R()}/bridges`, { id, rotate }),
   revokeBridge: (id: string) => call<{ ok: boolean }>("DELETE", `${R()}/bridges/${encodeURIComponent(id)}`),
-  bridgeSettings: (id: string, s: { enabled?: boolean; priority?: number }) => call<{ id: string; enabled: boolean; priority: number }>("PUT", `${R()}/bridges/${encodeURIComponent(id)}/settings`, s),
+  bridgeSettings: (id: string, s: { enabled?: boolean; priority?: number; enginesOff?: string[] }) => call<{ id: string; enabled: boolean; priority: number }>("PUT", `${R()}/bridges/${encodeURIComponent(id)}/settings`, s),
+  /** A bridged machine's own inventory, through its bridge (only with remote config on). */
+  bridgeMachineConfig: (id: string) => call<{ text: string; rev: string; path?: string }>("GET", `${R()}/bridges/${encodeURIComponent(id)}/machine/config`),
+  saveBridgeMachineConfig: (id: string, text: string, rev: string, reason: string) =>
+    call<{ ok?: boolean; rev?: string; pending?: string; reasons?: string[] }>("PUT", `${R()}/bridges/${encodeURIComponent(id)}/machine/config`, { text, reason }, { "If-Match": `"${rev}"` }),
   bridgeCmd: <T = unknown>(id: string, op: string, args: Record<string, unknown> = {}) => call<T>("POST", `${R()}/bridges/${encodeURIComponent(id)}/cmd`, { op, args }),
   // D152: the inventory, engine capabilities, Hugging Face and downloads.
   inventory: () => call<Inventory>("GET", `${R()}/inventory`),
