@@ -666,10 +666,16 @@ async fn the_supervisor_feed_is_mirrored_and_the_old_dash_fills_only_the_rest() 
         text: "hot".into(),
         data: Value::Null,
     });
+    // The new reading itself, not the text "55.0": the restamped dash's float timestamps
+    // (1795653655.0…) can contain that too, which let the loop stop before the GPU patch.
+    let core_c = |v: &Value, at: &str| v.pointer(&format!("{at}/gpus/A/core_c")).cloned();
     let mut saw = (false, false);
     for _ in 0..40 {
         let ev = sse.next().await;
-        if ev.data.contains("55.0") {
+        let msg: Value = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
+        if core_c(&msg, "/patch") == Some(json!(55.0))
+            || core_c(&msg, "/state") == Some(json!(55.0))
+        {
             saw.0 = true;
         }
         if ev.event == "event" && ev.data.contains("alert.fired") {
@@ -681,8 +687,9 @@ async fn the_supervisor_feed_is_mirrored_and_the_old_dash_fills_only_the_rest() 
     }
     assert!(saw.0 && saw.1, "{saw:?}");
     // The public copy: model servers by role, no ports.
-    let p = glance.public.as_ref().unwrap().snapshot().state.to_string();
-    assert!(p.contains("55.0"));
+    let public = glance.public.as_ref().unwrap().snapshot().state;
+    assert_eq!(core_c(&public, ""), Some(json!(55.0)), "{public}");
+    let p = public.to_string();
     for gone in [":8094", ":8096", "\"port\""] {
         assert!(!p.contains(gone), "{gone}");
     }
