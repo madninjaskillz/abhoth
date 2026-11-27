@@ -165,6 +165,8 @@ pub struct AppState {
     pub login: Arc<crate::login::LoginAuth>,
     /// Key requests waiting for an admin (D149, in memory).
     pub key_requests: crate::key_requests::KeyRequests,
+    /// Sign-in with Abhoth (D154): codes and link requests waiting.
+    pub sso: crate::sso::Sso,
 }
 
 #[derive(rust_embed::RustEmbed)]
@@ -345,6 +347,7 @@ impl WebUiServer {
             port,
             ptys: Arc::new(crate::pty::PtyRegistry::default()),
             key_requests: Default::default(),
+            sso: Default::default(),
             previews: crate::files::preview::PreviewKeys::new(),
             profiles,
             bench,
@@ -517,6 +520,7 @@ fn router(state: Arc<AppState>) -> Router {
     }
     api.merge(crate::login::routes())
         .merge(crate::router_admin::routes())
+        .merge(crate::sso::routes())
         .fallback(static_or_index)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

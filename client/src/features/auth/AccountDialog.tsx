@@ -4,7 +4,7 @@ import { KeyRound, Laptop, Loader2, LogOut, Plus, ShieldCheck, ShieldOff, Trash2
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Badge, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/misc";
-import { accountApi, authState, type ApiKey, type NewApiKey, type TotpSetup, type WebSessionInfo } from "@/lib/auth";
+import { accountApi, authState, type ApiKey, type NewApiKey, type SsoConsent, type TotpSetup, type WebSessionInfo } from "@/lib/auth";
 import { MIN_PASSWORD, ago, when, describeAgent, passwordProblem } from "./authHelpers";
 import { CodeForm, CopyButton, RecoveryCodes, TotpQr, errorText } from "./parts";
 
@@ -47,8 +47,9 @@ export function AccountPane() {
             <TabsContent value="keys">
               <KeysSection />
             </TabsContent>
-            <TabsContent value="sessions">
+            <TabsContent value="sessions" className="space-y-6">
               <SessionsSection />
+              <RoutersSection />
             </TabsContent>
           </div>
         </Tabs>
@@ -392,3 +393,34 @@ function SessionsSection() {
   );
 }
 
+/** Routers you let sign you in with this account (Sign in with Abhoth, D154). */
+function RoutersSection() {
+  const qc = useQueryClient();
+  const list = useQuery({ queryKey: ["account-sso"], queryFn: accountApi.ssoConsents });
+  const [error, setError] = useState<string | null>(null);
+  const revoke = useMutation({
+    mutationFn: (c: SsoConsent) => accountApi.revokeSso(c.clientId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["account-sso"] }),
+    onError: (e) => setError(errorText(e)),
+  });
+  if (list.data && !list.data.length) return null;
+  return (
+    <Section title="Routers you sign in to" description="Router admin pages you allowed to sign you in with this account. Taking it back means the next sign-in asks again.">
+      {error && <div className="text-xs text-destructive" role="alert">{error}</div>}
+      <div className="divide-y rounded-md border" data-testid="sso-consents">
+        {list.isLoading && <div className="p-3 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /></div>}
+        {list.data?.map((c) => (
+          <div key={c.clientId} className="flex items-center gap-3 px-3 py-2 text-xs" data-testid="sso-consent">
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{c.name}</div>
+              <div className="truncate text-muted-foreground">allowed {ago(c.created)}{c.lastUsed ? <> · last sign-in {ago(c.lastUsed)}</> : null}</div>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => revoke.mutate(c)} disabled={revoke.isPending} data-testid="sso-consent-revoke">
+              <Trash2 /> Revoke
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}

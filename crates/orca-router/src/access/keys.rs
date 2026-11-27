@@ -105,7 +105,7 @@ impl Introspector for HttpIntrospector {
 }
 
 /// reqwest errors name the URL; ours carries no secret, but keep messages short.
-fn without_url(e: &reqwest::Error) -> String {
+pub(crate) fn without_url(e: &reqwest::Error) -> String {
     if e.is_timeout() {
         "timeout".into()
     } else if e.is_connect() {

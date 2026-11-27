@@ -5,7 +5,8 @@
 //!   behind a reverse proxy under any prefix and through the Abhoth app's proxy.
 //! - `GET /admin/session`: who the caller is (and the CSRF token of a browser session);
 //!   `POST /admin/login` `{key}`: sign in with an admin key (a session cookie);
-//!   `POST /admin/logout`.
+//!   `POST /admin/logout`; `GET /admin/sso` and `/admin/sso-callback`: Sign in with Abhoth
+//!   (D154, [`crate::admin_sso`]).
 //! - `/admin/api/gateway[/check]`: `router.json` (the gateway's model list) read, checked and
 //!   saved (If-Match, backup, atomic write, audit, hot reload).
 //!
@@ -45,6 +46,8 @@ pub fn is_ui_path(path: &str) -> bool {
             | "/admin/session"
             | "/admin/login"
             | "/admin/logout"
+            | "/admin/sso"
+            | "/admin/sso-callback"
     ) || path.starts_with("/admin/assets/")
         || path.starts_with("/admin/brand/")
 }
@@ -122,6 +125,7 @@ pub async fn handle(
     st: &Arc<AppState>,
     method: &Method,
     path: &str,
+    query: Option<&str>,
     headers: &HeaderMap,
     peer: Option<IpAddr>,
     raw: &Bytes,
@@ -147,6 +151,10 @@ pub async fn handle(
         (Method::GET, "/admin/session") => session(st, headers, peer).await,
         (Method::POST, "/admin/login") => login(st, headers, peer, raw).await,
         (Method::POST, "/admin/logout") => logout(st, headers),
+        (Method::GET, "/admin/sso") => crate::admin_sso::start(st, headers, peer).await,
+        (Method::GET, "/admin/sso-callback") => {
+            crate::admin_sso::callback(st, headers, peer, query).await
+        }
         _ => err(405, "method not allowed"),
     }
 }
@@ -161,8 +169,9 @@ fn via(p: &Principal, session: bool) -> &'static str {
     }
 }
 
-fn plane_info(cp: &ControlPlane) -> Value {
+fn plane_info(st: &AppState, cp: &ControlPlane) -> Value {
     json!({
+        "sso": crate::admin_sso::offered(st, cp),
         "localKeys": cp.access.local_keys.is_some(),
         "hasKeys": cp.access.local_keys.as_ref().map(|k| k.active_count() > 0).unwrap_or(false),
         "linked": cp.access.settings.accounts_url.is_some(),
@@ -204,7 +213,7 @@ async fn session(st: &Arc<AppState>, headers: &HeaderMap, peer: Option<IpAddr>) 
             ),
         );
     };
-    let info = merge(base, plane_info(cp));
+    let info = merge(base, plane_info(st, cp));
     match cp
         .access
         .authenticate_session(headers, peer, "GET", "/admin/session")

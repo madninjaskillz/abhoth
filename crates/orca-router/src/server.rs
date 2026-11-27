@@ -178,7 +178,16 @@ async fn dispatch(State(cx): State<Ctx>, req: Request) -> Response {
         }
         // D151: the router's own admin pages (and their sign-in) on this port.
         (_, p) if crate::admin_ui::is_ui_path(p) => {
-            crate::admin_ui::handle(&st, &method, p, &headers, peer.map(|p| p.ip()), &raw).await
+            crate::admin_ui::handle(
+                &st,
+                &method,
+                p,
+                path_q.split_once('?').map(|(_, q)| q),
+                &headers,
+                peer.map(|p| p.ip()),
+                &raw,
+            )
+            .await
         }
         (_, p)
             if (p == "/admin/api/gateway" || p.starts_with("/admin/api/gateway/"))

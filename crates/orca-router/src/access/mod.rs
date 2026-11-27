@@ -9,6 +9,7 @@
 pub mod keys;
 pub mod local_keys;
 pub mod sessions;
+pub mod sso;
 
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -43,6 +44,16 @@ pub struct AccessSettings {
     pub cache_seconds: u64,
     pub negative_cache_seconds: u64,
     pub stale_seconds: u64,
+    /// Sign-in with Abhoth (D154): the web UI the admin pages send people to, as their browser
+    /// reaches it ("https://abhoth.example.org"). Unset: the origin of `--key-url` when the
+    /// router is linked (`accounts_url`), else off.
+    pub sso_url: Option<String>,
+    /// Off: no "Sign in with Abhoth", even when linked.
+    pub sso: bool,
+    /// Router addresses ("https://router.example.org", with a proxy's prefix if any) a linked
+    /// router may register its callback for by itself; IP addresses and localhost need no
+    /// listing.
+    pub public_urls: Vec<String>,
 }
 
 impl Default for AccessSettings {
@@ -56,6 +67,9 @@ impl Default for AccessSettings {
             cache_seconds: 60,
             negative_cache_seconds: 10,
             stale_seconds: 900,
+            sso_url: None,
+            sso: true,
+            public_urls: Vec::new(),
         }
     }
 }
@@ -84,6 +98,16 @@ impl AccessSettings {
             && let Err(e) = orca_core::router_link::link_url_ok(u)
         {
             out.push(("access.accounts_url".into(), e));
+        }
+        if let Some(u) = &self.sso_url
+            && !(u.starts_with("https://") || u.starts_with("http://"))
+        {
+            out.push(("access.sso_url".into(), "must be an http(s) URL".into()));
+        }
+        for (i, u) in self.public_urls.iter().enumerate() {
+            if let Err(e) = orca_core::sso::redirect_uri_ok(&orca_core::sso::callback_for(u)) {
+                out.push((format!("access.public_urls[{i}]"), e));
+            }
         }
         if self.accounts_url.is_some() != self.accounts_token.is_some() {
             out.push((
@@ -137,6 +161,9 @@ impl Cidr {
         }
     }
 }
+
+/// The scope of an identity made by Sign-in with Abhoth (D154): a web UI admin's session.
+pub const SSO_SCOPE: &str = "webui-sso";
 
 /// Who a request comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -252,6 +279,9 @@ impl Principal {
             Principal::Anonymous { lan: true } => "anonymous-lan".into(),
             Principal::Anonymous { lan: false } => "anonymous".into(),
             Principal::Loopback => "loopback".into(),
+            Principal::Key(i) if i.scopes.iter().any(|s| s == SSO_SCOPE) => {
+                format!("webui:{}", i.name)
+            }
             Principal::Key(i) if i.scopes.iter().any(|s| s == local_keys::LOCAL_SCOPE) => {
                 format!("router-key:{}#{}", i.key_name, i.key_id)
             }
@@ -296,6 +326,9 @@ pub struct Access {
     pub local_keys: Option<LocalKeys>,
     /// Signed-in browser sessions of the router's own admin pages (D151).
     pub sessions: Sessions,
+    /// Sign-in with Abhoth (D154): the client's credentials and sign-ins in progress; `None`
+    /// without a state directory.
+    pub sso: Option<sso::SsoClient>,
     now_unix: Arc<dyn Fn() -> i64 + Send + Sync>,
 }
 
@@ -372,6 +405,7 @@ impl Access {
             key_request_limits: Default::default(),
             local_keys: None,
             sessions: Sessions::default(),
+            sso: None,
             now_unix,
         }
     }
@@ -380,6 +414,17 @@ impl Access {
     pub fn with_local_keys(mut self, keys: LocalKeys) -> Self {
         self.local_keys = Some(keys);
         self
+    }
+
+    /// With Sign-in with Abhoth's client, its credentials in `state_dir` (D154).
+    pub fn with_sso(mut self, state_dir: &std::path::Path) -> Self {
+        self.sso = Some(sso::SsoClient::open(state_dir));
+        self
+    }
+
+    /// The link token, for the registration over the link.
+    pub fn link_token(&self) -> Option<&[u8]> {
+        self.token.as_deref()
     }
 
     fn in_lan(&self, ip: Option<IpAddr>) -> bool {
@@ -459,6 +504,8 @@ impl Access {
                     },
                     None => false,
                 },
+                // The web UI vouched for an admin at sign-in; the session's limits apply.
+                KeySource::Sso(_) => true,
             };
             if !still {
                 self.sessions.remove(id);

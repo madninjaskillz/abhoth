@@ -990,7 +990,9 @@ pub fn install_admin_only(
         return Err("access.accounts_token: the secret could not be read".into());
     }
     bootstrap_hint(&keys, c, main);
-    let access = Access::new(c.access.clone(), token).with_local_keys(keys);
+    let access = Access::new(c.access.clone(), token)
+        .with_local_keys(keys)
+        .with_sso(&state_dir);
     let backend = live::ConfigBackend::new(main, &state_dir, store);
     crate::control::downloads::install(main, &state_dir, backend.clone());
     st.admin_only
@@ -1030,7 +1032,8 @@ pub fn install_from_toml(
         return Err("access.accounts_token: the secret could not be read".into());
     }
     let access = Access::new(c.access.clone(), token)
-        .with_local_keys(crate::access::LocalKeys::open(store.clone())?);
+        .with_local_keys(crate::access::LocalKeys::open(store.clone())?)
+        .with_sso(&state_dir);
     // The Supervisor's calendar (SUPERVISOR.md 8), with its own flag.
     let calendar = crate::calendar::start(c, main, &l.origin, store.clone())?;
     let backend = live::ConfigBackend::new(main, &state_dir, store);

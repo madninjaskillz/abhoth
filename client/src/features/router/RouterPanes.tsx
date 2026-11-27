@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { RouterApiError, keyRequestApi, routerApi, serviceKeyApi, useLiveState, type KeyRequest, type ServiceKey } from "./routerApi";
 import { accessLabel, ago, coldLabel, type Job, type LayoutView, type Plan, type RouteEdit, type RouteView } from "./routerModel";
 import { GatewayForms } from "./forms/GatewayForms";
+import { RouterSignIn } from "./RouterSignIn";
 import { RouterSetupForms } from "./forms/SetupForms";
 import { InventoryForms } from "./forms/InventoryForms";
 import { EngineStore } from "./forms/EngineStore";
@@ -597,6 +598,7 @@ export function ServiceKeysPane() {
       </PaneHead>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         <KeyRequests onApproved={refresh} />
+        <RouterSignIn />
         {list.data && !list.data.router && <div className="rounded-md border border-warning/50 p-2 text-xs text-warning">No router is linked to this server yet (ABHOTH_ROUTER_URL, ABHOTH_ROUTER_TOKEN_FILE). Keys made now work once it is.</div>}
         {made?.key && (
           <div className="space-y-1 rounded-md border border-success/50 bg-success/5 p-3 text-xs" data-testid="service-key-made" role="status">

@@ -117,7 +117,7 @@ fn random_bytes<const N: usize>() -> [u8; N] {
     b
 }
 
-fn new_code() -> String {
+pub(crate) fn new_code() -> String {
     // 31 symbols; rejection sampling keeps every symbol equally likely.
     let mut out = String::new();
     while out.len() < 9 {

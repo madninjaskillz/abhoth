@@ -49,6 +49,11 @@ USAGE:
   abhoth router admin-key list|revoke ID|NAME --control router.toml
                 (the router's own admin keys, for its admin pages at /admin/; --out writes the
                  new key to FILE (mode 600) instead of printing it)
+  abhoth router sso link --webui URL --control router.toml --public-url URL... [--name NAME]
+  abhoth router sso status|unlink --control router.toml
+                (Sign in with Abhoth on the admin pages: asks the Abhoth web UI at URL to
+                 register this router; an Abhoth admin approves the code it prints. A router
+                 linked with accounts_url registers itself and needs none of this)
   abhoth router bridge-token create ID --control router.toml --out FILE [--rotate]
   abhoth router bridge-token list|revoke ID --control router.toml
                 (tokens for bridges that dial /bridge/ws; the new token goes to FILE (mode 600),
@@ -77,6 +82,7 @@ pub async fn run(args: Vec<String>) -> Result<i32> {
         Some("import") => control_import_cmd(&args[1..]),
         Some("hostctl") => hostctl_cmd(&args[1..]).await,
         Some("admin-key") => admin_key_cmd(&args[1..]),
+        Some("sso") => sso_cmd(&args[1..]).await,
         Some("init") => crate::init::run(&args[1..]),
         Some("bridge-token") => bridge_token_cmd(&args[1..]),
         Some("config-check") => {
@@ -590,6 +596,168 @@ fn control_import_cmd(args: &[String]) -> Result<i32> {
 /// Load and validate a control-plane `router.toml`; exit 1 on errors.
 /// `abhoth router admin-key create|list|revoke` (D151): the router's own admin keys, in the
 /// `router.db` of the `router.toml`'s `state_dir`. Works while the router runs (SQLite, WAL).
+/// `abhoth router sso link|status|unlink` (D154).
+async fn sso_cmd(args: &[String]) -> Result<i32> {
+    use orca_core::sso::{
+        ClientRegistration, LINK_POLL_PATH, LINK_REQUESTS_PATH, LinkStatus, LinkTicket,
+        callback_for, redirect_uri_ok,
+    };
+    let sub = args.first().map(String::as_str).unwrap_or("");
+    let (mut control, mut webui, mut name) = (None, None, None);
+    let mut public: Vec<String> = Vec::new();
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--control" | "--config" => control = Some(take(args, &mut i, "--control")?),
+            "--webui" => webui = Some(take(args, &mut i, "--webui")?),
+            "--name" => name = Some(take(args, &mut i, "--name")?),
+            "--public-url" => public.push(take(args, &mut i, "--public-url")?),
+            a => bail!("unknown argument {a}"),
+        }
+        i += 1;
+    }
+    let control = PathBuf::from(control.ok_or_else(|| {
+        anyhow!("--control router.toml is required (its state_dir keeps the credentials)")
+    })?);
+    let loaded = crate::control::load::load(&control).map_err(|issues| {
+        anyhow!(
+            "{}",
+            issues
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(
+                    "
+"
+                )
+        )
+    })?;
+    let state_dir = PathBuf::from(&loaded.config.router.state_dir);
+    let file = state_dir.join(crate::access::sso::CREDENTIALS_FILE);
+    let client = crate::access::sso::SsoClient::open(&state_dir);
+    match sub {
+        "status" => {
+            let a = &loaded.config.access;
+            match client.credentials() {
+                Some(c) => {
+                    println!("registered as {} for:", c.client_id);
+                    for u in &c.redirect_uris {
+                        println!("  {u}");
+                    }
+                }
+                None if a.accounts_url.is_some() => {
+                    println!(
+                        "not registered yet; linked, so it registers itself at the first sign-in"
+                    )
+                }
+                None => println!("not registered (abhoth router sso link --webui URL ...)"),
+            }
+            println!(
+                "sign-in at: {}",
+                a.sso_url
+                    .as_deref()
+                    .unwrap_or("(access.sso_url unset: the origin of --key-url when linked)")
+            );
+            Ok(0)
+        }
+        "unlink" => {
+            match std::fs::remove_file(&file) {
+                Ok(()) => println!(
+                    "credentials removed; remove the router in Abhoth (Settings > Service keys > Router sign-in) too"
+                ),
+                Err(_) => println!("no credentials here"),
+            }
+            Ok(0)
+        }
+        "link" => {
+            let webui = webui
+                .ok_or_else(|| {
+                    anyhow!("--webui URL (the Abhoth web UI, e.g. https://abhoth.example.org)")
+                })?
+                .trim_end_matches('/')
+                .to_string();
+            if public.is_empty() {
+                bail!(
+                    "--public-url URL: the address you open this router's admin pages at (e.g. http://router.lan:8010); repeat it for several"
+                );
+            }
+            let redirect_uris: Vec<String> = public.iter().map(|u| callback_for(u)).collect();
+            for u in &redirect_uris {
+                redirect_uri_ok(u).map_err(|e| anyhow!("{u}: {e}"))?;
+            }
+            let name = name.unwrap_or_else(|| crate::discovery::display_name(None));
+            let http = reqwest::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .build()?;
+            let r = http
+                .post(format!("{webui}{LINK_REQUESTS_PATH}"))
+                .json(&ClientRegistration {
+                    name: name.clone(),
+                    redirect_uris,
+                })
+                .send()
+                .await
+                .context("asking the Abhoth web UI")?;
+            if !r.status().is_success() {
+                let st = r.status();
+                let v: serde_json::Value = r.json().await.unwrap_or_default();
+                bail!(
+                    "the Abhoth web UI refused ({st}): {}",
+                    v["error"].as_str().unwrap_or("?")
+                );
+            }
+            let t: LinkTicket = r.json().await.context("the web UI's answer")?;
+            println!(
+                "Asked {webui} to register router \"{name}\".
+An Abhoth admin approves it in Settings > Service keys > Router sign-in; the code there must be:
+
+    {}
+",
+                t.code
+            );
+            let until = std::time::Instant::now() + Duration::from_secs(t.expires_in.max(1) as u64);
+            while std::time::Instant::now() < until {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                let Ok(r) = http
+                    .post(format!("{webui}{LINK_POLL_PATH}"))
+                    .json(&serde_json::json!({"id": t.id, "poll": t.poll}))
+                    .send()
+                    .await
+                else {
+                    continue;
+                };
+                let Ok(s) = r.json::<LinkStatus>().await else {
+                    continue;
+                };
+                match (s.status.as_str(), s.credentials) {
+                    ("pending", _) => continue,
+                    ("approved", Some(c)) => {
+                        client.save(&c).map_err(|e| anyhow!(e))?;
+                        println!(
+                            "Approved: registered as {} (credentials in {}, mode 600).
+Set in router.toml:
+
+    [access]
+    sso_url = \"{webui}\"
+    public_urls = {:?}
+
+then restart the router; its admin pages offer \"Sign in with Abhoth\".",
+                            c.client_id,
+                            file.display(),
+                            public
+                        );
+                        return Ok(0);
+                    }
+                    ("denied", _) => bail!("an Abhoth admin denied the request"),
+                    (other, _) => bail!("the request is {other}; run link again"),
+                }
+            }
+            bail!("nobody approved the request in time; run link again")
+        }
+        _ => bail!("abhoth router sso link|status|unlink --control router.toml (see --help)"),
+    }
+}
+
 fn admin_key_cmd(args: &[String]) -> Result<i32> {
     let sub = args.first().map(String::as_str).unwrap_or("");
     let (mut control, mut out, mut name) = (None, None, None);

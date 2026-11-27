@@ -181,6 +181,33 @@ export const accountApi = {
   sessions: () => call<WebSessionInfo[]>("GET", "/api/account/sessions"),
   revokeSession: (id: number) => call<Ok>("DELETE", `/api/account/sessions/${id}`),
   revokeAll: () => post<Ok>("/api/account/sessions/revoke-all"),
+  ssoConsents: () => call<{ consents: SsoConsent[] }>("GET", "/api/account/sso").then((r) => r.consents),
+  revokeSso: (client: string) => call<Ok>("DELETE", `/api/account/sso/${encodeURIComponent(client)}`),
+};
+
+/** A router you let sign you in with this account (D154). */
+export interface SsoConsent {
+  clientId: string;
+  name: string;
+  created: number;
+  lastUsed: number | null;
+}
+
+/** What `/oauth/authorize` asks (Sign in with Abhoth, D154). */
+export interface SsoAsk {
+  client: { id: string; name: string };
+  redirectOrigin: string;
+  user: string;
+  admin: boolean;
+  refused?: string | null;
+  consented: boolean;
+}
+
+/** The authorize page's query, passed on as it came. */
+export const ssoApi = {
+  ask: (query: string) => call<SsoAsk>("GET", `/api/oauth/authorize${query}`),
+  answer: (query: string, allow: boolean) =>
+    post<{ redirect: string }>("/api/oauth/authorize", { ...Object.fromEntries(new URLSearchParams(query)), allow }),
 };
 
 // ---- admin ----

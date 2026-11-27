@@ -4,7 +4,7 @@
 import mascot128 from "@/assets/brand/abhoth-mascot-128.webp";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Boxes, Cable, Gauge, HardDrive, KeyRound, Loader2, LogOut, Route, ServerCog, Settings2, Store } from "lucide-react";
+import { Activity, Boxes, Cable, Gauge, HardDrive, KeyRound, Loader2, LogIn, LogOut, Route, ServerCog, Settings2, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { RouterActivityPane, RouterOverviewPane, RouterRoutesPane } from "../RouterPanes";
@@ -118,6 +118,16 @@ function SignIn({ s, onDone }: { s: RouterSession; onDone: () => void }) {
           With an admin key (abk_…){s.linked ? ": one of this router's own, or an admin's key from the linked Abhoth server" : " made on this router"}.
         </p>
       </div>
+      {s.sso && (
+        <>
+          <Button type="button" className="w-full" onClick={() => location.assign(pageUrl("sso"))} data-testid="router-signin-sso">
+            <LogIn /> Sign in with Abhoth
+          </Button>
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="h-px flex-1 bg-border" /> or with an admin key <span className="h-px flex-1 bg-border" />
+          </div>
+        </>
+      )}
       <input
         type="password"
         autoComplete="current-password"
@@ -129,7 +139,7 @@ function SignIn({ s, onDone }: { s: RouterSession; onDone: () => void }) {
         autoFocus
       />
       {error && <p className="text-xs text-destructive" data-testid="router-signin-error">{error}</p>}
-      <Button type="submit" className="w-full" disabled={busy || !key.trim()} data-testid="router-signin-submit">
+      <Button type="submit" variant={s.sso ? "outline" : "default"} className="w-full" disabled={busy || !key.trim()} data-testid="router-signin-submit">
         {busy && <Loader2 className="animate-spin" />} Sign in
       </Button>
       {!s.hasKeys && (

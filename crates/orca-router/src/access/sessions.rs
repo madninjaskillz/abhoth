@@ -39,6 +39,8 @@ pub enum KeySource {
     Local(String),
     /// A key the web server vouches for (introspection, cached), by digest.
     Remote(String),
+    /// Sign-in with Abhoth (D154): a web UI admin, by user id.
+    Sso(i64),
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +180,7 @@ impl Sessions {
     pub fn remove_key(&self, digest: &str) {
         self.map.lock().unwrap().retain(|_, s| match &s.source {
             KeySource::Local(d) | KeySource::Remote(d) => d != digest,
+            KeySource::Sso(_) => true,
         });
     }
 
@@ -200,11 +203,16 @@ impl Sessions {
 
 /// The session cookie's value in a request.
 pub fn cookie(headers: &HeaderMap) -> Option<&str> {
+    named_cookie(headers, COOKIE)
+}
+
+/// A cookie's value in a request.
+pub fn named_cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     for v in headers.get_all("cookie") {
         let Ok(s) = v.to_str() else { continue };
         for part in s.split(';') {
             if let Some((k, v)) = part.trim().split_once('=')
-                && k.trim() == COOKIE
+                && k.trim() == name
                 && !v.trim().is_empty()
             {
                 return Some(v.trim());

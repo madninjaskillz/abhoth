@@ -965,6 +965,30 @@ Design: [`docs/design/ROUTER-ADMIN.md`](docs/design/ROUTER-ADMIN.md).
 - **From the Abhoth app:** in router mode with an admin key, Settings → Models → Connection →
   Router admin.
 
+### Sign in with Abhoth (D154)
+
+With an Abhoth web UI as its identity provider, the sign-in page also offers **Sign in with
+Abhoth**: the browser goes to the web UI, which asks for the password (and 2FA) when needed, then
+once per router: "<Router> wants to use your Abhoth account to sign you in to its admin pages".
+Only web UI admins get in; anyone else is refused whatever they answer. The router then makes its
+usual admin session (audited as `webui:<username>`). Admin keys keep working as before.
+Design: [`docs/design/ROUTER-SSO.md`](docs/design/ROUTER-SSO.md).
+
+- **Linked router** (`[access] accounts_url` + `accounts_token`, as in the single container):
+  nothing to do. It registers itself over the link at the first sign-in, for the address it was
+  opened at when that is an IP address or `localhost`, and for every `access.public_urls` entry
+  (list a host name you reach it by, e.g. `public_urls = ["https://router.example.org"]`). People
+  are sent to `access.sso_url`, or by default to the origin of `--key-url`.
+- **Any other router**: `abhoth router sso link --webui https://abhoth.example.org
+  --public-url http://router.lan:8010 --control router.toml` prints a code; an Abhoth admin
+  compares it in Settings → Service keys → Router sign-in and approves. Then set
+  `[access] sso_url = "https://abhoth.example.org"` and `public_urls = [...]` and restart.
+  `sso status` shows the registration, `sso unlink` forgets it.
+- The client secret is kept in `<state_dir>/sso-client.json` (mode 600) and hashed in the web UI.
+  `[access] sso = false` turns the button off.
+- Each user can take a consent back in the web UI under Account → Sessions; admins remove a router
+  under Router sign-in.
+
 ## 15. The inventory (D152)
 
 The admin pages' **Inventory** tab sets the router up as servers → cards → which engines may run

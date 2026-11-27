@@ -784,7 +784,11 @@ pub async fn login_auth(
     let seen = auth.seen(peer, req.headers());
     // The router's key introspection (ROUTER-CONFIG.md 11.1) carries its own bearer token,
     // which the handler checks; no session, CSRF or HTTPS rule applies to it.
-    if crate::router_admin::is_internal(req.uri().path()) && req.method() == Method::POST {
+    // So do Sign-in with Abhoth's code exchange and router registration (D154).
+    if (crate::router_admin::is_internal(req.uri().path())
+        || crate::sso::is_public(req.uri().path()))
+        && req.method() == Method::POST
+    {
         return harden(next.run(req).await);
     }
     let loopback = seen.ip.is_some_and(|ip| ip.is_loopback());

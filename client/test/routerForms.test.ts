@@ -142,6 +142,8 @@ test("the page's URLs are relative to it (any proxy prefix)", () => {
   assert.equal(pageUrl("session", "https://h/admin/"), "/admin/session");
   assert.equal(pageUrl("api", "https://h/router/admin/#keys"), "/router/admin/api");
   assert.equal(pageUrl("login", "http://h/api/settings/connection/router-admin/ui/"), "/api/settings/connection/router-admin/ui/login");
+  // D154: Sign in with Abhoth starts beside the sign-in, under any prefix
+  assert.equal(pageUrl("sso", "https://h/router/admin/"), "/router/admin/sso");
 });
 
 test("D153: a CPU card round trip: load, edit, the edits, save: never a GPU field", () => {

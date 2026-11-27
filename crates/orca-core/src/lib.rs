@@ -18,3 +18,4 @@ pub mod router_link;
 pub mod router_mode;
 pub mod session;
 pub mod slots;
+pub mod sso;

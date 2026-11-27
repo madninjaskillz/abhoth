@@ -73,6 +73,23 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE api_keys ADD COLUMN kind TEXT NOT NULL DEFAULT 'user';
     ALTER TABLE api_keys ADD COLUMN scopes TEXT NOT NULL DEFAULT '[]';
     ALTER TABLE api_keys ADD COLUMN note TEXT;",
+    // 3: Sign-in with Abhoth (D154): registered routers (OAuth clients; the secret hashed) and
+    // the consents users gave them.
+    "CREATE TABLE sso_clients(
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        secret_hash BLOB NOT NULL,
+        redirect_uris TEXT NOT NULL,
+        created INTEGER NOT NULL,
+        created_by TEXT
+    );
+    CREATE TABLE sso_consents(
+        client_id TEXT NOT NULL REFERENCES sso_clients(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created INTEGER NOT NULL,
+        last_used INTEGER,
+        PRIMARY KEY(client_id, user_id)
+    );",
 ];
 
 /// SHA-256 of a high-entropy secret (a cookie, an API key, a recovery code).
@@ -197,6 +214,27 @@ pub enum CreateError {
 
 fn db_err(e: rusqlite::Error) -> String {
     e.to_string()
+}
+
+/// A router registered for Sign-in with Abhoth (D154).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SsoClient {
+    pub id: String,
+    pub name: String,
+    pub redirect_uris: Vec<String>,
+    pub created: i64,
+    pub created_by: Option<String>,
+}
+
+/// A user's standing consent for a router.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SsoConsent {
+    pub client_id: String,
+    pub name: String,
+    pub created: i64,
+    pub last_used: Option<i64>,
 }
 
 pub struct UserDb {
@@ -792,6 +830,135 @@ impl UserDb {
     /// A user's own keys (not the service keys an admin issued).
     pub fn api_keys_of(&self, user_id: i64) -> Vec<ApiKey> {
         self.keys_where("user_id=?1 AND kind='user'", params![user_id])
+    }
+
+    // ---- Sign-in with Abhoth (D154) ----
+
+    /// Register a client, or replace its secret and redirect URIs (same id).
+    pub fn put_sso_client(&self, c: &SsoClient, secret_hash: &[u8]) -> bool {
+        let uris = serde_json::to_string(&c.redirect_uris).unwrap_or_else(|_| "[]".into());
+        self.exec(
+            "INSERT INTO sso_clients(id, name, secret_hash, redirect_uris, created, created_by)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET name=?2, secret_hash=?3, redirect_uris=?4",
+            params![c.id, c.name, secret_hash, uris, c.created, c.created_by],
+        )
+    }
+
+    /// Change a client's redirect URIs only.
+    pub fn set_sso_redirects(&self, id: &str, uris: &[String]) -> bool {
+        let uris = serde_json::to_string(uris).unwrap_or_else(|_| "[]".into());
+        self.exec(
+            "UPDATE sso_clients SET redirect_uris=?2 WHERE id=?1",
+            params![id, uris],
+        )
+    }
+
+    pub fn sso_client(&self, id: &str) -> Option<(SsoClient, Vec<u8>)> {
+        self.sso_clients_where("id=?1", params![id])
+            .into_iter()
+            .next()
+    }
+
+    pub fn sso_clients(&self) -> Vec<SsoClient> {
+        self.sso_clients_where("1", params![])
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect()
+    }
+
+    fn sso_clients_where(
+        &self,
+        cond: &str,
+        args: impl rusqlite::Params,
+    ) -> Vec<(SsoClient, Vec<u8>)> {
+        let conn = self.conn.lock().unwrap();
+        let Ok(mut st) = conn.prepare(&format!(
+            "SELECT id, name, secret_hash, redirect_uris, created, created_by FROM sso_clients WHERE {cond} ORDER BY created, id"
+        )) else {
+            return vec![];
+        };
+        st.query_map(args, |r| {
+            let uris: String = r.get(3)?;
+            Ok((
+                SsoClient {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    redirect_uris: serde_json::from_str(&uris).unwrap_or_default(),
+                    created: r.get(4)?,
+                    created_by: r.get(5)?,
+                },
+                r.get::<_, Vec<u8>>(2)?,
+            ))
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Remove a client and every consent given to it.
+    pub fn delete_sso_client(&self, id: &str) -> bool {
+        let conn = self.conn.lock().unwrap();
+        let _ = conn.execute("DELETE FROM sso_consents WHERE client_id=?1", params![id]);
+        conn.execute("DELETE FROM sso_clients WHERE id=?1", params![id])
+            .is_ok_and(|n| n > 0)
+    }
+
+    pub fn sso_consented(&self, client_id: &str, user_id: i64) -> bool {
+        self.conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT 1 FROM sso_consents WHERE client_id=?1 AND user_id=?2",
+                params![client_id, user_id],
+                |_| Ok(()),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .is_some()
+    }
+
+    pub fn add_sso_consent(&self, client_id: &str, user_id: i64, now: i64) -> bool {
+        self.exec(
+            "INSERT INTO sso_consents(client_id, user_id, created, last_used) VALUES(?1, ?2, ?3, ?3)
+             ON CONFLICT(client_id, user_id) DO UPDATE SET last_used=?3",
+            params![client_id, user_id, now],
+        )
+    }
+
+    pub fn touch_sso_consent(&self, client_id: &str, user_id: i64, now: i64) {
+        self.exec(
+            "UPDATE sso_consents SET last_used=?3 WHERE client_id=?1 AND user_id=?2",
+            params![client_id, user_id, now],
+        );
+    }
+
+    pub fn delete_sso_consent(&self, client_id: &str, user_id: i64) -> bool {
+        self.exec(
+            "DELETE FROM sso_consents WHERE client_id=?1 AND user_id=?2",
+            params![client_id, user_id],
+        )
+    }
+
+    /// A user's consents, with the client's name.
+    pub fn sso_consents_of(&self, user_id: i64) -> Vec<SsoConsent> {
+        let conn = self.conn.lock().unwrap();
+        let Ok(mut st) = conn.prepare(
+            "SELECT c.client_id, s.name, c.created, c.last_used FROM sso_consents c
+             JOIN sso_clients s ON s.id = c.client_id WHERE c.user_id=?1 ORDER BY c.created",
+        ) else {
+            return vec![];
+        };
+        st.query_map(params![user_id], |r| {
+            Ok(SsoConsent {
+                client_id: r.get(0)?,
+                name: r.get(1)?,
+                created: r.get(2)?,
+                last_used: r.get(3)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
     /// Every service key, oldest first.

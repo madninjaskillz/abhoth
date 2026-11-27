@@ -18,6 +18,8 @@ export interface RouterSession {
   hasKeys?: boolean;
   linked?: boolean;
   embedded?: boolean;
+  /** Sign in with Abhoth (D154) is offered. */
+  sso?: boolean;
 }
 
 /** A URL next to the page (`session`, `login`, `api`): relative, so any proxy prefix is kept. */

@@ -24,6 +24,7 @@ pub mod pty;
 pub mod router_admin;
 pub mod server;
 pub mod settings;
+pub mod sso;
 pub mod util;
 
 pub use live::{AgentHost, LiveSession, SessionFactory};

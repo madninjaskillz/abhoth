@@ -201,6 +201,33 @@ export const keyRequestApi = {
   deny: (id: string) => call<{ ok: boolean }>("POST", `/api/admin/key-requests/${encodeURIComponent(id)}/deny`),
 };
 
+/** A router registered for Sign in with Abhoth (D154). */
+export interface SsoClientInfo {
+  id: string;
+  name: string;
+  redirectUris: string[];
+  created: number;
+  createdBy?: string | null;
+}
+
+/** A router asking to be registered (`abhoth router sso link`). */
+export interface SsoLinkRequest {
+  id: string;
+  code: string;
+  name: string;
+  redirectUris: string[];
+  ip: string;
+  created: number;
+  expiresIn: number;
+}
+
+export const ssoAdminApi = {
+  list: () => call<{ clients: SsoClientInfo[]; requests: SsoLinkRequest[] }>("GET", "/api/admin/sso"),
+  approve: (id: string) => call<{ ok: boolean; client: SsoClientInfo }>("POST", `/api/admin/sso/link-requests/${encodeURIComponent(id)}/approve`),
+  deny: (id: string) => call<{ ok: boolean }>("POST", `/api/admin/sso/link-requests/${encodeURIComponent(id)}/deny`),
+  remove: (id: string) => call<{ ok: boolean }>("DELETE", `/api/admin/sso/clients/${encodeURIComponent(id)}`),
+};
+
 export const serviceKeyApi = {
   list: () => call<{ keys: ServiceKey[]; scopes: string[]; router: boolean }>("GET", "/api/admin/service-keys"),
   create: (name: string, scopes: string[], note: string) => call<ServiceKey>("POST", "/api/admin/service-keys", { name, scopes, note }),

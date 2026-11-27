@@ -7,6 +7,7 @@ import { loadAuth } from "@/lib/auth";
 import { loadBranding } from "@/lib/brand";
 import { SignIn } from "@/features/auth/SignIn";
 import { Setup } from "@/features/auth/Setup";
+import { Consent } from "@/features/auth/Consent";
 import { WindowFrame } from "@/components/TitleBar";
 import App from "./App";
 import "./index.css";
@@ -18,7 +19,9 @@ const queryClient = new QueryClient({
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 
 // No users yet: the setup page. Not signed in: the sign-in page. Then the app (reloaded, so it starts clean).
-const done = () => location.assign("/");
+// Sign in with Abhoth (D154): signing in on the consent page comes back to it.
+const consent = location.pathname === "/oauth/authorize";
+const done = () => (consent ? location.reload() : location.assign("/"));
 void Promise.all([loadAuth(), loadBranding()]).then(([auth]) => {
   if (auth.setup) {
     if (location.pathname !== "/setup") history.replaceState(null, "", "/setup");
@@ -36,6 +39,16 @@ void Promise.all([loadAuth(), loadBranding()]).then(([auth]) => {
       <React.StrictMode>
         <WindowFrame>
           <SignIn state={auth} onDone={done} />
+        </WindowFrame>
+      </React.StrictMode>,
+    );
+    return;
+  }
+  if (consent) {
+    root.render(
+      <React.StrictMode>
+        <WindowFrame>
+          <Consent />
         </WindowFrame>
       </React.StrictMode>,
     );

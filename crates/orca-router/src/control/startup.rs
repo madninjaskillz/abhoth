@@ -1127,7 +1127,9 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
     tokio::spawn(probe_media_engines(st.clone(), c.clone()));
     crate::control_api::bootstrap_hint(&local_keys, &c, main);
     let cp = Arc::new(ControlPlane {
-        access: Access::new(c.access.clone(), token).with_local_keys(local_keys),
+        access: Access::new(c.access.clone(), token)
+            .with_local_keys(local_keys)
+            .with_sso(&state_dir),
         backend: backend.clone(),
     });
     st.control
