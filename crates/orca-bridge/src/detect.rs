@@ -361,6 +361,31 @@ pub fn descriptor(c: &BridgeConfig, gpus: &[Gpu], cpu: &Cpu) -> Descriptor {
         limits: DescLimits {
             max_concurrent: c.limits.max_concurrent,
         },
+        remote_config: false,
+        config_rev: None,
+        models: Vec::new(),
+    }
+}
+
+/// Leave out what is not shared: engines `keep` refuses (from `engines` and from every card's
+/// list), and files under `drop_files` prefixes (an unshared model's folder).
+pub fn share_only(d: &mut Descriptor, keep: &dyn Fn(&str) -> bool, drop_files: &[String]) {
+    d.engines.retain(|e| keep(&e.id));
+    for c in &mut d.cards {
+        for list in c.engines.values_mut() {
+            list.retain(|e| keep(e));
+        }
+        c.engines.retain(|_, l| !l.is_empty());
+    }
+    if !drop_files.is_empty() {
+        for list in d.files.values_mut() {
+            list.retain(|f| {
+                let f = f.replace('\\', "/");
+                !drop_files
+                    .iter()
+                    .any(|p| f == *p || f.starts_with(&format!("{p}/")))
+            });
+        }
     }
 }
 

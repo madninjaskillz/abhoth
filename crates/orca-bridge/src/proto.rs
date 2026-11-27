@@ -30,6 +30,9 @@ pub const CHUNK: usize = 64 * 1024;
 pub const TOKEN_PREFIX: &str = "abb_";
 /// Probes and proxied health checks carry this header: never load a model or switch a layout.
 pub const NO_SWITCH: &str = "x-abhoth-no-switch";
+/// `open` with this method: a raw TCP stream to the engine's port (Wyoming), no HTTP. The head
+/// is 200 once the bridge has connected; binary frames are the bytes each way.
+pub const TCP_METHOD: &str = "TCP";
 
 /// One control message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -127,6 +130,9 @@ impl Frame {
 pub struct Settings {
     pub enabled: bool,
     pub priority: i32,
+    /// Shared engines the router's admin does not use (left out of the overlay).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub engines_off: Vec<String>,
 }
 
 impl Default for Settings {
@@ -134,6 +140,7 @@ impl Default for Settings {
         Self {
             enabled: true,
             priority: 0,
+            engines_off: Vec::new(),
         }
     }
 }
@@ -152,6 +159,28 @@ pub struct Descriptor {
     pub files: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub limits: DescLimits,
+    /// The bridge lets a router admin edit its inventory (`config.get` / `config.apply`,
+    /// MACHINE.md 8). Absent: false (a headless bridge, or the desktop with the setting off).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remote_config: bool,
+    /// The revision of the bridge's editable config (changes on every save there).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_rev: Option<String>,
+    /// The models the bridge shares (MACHINE.md 5): id, kind and the engines that serve it.
+    /// Absent for a headless bridge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<ModelDesc>,
+}
+
+/// A model a bridge has and shares.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ModelDesc {
+    pub id: String,
+    #[serde(default)]
+    pub kind: String,
+    /// Engines that can serve it, primary first.
+    #[serde(default)]
+    pub engines: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

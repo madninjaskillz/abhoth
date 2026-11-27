@@ -131,6 +131,13 @@ pub struct CardOverride {
 pub struct LimitsSection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_concurrent: Option<u32>,
+    /// Count the ZFS ARC above its floor as free RAM for `min_free_ram_gib` (TrueNAS: the ARC
+    /// holds most of it and gives it back under pressure). Unset: yes when ZFS is there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count_zfs_arc: Option<bool>,
+    /// Kept back from the reclaimable ARC (default 0.5 GiB).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arc_margin_gib: Option<f64>,
 }
 
 /// How an engine is run on this host.

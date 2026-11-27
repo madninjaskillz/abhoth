@@ -41,11 +41,16 @@ pub struct Status {
 pub struct Handle {
     pub status: Arc<Mutex<Status>>,
     stop: watch::Sender<bool>,
+    refresh: Arc<watch::Sender<u64>>,
 }
 
 impl Handle {
     pub fn stop(&self) {
         let _ = self.stop.send(true);
+    }
+    /// Shape the descriptor again and send it (the embedding app's shares or revision changed).
+    pub fn refresh(&self) {
+        self.refresh.send_modify(|n| *n += 1);
     }
     pub fn status(&self) -> Status {
         self.status.lock().unwrap().clone()
@@ -88,11 +93,38 @@ impl Default for Timing {
     }
 }
 
+/// Commands the bridge passes on to whoever embeds it (the desktop app's remote config,
+/// MACHINE.md 8): `None` from `call` means "not mine", and the bridge answers "unknown command".
+#[async_trait::async_trait]
+pub trait Remote: Send + Sync {
+    async fn call(&self, op: &str, args: &Value) -> Option<Result<Value, String>>;
+}
+
+/// Shapes the descriptor before it is sent (leave out what is not shared, add models, the
+/// remote-config flag and revision).
+pub type Shape = Arc<dyn Fn(&mut Descriptor) + Send + Sync>;
+/// Whether the router may use an engine (start, stop, streams). Unshared engines answer no.
+pub type Allow = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
+/// How an embedding app runs the bridge (the desktop app, D155). Default: a bridge of its own.
+#[derive(Clone, Default)]
+pub struct Options {
+    /// Run engines with this supervisor (the app's own, shared with its local use) instead of
+    /// a new one. The bridge then never starts, reaps or stops engines itself.
+    pub sup: Option<Arc<Supervisor>>,
+    pub shape: Option<Shape>,
+    pub allow: Option<Allow>,
+    pub remote: Option<Arc<dyn Remote>>,
+}
+
 struct Ctx {
     cfg: BridgeConfig,
     sup: Arc<Supervisor>,
     log: Log,
+    /// The descriptor as detected, before [`Options::shape`].
+    base: Mutex<Descriptor>,
     descriptor: Mutex<Descriptor>,
+    opts: Options,
     status: Arc<Mutex<Status>>,
     proxy: reqwest::Client,
     version: String,
@@ -100,7 +132,19 @@ struct Ctx {
 
 /// Start the bridge in the background; it runs until [`Handle::stop`].
 pub fn spawn(cfg: BridgeConfig, version: &str, log: Log, timing: Timing) -> Handle {
+    spawn_with(cfg, version, log, timing, Options::default())
+}
+
+/// [`spawn`] for an embedding app ([`Options`]).
+pub fn spawn_with(
+    cfg: BridgeConfig,
+    version: &str,
+    log: Log,
+    timing: Timing,
+    opts: Options,
+) -> Handle {
     let (tx, rx) = watch::channel(false);
+    let (rtx, rrx) = watch::channel(0u64);
     let status = Arc::new(Mutex::new(Status {
         router: cfg.bridge.router.clone(),
         ..Status::default()
@@ -108,10 +152,11 @@ pub fn spawn(cfg: BridgeConfig, version: &str, log: Log, timing: Timing) -> Hand
     let h = Handle {
         status: status.clone(),
         stop: tx,
+        refresh: Arc::new(rtx),
     };
     let version = version.to_string();
     tokio::spawn(async move {
-        run_inner(cfg, version, log, timing, status, rx).await;
+        run_inner(cfg, version, log, timing, status, rx, opts, rrx).await;
     });
     h
 }
@@ -128,9 +173,21 @@ pub async fn run(
         router: cfg.bridge.router.clone(),
         ..Status::default()
     }));
-    run_inner(cfg, version.to_string(), log, timing, status, stop).await
+    let (_rtx, rrx) = watch::channel(0u64);
+    run_inner(
+        cfg,
+        version.to_string(),
+        log,
+        timing,
+        status,
+        stop,
+        Options::default(),
+        rrx,
+    )
+    .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_inner(
     mut cfg: BridgeConfig,
     version: String,
@@ -138,6 +195,8 @@ async fn run_inner(
     timing: Timing,
     status: Arc<Mutex<Status>>,
     mut stop: watch::Receiver<bool>,
+    opts: Options,
+    mut refresh: watch::Receiver<u64>,
 ) {
     if let Err(e) = crate::package::fill(&mut cfg) {
         log(&format!("config: {e}"));
@@ -150,7 +209,11 @@ async fn run_inner(
         Vec::new()
     };
     let cpu = detect::cpu().await;
-    let descriptor = detect::descriptor(&cfg, &gpus, &cpu);
+    let base = detect::descriptor(&cfg, &gpus, &cpu);
+    let mut descriptor = base.clone();
+    if let Some(f) = &opts.shape {
+        f(&mut descriptor);
+    }
     log(&format!(
         "bridge {} (abhoth {version}): {} card(s) [{}], {} engine(s)",
         cfg.bridge.id,
@@ -166,13 +229,33 @@ async fn run_inner(
     for p in descriptor.problems() {
         log(&format!("descriptor: {p}"));
     }
-    let sup = Supervisor::new(cfg.clone(), gpus, log.clone());
-    sup.adopt_all().await;
+    if let Some(f) = crate::runner::free_ram(
+        cfg.limits.count_zfs_arc,
+        cfg.limits
+            .arc_margin_gib
+            .unwrap_or(crate::runner::DEFAULT_ARC_MARGIN_GIB),
+    ) {
+        log(&format!("RAM for engines: {}", f.describe()));
+    }
+    let own = opts.sup.is_none();
+    let sup = match &opts.sup {
+        Some(s) => s.clone(),
+        None => {
+            let s = Supervisor::new(cfg.clone(), gpus, log.clone());
+            s.adopt_all().await;
+            // images and packages now, not at the first request (a failed pull shows in status)
+            let p = s.clone();
+            tokio::spawn(async move { p.prepare_all().await });
+            s
+        }
+    };
     let ctx = Arc::new(Ctx {
         cfg,
         sup: sup.clone(),
         log: log.clone(),
+        base: Mutex::new(base),
         descriptor: Mutex::new(descriptor),
+        opts,
         status,
         proxy: reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
@@ -180,11 +263,11 @@ async fn run_inner(
             .expect("http client"),
         version,
     });
-    {
+    if own {
         let sup = sup.clone();
         tokio::spawn(async move { sup.start_always().await });
     }
-    let reaper = {
+    let reaper = own.then(|| {
         let sup = sup.clone();
         let every = timing.reap_every;
         tokio::spawn(async move {
@@ -193,7 +276,7 @@ async fn run_inner(
                 sup.reap_idle().await;
             }
         })
-    };
+    });
 
     let mut backoff = timing.backoff_min;
     loop {
@@ -201,7 +284,7 @@ async fn run_inner(
             break;
         }
         let before = ctx.status.lock().unwrap().connects;
-        let ended = connect_once(&ctx, &timing, &mut stop).await;
+        let ended = connect_once(&ctx, &timing, &mut stop, &mut refresh).await;
         if ctx.status.lock().unwrap().connects > before {
             backoff = timing.backoff_min; // that connection was accepted: start again from 1 s
         }
@@ -232,9 +315,43 @@ async fn run_inner(
             _ = stop.changed() => {}
         }
     }
-    reaper.abort();
-    log("bridge stopping: stopping the engines it started");
-    sup.stop_all().await;
+    if let Some(r) = reaper {
+        r.abort();
+        log("bridge stopping: stopping the engines it started");
+        sup.stop_all().await;
+    } else {
+        log("bridge stopping (the app keeps its engines)");
+    }
+}
+
+impl Ctx {
+    /// The descriptor from the base again, through the app's shape.
+    fn reshape(&self) -> Descriptor {
+        let mut d = self.base.lock().unwrap().clone();
+        if let Some(f) = &self.opts.shape {
+            f(&mut d);
+        }
+        *self.descriptor.lock().unwrap() = d.clone();
+        d
+    }
+
+    fn allowed(&self, engine: &str) -> Result<(), String> {
+        match &self.opts.allow {
+            Some(f) if !engine.is_empty() && !f(engine) => {
+                Err(format!("engine `{engine}` is not shared with the router"))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    async fn acquire(
+        self: &Arc<Self>,
+        engine: &str,
+        card: &str,
+    ) -> Result<crate::runner::Lease, String> {
+        self.allowed(engine)?;
+        self.sup.acquire(engine, card).await
+    }
 }
 
 /// 75 %..125 % of `d`.
@@ -245,7 +362,12 @@ fn jitter(d: Duration) -> Duration {
     d.mul_f64(f)
 }
 
-async fn connect_once(ctx: &Arc<Ctx>, timing: &Timing, stop: &mut watch::Receiver<bool>) -> Ended {
+async fn connect_once(
+    ctx: &Arc<Ctx>,
+    timing: &Timing,
+    stop: &mut watch::Receiver<bool>,
+    refresh: &mut watch::Receiver<u64>,
+) -> Ended {
     let url = match ws_url(&ctx.cfg.bridge.router) {
         Ok(u) => u,
         Err(e) => return Ended::Refused(format!("bridge.router: {e}")),
@@ -316,13 +438,20 @@ async fn connect_once(ctx: &Arc<Ctx>, timing: &Timing, stop: &mut watch::Receive
     });
     // Engine state changes go to the router as events.
     {
-        let mux = mux.clone();
+        let events = mux.clone();
         ctx.sup.set_on_state(Arc::new(move |v: Value| {
-            mux.send(&Frame::Event {
+            events.send(&Frame::Event {
                 kind: "engine-state".into(),
                 data: v,
             });
         }));
+        // what was fetched (or failed to) before this connection
+        for (engine, v) in ctx.sup.prepared() {
+            mux.send(&Frame::Event {
+                kind: "engine-state".into(),
+                data: json!({"engine": engine, "prepare": v}),
+            });
+        }
     }
     let mut ping = tokio::time::interval(timing.ping);
     ping.tick().await;
@@ -365,6 +494,11 @@ async fn connect_once(ctx: &Arc<Ctx>, timing: &Timing, stop: &mut watch::Receive
             _ = stop.changed() => {
                 mux.close(1001, "the bridge is stopping");
                 break Ended::Stopped;
+            }
+            r = refresh.changed() => {
+                if r.is_ok() {
+                    mux.send(&Frame::Descriptor { descriptor: ctx.reshape() });
+                }
             }
         }
     };
@@ -444,7 +578,9 @@ async fn handle(ctx: &Arc<Ctx>, mux: &Arc<Mux>, f: Frame) -> Result<(), Ended> {
             let stream = mux.accept(sid);
             let (ctx, mux) = (ctx.clone(), mux.clone());
             tokio::spawn(async move {
-                if ws {
+                if method.eq_ignore_ascii_case(crate::proto::TCP_METHOD) {
+                    proxy_tcp(&ctx, &mux, stream, &engine, &card).await
+                } else if ws {
                     proxy_ws(&ctx, &mux, stream, &engine, &card, &path, headers).await
                 } else {
                     proxy_http(&ctx, &mux, stream, &engine, &card, &method, &path, headers).await
@@ -469,8 +605,19 @@ async fn command(ctx: &Arc<Ctx>, mux: &Arc<Mux>, op: &str, args: &Value) -> Resu
             let mut v = ctx.sup.status();
             v["bridge"] = json!(ctx.cfg.bridge.id);
             v["version"] = json!(ctx.version);
-            v["free_ram_gib"] = json!(crate::runner::free_ram_gib());
+            let lim = &ctx.cfg.limits;
+            let free = crate::runner::free_ram(
+                lim.count_zfs_arc,
+                lim.arc_margin_gib
+                    .unwrap_or(crate::runner::DEFAULT_ARC_MARGIN_GIB),
+            );
+            v["free_ram_gib"] = json!(free.map(|f| f.total()));
+            v["ram"] = json!(free.map(|f| json!({"available_gib": f.available_gib,
+                "arc_reclaimable_gib": f.arc_gib, "text": f.describe()})));
             Ok(v)
+        }
+        "start" | "stop" | "logs" | "probe" if ctx.allowed(engine).is_err() => {
+            ctx.allowed(engine).map(|_| Value::Null)
         }
         "start" => ctx
             .sup
@@ -496,8 +643,8 @@ async fn command(ctx: &Arc<Ctx>, mux: &Arc<Mux>, op: &str, args: &Value) -> Resu
             } else {
                 Vec::new()
             };
-            let d = detect::descriptor(&ctx.cfg, &gpus, &detect::cpu().await);
-            *ctx.descriptor.lock().unwrap() = d.clone();
+            *ctx.base.lock().unwrap() = detect::descriptor(&ctx.cfg, &gpus, &detect::cpu().await);
+            let d = ctx.reshape();
             mux.send(&Frame::Descriptor {
                 descriptor: d.clone(),
             });
@@ -523,7 +670,13 @@ async fn command(ctx: &Arc<Ctx>, mux: &Arc<Mux>, op: &str, args: &Value) -> Resu
         "install" | "uninstall" | "sync-receive" => Err(format!(
             "`{op}` is not a bridge command yet: an engine with `package = \"...\"` in bridge.toml installs on its first start"
         )),
-        _ => Err(format!("unknown command `{op}`")),
+        _ => match &ctx.opts.remote {
+            Some(r) => match r.call(op, args).await {
+                Some(res) => res,
+                None => Err(format!("unknown command `{op}`")),
+            },
+            None => Err(format!("unknown command `{op}`")),
+        },
     }
 }
 
@@ -629,7 +782,7 @@ async fn proxy_http(
 ) {
     let sid = s.sid;
     let (tx, rx) = s.split();
-    let lease = match ctx.sup.acquire(engine, card).await {
+    let lease = match ctx.acquire(engine, card).await {
         Ok(l) => l,
         Err(e) => {
             // Not reading the request: let go of it first, so the reply's end is not a reset.
@@ -715,7 +868,7 @@ async fn proxy_ws(
 ) {
     let sid = s.sid;
     let (tx, mut rx) = s.split();
-    let lease = match ctx.sup.acquire(engine, card).await {
+    let lease = match ctx.acquire(engine, card).await {
         Ok(l) => l,
         Err(_) => {
             drop(rx);
@@ -795,6 +948,68 @@ async fn proxy_ws(
         _ = up => {}
         _ = down => {}
     }
+    drop(lease);
+}
+
+/// A raw TCP stream to the engine's port (Wyoming, 13.1 `method = "TCP"`): the head is 200 once
+/// connected, then the stream's binary frames are the bytes each way.
+async fn proxy_tcp(
+    ctx: &Arc<Ctx>,
+    mux: &Arc<Mux>,
+    s: crate::mux::Stream,
+    engine: &str,
+    card: &str,
+) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let sid = s.sid;
+    let (tx, mut rx) = s.split();
+    let lease = match ctx.acquire(engine, card).await {
+        Ok(l) => l,
+        Err(e) => {
+            drop(rx);
+            (ctx.log)(&format!("tcp to {engine} on {card}: {e}"));
+            error_head(mux, sid, 503);
+            tx.end();
+            return;
+        }
+    };
+    let conn = match tokio::net::TcpStream::connect((lease.host.as_str(), lease.port)).await {
+        Ok(c) => c,
+        Err(_) => {
+            drop(rx);
+            error_head(mux, sid, 502);
+            tx.end();
+            return;
+        }
+    };
+    let _ = conn.set_nodelay(true);
+    mux.head(sid, 200, Vec::new());
+    let (mut r, mut w) = conn.into_split();
+    let up = async {
+        while let Some(m) = rx.recv().await {
+            let Ok(b) = m else { break };
+            if w.write_all(&b).await.is_err() {
+                break;
+            }
+        }
+        let _ = w.shutdown().await;
+    };
+    let down = async {
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            match r.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if tx.send(&buf[..n]).await.is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+        tx.end();
+    };
+    // both halves: a client that stops sending may still be reading the answer
+    tokio::join!(up, down);
     drop(lease);
 }
 

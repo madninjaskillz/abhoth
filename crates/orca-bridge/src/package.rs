@@ -203,6 +203,36 @@ impl Runner for PackageRunner {
             .map_err(|e| e.to_string())
     }
 
+    async fn prepare(&self, spec: &RunSpec) -> Result<String, String> {
+        let want = spec
+            .cfg
+            .package
+            .as_deref()
+            .ok_or("this engine has no package")?;
+        let p = find(want)?;
+        let r = self.runner().await;
+        let card = card_sel(spec, r.facts());
+        let filter = MethodFilter {
+            host_processes: spec.cfg.host_processes,
+            only: None,
+        };
+        let (method, _) = orca_engines::choose_method(&p.manifest, r.facts(), &card, &filter)
+            .map_err(|_| format!("no method of {} fits here", p.key()))?;
+        match r.layout.find_installed(&p.manifest.id, &p.manifest.version) {
+            Some(i) if i.method == method => Ok(format!("{} is installed", p.key())),
+            _ => r
+                .install(&p, method, &card, &Approvals::default())
+                .await
+                .map(|_| format!("installed {}", p.key()))
+                .map_err(|e| {
+                    format!(
+                        "installing {} failed ({e}); its image may need loading with `docker load`",
+                        p.key()
+                    )
+                }),
+        }
+    }
+
     async fn stop(&self, h: &Handle, grace: Duration) -> Result<(), String> {
         let h = unwrap(h)?;
         self.runner()

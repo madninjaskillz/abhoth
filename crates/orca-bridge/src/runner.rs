@@ -82,6 +82,11 @@ pub trait Runner: Send + Sync {
     async fn logs(&self, h: &Handle, lines: u32) -> Result<String, String>;
     /// An instance left running by an earlier bridge process, if there is one.
     async fn adopt(&self, spec: &RunSpec) -> Option<Handle>;
+    /// Fetch what a start needs (an image, a package install) ahead of the first request.
+    /// `Ok(what)`: ready; `Err`: why it cannot start (shown in the bridge's status).
+    async fn prepare(&self, _spec: &RunSpec) -> Result<String, String> {
+        Ok("nothing to fetch".into())
+    }
 }
 
 // ── docker ───────────────────────────────────────────────────────────────────────────────────
@@ -259,6 +264,34 @@ impl Runner for DockerRunner {
         };
         self.running(&h).await.then_some(h)
     }
+    async fn prepare(&self, spec: &RunSpec) -> Result<String, String> {
+        let Some(d) = &spec.cfg.docker else {
+            return Ok("nothing to fetch".into());
+        };
+        let image = d.image.clone();
+        if self
+            .docker(
+                &[
+                    "image".into(),
+                    "inspect".into(),
+                    "-f".into(),
+                    "{{.Id}}".into(),
+                    image.clone(),
+                ],
+                Duration::from_secs(30),
+            )
+            .await
+            .is_ok()
+        {
+            return Ok(format!("image {image} is here"));
+        }
+        self.docker(&["pull".into(), image.clone()], Duration::from_secs(3600))
+            .await
+            .map(|_| format!("pulled {image}"))
+            .map_err(|e| {
+                format!("image {image} is not on this host and pulling it failed ({e}); load it with `docker load` or check the registry")
+            })
+    }
 }
 
 // ── processes ────────────────────────────────────────────────────────────────────────────────
@@ -430,6 +463,8 @@ pub struct Supervisor {
     http: reqwest::Client,
     log: Log,
     on_state: Mutex<Option<OnState>>,
+    /// Per engine, what [`Supervisor::prepare_all`] found (`ready`, `fetching`, `failed`).
+    prepared: Mutex<BTreeMap<String, Value>>,
     /// Health polling interval while starting (tests make it short).
     pub poll: Duration,
 }
@@ -471,13 +506,79 @@ impl Drop for Lease {
     }
 }
 
-/// MemAvailable in GiB (Linux), for the engines' `min_free_ram_gib`-style checks.
-pub fn free_ram_gib() -> Option<f64> {
-    let s = std::fs::read_to_string("/proc/meminfo").ok()?;
+/// RAM an engine could have now (Linux): `MemAvailable`, plus the ZFS ARC above its floor,
+/// which the kernel gives back under pressure but `MemAvailable` does not count (TrueNAS).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct FreeRam {
+    pub available_gib: f64,
+    /// ARC above `max(c_min, arc_meta_min)`, less the margin (0 without ZFS or when off).
+    pub arc_gib: f64,
+}
+
+impl FreeRam {
+    pub fn total(&self) -> f64 {
+        self.available_gib + self.arc_gib
+    }
+    /// `1.8 GiB available + 5.1 GiB reclaimable ARC`, or `1.8 GiB available`.
+    pub fn describe(&self) -> String {
+        if self.arc_gib > 0.0 {
+            format!(
+                "{:.1} GiB available + {:.1} GiB reclaimable ARC",
+                self.available_gib, self.arc_gib
+            )
+        } else {
+            format!("{:.1} GiB available", self.available_gib)
+        }
+    }
+}
+
+/// `MemAvailable` from `/proc/meminfo`, in GiB.
+pub fn parse_mem_available(s: &str) -> Option<f64> {
     let line = s.lines().find(|l| l.starts_with("MemAvailable:"))?;
     let kb: f64 = line.split_whitespace().nth(1)?.parse().ok()?;
     Some(kb / 1024.0 / 1024.0)
 }
+
+/// The ARC above its floor from `/proc/spl/kstat/zfs/arcstats`, in GiB:
+/// `max(0, size - max(c_min, arc_meta_min))`.
+pub fn parse_arc_reclaimable(s: &str) -> Option<f64> {
+    let field = |k: &str| {
+        s.lines().find_map(|l| {
+            let mut w = l.split_whitespace();
+            (w.next()? == k).then(|| w.nth(1)?.parse::<f64>().ok())?
+        })
+    };
+    let size = field("size")?;
+    let floor = field("c_min")
+        .unwrap_or(0.0)
+        .max(field("arc_meta_min").unwrap_or(0.0));
+    Some(((size - floor).max(0.0)) / 1024.0 / 1024.0 / 1024.0)
+}
+
+/// [`FreeRam`] now. `count_arc`: None = when ZFS is there; `margin_gib` comes off the ARC part.
+pub fn free_ram(count_arc: Option<bool>, margin_gib: f64) -> Option<FreeRam> {
+    let available_gib = parse_mem_available(&std::fs::read_to_string("/proc/meminfo").ok()?)?;
+    let arc_gib = if count_arc != Some(false) {
+        std::fs::read_to_string("/proc/spl/kstat/zfs/arcstats")
+            .ok()
+            .and_then(|t| parse_arc_reclaimable(&t))
+            .map(|a| (a - margin_gib).max(0.0))
+            .unwrap_or(0.0)
+    } else {
+        0.0
+    };
+    Some(FreeRam {
+        available_gib,
+        arc_gib,
+    })
+}
+
+/// [`free_ram`]'s total with the defaults (ARC counted when present, 0.5 GiB margin).
+pub fn free_ram_gib() -> Option<f64> {
+    free_ram(None, DEFAULT_ARC_MARGIN_GIB).map(|f| f.total())
+}
+
+pub const DEFAULT_ARC_MARGIN_GIB: f64 = 0.5;
 
 impl Supervisor {
     pub fn new(cfg: BridgeConfig, gpus: Vec<Gpu>, log: Log) -> Arc<Supervisor> {
@@ -514,6 +615,7 @@ impl Supervisor {
                 .expect("http client"),
             log,
             on_state: Mutex::new(None),
+            prepared: Mutex::new(BTreeMap::new()),
             poll: Duration::from_secs(2),
         })
     }
@@ -677,13 +779,20 @@ impl Supervisor {
             .cfg
             .min_free_ram_gib
             .or(spec.cfg.mem_gib.filter(|_| spec.gpu.is_none()));
+        let lim = &self.cfg.limits;
         if let Some(need) = need
-            && let Some(free) = free_ram_gib()
-            && free < need
+            && let Some(free) = free_ram(
+                lim.count_zfs_arc,
+                lim.arc_margin_gib.unwrap_or(DEFAULT_ARC_MARGIN_GIB),
+            )
+            && free.total() < need
         {
             let e = format!(
-                "not starting {} on {}: {free:.1} GiB RAM free, it needs {need:.1}",
-                key.0, key.1
+                "not starting {} on {}: {} ({:.1} GiB), it needs {need:.1}",
+                key.0,
+                key.1,
+                free.describe(),
+                free.total()
             );
             self.set(key, |i| {
                 i.state = State::Failed;
@@ -697,6 +806,18 @@ impl Supervisor {
             i.error = None;
             i.starts += 1;
         });
+        // the image or package first: a failed pull says so, instead of docker's run error
+        if let Err(e) = runner.prepare(spec).await {
+            self.prepared
+                .lock()
+                .unwrap()
+                .insert(key.0.clone(), json!({"state": "failed", "error": e}));
+            self.set(key, |i| {
+                i.state = State::Failed;
+                i.error = Some(e.clone());
+            });
+            return Err(e);
+        }
         let h = match runner.start(spec).await {
             Ok(h) => h,
             Err(e) => {
@@ -835,8 +956,57 @@ impl Supervisor {
         }
     }
 
+    /// Fetch every startable engine's image or package now (the bridge calls this when it
+    /// starts and after a config change), so the first request does not wait on a download and
+    /// a failed pull is an error in the status, not a 503 later.
+    pub async fn prepare_all(self: &Arc<Self>) {
+        let mut todo = Vec::new();
+        for (eid, e) in &self.cfg.engines {
+            if matches!(e.method(), "external" | "process") {
+                continue;
+            }
+            if let Some(card) = e.cards.first()
+                && let Ok(spec) = self.spec(eid, card)
+            {
+                todo.push(spec);
+            }
+        }
+        for spec in todo {
+            let Some(r) = self.runner(&spec).cloned() else {
+                continue;
+            };
+            self.prepared
+                .lock()
+                .unwrap()
+                .insert(spec.engine.clone(), json!({"state": "fetching"}));
+            let v = match r.prepare(&spec).await {
+                Ok(what) => {
+                    (self.log)(&format!("{}: {what}", spec.engine));
+                    json!({"state": "ready", "detail": what})
+                }
+                Err(e) => {
+                    (self.log)(&format!("{}: {e}", spec.engine));
+                    json!({"state": "failed", "error": e})
+                }
+            };
+            self.prepared
+                .lock()
+                .unwrap()
+                .insert(spec.engine.clone(), v.clone());
+            if let Some(f) = self.on_state.lock().unwrap().clone() {
+                f(json!({"engine": spec.engine, "prepare": v}));
+            }
+        }
+    }
+
+    /// What [`Supervisor::prepare_all`] found so far, per engine.
+    pub fn prepared(&self) -> BTreeMap<String, Value> {
+        self.prepared.lock().unwrap().clone()
+    }
+
     /// `status`: every engine on every card.
     pub fn status(&self) -> Value {
+        let prepared = self.prepared.lock().unwrap().clone();
         let g = self.inst.lock().unwrap();
         let mut out = Vec::new();
         for (eid, e) in &self.cfg.engines {
@@ -854,6 +1024,7 @@ impl Supervisor {
                     "idle_seconds": i.map(|i| i.last_used.elapsed().as_secs()),
                     "up_seconds": i.and_then(|i| i.since.map(|s| s.elapsed().as_secs())),
                     "starts": i.map_or(0, |i| i.starts),
+                    "prepare": prepared.get(eid),
                 }));
             }
         }
@@ -903,6 +1074,54 @@ impl Supervisor {
 mod tests {
     use super::*;
     use crate::config::DockerRun;
+
+    const ARCSTATS: &str = "13 1 0x01 123 33456 2345 6789
+name                            type data
+hits                            4    1234567
+c                               4    6442450944
+c_min                           4    1073741824
+c_max                           4    8589934592
+size                            4    6549825126
+arc_meta_min                    4    16777216
+";
+
+    #[test]
+    fn reclaimable_arc_is_the_arc_above_its_floor() {
+        let a = parse_arc_reclaimable(ARCSTATS).unwrap();
+        // 6549825126 - 1073741824 bytes = 5.1 GiB
+        assert!((a - 5.1).abs() < 0.01, "{a}");
+        // a floor above the size: nothing to reclaim
+        let small = ARCSTATS.replace("6549825126", "900000000");
+        assert_eq!(parse_arc_reclaimable(&small), Some(0.0));
+        // an older ZFS whose arc_meta_min is the higher floor
+        let meta = ARCSTATS.replace("16777216", "2147483648");
+        assert!((parse_arc_reclaimable(&meta).unwrap() - 4.1).abs() < 0.01);
+        assert_eq!(
+            parse_arc_reclaimable(
+                "name type data
+"
+            ),
+            None
+        );
+        let mi = "MemTotal: 16000000 kB
+MemAvailable:    1887436 kB
+";
+        assert!((parse_mem_available(mi).unwrap() - 1.8).abs() < 0.01);
+        let f = FreeRam {
+            available_gib: 1.8,
+            arc_gib: 5.1,
+        };
+        assert_eq!(f.describe(), "1.8 GiB available + 5.1 GiB reclaimable ARC");
+        assert!((f.total() - 6.9).abs() < 1e-9);
+        assert_eq!(
+            FreeRam {
+                available_gib: 2.0,
+                arc_gib: 0.0
+            }
+            .describe(),
+            "2.0 GiB available"
+        );
+    }
 
     fn spec(gpu: bool) -> RunSpec {
         RunSpec {
