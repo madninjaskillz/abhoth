@@ -154,6 +154,7 @@ impl Package {
             params.insert(k.clone(), x.clone());
         }
         s.params = params;
+        s.ports = p.ports.iter().map(|(k, v)| (k.clone(), *v)).collect();
         // CPU sets stay the server's business; the package declares no limits of its own.
         s.limits = Limits::default();
         Ok(s)

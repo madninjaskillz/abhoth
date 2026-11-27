@@ -28,7 +28,7 @@ fn config(docker: &str, whisper_port: u16) -> ControlConfig {
         gpu_uuid = "GPU-11111111-2222-3333-4444-555555555555"
         vram_gib = 8.0
         managed = false
-        engines = {{ llm = [], stt = ["whisper-fw"] }}
+        engines = {{ llm = [], stt = ["whisper-fw"], tts = ["cb"] }}
         [cards.CPU]
         server = "dt"
         device = "cpu"
@@ -48,6 +48,13 @@ fn config(docker: &str, whisper_port: u16) -> ControlConfig {
         model_dir = "/srv/models/whisper"
         port = {{ CPU = {whisper_port} }}
         package = {{ id = "whisper", version = "3.8.1" }}
+        [engines.cb]
+        driver = "package"
+        lifecycle = "standing"
+        memory_gib = 3.5
+        model_dir = "/srv/hf"
+        port = {{ X1 = 11204 }}
+        package = {{ id = "chatterbox", version = "0.1.7", params = {{ voices_dir = "/srv/sa3/voices", voice = "v1" }}, ports = {{ wyoming = 11203 }}, env = {{ CBS_PREFIX = "Sir,", CBS_VOICE = "v2" }} }}
         "#
     ))
     .expect("config")
@@ -337,4 +344,50 @@ async fn the_supervisor_creates_starts_restarts_and_never_stops() {
     f.lock().unwrap().labelled = false;
     tend(&c, "whisper-fw", "CPU", d.path()).await;
     assert_eq!(status_of("whisper-fw", "CPU").unwrap().state, "foreign");
+}
+
+#[test]
+fn a_gpu_package_gets_its_card_extra_ports_and_env() {
+    let c = config("http://127.0.0.1:1", 10301);
+    let d = tempfile::tempdir().unwrap();
+    let p = plan(&c, "cb", "X1", d.path()).unwrap();
+    assert_eq!(
+        p.run.gpus.as_deref(),
+        Some("device=GPU-11111111-2222-3333-4444-555555555555")
+    );
+    assert!(
+        p.run
+            .ports
+            .contains(&("127.0.0.1".into(), 11204, 10204, "tcp".into())),
+        "{:?}",
+        p.run.ports
+    );
+    assert!(
+        p.run
+            .ports
+            .contains(&("127.0.0.1".into(), 11203, 10203, "tcp".into())),
+        "{:?}",
+        p.run.ports
+    );
+    assert!(
+        p.run.env.contains(&"CBS_PREFIX=Sir,".to_string()),
+        "{:?}",
+        p.run.env
+    );
+    // the engine's env wins over the package's
+    assert!(
+        p.run.env.contains(&"CBS_VOICE=v2".to_string()),
+        "{:?}",
+        p.run.env
+    );
+    assert!(
+        !p.run.env.contains(&"CBS_VOICE=v1".to_string()),
+        "{:?}",
+        p.run.env
+    );
+    assert!(
+        p.run.binds.iter().any(|b| b.0 == "/srv/sa3/voices" && b.2),
+        "{:?}",
+        p.run.binds
+    );
 }

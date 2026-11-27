@@ -749,6 +749,13 @@ pub struct PackageRef {
     /// The store it came from (`default`, `my`, a store id), for updates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub store: Option<String>,
+    /// Host ports for the package's extra ports, by `ports[].id` (`wyoming = 11203`); the first
+    /// port is the engine's `port`. An extra port left out is not published.
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub ports: IndexMap<String, u16>,
+    /// Extra environment for the engine's container, over the package's own (standing engines).
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub env: IndexMap<String, String>,
 }
 
 /// An engine's capabilities, as overrides of its kind's (ROUTER-INVENTORY.md 3).

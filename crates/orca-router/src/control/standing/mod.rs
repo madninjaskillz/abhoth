@@ -621,6 +621,11 @@ pub fn plan(c: &ControlConfig, engine: &str, card: &str, state_dir: &Path) -> Re
         _ => return Err("the package method is not a docker run".into()),
     };
     let mut run = parse_run(&argv)?;
+    for (k, v) in &pr.env {
+        run.env
+            .retain(|x| x.split_once('=').map(|(a, _)| a) != Some(k.as_str()));
+        run.env.push(format!("{k}={v}"));
+    }
     run.labels.insert(LABEL.into(), "1".into());
     run.labels.insert("abhoth.card".into(), card.into());
     let uuid = (!cd.is_cpu()).then_some(cd.gpu_uuid.as_str());
