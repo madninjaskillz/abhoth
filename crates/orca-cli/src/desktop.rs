@@ -309,6 +309,10 @@ pub fn run(raw: Vec<String>) -> i32 {
         }
     };
 
+    // Bridge mode (desktop.bridgeMode): this PC as a router-managed server while the app runs.
+    #[cfg(feature = "bridge")]
+    crate::bridge_mode::spawn_watcher(home.clone(), chrome::desktop_config);
+
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 

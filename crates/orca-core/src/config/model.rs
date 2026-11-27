@@ -930,6 +930,19 @@ pub struct DesktopConfig {
     /// Use the OS title bar instead of the app's own (D143). Off by default: the window is
     /// frameless on Windows and the web UI draws the title bar. Linux and macOS always use the OS one.
     pub system_title_bar: bool,
+    /// Bridge mode (ROUTER-MEDIA-PLAN.md 11): while the app runs, this PC is a server the router
+    /// manages; the router can start and stop engines here (ComfyUI and others) and send them
+    /// requests. Off by default; off, the router does not use this PC.
+    pub bridge_mode: bool,
+    /// The router to dial (`http://deepthought:8010`).
+    pub bridge_router: String,
+    /// This PC's bridge id (the router admin mints its token for this id). Empty: `pc`.
+    pub bridge_id: String,
+    /// The bridge token a router admin minted (`abb_…`). Kept like the app's API keys; never
+    /// logged.
+    pub bridge_token: String,
+    /// Optional bridge.toml with this PC's engines and card overrides.
+    pub bridge_config: String,
 }
 
 impl Default for DesktopConfig {
@@ -937,6 +950,11 @@ impl Default for DesktopConfig {
         Self {
             close_to_tray: true,
             system_title_bar: false,
+            bridge_mode: false,
+            bridge_router: String::new(),
+            bridge_id: String::new(),
+            bridge_token: String::new(),
+            bridge_config: String::new(),
         }
     }
 }

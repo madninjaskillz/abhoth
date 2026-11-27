@@ -3,6 +3,8 @@
 
 pub mod agent_host;
 pub mod args;
+#[cfg(feature = "bridge")]
+pub mod bridge_mode;
 pub mod commands;
 pub mod custom_commands;
 #[cfg(feature = "desktop")]
@@ -647,6 +649,7 @@ Usage:
   {bin} --desktop                the web UI in its own window (desktop builds)
   {bin} admin create <user>      web UI accounts (also reset-password, reset-2fa, list)
   {bin} router ...              the OpenAI-compatible gateway (router --help)
+  {bin} bridge ...              this host as a server the router manages (bridge --help)
   {bin} supervisor run --config F the supervisor (telemetry hub, Home Assistant)
   {bin} --hostui ... --with-router \"<router flags>\" --with-supervisor <config>
                                  the web UI, router and supervisor in one process (the Docker image)
@@ -680,6 +683,12 @@ pub async fn main_with_args(mut raw: Vec<String>) -> Result<i32> {
     // `abhoth engine validate|index|fit|schema` (engine packages, docs/ENGINE-PACKAGES.md).
     if raw.first().map(String::as_str) == Some("engine") {
         return Ok(orca_engines::cli::main(&raw[1..]).await);
+    }
+    // `abhoth bridge [--config bridge.toml]`: this host as a router-managed server
+    // (ROUTER-MEDIA-PLAN.md 11); headless, logs to stdout.
+    #[cfg(feature = "bridge")]
+    if raw.first().map(String::as_str) == Some("bridge") {
+        return Ok(orca_bridge::cli::main(&raw[1..], env!("CARGO_PKG_VERSION")).await);
     }
     // `abhoth supervisor run|check --config FILE` (docs/design/SUPERVISOR.md).
     #[cfg(feature = "supervisor")]
