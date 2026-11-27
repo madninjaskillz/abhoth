@@ -1058,6 +1058,32 @@ is inventory only:
   and that client's `/ws` reach the server that took it.
 - `GET /v1/models?kind=image|tts|stt|music|video|media` lists the inventory's media models (not
   components); without `kind` the list is the chat models', as before.
+**Images in the router (phase 4, 0.16.28):** `POST /v1/images/generations` and `/edits` are
+rendered by the router on the ComfyUI engines (the image API shim's logic), whenever a recipe
+and a ComfyUI engine are configured (else they go to an `openai-images` engine as before):
+
+- A **recipe** is an image model with `needs` (its components by `role`: `diffusion`,
+  `text_encoder`, `vae`, optional `lora`; each component's `artifacts.comfyui.file`) and an
+  optional `recipe = { workflow = "qwen21", sigmas = "...", cfg = 1.0, edits = true, default =
+  false }`. A name or alias picks one; any other name gets the default recipe (`default = true`,
+  else `qwen-image`). `name@server` pins (`@truenas` means DeepThought, as in the shim).
+- Sizes snap to the nearest ~1 MP bucket (1024x1024, 1184x896, 1248x832, 1376x768 and their
+  portraits). The answer is `{"created", "backend", "model", "data": [{"b64_json"}]}`.
+- Only ComfyUIs whose last probe lists every file the recipe loads (never probed: the
+  components' `servers`). A request waits, in arrival order and for up to an hour, for one that
+  is idle (none of this router's renders and an empty ComfyUI queue). A render that fails there
+  (lost, over 900 s, an execution error) is tried once on each other one.
+- Edits: multipart `image` / `image[]` (up to 4) or JSON base64 / `data:` images (URLs are never
+  fetched), uploaded to the chosen ComfyUI, then the recipe's edit workflow.
+- `GET /compat/image-api/health` answers in the shim's shape (`status`, `backends`).
+- `/comfyui/prompt` with several ComfyUIs goes only to those whose probe lists every model file
+  the workflow loads (400 naming the missing files when none does). ComfyUI's page works under
+  `/comfyui/` (its URLs are relative), signed in.
+
+When every engine fails, the answer (503, or 429 when the last one said so, with its
+`Retry-After`) names each one tried and why, including the reason in an engine's or bridge's
+own "not now" answer (for example a bridge whose engine image could not be pulled).
+
 - Not yet: Wyoming through a bridge (the tunnel carries HTTP and WebSockets), router-side queues
   and `/v1/jobs`, MP3 or Opus from engines that only make WAV.
 

@@ -1046,3 +1046,7 @@ Sizes are rough (S < 1 day, M 1-3 days, L 3-7 days, XL > 1 week of agent time).
     every card listing the kind, DeepThought before bridges, failover with a 30 s cool-off, so
     speech falls back to truenas.local through the bridge tunnel. `engines.x.media_api` names an
     engine's surface. Saving `router.toml` now also refreshes the bridges' base config.
+  - **Phase 4 (0.16.28), images in the router:** `/v1/images/generations` and `/edits` render on
+    the ComfyUI engines (recipes from `needs` by role plus `models.x.recipe`; 1 MP buckets; FIFO
+    wait for an idle ComfyUI with the files; one retry per other ComfyUI; edits by upload);
+    `/compat/image-api/health`; `/comfyui/prompt` checks a workflow's model files against probes.
