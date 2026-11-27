@@ -34,6 +34,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tower_service::Service;
 
+use crate::local_engines as le;
+
 /// The label that marks a `router.toml` engine as the mirror of a manual engine.
 pub const MANUAL_LABEL: &str = "abhoth.machine";
 
@@ -51,6 +53,9 @@ pub struct Paths {
     pub pending: PathBuf,
     pub backups: PathBuf,
     pub status: PathBuf,
+    /// Local Engines (D156): unmanaged engines and Cloud providers, and the agent's tools.
+    pub endpoints: PathBuf,
+    pub tools: PathBuf,
 }
 
 impl Paths {
@@ -66,6 +71,8 @@ impl Paths {
             pending: dir.join("pending.json"),
             backups: dir.join("remote-backups"),
             status: dir.join("status.json"),
+            endpoints: dir.join("endpoints.json"),
+            tools: dir.join("tools.json"),
             dir,
         }
     }
@@ -231,6 +238,9 @@ pub struct Share {
     pub engines: BTreeMap<String, bool>,
     #[serde(default)]
     pub models: BTreeMap<String, bool>,
+    /// Local Engines' endpoints exposed on Migo Bridge (D156); off unless set.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub endpoints: BTreeMap<String, bool>,
 }
 
 impl Share {
@@ -1251,7 +1261,11 @@ impl Machine {
 
     pub fn save_share(&self, v: &Value) -> (u16, Value) {
         let mut s = Share::load(&self.paths.share);
-        for (k, map) in [("engines", &mut s.engines), ("models", &mut s.models)] {
+        for (k, map) in [
+            ("engines", &mut s.engines),
+            ("models", &mut s.models),
+            ("endpoints", &mut s.endpoints),
+        ] {
             if let Some(o) = v.get(k).and_then(Value::as_object) {
                 for (id, on) in o {
                     if let Some(b) = on.as_bool() {
@@ -1700,7 +1714,272 @@ impl Machine {
                     .collect()
             })
             .unwrap_or_default();
+        let mut data = data;
+        let eps = le::Endpoints::load(&self.paths.endpoints).unwrap_or_default();
+        for (id, e) in &eps.endpoints {
+            for m in &e.models {
+                data.push(json!({"id": m, "object": "model", "owned_by": id, "kind": e.kind}));
+            }
+        }
         json!({"object": "list", "data": data})
+    }
+
+    /// An unmanaged or Cloud LLM endpoint that serves `model` (listed in its models).
+    fn endpoint_for(&self, model: &str) -> Option<(String, le::Endpoint)> {
+        let eps = le::Endpoints::load(&self.paths.endpoints).ok()?;
+        eps.endpoints
+            .into_iter()
+            .find(|(_, e)| e.kind == "llm" && e.models.iter().any(|m| m == model))
+    }
+
+    /// `/api/machine/v1/<rest>` for a model an endpoint serves: passed through as is.
+    async fn v1_endpoint(
+        &self,
+        method: Method,
+        rest: &str,
+        headers: &HeaderMap,
+        body: Bytes,
+        id: &str,
+        e: &le::Endpoint,
+    ) -> Response {
+        let url = format!("{}/{}", le::openai_base(e), rest.trim_start_matches('/'));
+        let mut rb = self
+            .http
+            .request(method, &url)
+            .timeout(Duration::from_secs(e.timeout_seconds.unwrap_or(1800)))
+            .body(body);
+        for k in [header::CONTENT_TYPE, header::ACCEPT] {
+            if let Some(v) = headers.get(&k) {
+                rb = rb.header(k, v);
+            }
+        }
+        if let Some(k) = le::read_key(&self.paths.dir, e) {
+            rb = if e.api == "anthropic" {
+                rb.header("x-api-key", k)
+                    .header("anthropic-version", "2023-06-01")
+            } else {
+                rb.bearer_auth(k)
+            };
+        }
+        match rb.send().await {
+            Ok(r) => {
+                let status = r.status().as_u16();
+                let ct = r.headers().get(header::CONTENT_TYPE).cloned();
+                let stream = futures_util::StreamExt::map(r.bytes_stream(), |c| {
+                    c.map_err(std::io::Error::other)
+                });
+                let mut resp = Response::new(Body::from_stream(stream));
+                *resp.status_mut() =
+                    StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY);
+                if let Some(ct) = ct {
+                    resp.headers_mut().insert(header::CONTENT_TYPE, ct);
+                }
+                if let Ok(v) = header::HeaderValue::from_str(id) {
+                    resp.headers_mut().insert("x-abhoth-engine", v);
+                }
+                resp
+            }
+            Err(err) => json_response(
+                502,
+                &json!({"error": {"message": format!("{id}: {}", err.without_url())}}),
+            ),
+        }
+    }
+
+    // ── Local Engines (D156) ──────────────────────────────────────────────────────────────
+
+    /// `GET /api/machine/local-engines`.
+    pub fn local_engines(&self) -> Value {
+        let c = self.config().ok();
+        let eps = match le::Endpoints::load(&self.paths.endpoints) {
+            Ok(e) => e,
+            Err(err) => return json!({"error": err}),
+        };
+        let mut states: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+        if let Some(sup) = self.sup() {
+            for e in sup.status()["engines"].as_array().into_iter().flatten() {
+                if let Some(id) = e["engine"].as_str() {
+                    states.entry(id.to_string()).or_default().push(json!({
+                        "card": e["card"], "state": e["state"], "error": e["error"],
+                    }));
+                }
+            }
+        }
+        let share = Share::load(&self.paths.share);
+        let tools = le::Tools::load(&self.paths.tools);
+        let mut v = le::view(
+            c.as_ref(),
+            &eps,
+            &self.paths.dir,
+            &share.endpoints,
+            &share.engines,
+            &tools,
+            &states,
+        );
+        v["bridgeMode"] = json!((self.read)(&self.home).bridge_mode);
+        v
+    }
+
+    /// Every engine and endpoint id with the kinds it serves.
+    fn kinds_of(&self, eps: &le::Endpoints) -> BTreeMap<String, BTreeSet<String>> {
+        let mut k = self
+            .config()
+            .map(|c| le::managed_kinds(&c))
+            .unwrap_or_default();
+        for (id, e) in &eps.endpoints {
+            k.insert(id.clone(), BTreeSet::from([e.kind.clone()]));
+        }
+        k
+    }
+
+    /// `PUT /api/machine/endpoints/<id>`: `{endpoint, key?, rev}`. `key`: absent keeps the
+    /// stored one, `null` or `""` removes it.
+    pub async fn save_endpoint(&self, id: &str, b: &Value) -> (u16, Value) {
+        let _g = self.save.lock().await;
+        let eps = match le::Endpoints::load(&self.paths.endpoints) {
+            Ok(e) => e,
+            Err(err) => return (500, json!({"error": err})),
+        };
+        if let Some(r) = b["rev"].as_str()
+            && !r.is_empty()
+            && r != eps.rev()
+        {
+            return (
+                412,
+                json!({"error": "Local Engines changed since this page read them; reload.",
+                       "rev": eps.rev()}),
+            );
+        }
+        let typed: le::Endpoint = match serde_json::from_value(b["endpoint"].clone()) {
+            Ok(e) => e,
+            Err(err) => return (400, json!({"error": format!("endpoint: {err}")})),
+        };
+        let managed = self
+            .config()
+            .map(|c| le::managed_ids(&c))
+            .unwrap_or_default();
+        let mut e = match le::check(id, &typed, &managed) {
+            Ok(e) => e,
+            Err(err) => return (422, json!({"error": err})),
+        };
+        let mut next = eps.clone();
+        next.endpoints.insert(id.to_string(), e.clone());
+        if let Ok(c) = self.config() {
+            let had = le::clashes(&c, &eps);
+            if let Some(x) = le::clashes(&c, &next).iter().find(|x| !had.contains(x)) {
+                return (
+                    422,
+                    json!({"error": format!("{x}: a model name leads to one engine.")}),
+                );
+            }
+        }
+        let old_key = eps.endpoints.get(id).and_then(|o| o.key.clone());
+        e.key = match b.get("key") {
+            None => old_key,
+            Some(k) => match le::store_key(&self.paths.dir, id, k.as_str()) {
+                Ok(r) => r,
+                Err(err) => return (500, json!({"error": err})),
+            },
+        };
+        next.endpoints.insert(id.to_string(), e);
+        if let Err(err) = write_atomic(
+            &self.paths.endpoints,
+            &serde_json::to_string_pretty(&next).unwrap_or_default(),
+        ) {
+            return (500, json!({"error": err}));
+        }
+        self.settle_tools(&next);
+        (200, json!({"ok": true, "rev": next.rev()}))
+    }
+
+    /// `DELETE /api/machine/endpoints/<id>` (its key, sharing and tool entries go too).
+    pub async fn remove_endpoint(&self, id: &str) -> (u16, Value) {
+        let _g = self.save.lock().await;
+        let mut eps = match le::Endpoints::load(&self.paths.endpoints) {
+            Ok(e) => e,
+            Err(err) => return (500, json!({"error": err})),
+        };
+        if eps.endpoints.remove(id).is_none() {
+            return (404, json!({"error": format!("no endpoint `{id}`")}));
+        }
+        if let Err(err) = write_atomic(
+            &self.paths.endpoints,
+            &serde_json::to_string_pretty(&eps).unwrap_or_default(),
+        ) {
+            return (500, json!({"error": err}));
+        }
+        let _ = le::store_key(&self.paths.dir, id, None);
+        let mut share = Share::load(&self.paths.share);
+        if share.endpoints.remove(id).is_some() {
+            let _ = write_atomic(
+                &self.paths.share,
+                &serde_json::to_string_pretty(&share).unwrap_or_default(),
+            );
+            self.view.write().unwrap().share = share;
+        }
+        self.settle_tools(&eps);
+        (200, json!({"ok": true, "rev": eps.rev()}))
+    }
+
+    fn settle_tools(&self, eps: &le::Endpoints) {
+        let mut t = le::Tools::load(&self.paths.tools);
+        let before = t.clone();
+        le::settle_defaults(&mut t, &self.kinds_of(eps));
+        if t != before {
+            let _ = write_atomic(
+                &self.paths.tools,
+                &serde_json::to_string_pretty(&t).unwrap_or_default(),
+            );
+        }
+    }
+
+    /// `PUT /api/machine/tools`: `{exposed: {id: bool}, defaults: {kind: id}}` merged in.
+    pub fn save_tools(&self, b: &Value) -> (u16, Value) {
+        let eps = le::Endpoints::load(&self.paths.endpoints).unwrap_or_default();
+        let mut t = le::Tools::load(&self.paths.tools);
+        for (id, on) in b["exposed"].as_object().into_iter().flatten() {
+            if let Some(on) = on.as_bool() {
+                t.exposed.insert(id.clone(), on);
+            }
+        }
+        for (kind, id) in b["defaults"].as_object().into_iter().flatten() {
+            if let Some(id) = id.as_str() {
+                t.defaults.insert(kind.clone(), id.to_string());
+            }
+        }
+        le::settle_defaults(&mut t, &self.kinds_of(&eps));
+        match write_atomic(
+            &self.paths.tools,
+            &serde_json::to_string_pretty(&t).unwrap_or_default(),
+        ) {
+            Ok(()) => (200, json!(t)),
+            Err(e) => (500, json!({"error": e})),
+        }
+    }
+
+    /// `POST /api/machine/endpoints/check`: `{id?, endpoint, key?}`; without a key, a saved
+    /// endpoint's stored key is used.
+    pub async fn check_endpoint(&self, b: &Value) -> (u16, Value) {
+        let typed: le::Endpoint = match serde_json::from_value(b["endpoint"].clone()) {
+            Ok(e) => e,
+            Err(err) => return (400, json!({"error": format!("endpoint: {err}")})),
+        };
+        let id = b["id"]
+            .as_str()
+            .filter(|s| le::valid_id(s))
+            .unwrap_or("check");
+        let e = match le::check(id, &typed, &BTreeSet::new()) {
+            Ok(e) => e,
+            Err(err) => return (422, json!({"ok": false, "error": err})),
+        };
+        let key = match b["key"].as_str().filter(|k| !k.trim().is_empty()) {
+            Some(k) => Some(k.trim().to_string()),
+            None => le::Endpoints::load(&self.paths.endpoints)
+                .ok()
+                .and_then(|eps| eps.endpoints.get(id).cloned())
+                .and_then(|old| le::read_key(&self.paths.dir, &old)),
+        };
+        (200, le::probe(&self.http, &e, key.as_deref()).await)
     }
 
     /// Where a request for `model` goes: the router's placement over this one machine.
@@ -1755,6 +2034,9 @@ impl Machine {
             .ok()
             .and_then(|v| v["model"].as_str().map(String::from))
             .unwrap_or_default();
+        if let Some((id, e)) = self.endpoint_for(&model) {
+            return self.v1_endpoint(method, rest, headers, body, &id, &e).await;
+        }
         let (engine, card) = match self.place(&model) {
             Ok(x) => x,
             Err(e) => {
@@ -1871,6 +2153,27 @@ impl Machine {
                     )
                     .await;
                 self.tick().await;
+                json_response(s, &v)
+            }
+            (Method::GET, "local-engines") => json_response(200, &self.local_engines()),
+            (Method::POST, "endpoints/check") => {
+                let (s, v) = self.check_endpoint(&jbody()).await;
+                json_response(s, &v)
+            }
+            (Method::PUT, p) if p.starts_with("endpoints/") => {
+                let (s, v) = self
+                    .save_endpoint(p.trim_start_matches("endpoints/"), &jbody())
+                    .await;
+                json_response(s, &v)
+            }
+            (Method::DELETE, p) if p.starts_with("endpoints/") => {
+                let (s, v) = self
+                    .remove_endpoint(p.trim_start_matches("endpoints/"))
+                    .await;
+                json_response(s, &v)
+            }
+            (Method::PUT, "tools") => {
+                let (s, v) = self.save_tools(&jbody());
                 json_response(s, &v)
             }
             (Method::PUT, "share") => {

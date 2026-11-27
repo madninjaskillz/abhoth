@@ -85,7 +85,8 @@ pub struct WebUiOptions {
     pub glance: Option<crate::glance::GlanceOptions>,
     /// Set when the server backs the desktop window (`abhoth --desktop`, D110).
     pub desktop: Option<DesktopHooks>,
-    /// This machine (MACHINE.md) without the desktop window (`--hostui-machine`): its page at
+    /// This machine (MACHINE.md) without the desktop window (every `--hostui` unless
+    /// `--hostui-no-machine`, D156): its page at
     /// /machine.html for the host's admins. The desktop app passes its handler in [`DesktopHooks`].
     pub machine: Option<MachineFn>,
 }
@@ -616,6 +617,8 @@ async fn info(
         "bench": state.bench.is_some(),
         "profiles": state.options.profiles_url.is_some(),
         "router": admin && state.options.router.is_some(),
+        // This machine and Local Engines (D155, D156): admins, where the host runs them.
+        "machine": admin && machine_fn(&state.options).is_some(),
         "glance": state.glance.is_some(),
         // The React client picks its hub transport from this (absent: the C# SignalR hub).
         "hub": "ws",

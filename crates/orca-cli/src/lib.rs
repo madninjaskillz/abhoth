@@ -16,6 +16,8 @@ pub mod hostui;
 pub mod hostui_password;
 pub mod input_preprocessor;
 #[cfg(all(feature = "bridge", feature = "router"))]
+pub mod local_engines;
+#[cfg(all(feature = "bridge", feature = "router"))]
 pub mod machine;
 pub mod model_discovery;
 pub mod pi_agents;
@@ -648,7 +650,7 @@ Usage:
   {bin}                          interactive session in the current folder
   {bin} -p \"<prompt>\"            one prompt, then exit (--print; --output json)
   {bin} --hostui[=host:port]     the web UI (--hostui-open, --hostui-login, --hostui-token <t>,
-                               --hostui-machine: This machine at /machine.html)
+                               --hostui-no-machine: no This machine / Local Engines)
   {bin} --desktop                the web UI in its own window (desktop builds)
   {bin} admin create <user>      web UI accounts (also reset-password, reset-2fa, list)
   {bin} sothoth ...             Sothoth, the OpenAI-compatible gateway (sothoth --help)

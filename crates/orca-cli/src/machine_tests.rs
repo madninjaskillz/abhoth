@@ -420,3 +420,174 @@ async fn the_machine_edits_through_its_own_router_and_guards_remote_changes() {
         .collect();
     assert!(running.contains(&"tts"), "{st}");
 }
+
+// ── Local Engines (D156) through the host's handler ─────────────────────────────────────────
+
+async fn call(m: &Arc<Machine>, method: Method, path: &str, body: Value) -> (u16, Value) {
+    let req = Request::builder()
+        .method(method)
+        .uri(format!("/api/machine/{path}"))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let r = m.handle(req).await;
+    let s = r.status().as_u16();
+    let b = axum::body::to_bytes(r.into_body(), 1 << 20).await.unwrap();
+    (s, serde_json::from_slice(&b).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn local_engines_add_check_route_and_remove_an_unmanaged_engine() {
+    use axum::routing::{get, post};
+    // a stand-in for LM Studio: lists one model, echoes the key it got
+    let app = axum::Router::new()
+        .route(
+            "/v1/models",
+            get(|| async { axum::Json(json!({"data": [{"id": "local-llm"}]})) }),
+        )
+        .route(
+            "/v1/chat/completions",
+            post(|h: HeaderMap, b: Bytes| async move {
+                let auth = h
+                    .get("authorization")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                let v: Value = serde_json::from_slice(&b).unwrap_or(Value::Null);
+                axum::Json(json!({"auth": auth, "model": v["model"]}))
+            }),
+        );
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = l.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path();
+    set_desktop(home, json!({"bridgeMode": false}));
+    let m = Machine::open(home, desktop_from_file).await.unwrap();
+
+    let (s, v) = call(&m, Method::GET, "local-engines", Value::Null).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["endpoints"], json!([]));
+    let rev = v["rev"].as_str().unwrap().to_string();
+
+    let ep = json!({"title": "LM Studio", "kind": "llm", "url": format!("http://{addr}/v1/"), "models": ["local-llm"]});
+    // Check, before it is saved
+    let (s, v) = call(&m, Method::POST, "endpoints/check", json!({"endpoint": ep})).await;
+    assert_eq!((s, &v["ok"]), (200, &json!(true)), "{v}");
+    assert_eq!(v["models"], json!(["local-llm"]));
+    // a bad one is refused with the reason
+    let (s, v) = call(
+        &m,
+        Method::PUT,
+        "endpoints/x",
+        json!({"endpoint": {"kind": "llm", "url": "nope"}}),
+    )
+    .await;
+    assert_eq!(s, 422, "{v}");
+    // saved with a key; the key is never shown
+    let (s, v) = call(
+        &m,
+        Method::PUT,
+        "endpoints/lm-studio",
+        json!({"endpoint": ep, "rev": rev, "key": "placeholder-key"}),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    // a stale revision is refused
+    let (s, _) = call(
+        &m,
+        Method::PUT,
+        "endpoints/lm-studio",
+        json!({"endpoint": ep, "rev": rev}),
+    )
+    .await;
+    assert_eq!(s, 412);
+    let (_, v) = call(&m, Method::GET, "local-engines", Value::Null).await;
+    assert!(!v.to_string().contains("placeholder-key"), "{v}");
+    assert_eq!(v["endpoints"][0]["id"], "lm-studio");
+    assert_eq!(v["endpoints"][0]["url"], format!("http://{addr}/v1"));
+    assert_eq!(v["endpoints"][0]["keySet"], true);
+
+    // /api/machine/v1 lists its models and sends its requests to it, with its key
+    let (_, v) = call(&m, Method::GET, "v1/models", Value::Null).await;
+    assert!(
+        v["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x["id"] == "local-llm" && x["owned_by"] == "lm-studio"),
+        "{v}"
+    );
+    let (s, v) = call(
+        &m,
+        Method::POST,
+        "v1/chat/completions",
+        json!({"model": "local-llm", "messages": []}),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(
+        v,
+        json!({"auth": "Bearer placeholder-key", "model": "local-llm"})
+    );
+
+    // saved again without a key: the stored one is kept; "" removes it
+    let rev = call(&m, Method::GET, "local-engines", Value::Null).await.1["rev"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (s, v) = call(
+        &m,
+        Method::PUT,
+        "endpoints/lm-studio",
+        json!({"endpoint": ep, "rev": rev}),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let (_, v) = call(&m, Method::GET, "local-engines", Value::Null).await;
+    assert_eq!(v["endpoints"][0]["keySet"], true);
+
+    // tools: an image endpoint exposed becomes the image default
+    let img = json!({"title": "Images", "kind": "image", "url": "http://127.0.0.1:9/"});
+    let (s, v) = call(
+        &m,
+        Method::PUT,
+        "endpoints/images",
+        json!({"endpoint": img}),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let (s, v) = call(
+        &m,
+        Method::PUT,
+        "tools",
+        json!({"exposed": {"images": true}}),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["defaults"]["image"], "images");
+    // sharing an endpoint is kept in share.json beside the engines
+    let (s, _) = call(
+        &m,
+        Method::PUT,
+        "share",
+        json!({"endpoints": {"lm-studio": true}}),
+    )
+    .await;
+    assert_eq!(s, 200);
+    let (_, v) = call(&m, Method::GET, "local-engines", Value::Null).await;
+    assert_eq!(v["endpoints"][1]["shared"], true, "{v}");
+
+    // removed: its key, sharing and tool default go too
+    let (s, _) = call(&m, Method::DELETE, "endpoints/images", Value::Null).await;
+    assert_eq!(s, 200);
+    let t = crate::local_engines::Tools::load(&m.paths.tools);
+    assert!(!t.defaults.contains_key("image"));
+    let (s, _) = call(&m, Method::DELETE, "endpoints/lm-studio", Value::Null).await;
+    assert_eq!(s, 200);
+    assert!(!m.paths.dir.join("secrets").join("lm-studio").exists());
+    assert!(Share::load(&m.paths.share).endpoints.is_empty());
+    let (s, _) = call(&m, Method::DELETE, "endpoints/lm-studio", Value::Null).await;
+    assert_eq!(s, 404);
+}
