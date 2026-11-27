@@ -416,3 +416,121 @@ fn external_engines_never_sit_on_managed_cards() {
     assert!(has(&c, "engines.comfyui.port.A", "never observes it"));
     assert!(errors(&c).is_empty());
 }
+
+/// The sample plus `dense-tp`: one dense server over A+B (A lists both, B is "held").
+pub(crate) fn sample_tp() -> ControlConfig {
+    let text = format!(
+        "{SAMPLE}\n[layouts.dense-tp]\ntitle = \"Dense over both\"\n\
+         cards = {{ A = {{ engine = \"ninfer\", profile = \"4lane\", model = \"dense\", devices = [\"A\", \"B\"] }}, B = \"held\" }}\n"
+    );
+    toml::from_str(&text).expect("sample + dense-tp parses")
+}
+
+#[test]
+fn one_instance_over_two_cards() {
+    let c = sample_tp();
+    let e = errors(&c);
+    assert!(e.is_empty(), "{e:#?}");
+    // B runs nothing of its own; A's spec carries both cards
+    let r = c.resolve_layout("dense-tp").unwrap();
+    assert_eq!(r[0].1.as_ref().unwrap().devices, ["A", "B"]);
+    assert!(r[1].1.is_none());
+
+    // "held" with nobody holding it
+    let mut c = sample_tp();
+    if let LayoutCard::Spec(s) = c
+        .layouts
+        .get_mut("dense-tp")
+        .unwrap()
+        .cards
+        .get_mut("A")
+        .unwrap()
+    {
+        s.devices.clear();
+    }
+    assert!(has(
+        &c,
+        "layouts.dense-tp.cards.B",
+        "no other card of the layout lists this card"
+    ));
+
+    // a held card must be "held", and the own card comes first
+    let mut c = sample_tp();
+    c.layouts
+        .get_mut("dense-tp")
+        .unwrap()
+        .cards
+        .insert("B".into(), LayoutCard::Word("off".into()));
+    assert!(has(
+        &c,
+        "layouts.dense-tp.cards.A.devices",
+        "card `B` must be \"held\""
+    ));
+    let mut c = sample_tp();
+    if let LayoutCard::Spec(s) = c
+        .layouts
+        .get_mut("dense-tp")
+        .unwrap()
+        .cards
+        .get_mut("A")
+        .unwrap()
+    {
+        s.devices = vec!["B".into(), "A".into()];
+    }
+    assert!(has(
+        &c,
+        "layouts.dense-tp.cards.A.devices",
+        "must start with its own card `A`"
+    ));
+    // unmanaged or unknown cards cannot be spanned
+    let mut c = sample_tp();
+    if let LayoutCard::Spec(s) = c
+        .layouts
+        .get_mut("dense-tp")
+        .unwrap()
+        .cards
+        .get_mut("A")
+        .unwrap()
+    {
+        s.devices = vec!["A".into(), "B".into(), "C".into(), "Z".into()];
+    }
+    assert!(has(
+        &c,
+        "layouts.dense-tp.cards.A.devices",
+        "card `C` is not a managed GPU card"
+    ));
+    assert!(has(&c, "layouts.dense-tp.cards.A.devices", "no card `Z`"));
+    // an unknown word names "held" among the choices
+    let mut c = sample_tp();
+    c.layouts
+        .get_mut("dense-tp")
+        .unwrap()
+        .cards
+        .insert("B".into(), LayoutCard::Word("hold".into()));
+    assert!(has(&c, "layouts.dense-tp.cards.B", "\"held\""));
+}
+
+#[test]
+fn a_spanning_instance_is_fitted_per_card_share() {
+    // 22.5 + 7.5 = 30 GiB: over budget on one 17 GiB card (15.5 after the 1.5 reserve), fits
+    // as 15 GiB on each of two
+    let mut c = sample_tp();
+    for k in ["A", "B"] {
+        c.cards.get_mut(k).unwrap().vram_gib = Some(17.0);
+    }
+    assert!(has(&c, "layouts.dense-x2.cards.A", "needs 30.0 GiB"));
+    assert!(
+        !validate(&c)
+            .iter()
+            .any(|i| i.path.starts_with("layouts.dense-tp")),
+        "{:#?}",
+        validate(&c)
+    );
+    // ... but not when B has only 14.5 GiB
+    c.cards.get_mut("B").unwrap().vram_gib = Some(16.0);
+    assert!(has(
+        &c,
+        "layouts.dense-tp.cards.A",
+        "over 2 cards) but card `B` has"
+    ));
+}

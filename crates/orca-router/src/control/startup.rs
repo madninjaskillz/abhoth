@@ -162,6 +162,7 @@ impl RouteSink for LiveRoutes {
                         engine: s.engine.clone(),
                         profile: s.profile.clone(),
                         model: s.model.clone(),
+                        devices: s.devices.clone(),
                     });
                     (c.clone(), v)
                 })
@@ -374,6 +375,7 @@ pub fn overlay(c: &ControlConfig, server: &str, run: &Running, rc: &mut RouterCo
             engine: s.engine.clone(),
             profile: s.profile.clone(),
             model: s.model.clone(),
+            devices: s.devices.clone(),
         };
         if let Ok(r) = super::resolve::resolve(c, card, &ss) {
             if !up.served_id.is_empty() {
@@ -787,6 +789,7 @@ fn seed_store(store: &Store, server: &str, run: &Running) {
         engine: s.engine.clone(),
         profile: s.profile.clone(),
         model: s.model.clone(),
+        devices: s.devices.clone(),
     };
     if store.active_layout(server).ok().flatten().is_none()
         && let Some(l) = &run.layout
@@ -1162,6 +1165,7 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
                     engine: m.engine.clone(),
                     profile,
                     model: m.model.clone(),
+                    devices: Vec::new(),
                 },
             ))
         })

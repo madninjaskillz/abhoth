@@ -715,6 +715,7 @@ mod tests {
             engine: e.into(),
             profile: p.into(),
             model: m.into(),
+            devices: Vec::new(),
         }
     }
 

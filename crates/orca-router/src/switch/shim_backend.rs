@@ -33,6 +33,10 @@ pub struct ControlShim {
 fn pick(c: &LayoutCard) -> Value {
     match c {
         LayoutCard::Word(w) => Value::from(w.as_str()),
+        LayoutCard::Spec(s) if !s.devices.is_empty() => {
+            json!({"engine": s.engine, "engineProfile": s.profile, "model": s.model,
+                "devices": s.devices})
+        }
         LayoutCard::Spec(s) => {
             json!({"engine": s.engine, "engineProfile": s.profile, "model": s.model})
         }

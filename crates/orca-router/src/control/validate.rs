@@ -752,13 +752,71 @@ fn layouts(c: &ControlConfig, v: &mut Vec<Issue>) {
                         v.push(Issue::err(&cp, "\"same\" needs an earlier card to copy"));
                     }
                 }
+                LayoutCard::Word(w) if w == "held" => {
+                    let holder = resolve_cards(l).into_iter().find(|(k, s)| {
+                        k != card_id
+                            && s.as_ref()
+                                .is_some_and(|s| s.devices.iter().any(|d| d == card_id))
+                    });
+                    if holder.is_none() {
+                        v.push(Issue::err(
+                            &cp,
+                            "\"held\": no other card of the layout lists this card in its `devices`",
+                        ));
+                    }
+                }
                 LayoutCard::Word(w) => v.push(Issue::err(
                     &cp,
-                    format!("{w:?}: use \"off\", \"same\" or {{ engine, profile, model }}"),
+                    format!(
+                        "{w:?}: use \"off\", \"same\", \"held\" or {{ engine, profile, model }}"
+                    ),
                 )),
                 LayoutCard::Spec(_) => {}
             }
             first = false;
+        }
+        // One instance over several cards: its own card first, then cards of the same server
+        // that are "held" in this layout (and nothing else's).
+        for (card_id, spec) in resolve_cards(l) {
+            let Some(s) = spec.filter(|s| !s.devices.is_empty()) else {
+                continue;
+            };
+            let cp = format!("{p}.cards.{}.devices", key(&card_id));
+            if s.devices.first() != Some(&card_id) {
+                v.push(Issue::err(
+                    &cp,
+                    format!("must start with its own card `{card_id}`"),
+                ));
+            }
+            let server = c.cards.get(&card_id).map(|x| x.server.clone());
+            let mut seen = BTreeSet::new();
+            for d in &s.devices {
+                if !seen.insert(d.clone()) {
+                    v.push(Issue::err(&cp, format!("card `{d}` is listed twice")));
+                    continue;
+                }
+                let Some(dc) = c.cards.get(d) else {
+                    v.push(Issue::err(&cp, format!("no card `{d}`")));
+                    continue;
+                };
+                if Some(&dc.server) != server.as_ref() {
+                    v.push(Issue::err(&cp, format!("card `{d}` is on another server")));
+                }
+                if !dc.managed || dc.is_cpu() {
+                    v.push(Issue::err(
+                        &cp,
+                        format!("card `{d}` is not a managed GPU card"),
+                    ));
+                }
+                if *d != card_id
+                    && !matches!(l.cards.get(d), Some(LayoutCard::Word(w)) if w == "held")
+                {
+                    v.push(Issue::err(
+                        &cp,
+                        format!("card `{d}` must be \"held\" in this layout"),
+                    ));
+                }
+            }
         }
         for (card_id, spec) in resolve_cards(l) {
             let Some(s) = spec else { continue };
@@ -826,20 +884,33 @@ fn layouts(c: &ControlConfig, v: &mut Vec<Issue>) {
                     }
                 }
             }
-            // Capacity: artifact + profile <= card VRAM - reserve.
-            if let (Some(vram), Some(prof), Some(a)) = (card.vram_gib, prof, art) {
-                let need = a.vram_gib + prof.vram_gib;
-                let have = vram - card.reserve_gib - c.standing_gib(&card_id, None);
-                if need > have + 1e-9 {
-                    let msg = format!(
-                        "needs {need:.1} GiB (model {:.1} + profile {:.1}) but card `{card_id}` has {have:.1} GiB ({vram:.1} - {:.1} reserve)",
-                        a.vram_gib, prof.vram_gib, card.reserve_gib
-                    );
-                    v.push(if l.force {
-                        Issue::warn(&cp, format!("{msg}; allowed by force = true"))
-                    } else {
-                        Issue::err(&cp, msg)
-                    });
+            // Capacity: artifact + profile <= card VRAM - reserve; an instance over several
+            // cards puts an even share on each of them.
+            let over: Vec<String> = s.cards_on(&card_id);
+            let n = over.len().max(1) as f64;
+            for d in &over {
+                let Some(dcard) = c.cards.get(d) else {
+                    continue;
+                };
+                if let (Some(vram), Some(prof), Some(a)) = (dcard.vram_gib, prof, art) {
+                    let need = (a.vram_gib + prof.vram_gib) / n;
+                    let have = vram - dcard.reserve_gib - c.standing_gib(d, None);
+                    if need > have + 1e-9 {
+                        let share = if n > 1.0 {
+                            format!(" over {} cards", over.len())
+                        } else {
+                            String::new()
+                        };
+                        let msg = format!(
+                            "needs {need:.1} GiB (model {:.1} + profile {:.1}{share}) but card `{d}` has {have:.1} GiB ({vram:.1} - {:.1} reserve)",
+                            a.vram_gib, prof.vram_gib, dcard.reserve_gib
+                        );
+                        v.push(if l.force {
+                            Issue::warn(&cp, format!("{msg}; allowed by force = true"))
+                        } else {
+                            Issue::err(&cp, msg)
+                        });
+                    }
                 }
             }
         }

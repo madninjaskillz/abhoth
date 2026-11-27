@@ -85,6 +85,7 @@ impl ExecHost {
             engine: s.engine.clone(),
             profile: s.profile.clone(),
             model: s.model.clone(),
+            devices: s.devices.clone(),
         }
     }
 

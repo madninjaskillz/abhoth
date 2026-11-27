@@ -1027,6 +1027,7 @@ pub fn import(src: &Sources, opt: &Options) -> Result<Imported, String> {
                     engine: s(&o["engine"]),
                     profile: s(&o["engineProfile"]),
                     model: s(&o["model"]),
+                    devices: Vec::new(),
                 }),
                 _ => LayoutCard::Word("off".into()),
             };
@@ -1515,6 +1516,11 @@ fn inline_layout_cards(text: &str, c: &ControlConfig) -> Result<String, String> 
                         t.insert("engine", sp.engine.as_str().into());
                         t.insert("profile", sp.profile.as_str().into());
                         t.insert("model", sp.model.as_str().into());
+                        if !sp.devices.is_empty() {
+                            let a: toml_edit::Array =
+                                sp.devices.iter().map(|d| d.as_str()).collect();
+                            t.insert("devices", toml_edit::Value::Array(a));
+                        }
                         toml_edit::Value::InlineTable(t)
                     }
                 };

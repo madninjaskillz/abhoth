@@ -103,6 +103,7 @@ fn spec_of(h: &ExecHost, engine: &str, profile: &str, model: &str) -> CardSpec {
             engine: engine.into(),
             profile: profile.into(),
             model: model.into(),
+            devices: Vec::new(),
         },
     )
 }

@@ -124,6 +124,7 @@ fn imported_argv_matches_layoutctl_shape() {
         engine: "ninfer".into(),
         profile: "ninfer-4lane".into(),
         model: "dense".into(),
+        devices: Vec::new(),
     };
     let r = resolve::resolve(&im.config, "A", &spec).unwrap();
     let argv = crate::control::template::masked(&r.docker);

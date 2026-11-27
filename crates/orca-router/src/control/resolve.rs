@@ -197,6 +197,7 @@ pub fn model_vision(
         engine: engine.into(),
         profile,
         model: model.into(),
+        devices: Vec::new(),
     };
     card_options(c, &spec).ok().map(|o| vision_on(&o))
 }
@@ -310,6 +311,10 @@ pub fn flat_spec(c: &ControlConfig, spec: &CardSpec) -> Result<Value, String> {
         && let Some(mems) = prof.mems.as_deref().filter(|s| !s.is_empty())
     {
         m.insert("mems".into(), Value::String(mems.into()));
+    }
+    // Always in the label when set: a spanning instance is never mistaken for a one-card one.
+    if !spec.devices.is_empty() {
+        m.insert("devices".into(), Value::from(spec.devices.clone()));
     }
     Ok(Value::Object(m))
 }
@@ -450,6 +455,24 @@ pub fn resolve(c: &ControlConfig, card_id: &str, spec: &CardSpec) -> Result<Reso
     );
     v.insert("served_id".into(), w(&served_id));
     v.insert("mems".into(), w(prof.mems.as_deref().unwrap_or("")));
+    // One instance over several cards: every card's GPU and CPUs (its own first).
+    if !spec.devices.is_empty() {
+        let mut uuids = Vec::new();
+        let mut cpus = Vec::new();
+        for d in &spec.devices {
+            let dc = c
+                .cards
+                .get(d)
+                .ok_or_else(|| format!("devices: no card `{d}`"))?;
+            uuids.push(dc.gpu_uuid.clone());
+            if let Some(x) = dc.cpus.as_deref().filter(|x| !x.is_empty()) {
+                cpus.push(x.to_string());
+            }
+        }
+        v.insert("gpu_uuid".into(), w(&uuids.join(",")));
+        v.insert("cpus".into(), w(&cpus.join(",")));
+        v.insert("devices".into(), w(&spec.devices.join(",")));
+    }
 
     // Build: a directory ({build_dir}) or an image ({build_image}); same value, two names.
     if let Some(b) = build_name(e, prof) {
@@ -733,6 +756,7 @@ pub fn known_specs(c: &ControlConfig, card: &str) -> Vec<CardSpec> {
                     engine: eid.clone(),
                     profile: p.clone(),
                     model: mid.clone(),
+                    devices: Vec::new(),
                 };
                 if !out.contains(&s) {
                     out.push(s);
@@ -765,6 +789,7 @@ mod tests {
             engine: e.into(),
             profile: p.into(),
             model: m.into(),
+            devices: Vec::new(),
         }
     }
 
@@ -914,5 +939,43 @@ mod tests {
             r#"{"reasoning_effort":"medium"}"#
         );
         assert_eq!(py_json(&serde_json::json!("\u{e9}")), r#""\u00e9""#);
+    }
+
+    #[test]
+    fn a_spanning_instance_gets_every_cards_gpu_and_cpus() {
+        let c = crate::control::validate::tests::sample_tp();
+        let s = c.resolve_layout("dense-tp").unwrap()[0].1.clone().unwrap();
+        let r = resolve(&c, "A", &s).unwrap();
+        let words = r.docker.join(" ");
+        assert!(
+            words.contains("NVIDIA_VISIBLE_DEVICES=GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,GPU-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            "{words}"
+        );
+        assert!(words.contains("--cpuset-cpus=0-23,24-47"), "{words}");
+        // still card A's server: its port and container
+        assert!(words.contains("--port 8094"), "{words}");
+        assert_eq!(r.iref.name, "ninfer-a");
+        // the label says so, and reads back as the spanning spec (not the one-card one)
+        let f = flat_spec(&c, &s).unwrap();
+        assert!(
+            py_json(&f).contains(r#""devices": ["A", "B"]"#),
+            "{}",
+            py_json(&f)
+        );
+        assert_eq!(spec_from_label(&c, "A", &f), Some(s.clone()));
+        let one = spec("ninfer", "4lane", "dense");
+        assert_eq!(
+            spec_from_label(&c, "A", &flat_spec(&c, &one).unwrap()),
+            Some(one)
+        );
+        // the switch's target: B is off (held), A carries both; with B offline A cannot run
+        let t = crate::switch::wiring::target_spec(&c, "gpu", "dense-tp", &[]).unwrap();
+        assert_eq!(t["A"].devices, ["A", "B"]);
+        assert_eq!(t["A"].lanes, 4);
+        assert!(t["B"].is_off());
+        let t = crate::switch::wiring::target_spec(&c, "gpu", "dense-tp", &["B".into()]).unwrap();
+        assert!(t["A"].is_off() && t["B"].is_off());
+        // and back to the schema's spec unchanged
+        assert_eq!(crate::switch::wiring::spec_of(&c, &s).to_schema(), s);
     }
 }

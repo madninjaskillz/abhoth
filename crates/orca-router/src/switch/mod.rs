@@ -52,6 +52,11 @@ pub struct CardSpec {
     /// Anything else that makes it a different instance (build, options hash, NUMA mems).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub detail: BTreeMap<String, String>,
+    /// One instance over several cards (tensor parallel): every card it uses, its own first.
+    /// The other cards are off in the spec (they run nothing of their own) but their GPUs are
+    /// this instance's. Empty = just its own card.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<String>,
 }
 
 impl CardSpec {
@@ -62,6 +67,7 @@ impl CardSpec {
             model: String::new(),
             lanes: 0,
             detail: BTreeMap::new(),
+            devices: Vec::new(),
         }
     }
 
@@ -76,12 +82,56 @@ impl CardSpec {
             model: model.into(),
             lanes,
             detail: BTreeMap::new(),
+            devices: Vec::new(),
+        }
+    }
+
+    /// The cards an instance of this spec on `own` uses: its `devices`, or just `own`.
+    pub fn cards_on(&self, own: &str) -> Vec<String> {
+        if self.is_off() {
+            Vec::new()
+        } else if self.devices.is_empty() {
+            vec![own.to_string()]
+        } else {
+            self.devices.clone()
+        }
+    }
+
+    /// The schema's card spec (engine, profile, model, devices).
+    pub fn to_schema(&self) -> crate::control::schema::CardSpec {
+        crate::control::schema::CardSpec {
+            engine: self.engine.clone(),
+            profile: self.profile.clone(),
+            model: self.model.clone(),
+            devices: self.devices.clone(),
         }
     }
 }
 
 /// Card id -> what it runs, for every managed card of one server.
 pub type Spec = BTreeMap<String, CardSpec>;
+
+/// The card whose instance holds `card` (lists it in its `devices`), if another one does.
+pub fn holder_of(spec: &Spec, card: &str) -> Option<String> {
+    spec.iter()
+        .find(|(c, s)| c.as_str() != card && s.cards_on(c).iter().any(|d| d == card))
+        .map(|(c, _)| c.clone())
+}
+
+/// Cards a spec gives to two things at once: a card that runs its own instance (or is held
+/// twice) while another card's instance spans it. Empty when the spec is consistent.
+pub fn overlaps(spec: &Spec) -> Vec<String> {
+    let mut seen: BTreeMap<String, String> = BTreeMap::new();
+    let mut bad = Vec::new();
+    for (c, s) in spec {
+        for d in s.cards_on(c) {
+            if let Some(o) = seen.insert(d.clone(), c.clone()) {
+                bad.push(format!("card {d} is used by both {o} and {c}"));
+            }
+        }
+    }
+    bad
+}
 
 /// What the host runs now.
 #[derive(Debug, Clone, Default, PartialEq)]
