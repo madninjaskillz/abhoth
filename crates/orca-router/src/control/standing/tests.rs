@@ -170,7 +170,12 @@ fn packages_render_into_checked_containers() {
         p.run.cmd
     );
     // the CPU threads param (default 8) reaches the server
-    let at = p.run.cmd.iter().position(|x| x == "--cpu-threads").expect("--cpu-threads");
+    let at = p
+        .run
+        .cmd
+        .iter()
+        .position(|x| x == "--cpu-threads")
+        .expect("--cpu-threads");
     assert_eq!(p.run.cmd[at + 1], "8");
     assert!(
         p.run
