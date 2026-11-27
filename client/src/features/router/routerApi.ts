@@ -157,7 +157,15 @@ const ES = () => `${R()}/engine-store`;
 const q = encodeURIComponent;
 
 /** Engine packages: the stores, installs (jobs), My packages and the Create package wizard. */
+/** D153 phase 5: an engine Sothoth keeps running on a card (`lifecycle = "standing"`). */
+export type StandingStatus = {
+  engine: string; card: string; server: string; container: string; image?: string;
+  state: "starting" | "ready" | "unhealthy" | "stopped" | "backoff" | "failed" | "foreign" | "blocked" | string;
+  detail: string; restarts: number; started?: number; nextTry?: number; checked: number;
+};
+
 export const engineStoreApi = {
+  standing: () => call<{ engines: StandingStatus[] }>("GET", `${R()}/standing`),
   stores: () => call<{ stores: StoreInfo[] }>("GET", `${ES()}/stores`),
   addStore: (url: string, trusted: boolean, name?: string) => call<StoreInfo>("POST", `${ES()}/stores`, name ? { url, trusted, name } : { url, trusted }),
   removeStore: (id: string) => call<{ ok: boolean }>("DELETE", `${ES()}/stores/${q(id)}`),

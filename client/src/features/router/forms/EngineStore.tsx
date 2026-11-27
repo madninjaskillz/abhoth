@@ -531,6 +531,7 @@ function InstalledPane() {
           </div>
         </div>
       ))}
+      <StandingPane />
       {manual.length > 0 && (
         <div className="rounded-md border" data-testid="store-manual">
           <div className="border-b px-3 py-2">
@@ -570,6 +571,39 @@ function InstalledPane() {
         onCancel={() => setRemoving(null)}
         onConfirm={() => { const e = removing!; setRemoving(null); remove.mutate({ engine: e, uninstall }); }}
       />
+    </div>
+  );
+}
+
+/** Standing engines: what Sothoth keeps running, and how each one is doing. */
+function StandingPane() {
+  const st = useQuery({ queryKey: ["router-standing"], queryFn: engineStoreApi.standing, refetchInterval: 15000, retry: false });
+  const rows = st.data?.engines ?? [];
+  if (rows.length === 0) return null;
+  const variant = (s: string) => (s === "ready" ? "default" : s === "starting" ? "secondary" : s === "foreign" || s === "blocked" ? "warning" : "destructive");
+  return (
+    <div className="rounded-md border" data-testid="store-standing">
+      <div className="border-b px-3 py-2">
+        <div className="text-sm font-medium">Standing engines</div>
+        <div className="text-xs text-muted-foreground">Kept running by Sothoth: started when down, restarted with backoff, never stopped by it.</div>
+      </div>
+      <div className="divide-y">
+        {rows.map((r) => (
+          <div key={`${r.engine}/${r.card}`} className="space-y-0.5 px-3 py-1.5 text-xs" data-testid="store-standing-row" data-engine={r.engine} data-state={r.state}>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-mono">{r.engine}</span>
+              <span className="text-muted-foreground">on {r.card} ({r.server})</span>
+              <Badge variant={variant(r.state)}>{r.state}</Badge>
+              {r.restarts > 0 && <Badge variant="outline">{r.restarts} restart{r.restarts === 1 ? "" : "s"}</Badge>}
+              <span className="font-mono text-muted-foreground">{r.container}</span>
+              {r.started && <span className="text-muted-foreground">up since {new Date(r.started * 1000).toLocaleString()}</span>}
+              {r.nextTry && r.state !== "ready" && <span className="text-muted-foreground">next try {new Date(r.nextTry * 1000).toLocaleTimeString()}</span>}
+            </div>
+            {r.detail && <div className="break-all text-muted-foreground">{r.detail}</div>}
+            {r.image && <div className="break-all font-mono text-[11px] text-muted-foreground">{r.image}</div>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
