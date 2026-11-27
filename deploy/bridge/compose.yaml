@@ -1,21 +1,26 @@
-# abhoth-bridge on a GPU host. The router admin mints the token (admin pages, Bridges; or
-# `abhoth router bridge-token create ID --control router.toml --out FILE`); put it in
+# abhoth-migo (Migo, formerly abhoth-bridge) on a GPU host. Sothoth's (the router's) admin mints
+# the token (admin pages, Migo machines; or
+# `abhoth sothoth bridge-token create ID --control sothoth.toml --out FILE`); put it in
 # ./state/bridge.token (mode 600). Engines it starts are sibling containers named
-# abhoth-bridge-<id>-<engine>-<card>, published on 127.0.0.1 only.
+# abhoth-bridge-<id>-<engine>-<card> (unchanged, so a restarted Migo finds the ones it started),
+# published on 127.0.0.1 only.
+# An existing setup: its ./bridge.toml mounted at /config/bridge.toml is found as well, and the
+# local/abhoth-bridge:1 tag is the same image (docs/NAMES.md). Renaming the service from
+# abhoth-bridge: `docker compose up -d --remove-orphans` replaces the old container.
 services:
-  abhoth-bridge:
-    image: local/abhoth-bridge:1
+  abhoth-migo:
+    image: local/abhoth-migo:1
     restart: unless-stopped
-    # Host networking: the bridge reaches the engines it starts on 127.0.0.1 and dials the router
-    # out; nothing listens on the bridge itself.
+    # Host networking: Migo reaches the engines it starts on 127.0.0.1 and dials Sothoth out;
+    # nothing listens on Migo itself.
     network_mode: host
     runtime: nvidia
     environment:
       NVIDIA_VISIBLE_DEVICES: all          # or one GPU's UUID
       NVIDIA_DRIVER_CAPABILITIES: utility
-      # ABHOTH_BRIDGE_ROUTER: http://router-host:8010
+      # ABHOTH_MIGO_ROUTER: http://router-host:8010   # or ABHOTH_BRIDGE_ROUTER
     volumes:
-      - ./bridge.toml:/config/bridge.toml:ro
+      - ./migo.toml:/config/migo.toml:ro
       - ./state:/state
       - ./models:/models
       - /var/run/docker.sock:/var/run/docker.sock

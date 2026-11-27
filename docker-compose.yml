@@ -1,12 +1,14 @@
-# Abhoth in one container (D148): the web UI, and optionally the router and the supervisor.
+# Abhoth in one container (D148): the web UI, and optionally Sothoth (the router) and Nodens
+# (the supervisor). docs/NAMES.md has the names; every old name below still works.
 #   docker compose up -d --build
 #   docker compose exec abhoth /app/entrypoint.sh admin create <user>   # the first admin
 # Then open http://<host>:8093. See README.md, "Docker".
 #
 # Everything lives under ./abhoth-data (bind mounts; change the left-hand paths as you like):
 #   abhoth-data/web         web UI state (accounts, sessions, Claude/Codex logins)
-#   abhoth-data/router      router.json / router.toml and the router's own state
-#   abhoth-data/supervisor  supervisor.toml (and the secret files it names)
+#   abhoth-data/router      sothoth.json / sothoth.toml (or router.json / router.toml) and
+#                           Sothoth's own state
+#   abhoth-data/supervisor  nodens.toml or supervisor.toml (and the secret files it names)
 #   abhoth-data/projects    the projects the agent works in
 #   abhoth-data/secrets     read-only secrets (strata-api-key, git-deploy-key, ...)
 # The folders must be writable by uid 568 (e.g. `sudo chown -R 568:568 abhoth-data`).
@@ -35,20 +37,22 @@ services:
       # TRUSTED_PROXIES: "10.0.0.2"   # a reverse proxy in front: X-Forwarded-* only from it
       # BENCH: "1"                    # the Benchmarks page (in /data/web/bench)
       #
-      # The router (gateway + control plane, ROUTER.md and ROUTER-CONFIG.md). Its flags, as
-      # for `abhoth router`; whitespace-separated, no quoting:
-      # ROUTER_ARGS: "--config /data/router/router.json --port 8010 --control /data/router/router.toml"
-      # ROUTER_HEALTH_URL: "http://127.0.0.1:8010/health/liveliness"
+      # Sothoth, the router (gateway + control plane, ROUTER.md and ROUTER-CONFIG.md). Its
+      # flags, as for `abhoth sothoth`; whitespace-separated, no quoting (ROUTER_ARGS works too;
+      # a missing sothoth.* file reads the folder's router.* file):
+      # SOTHOTH_ARGS: "--config /data/router/sothoth.json --port 8010 --control /data/router/sothoth.toml"
+      # SOTHOTH_HEALTH_URL: "http://127.0.0.1:8010/health/liveliness"   # or ROUTER_HEALTH_URL
       #
-      # The supervisor (telemetry hub, Home Assistant, the Glance page's feed;
+      # Nodens, the supervisor (telemetry hub, Home Assistant, the Glance page's feed;
       # docs/design/SUPERVISOR.md). It talks to hostd on the host for fans and clocks (optional,
       # crates/orca-hostd/deploy): mount /run/abhoth below.
-      # SUPERVISOR_CONFIG: "/data/supervisor/supervisor.toml"
-      # ABHOTH_SUPERVISOR_URL: "http://127.0.0.1:9890"   # its [supervisor] listen
+      # NODENS_CONFIG: "/data/supervisor/nodens.toml"            # or SUPERVISOR_CONFIG
+      # ABHOTH_NODENS_URL: "http://127.0.0.1:9890"   # its [supervisor] listen; or ABHOTH_SUPERVISOR_URL
       #
-      # The Glance page's card buttons and calendar: the router's admin API.
-      # ABHOTH_ROUTER_URL: "http://127.0.0.1:8010"
-      # ABHOTH_ROUTER_TOKEN_FILE: "/run/secrets/router-link-token"
+      # The Glance page's card buttons and calendar: Sothoth's admin API (or ABHOTH_ROUTER_URL /
+      # ABHOTH_ROUTER_TOKEN_FILE).
+      # ABHOTH_SOTHOTH_URL: "http://127.0.0.1:8010"
+      # ABHOTH_SOTHOTH_TOKEN_FILE: "/run/secrets/router-link-token"
     volumes:
       - ./abhoth-data/web:/data/web
       - ./abhoth-data/router:/data/router

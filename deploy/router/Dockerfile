@@ -1,5 +1,6 @@
-# abhoth router (LiteLLM + qfn-lb replacement) as a small image. Build from rust/:
-#   docker build -f deploy/router/Dockerfile -t local/abhoth-router:1 .
+# abhoth-sothoth: Sothoth, the router (LiteLLM + qfn-lb replacement), as a small image. Build
+# from the repo root (the old abhoth-router tag is the same image; docs/NAMES.md):
+#   docker build -f deploy/router/Dockerfile -t local/abhoth-sothoth:1 -t local/abhoth-router:1 .
 # One static-ish binary (rustls, no OpenSSL) on debian slim; runs as uid 568 (TrueNAS "apps").
 # openssh-client: the control plane reaches the GPU host over SSH (hostctl, ROUTER-CONFIG.md 6).
 ARG RUST_VERSION=1.100.0
@@ -11,8 +12,8 @@ ENV CARGO_TERM_COLOR=never
 ARG FEATURES=""
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked -p orca-router --bin abhoth-router ${FEATURES:+--features $FEATURES} \
- && install -D -m 755 target/release/abhoth-router /out/abhoth-router
+    cargo build --release --locked -p orca-router --bin abhoth-sothoth ${FEATURES:+--features $FEATURES} \
+ && install -D -m 755 target/release/abhoth-sothoth /out/abhoth-sothoth
 
 FROM debian:bookworm-slim
 RUN apt-get update \
@@ -26,10 +27,13 @@ RUN if [ -n "$CLAUDE_CLI" ]; then \
       && npm install -g --no-fund --no-audit "$CLAUDE_CLI" && npm cache clean --force \
       && rm -rf /var/lib/apt/lists/* && claude --version; \
     fi
-COPY --from=build /out/abhoth-router /app/abhoth-router
-RUN /app/abhoth-router --help >/dev/null
+COPY --from=build /out/abhoth-sothoth /app/abhoth-sothoth
+# The old name: compose files and scripts that run /app/abhoth-router keep working.
+RUN ln -s abhoth-sothoth /app/abhoth-router \
+ && /app/abhoth-sothoth --help >/dev/null && /app/abhoth-router --help >/dev/null
 USER 568:568
 WORKDIR /state
-# Default: serve /state/router.json. The shadow compose overrides this per service.
-ENTRYPOINT ["/app/abhoth-router"]
-CMD ["--config", "/state/router.json", "--listen", "0.0.0.0:8020"]
+# Default: serve /state/sothoth.json (or /state/router.json when only that is there). The shadow
+# compose overrides this per service.
+ENTRYPOINT ["/app/abhoth-sothoth"]
+CMD ["--config", "/state/sothoth.json", "--listen", "0.0.0.0:8020"]

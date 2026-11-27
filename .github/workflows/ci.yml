@@ -160,6 +160,10 @@ jobs:
           docker run --rm --entrypoint /app/abhoth abhoth:ci --version
           docker run --rm --entrypoint /app/abhoth abhoth:ci router --help >/dev/null
           docker run --rm --entrypoint /app/abhoth abhoth:ci supervisor 2>&1 | grep -q usage
+          # The components' names (docs/NAMES.md) next to the old ones.
+          docker run --rm --entrypoint /app/abhoth abhoth:ci sothoth --help >/dev/null
+          docker run --rm --entrypoint /app/abhoth abhoth:ci migo --help >/dev/null
+          docker run --rm --entrypoint /app/abhoth abhoth:ci nodens 2>&1 | grep -q usage
       - name: Starts healthy (web UI)
         run: |
           mkdir -p data && sudo chown 568:568 data

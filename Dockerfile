@@ -1,17 +1,21 @@
-# Abhoth in one image (D148): the web UI, the router (gateway + control plane) and the
-# supervisor (telemetry hub, Home Assistant, Glance feed) in one container and one process.
+# Abhoth in one image (D148): the web UI, Sothoth (the router: gateway + control plane) and
+# Nodens (the supervisor: telemetry hub, Home Assistant, Glance feed) in one container and one
+# process (docs/NAMES.md for the names; the old ones all still work).
 # Build from the repo root:
 #   docker build -t abhoth .
 #   docker build -t abhoth --build-arg FEATURES=claude-engine .   # the router's Claude engine
 # Run: docker-compose.yml beside this file, and README.md "Docker". Only the web UI is on by
-# default; ROUTER_ARGS and SUPERVISOR_CONFIG turn the other two on (deploy/docker/entrypoint.sh).
-# The separate images (deploy/docker for the web UI, deploy/router for the router) still build.
+# default; SOTHOTH_ARGS and NODENS_CONFIG (or the old ROUTER_ARGS and SUPERVISOR_CONFIG) turn
+# the other two on (deploy/docker/entrypoint.sh).
+# The separate images (deploy/docker for the web UI, deploy/router for Sothoth, deploy/bridge
+# for Migo) still build.
 #
 # Mounts (one volume at /data, or one per folder; the image declares no VOLUME, so nothing
 # anonymous is created next to bind mounts):
 #   /data/web         web UI state: HOME (Claude/Codex logins), abhoth.db and sessions, bench/
-#   /data/router      router state: router.json / router.toml, router.db, requests.jsonl, ssh/
-#   /data/supervisor  supervisor.toml and the files it names
+#   /data/router      Sothoth's state: sothoth.json / sothoth.toml (or router.json / router.toml),
+#                     router.db, requests.jsonl, ssh/
+#   /data/supervisor  nodens.toml (or supervisor.toml) and the files it names
 #   /data/projects    the projects the agent works in (OPENORCA_PROJECTS_ROOT)
 #   /run/secrets      read-only secret files (entrypoint.sh lists the ones it reads)
 ARG RUST_VERSION=1.100.0
@@ -65,6 +69,7 @@ COPY deploy/bench/benchkit.py /app/bench/benchkit.py
 RUN sed -i 's/\r$//' /app/entrypoint.sh /app/healthcheck.sh \
  && chmod 755 /app/entrypoint.sh /app/healthcheck.sh /app/abhoth \
  && ln -s abhoth /app/openorca && ln -s abhoth /app/abhoth-router && ln -s abhoth /app/abhoth-supervisor \
+ && ln -s abhoth /app/abhoth-sothoth && ln -s abhoth /app/abhoth-nodens \
  && mkdir -p /data/web /data/router /data/supervisor /data/projects && chown 568:568 /data /data/web /data/router /data/supervisor /data/projects \
  && /app/abhoth --version
 ENV STATE_DIR=/data/web \
@@ -79,7 +84,7 @@ ENV STATE_DIR=/data/web \
     DISABLE_AUTOUPDATER=1 \
     SHELL=/bin/bash \
     PORT=8093
-# The web UI; the router's usual ports (gateway, compat lb/slots/profiles); the supervisor feed
+# The web UI; Sothoth's (the router's) usual ports (gateway, compat lb/slots/profiles); the Nodens (supervisor) feed
 # listens where its config says (127.0.0.1:9890 in the example: inside the container only).
 EXPOSE 8093 8010 8092 8098 8099
 USER 568:568

@@ -1,4 +1,8 @@
-# hostctl: installing the router's execution channel on a GPU host
+# hostctl: installing Sothoth's (the router's) execution channel on a GPU host
+
+Names ([docs/NAMES.md](../../docs/NAMES.md)): `abhoth-router` below is the old name of `abhoth-sothoth`;
+either binary works, so a host installed with `abhoth-router` needs no change. The steps keep
+the old name to match existing installs.
 
 The router controls a remote GPU host over SSH. The key it uses can do one thing: start
 `abhoth-router hostctl serve`, which runs a request only if the host's own allowlist permits it
@@ -89,7 +93,7 @@ others can write it.
 ## 5. Check from the router
 
 ```sh
-abhoth router config-check --config router.toml
+abhoth sothoth config-check --config router.toml
 ```
 
 The router's first status poll shows the server as reachable, or gives the SSH error: key,

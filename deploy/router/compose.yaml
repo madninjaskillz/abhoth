@@ -1,17 +1,19 @@
 # AI_ROOT is the host folder of the AI services and LITELLM_CONFIG_DIR the folder of LiteLLM's
 # generated config.yaml (from the environment or a .env beside this file).
-# abhoth router on DeepThought, SHADOW mode (nothing points at it). TrueNAS custom app / compose.
+# Sothoth (abhoth sothoth, formerly abhoth router) on DeepThought, SHADOW mode (nothing points
+# at it). TrueNAS custom app / compose. local/abhoth-router:1 is the same image under its old
+# tag (docs/NAMES.md); renaming the service from `router`: `docker compose up -d --remove-orphans`.
 #   State and config:  $AI_ROOT/router/          (router.json, base.json, requests.jsonl)
 #   Engine key:        $AI_ROOT/router/secrets/ninfer-key  (568:568, mode 0600; never printed)
 #   State dir:         568:568, mode 2770 (setgid, so the importer's files stay group 568)
 #   Inputs, read-only: LiteLLM's generated config.yaml, qfn-lb's nginx.conf, layouts/gateway.json
 # `importer` regenerates router.json from LiteLLM's config every 10 s (atomic write, only when it
-# changes); `router` hot-reloads it. On-demand follows gateway.json (currently off) and is
+# changes); `sothoth` hot-reloads it. On-demand follows gateway.json (currently off) and is
 # dry-run regardless. Placement is ON and `observe` scores it against real traffic from the
 # engines' own logs (decision-only; the only requests it sends are the capped canary).
 services:
   importer:
-    image: local/abhoth-router:1
+    image: local/abhoth-sothoth:1
     restart: unless-stopped
     # uid 950 (admin) can read LiteLLM's config.yaml (0640) and qfn-lb's nginx.conf (0600);
     # gid 568 writes into the setgid state dir (568:568, 2770). It never reads the key.
@@ -30,8 +32,8 @@ services:
       - $AI_ROOT/qwen-flash-next/twocopy/lb:/in/lb:ro
       - $AI_ROOT/layouts:/in/layouts:ro
       - $AI_ROOT/router:/state
-  router:
-    image: local/abhoth-router:1
+  sothoth:
+    image: local/abhoth-sothoth:1
     restart: unless-stopped
     user: "568:568"
     read_only: true

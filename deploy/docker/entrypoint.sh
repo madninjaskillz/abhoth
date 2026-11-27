@@ -5,13 +5,16 @@
 #   git-credentials  optional: a git credential-store file (https://user:token@host)
 #   admin-password   optional: with ADMIN_USER set, creates that admin on the first start
 #                    (ABHOTH_ADMIN_USER / ABHOTH_ADMIN_PASSWORD_FILE; ignored once accounts exist)
-# The single image (deploy/abhoth, D148) also runs the router and the supervisor in the same
-# process when these are set:
-#   ROUTER_ARGS        the router's flags (what follows `abhoth router`), e.g.
-#                      "--config /data/router/router.json --port 8010 --control /data/router/router.toml"
-#   SUPERVISOR_CONFIG  the supervisor's config file (its [supervisor] listen serves the feed)
-#   ABHOTH_SUPERVISOR_URL  the feed the Glance page follows; defaults to http://127.0.0.1:9890
-#                      when SUPERVISOR_CONFIG is set (GLANCE=0 turns the page off)
+# The single image (deploy/abhoth, D148) also runs Sothoth (the router) and Nodens (the
+# supervisor) in the same process when these are set (docs/NAMES.md; the old names in brackets
+# still work, the new one wins when both are set):
+#   SOTHOTH_ARGS       (ROUTER_ARGS) Sothoth's flags (what follows `abhoth sothoth`), e.g.
+#                      "--config /data/router/sothoth.json --port 8010 --control /data/router/sothoth.toml"
+#                      (a missing sothoth.* reads the same folder's router.*, and back)
+#   NODENS_CONFIG      (SUPERVISOR_CONFIG) Nodens' config file (its [supervisor] listen serves
+#                      the feed); nodens.toml or supervisor.toml
+#   ABHOTH_NODENS_URL  (ABHOTH_SUPERVISOR_URL) the feed the Glance page follows; defaults to
+#                      http://127.0.0.1:9890 when a Nodens config is set (GLANCE=0 turns the page off)
 # STATE_DIR (default /state) holds bench/ for BENCH=1.
 # Nothing here prints a secret.
 set -euo pipefail
@@ -63,15 +66,17 @@ if [[ "${BENCH:-0}" == 1 ]]; then
   [[ -r /run/secrets/ha.env ]] && args+=(--hostui-bench-power=/run/secrets/ha.env)
   [[ -d "$STATE_DIR/bench/kit/openorca.git" ]] && export REALTASKS_REPO="$STATE_DIR/bench/kit/openorca.git"
 fi
+ROUTER_ARGS=${SOTHOTH_ARGS:-${ROUTER_ARGS:-}}
+SUPERVISOR_CONFIG=${NODENS_CONFIG:-${SUPERVISOR_CONFIG:-}}
 [[ -n "${ROUTER_ARGS:-}" ]] && args+=(--with-router "$ROUTER_ARGS")
 if [[ -n "${SUPERVISOR_CONFIG:-}" ]]; then
   args+=(--with-supervisor "$SUPERVISOR_CONFIG")
-  if [[ "${GLANCE:-1}" == 1 ]]; then
+  if [[ "${GLANCE:-1}" == 1 && -z "${ABHOTH_NODENS_URL:-}" ]]; then
     export ABHOTH_SUPERVISOR_URL="${ABHOTH_SUPERVISOR_URL:-http://127.0.0.1:9890}"
   fi
 fi
-[[ "${GLANCE:-1}" == 0 ]] && unset ABHOTH_SUPERVISOR_URL
-# Router and supervisor logs on stderr (docker logs), like their own images.
+[[ "${GLANCE:-1}" == 0 ]] && unset ABHOTH_SUPERVISOR_URL ABHOTH_NODENS_URL
+# Sothoth and Nodens logs on stderr (docker logs), like their own images.
 if [[ -n "${ROUTER_ARGS:-}${SUPERVISOR_CONFIG:-}" ]]; then
   export RUST_LOG="${RUST_LOG:-info}"
 fi

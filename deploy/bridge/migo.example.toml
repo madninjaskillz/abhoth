@@ -1,5 +1,6 @@
-# abhoth bridge: a speech backup on a small GPU host (ROUTER-MEDIA-PLAN.md 11).
-# `abhoth-bridge check --config bridge.toml` prints what it would tell the router.
+# Migo (abhoth migo, formerly abhoth bridge): a speech backup on a small GPU host
+# (ROUTER-MEDIA-PLAN.md 11). Save it as migo.toml (an existing bridge.toml works the same).
+# `abhoth-migo check --config migo.toml` prints what it would tell Sothoth (the router).
 [bridge]
 id = "nas"
 title = "nas.local"
