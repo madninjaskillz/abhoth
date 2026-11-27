@@ -193,6 +193,14 @@ async fn admin_demo(args: &[String]) -> Result<i32> {
         let no_exec: crate::control::downloads::ExecFor =
             Arc::new(|_c, s| Err(format!("admin-demo: nothing runs on `{s}`")));
         crate::control::downloads::install_with(&main, &dir, demo.clone(), no_exec);
+        // Bridges against the demo's config: a bridge with a token minted into this state dir
+        // (`bridge-token create`) can connect, so the Bridges page shows a real one.
+        use crate::control::schema::ControlConfig;
+        if let Ok(c) = toml::from_str::<ControlConfig>(&demo.config().text) {
+            let hub = crate::bridges::Hub::new(&dir, Arc::new(c));
+            crate::bridges::install(hub.clone());
+            let _ = st.bridges.set(hub);
+        }
     }
     let settings = crate::access::AccessSettings {
         accounts_token: accounts
