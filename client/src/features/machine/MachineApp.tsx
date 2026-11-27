@@ -4,17 +4,17 @@
 // router when bridged, changes a router admin asks for, and what the router did.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cable, Check, Cpu, History, Loader2, Package, Play, Server, Square, Undo2, Wrench, X } from "lucide-react";
+import { Cable, Cpu, Loader2, Package, Play, Server, Square, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
 import { InventoryForms } from "@/features/router/forms/InventoryForms";
 import { EngineStore } from "@/features/router/forms/EngineStore";
 import { area } from "@/features/router/forms/formKit";
-import { ago } from "@/features/router/routerModel";
 import { machineApi, type MachineStatus } from "./machineApi";
+import { BridgeBadge, MACHINE_STATUS, Sharing } from "./MigoSharing";
 
-const STATUS = ["machine-status"];
+const STATUS = MACHINE_STATUS;
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function MachineApp() {
@@ -33,7 +33,7 @@ export function MachineApp() {
       </header>
       {pending > 0 && (
         <button className="border-b bg-warning/10 px-4 py-2 text-left text-xs" onClick={() => setTab("sharing")} data-testid="machine-pending-banner">
-          A Sothoth admin asked for {pending} change{pending > 1 ? "s" : ""} that need{pending > 1 ? "" : "s"} your approval: open <b>Sharing & Migo</b>.
+          A Sothoth Router admin asked for {pending} change{pending > 1 ? "s" : ""} that need{pending > 1 ? "" : "s"} your approval: open <b>Sharing & Migo Bridge</b>.
         </button>
       )}
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
@@ -43,7 +43,7 @@ export function MachineApp() {
             <TabsTrigger value="running" data-testid="machine-tab-running"><Play className="mr-1 size-3.5" />Running</TabsTrigger>
             <TabsTrigger value="manual" data-testid="machine-tab-manual"><Wrench className="mr-1 size-3.5" />Manual engines</TabsTrigger>
             <TabsTrigger value="store" data-testid="machine-tab-store"><Package className="mr-1 size-3.5" />Engine store</TabsTrigger>
-            <TabsTrigger value="sharing" data-testid="machine-tab-sharing"><Cable className="mr-1 size-3.5" />Sharing & Migo{pending > 0 && <Badge variant="warning" className="ml-1">{pending}</Badge>}</TabsTrigger>
+            <TabsTrigger value="sharing" data-testid="machine-tab-sharing"><Cable className="mr-1 size-3.5" />Sharing & Migo Bridge{pending > 0 && <Badge variant="warning" className="ml-1">{pending}</Badge>}</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="inventory" className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"><InventoryForms single /></TabsContent>
@@ -58,12 +58,6 @@ export function MachineApp() {
 
 const Spinner = () => <Loader2 className="m-4 size-4 animate-spin text-muted-foreground" />;
 
-function BridgeBadge({ s }: { s: MachineStatus }) {
-  if (!s.bridgeMode) return <Badge variant="outline">runs its engines itself</Badge>;
-  if (s.bridge?.connected) return <Badge variant="success" data-testid="machine-bridge-online">Migo to {s.bridge.router ?? s.bridgeRouter} · online</Badge>;
-  return <Badge variant="warning" title={s.bridge?.lastError ?? ""}>Migo · offline{s.bridge?.lastError ? `: ${s.bridge.lastError}` : ""}</Badge>;
-}
-
 function Running({ s }: { s: MachineStatus }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +71,7 @@ function Running({ s }: { s: MachineStatus }) {
     <div className="space-y-3 text-xs" data-testid="machine-running">
       <div>
         <h3 className="text-sm font-semibold">Engines on this machine</h3>
-        <p className="text-muted-foreground">On-demand engines start at the first request (from this app, or from the router when shared) and stop when idle. Their images and packages are fetched ahead of time.</p>
+        <p className="text-muted-foreground">On-demand engines start at the first request (from this app, or from your Sothoth Router when shared) and stop when idle. Their images and packages are fetched ahead of time.</p>
       </div>
       {s.problems.map((p) => <div key={p} className="text-warning">{p}</div>)}
       {error && <div className="text-destructive">{error}</div>}
@@ -138,79 +132,6 @@ function ManualEngines() {
         <span className="font-mono text-muted-foreground">rev {doc.data?.rev}</span>
       </div>
       {note && <div className={note.ok ? "text-success" : "text-destructive"}>{note.text}</div>}
-    </div>
-  );
-}
-
-function Sharing({ s }: { s: MachineStatus }) {
-  const qc = useQueryClient();
-  const [error, setError] = useState<string | null>(null);
-  const done = { onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: STATUS }); }, onError: (e: unknown) => setError(errText(e)) };
-  const share = useMutation({ mutationFn: machineApi.share, ...done });
-  const decide = useMutation({ mutationFn: (v: { id: string; approve: boolean }) => machineApi.decide(v.id, v.approve), ...done });
-  const undo = useMutation({ mutationFn: machineApi.undo, ...done });
-  const engines = Object.entries(s.share.engines);
-  const models = Object.entries(s.share.models);
-  return (
-    <div className="space-y-4 text-xs" data-testid="machine-sharing">
-      <section className="space-y-1">
-        <h3 className="text-sm font-semibold">Migo</h3>
-        {!s.bridgeMode && <p className="text-muted-foreground">Migo mode (formerly Bridge mode) is off: this app runs these engines for itself only. Turn it on in Settings → Connection to offer them to Sothoth, the router (your requests still go through it then).</p>}
-        {s.bridgeMode && (
-          <div className="space-y-0.5" data-testid="machine-bridge-status">
-            <div>Sothoth: <span className="font-mono">{s.bridge?.router ?? s.bridgeRouter ?? "not set"}</span> · {s.bridge?.connected ? <span className="text-success">connected as {s.bridge.server}</span> : <span className="text-warning">not connected</span>}{s.bridge?.enabled === false && " · the Sothoth admin has turned it off"}</div>
-            {s.bridge?.lastError && <div className="text-destructive">{s.bridge.lastError}</div>}
-            <div className="text-muted-foreground">Remote config: {s.remoteConfig ? "a Sothoth admin may change this inventory (each change is logged below and can be undone)" : "off: Sothoth sees this machine read-only"}.</div>
-            {s.advancedFile && <div className="text-warning">Advanced: Migo runs from {s.advancedFile}, not this inventory.</div>}
-          </div>
-        )}
-      </section>
-      {error && <div className="text-destructive">{error}</div>}
-      <section className="space-y-1">
-        <h3 className="text-sm font-semibold">Share with Sothoth</h3>
-        <p className="text-muted-foreground">What Sothoth (the router) may use through Migo. New engines and models are shared by default while Migo mode is on.</p>
-        {engines.length + models.length === 0 && <div className="text-muted-foreground">Nothing to share yet.</div>}
-        <div className="grid gap-1 sm:grid-cols-2">
-          {engines.map(([id, on]) => (
-            <label key={`e-${id}`} className="flex items-center gap-2 rounded border px-2 py-1" data-testid="machine-share-engine">
-              <input type="checkbox" checked={on} onChange={(e) => share.mutate({ engines: { [id]: e.target.checked } })} /> engine <span className="font-mono">{id}</span>
-            </label>
-          ))}
-          {models.map(([id, on]) => (
-            <label key={`m-${id}`} className="flex items-center gap-2 rounded border px-2 py-1">
-              <input type="checkbox" checked={on} onChange={(e) => share.mutate({ models: { [id]: e.target.checked } })} /> model <span className="font-mono">{id}</span>
-            </label>
-          ))}
-        </div>
-      </section>
-      <section className="space-y-1">
-        <h3 className="text-sm font-semibold">Waiting for your approval</h3>
-        {s.pending.length === 0 && <div className="text-muted-foreground">Nothing waiting.</div>}
-        {s.pending.map((p) => (
-          <div key={p.id} className="space-y-1 rounded-md border border-warning/50 p-2" data-testid="machine-pending">
-            <div><b>{p.who}</b> asked {ago(p.at * 1000)} ({p.op === "config.apply" ? "an inventory change" : "an engine install"}). It needs your approval because:</div>
-            <ul className="list-disc pl-5">{p.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-            <div className="flex gap-2">
-              <Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: p.id, approve: true })} data-testid="machine-approve"><Check /> Approve and apply</Button>
-              <Button size="sm" variant="outline" disabled={decide.isPending} onClick={() => decide.mutate({ id: p.id, approve: false })}><X /> Refuse</Button>
-            </div>
-          </div>
-        ))}
-      </section>
-      <section className="space-y-1">
-        <h3 className="flex items-center gap-1 text-sm font-semibold"><History className="size-4" /> Changes by a router admin</h3>
-        {s.remoteChanges.length === 0 && <div className="text-muted-foreground">None yet.</div>}
-        <div className="divide-y rounded-md border">
-          {s.remoteChanges.map((c) => (
-            <div key={c.id} className="flex flex-wrap items-center gap-2 px-2 py-1.5" data-testid="machine-change">
-              <span>Changed by router admin <b>{c.who.replace(/^admin:/, "")}</b> {ago(c.at * 1000)}{c.what ? `: ${c.what}` : ""}</span>
-              {c.undone ? <Badge variant="outline" className="ml-auto">undone</Badge> : (
-                <Button size="sm" variant="ghost" className="ml-auto" disabled={undo.isPending} onClick={() => undo.mutate(c.id)} data-testid="machine-undo"><Undo2 /> Undo</Button>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }

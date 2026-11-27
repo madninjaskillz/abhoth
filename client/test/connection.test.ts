@@ -78,7 +78,7 @@ test("typed URLs get a scheme", () => {
 });
 
 test("router mode is offered when server mode points at a router, never forced", () => {
-  assert.deepEqual(statusLine({ connection: "server", suggestRouter: true, router: { name: "DT" } }), { text: "The Base URL is DT, an Abhoth router.", offer: true });
+  assert.deepEqual(statusLine({ connection: "server", suggestRouter: true, router: { name: "DT" } }), { text: "The Base URL is DT, a Sothoth Router.", offer: true });
   assert.equal(statusLine({ connection: "server", suggestRouter: false, router: null }).offer, false);
   assert.deepEqual(statusLine({ connection: "router", suggestRouter: false, router: { name: "DT" } }), { text: "Connected to DT.", offer: false });
   assert.match(statusLine({ connection: "router", suggestRouter: false, router: null }).text, /does not answer/);

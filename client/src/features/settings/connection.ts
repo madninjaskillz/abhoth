@@ -81,8 +81,8 @@ export interface StatusLike {
 export function statusLine(s: StatusLike | undefined): { text: string; offer: boolean } {
   if (!s) return { text: "", offer: false };
   if (s.connection === "router")
-    return s.router ? { text: `Connected to ${s.router.name}.`, offer: false } : { text: "The Base URL does not answer as an Abhoth router.", offer: false };
-  if (s.suggestRouter && s.router) return { text: `The Base URL is ${s.router.name}, an Abhoth router.`, offer: true };
+    return s.router ? { text: `Connected to ${s.router.name}.`, offer: false } : { text: "The Base URL does not answer as a Sothoth Router.", offer: false };
+  if (s.suggestRouter && s.router) return { text: `The Base URL is ${s.router.name}, a Sothoth Router.`, offer: true };
   return { text: "", offer: false };
 }
 

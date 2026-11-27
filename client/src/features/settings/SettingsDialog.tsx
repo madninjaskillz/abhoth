@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, KeyRound, Layers, RotateCcw, Search, Settings } from "lucide-react";
+import { Check, ChevronRight, KeyRound, Layers, RotateCcw, Search, Settings } from "lucide-react";
 import { api, settingsApi, type Project, type Setting, type SettingsDoc } from "@/lib/api";
 import { ProfilePicker, useProfiles } from "@/features/profiles/Profiles";
 import { AccountPane } from "@/features/auth/AccountDialog";
@@ -16,7 +16,9 @@ import { inDesktop, windowCommands } from "@/lib/desktop";
 import { openSettings, useSettingsNav } from "./settingsNav";
 import { ConnectionPanel } from "./ConnectionPanel";
 import { modeOf, visibleInMode } from "./connection";
-import { nextTabIndex, pickTab, searchTabs, sectionsOfTab, unsavedByTab, visibleTabs, type SearchHit, type TabDef } from "./settingsTabs";
+import { MigoPanel } from "@/features/machine/MigoSharing";
+import { AboutPane } from "./AboutPane";
+import { TAB_GROUPS, groupsOfTab, nextTabIndex, pickTab, searchTabs, unsavedByTab, visibleTabs, type Group, type SearchHit, type TabDef } from "./settingsTabs";
 
 const field = "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:border-primary disabled:opacity-60";
 
@@ -77,7 +79,9 @@ export function SettingsDialog({ project, requested, onClose }: { project: Proje
 
   const all = useMemo(() => doc.data?.sections ?? [], [doc.data]);
   const router = !!info.data?.router;
-  const tabs = useMemo(() => visibleTabs({ admin, desktop: inDesktop(), router }, doc.data ? all : undefined), [admin, all, doc.data, router]);
+  // Desktop-only tabs (Desktop app, Migo Bridge, This Machine): in the desktop window, or a browser on the desktop app's own server.
+  const desktop = inDesktop() || !!info.data?.desktop;
+  const tabs = useMemo(() => visibleTabs({ admin, desktop, router }, doc.data ? all : undefined), [admin, all, doc.data, router, desktop]);
   const active = pickTab(requested, tabs) ?? "account";
   const activeTab = tabs.find((t) => t.id === active) ?? tabs[0];
   // The URL says which tab is open (and the first one when it asked for none or one this user can't see).
@@ -167,17 +171,13 @@ export function SettingsDialog({ project, requested, onClose }: { project: Proje
                   <p className="pt-2 text-xs text-muted-foreground">{activeTab.blurb}</p>
                   {doc.isLoading && <div className="py-6 text-sm text-muted-foreground">Loading…</div>}
                   {doc.isError && <div className="py-6 text-sm text-destructive">{(doc.error as Error).message}</div>}
-                  {activeTab.id === "models" && doc.isSuccess && <ConnectionPanel key={pid ?? "server"} pid={pid} mode={mode} sections={all} />}
-                  {sectionsOfTab(activeTab, all).map((s) => (
-                    <section key={s.name} className="py-2" data-testid="settings-section">
-                      <h3 className="sticky top-0 z-10 bg-panel py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{s.name}</h3>
-                      <div className="divide-y">
-                        {s.settings.filter((x) => !hide(x)).map((x) => (
-                          <SettingRow key={x.key} setting={x} pid={pid} scope={scope} />
-                        ))}
-                      </div>
-                    </section>
+                  {activeTab.panel === "connection" && doc.isSuccess && <ConnectionPanel key={pid ?? "server"} pid={pid} mode={mode} sections={all} />}
+                  {groupsOfTab(activeTab, all).map((g) => (
+                    <SettingsGroup key={g.name} group={g} hide={hide} unsaved={g.settings.some((x) => dirty.has(x.key))}>
+                      {(x) => <SettingRow key={x.key} setting={x} pid={pid} scope={scope} />}
+                    </SettingsGroup>
                   ))}
+                  {activeTab.panel === "migo" && <MigoPanel />}
                 </div>
               ) : null}
             </div>
@@ -197,6 +197,50 @@ export function SettingsDialog({ project, requested, onClose }: { project: Proje
         />
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * One group of a config tab: a heading with a line under it, then its settings. An Advanced
+ * group starts collapsed (open when one of its settings has an unsaved edit).
+ */
+function SettingsGroup({
+  group: g,
+  hide,
+  unsaved,
+  children,
+}: {
+  group: Group<Setting>;
+  hide: (x: Setting) => boolean;
+  unsaved: boolean;
+  children: (x: Setting) => React.ReactNode;
+}) {
+  const shown = g.settings.filter((x) => !hide(x));
+  const [open, setOpen] = useState(unsaved);
+  if (shown.length === 0) return null;
+  if (g.advanced)
+    return (
+      <section className="py-2" data-testid="settings-section" data-advanced="true">
+        <button
+          className="flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          aria-expanded={open || unsaved}
+          onClick={() => setOpen((o) => !o)}
+          data-testid="settings-advanced-toggle"
+        >
+          <ChevronRight className={cn("size-3.5 transition-transform", (open || unsaved) && "rotate-90")} />
+          Advanced: {g.name}
+          <span className="font-normal normal-case tracking-normal">({shown.length})</span>
+        </button>
+        {g.blurb && <p className="pl-5 text-xs text-muted-foreground">{g.blurb}</p>}
+        {(open || unsaved) && <div className="divide-y pl-5">{shown.map(children)}</div>}
+      </section>
+    );
+  return (
+    <section className="py-2" data-testid="settings-section">
+      <h3 className="sticky top-0 z-10 bg-panel py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{g.name}</h3>
+      {g.blurb && <p className="text-xs text-muted-foreground">{g.blurb}</p>}
+      <div className="divide-y">{shown.map(children)}</div>
+    </section>
   );
 }
 
@@ -231,22 +275,39 @@ function TabList({
             onChange={(e) => onSelect(e.target.value)}
             data-testid="settings-tab-select"
           >
-            {tabs.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-                {unsaved[t.id] ? " •" : ""}
-              </option>
-            ))}
+            {TAB_GROUPS.map((grp) => {
+              const mine = tabs.filter((t) => t.group === grp.id);
+              return mine.length === 0 ? null : (
+                <optgroup key={grp.id} label={grp.label}>
+                  {mine.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                      {unsaved[t.id] ? " •" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
         </label>
       </div>
-      <div className="hidden w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r p-2 sm:flex">
+      <div className="hidden w-48 shrink-0 flex-col gap-0.5 overflow-y-auto border-r p-2 sm:flex">
         <div role="tablist" aria-orientation="vertical" aria-label="Settings" className="flex flex-col gap-0.5" data-testid="settings-tabs">
           {tabs.map((t, i) => {
             const selected = !searching && t.id === active;
+            const heading = i === 0 || tabs[i - 1].group !== t.group ? TAB_GROUPS.find((g) => g.id === t.group)?.label : undefined;
             return (
+              <div key={t.id} className="contents">
+                {heading && (
+                  <div
+                    className={cn("px-2.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70", i > 0 && "pt-3")}
+                    role="presentation"
+                    data-testid="settings-tab-group"
+                  >
+                    {heading}
+                  </div>
+                )}
               <button
-                key={t.id}
                 ref={(el) => {
                   refs.current[i] = el;
                 }}
@@ -272,6 +333,7 @@ function TabList({
                 <span>{t.label}</span>
                 {!!unsaved[t.id] && <span className="size-1.5 rounded-full bg-warning" title="Unsaved edits" aria-label="unsaved edits" />}
               </button>
+              </div>
             );
           })}
         </div>
@@ -288,7 +350,8 @@ function TabList({
 function Pane({ id }: { id: string }) {
   if (id === "account") return <div className="flex h-full flex-col"><AccountPane /></div>;
   if (id === "users") return <div className="flex h-full flex-col"><UsersPane /></div>;
-  if (id === "machine") return <iframe src="/machine.html" title="This machine" className="h-full min-h-[480px] w-full border-0" data-testid="settings-machine-frame" />;
+  if (id === "about") return <AboutPane />;
+  if (id === "machine") return <iframe src="/machine.html" title="This Machine" className="h-full min-h-[480px] w-full border-0" data-testid="settings-machine-frame" />;
   if (id === "inference") return <div className="flex h-full flex-col"><RouterOverviewPane /></div>;
   if (id === "routes") return <div className="flex h-full flex-col"><RouterRoutesPane /></div>;
   if (id === "router-config") return <div className="flex h-full flex-col"><RouterConfigPane /></div>;
@@ -306,7 +369,7 @@ function SearchResults({
   render,
   loading,
 }: {
-  hits: SearchHit<{ name: string; settings: Setting[] }>[];
+  hits: SearchHit<Group<Setting>>[];
   query: string;
   onOpen: (tab: string) => void;
   render: (s: Setting) => React.ReactNode;
@@ -324,16 +387,13 @@ function SearchResults({
               Open tab
             </button>
           </div>
-          {h.pane ? (
-            <p className="py-1 text-xs text-muted-foreground">{h.tab.blurb}</p>
-          ) : (
-            h.sections.map((s) => (
+          {h.pane && <p className="py-1 text-xs text-muted-foreground">{h.tab.blurb}</p>}
+          {h.sections.map((s) => (
               <div key={s.name}>
                 <h3 className="pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{s.name}</h3>
                 <div className="divide-y">{s.settings.map(render)}</div>
               </div>
-            ))
-          )}
+            ))}
         </section>
       ))}
     </div>

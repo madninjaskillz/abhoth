@@ -239,7 +239,7 @@ function MachineConfig({ b }: { b: BridgeView }) {
   if (!b.remoteConfig) {
     return (
       <section className="rounded-md border border-dashed p-2 text-muted-foreground" data-testid="bridged-readonly">
-        <Lock className="mr-1 inline size-3" /> Read-only: this machine doesn't allow remote config. Its user can turn on <b>Migo: allow Sothoth to config</b> in the desktop app's settings.
+        <Lock className="mr-1 inline size-3" /> Read-only: this machine doesn't allow remote config. Its user can turn on <b>Allow Sothoth Router to change this machine</b> in the desktop app (Settings → Migo Bridge).
       </section>
     );
   }
