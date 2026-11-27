@@ -524,6 +524,11 @@ pub fn commands_for(c: &ControlConfig, server: &str) -> Result<Vec<Cmd>, String>
             let Some(e) = c.engines.get(&spec.engine) else {
                 continue;
             };
+            // Only engines that can run on this card (a port here), as `observe` reads them:
+            // a card with other engines (a compose engine without its container) is no error.
+            if e.port.get(card).is_none() {
+                continue;
+            }
             let d = drivers::for_engine(e);
             if let Ok(r) = resolve::resolve(c, card, &spec) {
                 for cmd in d.start(&r).map_err(|x| x.to_string())? {
@@ -841,5 +846,32 @@ mod tests {
         );
         let r = serde_json::to_string(&Reply::Ok(ExecOutput::ok_with("hi"))).unwrap();
         assert_eq!(parse_reply(&r).unwrap().unwrap().stdout, "hi");
+    }
+
+    #[test]
+    fn export_covers_a_spanning_instance_and_skips_cards_an_engine_cannot_run_on() {
+        let mut c = crate::control::validate::tests::sample_tp();
+        // a managed card no LLM engine has a port on (the compose engine has no container there)
+        c.cards.get_mut("C").unwrap().managed = true;
+        let cmds = commands_for(&c, "gpu").unwrap();
+        let tp: Vec<&Cmd> = cmds
+            .iter()
+            .filter(|x| x.id.starts_with("docker-run:ninfer:A:") && x.text().contains("--tensor"))
+            .collect();
+        assert!(
+            tp.is_empty(),
+            "the sample's profile has no tensor-parallel option"
+        );
+        let both: Vec<&Cmd> = cmds
+            .iter()
+            .filter(|x| {
+                x.id.starts_with("docker-run:ninfer:A:")
+                    && x.text().contains(
+                        "GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,GPU-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                    )
+            })
+            .collect();
+        assert_eq!(both.len(), 1, "{cmds:#?}");
+        assert!(!cmds.iter().any(|x| x.id.contains(":C:")));
     }
 }
