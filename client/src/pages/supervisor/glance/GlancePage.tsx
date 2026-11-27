@@ -653,7 +653,7 @@ export function GlancePage({ streamUrl, historyUrl, admin = false, publicView = 
   if (!s)
     return (
       <div className="glance" data-testid="glance">
-        <div className="boot" role="status">{view.error ? "Can't reach the feed: " + view.error : "Loading Glance…"}</div>
+        <div className="boot" role="status">{view.error ? "Can't reach Nodens (the feed): " + view.error : "Loading Glance…"}</div>
       </div>
     );
   const h = store.history;

@@ -33,11 +33,11 @@ export function BridgesForms() {
   return (
     <section className="space-y-3" data-testid="bridges">
       <SectionHead
-        title="Bridges"
-        blurb="A bridge brings another machine's cards and engines to this router: it dials in (no port opens on it), says what it has, and starts and stops its engines for the router. Make its token here, then run `abhoth bridge --config bridge.toml`, the abhoth-bridge image, or turn on Bridge mode in the Abhoth desktop app. The machines themselves are under Inventory → Bridged machines."
+        title="Migo"
+        blurb="Migo (formerly the bridge) brings another machine's cards and engines to Sothoth: it dials in (no port opens on it), says what it has, and starts and stops its engines for Sothoth. Make its token here, then run `abhoth migo --config migo.toml`, the abhoth-migo image, or turn on Migo mode in the Abhoth desktop app. The machines themselves are under Inventory → Migo machines."
       />
       <div className="flex flex-wrap items-end gap-2">
-        <Field label="New bridge's id" hint="a-z, 0-9, - and _ (it becomes the server's id)">
+        <Field label="New Migo machine's id" hint="a-z, 0-9, - and _ (it becomes the server's id)">
           <Text value={id} onChange={(v) => setId(v.trim().toLowerCase())} placeholder="e.g. truenas or pc" testid="bridge-new-id" />
         </Field>
         <Button size="sm" disabled={!idOk || mint.isPending} onClick={() => mint.mutate({ id, rotate: false })} data-testid="bridge-mint">

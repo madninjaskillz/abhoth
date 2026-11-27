@@ -65,7 +65,7 @@ export function RouterSetupForms() {
         <div className="border-b px-4 py-2">
           <TabsList>
             <TabsTrigger value="servers" data-testid="setup-servers"><Server className="mr-1 size-3.5" />Servers & cards</TabsTrigger>
-            <TabsTrigger value="bridged" data-testid="setup-bridged"><Cable className="mr-1 size-3.5" />Bridged machines</TabsTrigger>
+            <TabsTrigger value="bridged" data-testid="setup-bridged"><Cable className="mr-1 size-3.5" />Migo machines</TabsTrigger>
             <TabsTrigger value="engines" data-testid="setup-engines"><Cpu className="mr-1 size-3.5" />Engines</TabsTrigger>
             <TabsTrigger value="layouts" data-testid="setup-layouts"><Layers className="mr-1 size-3.5" />Layouts</TabsTrigger>
           </TabsList>
@@ -74,7 +74,7 @@ export function RouterSetupForms() {
           <TabsContent value="servers"><ServersSection d={d} submit={submit} busy={flow.prepare.isPending} error={flow.error} /></TabsContent>
           <TabsContent value="bridged">
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Bridged machines are not in router.toml and never part of a layout: their bridge starts and stops their engines on demand.</p>
+              <p className="text-xs text-muted-foreground">Migo machines are not in router.toml and never part of a layout: their Migo starts and stops their engines on demand.</p>
               <BridgedMachinesPane />
             </div>
           </TabsContent>

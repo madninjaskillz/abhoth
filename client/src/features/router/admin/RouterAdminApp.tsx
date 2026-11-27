@@ -1,4 +1,4 @@
-// The router's own admin pages (D151): served by `abhoth router` at /admin/ (no Abhoth web server
+// Sothoth's (the router's) own admin pages (D151): served by `abhoth sothoth` at /admin/ (no Abhoth web server
 // needed), and embedded in the Abhoth app through its proxy. Sign-in with an admin key gives a
 // session cookie; the panes are the app's router panes and forms, pointed at this router.
 import mascot128 from "@/assets/brand/abhoth-mascot-128.webp";
@@ -29,7 +29,7 @@ const TABS = [
   { id: "overview", label: "Overview", icon: Gauge },
   { id: "inventory", label: "Inventory", icon: HardDrive },
   { id: "store", label: "Engine store", icon: Store },
-  { id: "bridges", label: "Bridges", icon: Cable },
+  { id: "bridges", label: "Migo", icon: Cable },
   { id: "setup", label: "Servers & layouts", icon: ServerCog },
   { id: "models", label: "Model list", icon: Boxes },
   { id: "routes", label: "Routes", icon: Route },
@@ -68,8 +68,8 @@ function Brand({ s }: { s: RouterSession }) {
     <div className="flex items-center gap-2">
       <img src={mascot128} alt="" className="size-7" onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
       <div>
-        <div className="text-sm font-semibold leading-tight">{s.name || "Abhoth router"}</div>
-        <div className="text-[11px] text-muted-foreground">admin · v{s.version}</div>
+        <div className="text-sm font-semibold leading-tight">{s.name || "Sothoth"}</div>
+        <div className="text-[11px] text-muted-foreground">Sothoth admin · v{s.version}</div>
       </div>
     </div>
   );

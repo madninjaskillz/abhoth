@@ -154,21 +154,21 @@ function Sharing({ s }: { s: MachineStatus }) {
   return (
     <div className="space-y-4 text-xs" data-testid="machine-sharing">
       <section className="space-y-1">
-        <h3 className="text-sm font-semibold">Bridge</h3>
-        {!s.bridgeMode && <p className="text-muted-foreground">Bridge mode is off: this app runs these engines for itself only. Turn it on in Settings → Connection to offer them to a router (your requests still go through the router then).</p>}
+        <h3 className="text-sm font-semibold">Migo</h3>
+        {!s.bridgeMode && <p className="text-muted-foreground">Migo mode (formerly Bridge mode) is off: this app runs these engines for itself only. Turn it on in Settings → Connection to offer them to Sothoth, the router (your requests still go through it then).</p>}
         {s.bridgeMode && (
           <div className="space-y-0.5" data-testid="machine-bridge-status">
-            <div>Router: <span className="font-mono">{s.bridge?.router ?? s.bridgeRouter ?? "not set"}</span> · {s.bridge?.connected ? <span className="text-success">connected as {s.bridge.server}</span> : <span className="text-warning">not connected</span>}{s.bridge?.enabled === false && " · the router admin has turned it off"}</div>
+            <div>Sothoth: <span className="font-mono">{s.bridge?.router ?? s.bridgeRouter ?? "not set"}</span> · {s.bridge?.connected ? <span className="text-success">connected as {s.bridge.server}</span> : <span className="text-warning">not connected</span>}{s.bridge?.enabled === false && " · the Sothoth admin has turned it off"}</div>
             {s.bridge?.lastError && <div className="text-destructive">{s.bridge.lastError}</div>}
-            <div className="text-muted-foreground">Remote config: {s.remoteConfig ? "a router admin may change this inventory (each change is logged below and can be undone)" : "off: the router sees this machine read-only"}.</div>
-            {s.advancedFile && <div className="text-warning">Advanced: the bridge runs from {s.advancedFile}, not this inventory.</div>}
+            <div className="text-muted-foreground">Remote config: {s.remoteConfig ? "a Sothoth admin may change this inventory (each change is logged below and can be undone)" : "off: Sothoth sees this machine read-only"}.</div>
+            {s.advancedFile && <div className="text-warning">Advanced: Migo runs from {s.advancedFile}, not this inventory.</div>}
           </div>
         )}
       </section>
       {error && <div className="text-destructive">{error}</div>}
       <section className="space-y-1">
-        <h3 className="text-sm font-semibold">Share with the router</h3>
-        <p className="text-muted-foreground">What the router may use when bridged. New engines and models are shared by default while Bridge mode is on.</p>
+        <h3 className="text-sm font-semibold">Share with Sothoth</h3>
+        <p className="text-muted-foreground">What Sothoth (the router) may use through Migo. New engines and models are shared by default while Migo mode is on.</p>
         {engines.length + models.length === 0 && <div className="text-muted-foreground">Nothing to share yet.</div>}
         <div className="grid gap-1 sm:grid-cols-2">
           {engines.map(([id, on]) => (

@@ -319,7 +319,7 @@ function RouteDialog({ route, names, onClose, onSaved }: { route: RouteView; nam
 export function RouterConfigPane() {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="router-config">
-      <PaneHead icon={<ServerCog className="size-4 text-muted-foreground" />} title="Router config">
+      <PaneHead icon={<ServerCog className="size-4 text-muted-foreground" />} title="Sothoth config">
         Servers, cards, engines and layouts (router.toml) and the gateway's model list (router.json), as forms or as text. Every save is checked by the router, shown as a diff, backed up, written atomically, audited and reloaded. Nothing restarts: a changed active layout shows as drift with a plan.
       </PaneHead>
       <Tabs defaultValue="inventory" className="flex min-h-0 flex-1 flex-col">

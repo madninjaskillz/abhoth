@@ -53,7 +53,7 @@ export function InventoryForms({ onBridgeTokens, single }: { onBridgeTokens?: ()
         <div className="overflow-x-auto border-b px-4 py-2">
           <TabsList>
             <TabsTrigger value="servers" data-testid="inv-servers"><Server className="mr-1 size-3.5" />Servers & cards{ownServers(i).length > 0 && <Badge variant="secondary" className="ml-1">{ownServers(i).length}</Badge>}</TabsTrigger>
-            {!single && <TabsTrigger value="bridged" data-testid="inv-bridged-tab"><Cable className="mr-1 size-3.5" />Bridged machines{bridgedServers(i).length > 0 && <Badge variant="secondary" className="ml-1">{bridgedServers(i).length}</Badge>}</TabsTrigger>}
+            {!single && <TabsTrigger value="bridged" data-testid="inv-bridged-tab"><Cable className="mr-1 size-3.5" />Migo machines{bridgedServers(i).length > 0 && <Badge variant="secondary" className="ml-1">{bridgedServers(i).length}</Badge>}</TabsTrigger>}
             <TabsTrigger value="engines" data-testid="inv-engines"><Cpu className="mr-1 size-3.5" />Engines</TabsTrigger>
             <TabsTrigger value="models" data-testid="inv-models"><HardDrive className="mr-1 size-3.5" />Models</TabsTrigger>
             <TabsTrigger value="downloads" data-testid="inv-downloads"><Download className="mr-1 size-3.5" />Downloads</TabsTrigger>
@@ -126,7 +126,7 @@ function ServersPane({ inv, submit, busy, single }: { inv: Inventory; submit: Su
         </div>
         {!single && <Button size="sm" variant="outline" onClick={() => setAdding(true)} data-testid="inv-server-add"><Plus /> Add server</Button>}
       </div>
-      {ownServers(inv).length === 0 && <Empty>No servers yet. Add the machine with your GPUs: the router reaches it over SSH (or runs commands locally). Machines that bridge in are listed under <b>Bridged machines</b>.</Empty>}
+      {ownServers(inv).length === 0 && <Empty>No servers yet. Add the machine with your GPUs: the router reaches it over SSH (or runs commands locally). Machines that come in through Migo are listed under <b>Migo machines</b>.</Empty>}
       {ownServers(inv).map((s) => (
         <div key={s.id} className="rounded-md border" data-testid="inv-server" data-server={s.id}>
           <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">

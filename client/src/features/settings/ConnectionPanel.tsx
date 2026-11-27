@@ -63,7 +63,7 @@ export function ConnectionPanel({ pid, mode, sections }: { pid: string | null; m
     <section className="space-y-3 border-b py-3" data-testid="connection-panel" data-mode={mode}>
       <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Connection</h3>
       <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Connection type">
-        <ModeButton on={mode === "router"} onClick={() => pick("router")} icon={<RouterIcon className="size-4" />} title="Abhoth router" sub="Models, context, vision and tools come from the router" testid="connection-router" />
+        <ModeButton on={mode === "router"} onClick={() => pick("router")} icon={<RouterIcon className="size-4" />} title="Sothoth (Abhoth router)" sub="Models, context, vision and tools come from Sothoth" testid="connection-router" />
         <ModeButton on={mode === "server"} onClick={() => pick("server")} icon={<Server className="size-4" />} title="OpenAI-compatible server" sub="LM Studio, llama.cpp, vLLM… set up here" testid="connection-server" />
       </div>
       {line.text && (
@@ -182,7 +182,7 @@ function FindRouter({ busy, prompt, error, onUse }: { busy: boolean; prompt: boo
               </Button>
             </span>
           ) : (
-            <span className="text-muted-foreground">{check.data.error ? `No answer: ${check.data.error}.` : "That is not an Abhoth router (an OpenAI-compatible server is set up with the other option)."}</span>
+            <span className="text-muted-foreground">{check.data.error ? `No answer: ${check.data.error}.` : "That is not Sothoth, an Abhoth router (an OpenAI-compatible server is set up with the other option)."}</span>
           )}
         </div>
       )}
@@ -228,7 +228,7 @@ function RouterAdmin() {
   if (!entry.show) return null;
   return (
     <div className="space-y-1.5 rounded-md border p-3" data-testid="connection-router-admin">
-      <div className="flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4 text-success" /> Router admin</div>
+      <div className="flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4 text-success" /> Sothoth admin</div>
       <p className="text-xs text-muted-foreground">
         This app's key is an admin key on the router ({doc.data?.principal}). Its servers, cards, engines, layouts and model list are edited on the router's own admin pages.
       </p>
@@ -243,9 +243,9 @@ function RouterAdmin() {
       {open && entry.embedded && (
         <Dialog open onOpenChange={(o) => !o && setOpen(false)}>
           <DialogContent className="flex h-[90vh] max-w-[min(1400px,95vw)] flex-col gap-2 p-3" data-testid="router-admin-dialog">
-            <DialogTitle className="text-sm">Router admin</DialogTitle>
+            <DialogTitle className="text-sm">Sothoth admin</DialogTitle>
             <DialogDescription className="sr-only">The router's own admin pages, through this server.</DialogDescription>
-            <iframe src={entry.embedded} title="Router admin" className="min-h-0 w-full flex-1 rounded border bg-background" data-testid="router-admin-frame" />
+            <iframe src={entry.embedded} title="Sothoth admin" className="min-h-0 w-full flex-1 rounded border bg-background" data-testid="router-admin-frame" />
           </DialogContent>
         </Dialog>
       )}

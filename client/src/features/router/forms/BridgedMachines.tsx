@@ -47,18 +47,18 @@ export function BridgedMachinesPane({ onTokens }: { onTokens?: () => void }) {
   return (
     <div className="space-y-3" data-testid="inv-bridged-pane">
       <div>
-        <h3 className="text-sm font-semibold">Bridged machines</h3>
+        <h3 className="text-sm font-semibold">Migo machines</h3>
         <p className="text-xs text-muted-foreground">
-          Machines that dial this router and offer their cards and engines: a TrueNAS box running the abhoth-bridge image, or a PC with Bridge mode on in the desktop app. They are not servers this router configures: the machine says what it has, you choose whether and how much the router uses it.
+          Machines that dial Sothoth through Migo (formerly the bridge) and offer their cards and engines: a TrueNAS box running the abhoth-migo image, or a PC with Migo mode on in the desktop app. They are not servers this router configures: the machine says what it has, you choose whether and how much the router uses it.
         </p>
       </div>
       {bridges.length === 0 && (
         <div className="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground" data-testid="inv-bridged-empty">
-          <div className="font-medium text-foreground">No machines bridged yet.</div>
+          <div className="font-medium text-foreground">No Migo machines yet.</div>
           <div className="mt-1">
-            How to bridge one: make a token in{" "}
-            {onTokens ? <button className="underline" onClick={onTokens}>Bridges</button> : "Bridges"}
-            , then run <code>abhoth bridge --config bridge.toml</code> (or the abhoth-bridge image) with it, or paste it into the desktop app's Settings → This machine → Bridge mode. The machine appears here when it connects.
+            How to bring one in: make a token in{" "}
+            {onTokens ? <button className="underline" onClick={onTokens}>Migo</button> : "Migo"}
+            , then run <code>abhoth migo --config migo.toml</code> (or the abhoth-migo image) with it, or paste it into the desktop app's Settings → This machine → Migo mode. The machine appears here when it connects.
           </div>
         </div>
       )}
@@ -239,7 +239,7 @@ function MachineConfig({ b }: { b: BridgeView }) {
   if (!b.remoteConfig) {
     return (
       <section className="rounded-md border border-dashed p-2 text-muted-foreground" data-testid="bridged-readonly">
-        <Lock className="mr-1 inline size-3" /> Read-only: this machine doesn't allow remote config. Its user can turn on <b>Bridge: allow router to config</b> in the desktop app's settings.
+        <Lock className="mr-1 inline size-3" /> Read-only: this machine doesn't allow remote config. Its user can turn on <b>Migo: allow Sothoth to config</b> in the desktop app's settings.
       </section>
     );
   }
