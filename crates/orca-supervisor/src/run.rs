@@ -95,6 +95,11 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     let hub = TelemetryHub::new(HubConfig::default());
     hub.spawn_flusher(Duration::from_millis(500));
     let sink: Arc<dyn TelemetrySink> = hub.clone();
+    // Which card each fan cools and its curve, from config (Glance's fan panel).
+    let fan_policy = crate::local::fan_policy_section(&cfg.policy_toml);
+    if fan_policy.as_object().is_some_and(|m| !m.is_empty()) {
+        sink.set_section(orca_sensors::feed::sections::FAN_POLICY, fan_policy);
+    }
     let ep = match (&cfg.supervisor.hostd_socket, &cfg.supervisor.hostd_command) {
         (Some(s), _) => Endpoint::Socket(s.clone()),
         (_, Some(c)) => Endpoint::Command(c.clone()),

@@ -204,6 +204,21 @@ export interface Pool {
   avail_usable?: number;
 }
 
+/** A daily job's newest run log (the dash's `news`, the supervisor's `pipelines` entries). */
+export interface Pipeline {
+  name?: string;
+  file?: string;
+  date?: string;
+  /** done · running · stopped · none (no logs) */
+  status?: string;
+  minutes?: number;
+  mtime?: number;
+  errors?: number;
+  last_error?: string;
+  title?: string;
+  video?: string;
+}
+
 export interface CalendarEntry {
   id: string;
   title: string;
@@ -254,20 +269,13 @@ export interface GlanceState {
     net_tx?: number;
   };
   services?: Service[];
-  news?: {
-    file?: string;
-    date?: string;
-    status?: string;
-    minutes?: number;
-    mtime?: number;
-    errors?: number;
-    last_error?: string;
-    title?: string;
-    video?: string;
-  } | null;
+  news?: Pipeline | null;
   ecoflow?: { watts?: number; unit?: string; updated?: string } | null;
   pools?: Pool[];
   ooms?: { time: string; pid?: number; process?: string; container?: string; anon_mb?: number }[];
+  /** The daily jobs (video pipelines), newest run each; the supervisor's `pipelines`. */
+  pipelines?: Pipeline[];
+  containers?: { name: string; state?: string; health?: string | null; restarts?: number; started_at?: string; image?: string }[];
   errors?: Record<string, string>;
   hostjson_age_s?: number;
   hist?: Record<string, Point[]>;
@@ -515,11 +523,16 @@ export function imageBackendState(b: ImageBackend): { level: Level; text: string
 export const unetLabel = (u: string | undefined): string =>
   (u || "–").replace(/\.gguf$/, "").replace(/-(Q\d\w*|bf16|fp16|fp8\w*)$/i, "");
 
-export function newsState(n: NonNullable<GlanceState["news"]>, today: string): { level: Level; text: string; stale: boolean } {
+export function newsState(n: Pipeline, today: string): { level: Level; text: string; stale: boolean } {
+  if (n.status === "none") return { level: "", text: "no run logs found", stale: false };
   const level: Level = n.status === "done" ? (n.errors ? "warning" : "good") : n.status === "running" ? "warning" : "critical";
-  const text = n.status === "done" ? `done in ${n.minutes} min` : n.status === "running" ? "running" : "stopped without finishing";
+  const text = n.status === "done" ? (n.minutes != null ? `done in ${n.minutes} min` : "done") : n.status === "running" ? "running" : "stopped without finishing";
   return { level, text, stale: n.date !== today };
 }
+
+/** The jobs to show: the supervisor's pipelines, else the dash's one AI News job. */
+export const pipelinesOf = (s: GlanceState): Pipeline[] =>
+  s.pipelines?.length ? s.pipelines : s.news ? [{ name: "AI News", ...s.news }] : [];
 
 /** The connection dot: green under 6 s since the last message, amber to 12 s, then red. */
 export function connLevel(ageS: number, error: boolean): Level {
@@ -669,22 +682,31 @@ export interface FanSample {
 }
 
 /** The fans section over the dash's ESP block (which knows each duct's card, the curve, WiFi). */
-export function espFromFans(fans: Record<string, FanSample>, base: Esp | null | undefined, gpus: Gpu[]): Esp {
+export function espFromFans(fans: Record<string, FanSample>, base: Esp | null | undefined, gpus: Gpu[], policy?: Record<string, FanPolicy>): Esp {
   const byFan = new Map((base?.fans || []).map((f) => [f.fan, f]));
   const out: (Duct & { pci: string })[] = [];
   for (const [id, f] of Object.entries(fans)) {
     const n = Number(id.replace(/\D+/g, ""));
     const b = byFan.get(n);
-    const g = b ? gpus.find((x) => x.pci === b.pci) : undefined;
+    // Which card the fan cools: the supervisor's config, else the dash's PCI map.
+    const card = policy?.[id]?.card;
+    const g = (card ? gpus.find((x) => x.card === card) : undefined) ?? (b ? gpus.find((x) => x.pci === b.pci) : undefined);
     out.push({
-      fan: n, pci: b?.pci ?? id, rpm: f.rpm ?? null, duty: f.duty_pct ?? null, ff_duty: f.ff_duty_pct ?? null,
-      temp: f.control_temp_c ?? null, load: g?.utilization_gpu_ratio != null ? g.utilization_gpu_ratio * 100 : b?.load ?? null,
+      fan: n, pci: g?.pci ?? b?.pci ?? id, rpm: f.rpm ?? null, duty: f.duty_pct ?? null, ff_duty: f.ff_duty_pct ?? null,
+      // Load as the ESP is sent it: the card's power as a share of its limit.
+      temp: f.control_temp_c ?? null,
+      load: g?.power_draw_watts != null && g.enforced_power_limit_watts ? (100 * g.power_draw_watts) / g.enforced_power_limit_watts : b?.load ?? (g?.utilization_gpu_ratio != null ? g.utilization_gpu_ratio * 100 : null),
       stalled: !!f.stalled,
     });
   }
   out.sort((x, y) => x.fan - y.fan);
   const vals = Object.values(fans);
-  return { ...(base || {}), live: vals.length > 0, connected: vals.length > 0, failsafe: vals.some((f) => f.failsafe), fans: out };
+  const firstPolicy = policy ? Object.values(policy)[0] : undefined;
+  return {
+    ...(base || {}), live: vals.length > 0, connected: vals.length > 0, failsafe: vals.some((f) => f.failsafe), fans: out,
+    // The device's own numbers (the dash read them off the ESP) win over what config says.
+    cfg: { ...cfgFromPolicy(firstPolicy), ...(base?.cfg || {}) },
+  };
 }
 
 /** orca-sensors `BmcSample`: IPMI SDR rows. */
@@ -814,11 +836,124 @@ export function calendarFromSection(c: Record<string, unknown>): GlanceState["ca
   };
 }
 
+// ------------------------------------------------------------------ the supervisor's host-local sections
+
+/** One of the supervisor's `models.servers` (orca-supervisor local.rs: host.json + request logs). */
+export interface ModelServer {
+  port?: number;
+  model?: string;
+  lanes?: number;
+  cards?: string[];
+  engine?: string;
+  error?: string;
+  tok_s?: number;
+  running?: number;
+  queued?: number;
+  state?: string;
+  requests?: number;
+  output_tokens?: number;
+  prompt_tokens?: number;
+  prefix_reused?: number;
+  decode_tok_s?: number;
+  recent?: RequestRow[];
+  started_at?: string;
+}
+
+/**
+ * The model servers as the page's instances, keyed by container. Lanes are estimated as the
+ * dash did for ninfer: the first `running` lanes generate, each at an even share of the server's
+ * rate. What only the dash knew (context, KV, engine version) stays from its entry.
+ */
+export function instancesFromModels(servers: Record<string, ModelServer>, base: Record<string, Instance> | undefined, containers: GlanceState["containers"]): Record<string, Instance> {
+  const out: Record<string, Instance> = {};
+  const baseOf = (name: string) => Object.values(base || {}).find((i) => i.container === name);
+  for (const [name, m] of Object.entries(servers)) {
+    const b = baseOf(name);
+    const cards = m.cards || [];
+    const letter = cards.length === 1 ? cards[0] : "";
+    const engine = m.engine && m.engine !== "unknown" ? m.engine : b?.engine_label ?? b?.engine;
+    const running = m.running ?? 0;
+    const tok = m.tok_s ?? 0;
+    const lanes = m.lanes ?? (b?.slots || []).filter((x) => x.id !== "solo").length;
+    const slots = Array.from({ length: lanes }, (_, i) => ({
+      id: i, label: letter ? `${letter}${i + 1}` : String(i), state: i < running ? "generating" : "idle",
+      tok_s: i < running && running ? Math.round((tok / running) * 10) / 10 : 0, estimated: true,
+    }));
+    const c = (containers || []).find((x) => x.name === name);
+    out[name] = {
+      key: name,
+      role: engine && cards.length ? `${engine} ${cards.join("+")}` : b?.role ?? name,
+      model: m.model ?? b?.model,
+      engine, engine_label: engine, engine_version: b?.engine_version,
+      port: m.port ?? b?.port, container: name, ctx: b?.ctx, kv: b?.kv,
+      up: c ? c.state === "running" : b?.up ?? true,
+      running, queued: m.queued ?? 0, tok_s: tok,
+      started_at: m.started_at ?? c?.started_at ?? b?.started_at,
+      slots,
+      requests: m.recent ?? b?.requests,
+      totals: { requests: m.requests, output_tokens: m.output_tokens, decode_tok_s: m.decode_tok_s, draft_accept: b?.totals?.draft_accept },
+      cache: b?.cache,
+    };
+  }
+  return out;
+}
+
+/** The detected layout (as the dash named it): the servers' models, with how many copies. */
+export function layoutOf(insts: Instance[]): NonNullable<GlanceState["layout"]> {
+  const by = new Map<string, number>();
+  for (const i of insts) by.set(i.model || "?", (by.get(i.model || "?") ?? 0) + 1);
+  const name = [...by.entries()].sort((a, b) => b[1] - a[1]).map(([m, n]) => (n > 1 ? `${m} ×${n}` : m)).join(" + ");
+  return { name: name || "No LLM running", copies: insts.length, slots: insts.reduce((a, i) => a + (i.slots || []).filter((x) => x.id !== "solo").length, 0) };
+}
+
+/** The router's slot leases (`leases`, kind `slot`) as the dash's pig-slots map. */
+export function leasesAsSlots(leases: unknown[]): NonNullable<GlanceState["pig"]> {
+  const slots: Record<string, Lease | null> = {};
+  for (const x of leases) {
+    if (!x || typeof x !== "object") continue;
+    const l = x as { id?: string; kind?: string; holder?: string; host?: string; label?: string; client?: string; idle_s?: number };
+    if (l.kind !== "slot" || !l.id) continue;
+    slots[l.id] = { kind: l.client, label: l.label, owner: l.holder, host: l.host, idle_s: l.idle_s };
+  }
+  return { slots };
+}
+
+/** A fan's configured policy (the supervisor's `fan_policy`, from its config). */
+export interface FanPolicy {
+  card?: string | null;
+  curve?: [number, number][] | null;
+  min_duty?: number | null;
+  max_temp?: number | null;
+  feed_forward?: { lo?: number; hi?: number; max_duty?: number } | null;
+}
+
+/** The policy's curve numbers under the ESP's own names (the panel's footnote). */
+export function cfgFromPolicy(p: FanPolicy | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!p) return out;
+  const c = p.curve || [];
+  if (c.length) {
+    out["Curve Low Temp"] = c[0][0];
+    out["Curve High Temp"] = c[c.length - 1][0];
+  }
+  if (p.min_duty != null) out["Min Duty"] = p.min_duty;
+  if (p.max_temp != null) out["Critical Temp"] = p.max_temp;
+  const ff = p.feed_forward;
+  if (ff?.lo != null) out["FF Low Load"] = ff.lo;
+  if (ff?.hi != null) out["FF High Load"] = ff.hi;
+  if (ff?.max_duty != null) out["FF Max Duty"] = ff.max_duty;
+  return out;
+}
+
+type SensorValue = { v?: number; u?: string; ts?: number };
+
 /**
  * The page's state from the hub's sections. `dash` (the legacy dash's state, while the owning
  * subsystems have no sections of their own) is the base; `gpus`, `host`, `calendar`, `alerts`,
  * `engines` and `redacted` override it.
  */
+const sameList = (a: string[] | undefined, b: string[]) => !!a && a.length === b.length && a.every((x, i) => x === b[i]);
+
 export function fromSections(sec: Record<string, unknown>, tsMs: number): GlanceState {
   const dash = (sec.dash ?? {}) as Partial<GlanceState>;
   // The supervisor's sections carry no clock of their own: the newest of theirs and the dash's.
@@ -834,6 +969,41 @@ export function fromSections(sec: Record<string, unknown>, tsMs: number): Glance
   }
   if (sec.host && typeof sec.host === "object") s.host = { ...dash.host, ...hostFromSample(sec.host as HostSample) };
   const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+  // The supervisor's host-local sections (orca-supervisor local.rs) replace the dash's panels.
+  if (Array.isArray(sec.containers)) s.containers = sec.containers as GlanceState["containers"];
+  if (isObj(sec.storage)) {
+    const st = sec.storage as { pools?: Pool[]; age_s?: number };
+    if (Array.isArray(st.pools)) s.pools = st.pools;
+    if (st.age_s != null) s.hostjson_age_s = st.age_s;
+  }
+  if (Array.isArray(sec.ooms)) s.ooms = sec.ooms as GlanceState["ooms"];
+  if (isObj(sec.image)) s.image = sec.image as GlanceState["image"];
+  if (Array.isArray(sec.services) && sec.services.length) s.services = sec.services as Service[];
+  if (Array.isArray(sec.pipelines)) s.pipelines = sec.pipelines as Pipeline[];
+  if (Array.isArray(sec.leases)) s.pig = leasesAsSlots(sec.leases);
+  const eco = isObj(sec.sensors) ? (sec.sensors["ha.ecoflow_ac_output_w"] as SensorValue | undefined) : undefined;
+  if (eco && typeof eco.v === "number")
+    s.ecoflow = { watts: eco.v, unit: "W", updated: eco.ts ? new Date(eco.ts).toISOString() : undefined };
+  const modelErrors: Record<string, string> = {};
+  if (isObj(sec.models) && isObj(sec.models.servers)) {
+    const servers = sec.models.servers as Record<string, ModelServer>;
+    s.llm = instancesFromModels(servers, dash.llm, s.containers);
+    s.layout = layoutOf(Object.values(s.llm));
+    for (const [n, m] of Object.entries(servers)) if (m.error) modelErrors[n] = m.error;
+    if (s.gpus) {
+      s.gpus = s.gpus.map((g) => {
+        const llm = Object.entries(servers).filter(([, m]) => g.card && (m.cards || []).includes(g.card)).map(([k]) => k);
+        return sameList(g.llm, llm) ? g : { ...g, llm };
+      });
+    }
+  }
+  if (isObj(sec.gpu_procs) && s.gpus) {
+    const procs = sec.gpu_procs as Record<string, NonNullable<Gpu["procs"]>>;
+    s.gpus = s.gpus.map((g) => {
+      const p = g.card ? procs[g.card] ?? [] : g.procs;
+      return JSON.stringify(p) === JSON.stringify(g.procs) ? g : { ...g, procs: p };
+    });
+  }
   if (isObj(sec.calendar)) {
     // The supervisor's calendar has what is on now; the router's upcoming occurrences come apart.
     const c = Array.isArray(sec.calendar_next) && !Array.isArray(sec.calendar.next) ? { ...sec.calendar, next: sec.calendar_next } : sec.calendar;
@@ -847,9 +1017,10 @@ export function fromSections(sec: Record<string, unknown>, tsMs: number): Glance
     s.engines = enginesFromRouter(e);
   }
   if (isObj(sec.fans)) {
-    s.esp = espFromFans(sec.fans as Record<string, FanSample>, dash.esp, s.gpus || []);
+    const policy = isObj(sec.fan_policy) ? (sec.fan_policy as Record<string, FanPolicy>) : undefined;
+    s.esp = espFromFans(sec.fans as Record<string, FanSample>, dash.esp, s.gpus || [], policy);
     const byPci = new Map((s.esp.fans || []).map((f) => [f.pci, f]));
-    if (s.gpus) s.gpus = s.gpus.map((g) => (g.duct && byPci.has(g.pci) ? { ...g, duct: { ...g.duct, ...byPci.get(g.pci)! } } : g));
+    if (s.gpus) s.gpus = s.gpus.map((g) => (byPci.has(g.pci) && (g.duct || policy) ? { ...g, duct: { ...(g.duct || {}), ...byPci.get(g.pci)! } } : g));
   }
   if (isObj(sec.bmc)) s.bmc = bmcFromSample(sec.bmc as BmcSample, tsMs);
   if (isObj(sec.clocks) && s.gpus) {
@@ -857,6 +1028,7 @@ export function fromSections(sec: Record<string, unknown>, tsMs: number): Glance
     s.gpus = s.gpus.map((g) => (g.card && clocks[g.card] ? { ...g, clock: clocks[g.card] } : g));
   }
   const errors: Record<string, string> = { ...(dash.errors || {}) };
+  for (const [n, e] of Object.entries(modelErrors)) errors[n] = e;
   if (isObj(sec.feed_errors)) for (const [k, v] of Object.entries(sec.feed_errors)) errors[k] = String(v);
   const hostd = isObj(sec.health) && isObj(sec.health.hostd) ? (sec.health.hostd as { status?: string }) : null;
   if (hostd && hostd.status && hostd.status !== "ok") errors.hostd = hostd.status;

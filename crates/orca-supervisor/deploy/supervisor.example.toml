@@ -37,3 +37,10 @@ services = [
   { name = "ComfyUI", group = "Media", kind = "http", port = 8188, path = "/system_stats" },
   { name = "GPU fan ESP32", group = "Infra", kind = "fans" },
 ]
+# host.json names host paths (the ninfer request logs); where they are mounted here.
+path_map = [["/mnt/Storage/ai/ninfer/logs", "/ninfer-logs"]]
+# Daily jobs whose newest run_daily_<date>.log Glance shows (read-only mounts of the log folders).
+pipelines = [
+  { name = "AI News", logs = "/video-logs/ai-news/run_daily_*.log" },
+  { name = "Video Game News", logs = "/video-logs/game-news/run_daily_*.log" },
+]

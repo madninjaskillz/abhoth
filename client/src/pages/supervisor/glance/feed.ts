@@ -149,6 +149,18 @@ export class History {
     return this.rings.get(id);
   }
 
+  /** Older samples in front of a series (history fetched after the live samples began). */
+  prepend(id: string, pts: Point[], wall: number): void {
+    const cur = this.rings.get(id)?.points() ?? [];
+    const first = cur.length ? cur[0][0] : Infinity;
+    const older = pts.filter((p) => p[0] < first).sort((a, b) => a[0] - b[0]);
+    if (!older.length) return;
+    const r = new Ring(this.cap);
+    for (const [t, v] of older.concat(cur)) r.push(t, v);
+    r.touched = wall;
+    this.rings.set(id, r);
+  }
+
   /** Drops series nothing has fed for `idleS` (a layout switch replaces engines and slots). */
   prune(wall: number, idleS: number): void {
     for (const [id, r] of this.rings) if (wall - r.touched > idleS) this.rings.delete(id);
@@ -271,6 +283,55 @@ export function historyState(h: unknown): GlanceState | null {
   return { time: Number(h.time) || 0, hist: (isObj(h.hist) ? h.hist : {}) as GlanceState["hist"], gpus, llm };
 }
 
+// ------------------------------------------------------------------ the supervisor's sensor history
+
+/** Supervisor sensor id → the page's series id and a scale (util is a ratio on the page). */
+export function historyMap(s: GlanceState): Map<string, { series: string[]; scale: number }> {
+  const m = new Map<string, { series: string[]; scale: number }>();
+  const add = (id: string, series: string[], scale = 1) => m.set(id, { series, scale });
+  for (const g of s.gpus || []) {
+    if (!g.card) continue;
+    add(`gpu.${g.card}.core`, [gpuSeries(g, "temperature_gpu")]);
+    add(`gpu.${g.card}.hbm`, [gpuSeries(g, "temperature_memory")]);
+    add(`gpu.${g.card}.power_w`, [gpuSeries(g, "power_draw_watts")]);
+    add(`gpu.${g.card}.util`, [gpuSeries(g, "utilization_gpu_ratio")], 0.01);
+  }
+  for (const f of s.esp?.fans || []) {
+    const g = (s.gpus || []).find((x) => x.pci === f.pci && x.duct);
+    add(`fan.duct${f.fan}.duty`, [`fan:${f.fan}:duty`, ...(g ? [gpuSeries(g, "fan_duty")] : [])]);
+    add(`fan.duct${f.fan}.rpm`, [`fan:${f.fan}:rpm`, ...(g ? [gpuSeries(g, "fan_rpm")] : [])]);
+  }
+  add("host.cpu", ["cpu"]);
+  add("host.mem_consumed", ["mem_used"]);
+  add("engine.all.tok_s", ["total_tok_s"]);
+  for (const i of Object.values(s.llm || {})) add(`engine.${i.key}.tok_s`, [llmSeries(i)]);
+  add("ha.ecoflow_ac_output_w", ["ecoflow"]);
+  add('bmc."CPU1 Temp"', ["bmc:cpu1"]);
+  add('bmc."CPU2 Temp"', ["bmc:cpu2"]);
+  add('bmc."MB_10G Temp"', ["bmc:nic"]);
+  return m;
+}
+
+/** `/api/glance/history?…` for the page's series (the last 10 minutes). */
+export const historyQuery = (s: GlanceState): string =>
+  "range=10m&ids=" + [...historyMap(s).keys()].map(encodeURIComponent).join(",");
+
+/** The supervisor's history answer `{series: {id: [[ms, v]]}}` → the page's series. */
+export function historySeries(s: GlanceState, body: unknown): [string, Point[]][] {
+  const series = isObj(body) && isObj(body.series) ? body.series : {};
+  const map = historyMap(s);
+  const out: [string, Point[]][] = [];
+  for (const [id, raw] of Object.entries(series)) {
+    const to = map.get(id);
+    if (!to || !Array.isArray(raw)) continue;
+    const pts: Point[] = raw
+      .filter((p): p is [number, number | null] => Array.isArray(p) && typeof p[0] === "number")
+      .map(([t, v]) => [t / 1000, v == null ? null : v * to.scale]);
+    for (const sid of to.series) out.push([sid, pts]);
+  }
+  return out;
+}
+
 /** The raw state without history (the `history` section, and the legacy dash's inline `hist`). */
 function stripRaw(raw: Record<string, unknown>): Record<string, unknown> {
   let out = raw;
@@ -333,7 +394,9 @@ export class GlanceStore {
 
   /** History a message carries: the `history` section, or a legacy state's inline `hist`. */
   private seed(raw: Record<string, unknown>, wall: number) {
-    const h = "history" in raw ? historyState(raw.history) : (raw as unknown as GlanceState);
+    // A legacy state has its clock (`time`); the supervisor's sections without a `history`
+    // section carry none (their history comes from /api/glance/history).
+    const h = "history" in raw ? historyState(raw.history) : typeof raw.time === "number" ? (raw as unknown as GlanceState) : null;
     if (h) for (const [id, pts] of histOf(h)) for (const [t, v] of pts) this.history.push(id, t, v, wall);
   }
 
@@ -375,6 +438,13 @@ export class GlanceStore {
     if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
     this.set({ lastAt: this.now() });
     return true;
+  }
+
+  /** Fetched history in front of the live samples (charts start full). */
+  seedHistory(series: [string, Point[]][]): void {
+    const wall = this.now() / 1000;
+    for (const [id, pts] of series) this.history.prepend(id, pts, wall);
+    this.set({});
   }
 
   status(status: FeedStatus, error: string | null = null): void {

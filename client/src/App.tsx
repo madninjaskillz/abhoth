@@ -101,7 +101,7 @@ export default function App() {
       <div className="relative min-h-0 flex-1">
         {glanceOpen && info.data?.glance && (
           <div className="absolute inset-0 z-20 bg-background">
-            <GlancePage streamUrl="/api/glance/stream" admin={isAdmin()} onClose={() => setGlanceOpen(false)} />
+            <GlancePage streamUrl="/api/glance/stream" historyUrl="/api/glance/history" admin={isAdmin()} onClose={() => setGlanceOpen(false)} />
           </div>
         )}
         {benchOpen && (

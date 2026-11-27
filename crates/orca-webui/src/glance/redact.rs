@@ -242,6 +242,47 @@ impl Redaction {
                     }
                 }
                 "health" if self.errors => strip_keys(&mut v, &["error", "last_error"]),
+                // The supervisor's host-local sections (orca-supervisor local.rs).
+                "pipelines" if self.errors => strip_keys(&mut v, &["last_error", "last_line"]),
+                "gpu_procs" if self.containers => strip_keys(&mut v, &["container"]),
+                "services" if self.endpoints => strip_keys(&mut v, &["port"]),
+                "containers" if self.containers => v = json!([]),
+                "ooms" => {
+                    for r in v
+                        .as_array_mut()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_object_mut)
+                    {
+                        if self.containers {
+                            r.remove("container");
+                        }
+                        if self.oom_processes {
+                            r.remove("process");
+                            r.remove("pid");
+                            r.remove("cmdline");
+                        }
+                    }
+                }
+                "models" => {
+                    for s in v
+                        .get_mut("servers")
+                        .and_then(Value::as_object_mut)
+                        .into_iter()
+                        .flat_map(|m| m.values_mut())
+                        .filter_map(Value::as_object_mut)
+                    {
+                        if self.requests {
+                            s.remove("recent");
+                        }
+                        if self.endpoints {
+                            s.remove("port");
+                        }
+                        if self.errors {
+                            s.remove("error");
+                        }
+                    }
+                }
                 _ => {}
             }
             out.push((k.clone(), v));
@@ -453,6 +494,53 @@ mod tests {
         assert_eq!(out["gpus"][0]["llm"][0], "ninfer-b");
         let kept = Redaction::parse("requests").unwrap().apply(&st);
         assert!(kept["llm"]["ninfer-b:8096"].is_object());
+    }
+
+    #[test]
+    fn the_supervisors_local_sections() {
+        let mut m = serde_json::Map::new();
+        m.insert(
+            "pipelines".into(),
+            json!([{"name": "AI News", "status": "done", "last_error": "/secret/x", "last_line": "l"}]),
+        );
+        m.insert(
+            "gpu_procs".into(),
+            json!({"A": [{"process": "p", "container": "ix-app-1"}]}),
+        );
+        m.insert("containers".into(), json!([{"name": "ix-app-1"}]));
+        m.insert(
+            "ooms".into(),
+            json!([{"container": "ix-b-1", "process": "python3", "anon_mb": 9}]),
+        );
+        m.insert(
+            "models".into(),
+            json!({"servers": {"n": {"port": 8096, "recent": [{"out": 1}], "error": "boom", "tok_s": 2}}}),
+        );
+        m.insert(
+            "services".into(),
+            json!([{"name": "x", "port": 8010, "up": true}]),
+        );
+        let out: serde_json::Map<String, Value> = Redaction::default()
+            .apply_sections(&m)
+            .into_iter()
+            .collect();
+        let text = Value::Object(out.clone()).to_string();
+        for gone in [
+            "/secret/x",
+            "ix-app-1",
+            "ix-b-1",
+            "python3",
+            "8096",
+            "boom",
+            "\"recent\"",
+            "8010",
+        ] {
+            assert!(!text.contains(gone), "{gone} leaked: {text}");
+        }
+        assert_eq!(out["pipelines"][0]["status"], "done");
+        assert_eq!(out["gpu_procs"]["A"][0]["process"], "p");
+        assert_eq!(out["ooms"][0]["anon_mb"], 9);
+        assert_eq!(out["models"]["servers"]["n"]["tok_s"], 2);
     }
 
     #[test]

@@ -20,6 +20,7 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/glance/snapshot", get(snapshot))
         .route("/api/glance/stream", get(stream))
+        .route("/api/glance/history", get(history))
         .route("/api/glance/cards/{card}/{action}", post(card_action))
         .route("/api/glance/jobs/{id}", get(job))
 }
@@ -55,6 +56,61 @@ async fn stream(State(state): State<Arc<AppState>>, headers: axum::http::HeaderM
         super::feed::last_event_id(&headers),
         g.options.ping,
     )
+}
+
+/// `GET /api/glance/history?range=10m&ids=gpu.A.core,…`: the supervisor's sensor history (its
+/// `/api/v1/supervisor/history`), so the charts start full instead of empty. Read-only; the
+/// query is passed on only when it is plain sensor ids.
+async fn history(State(state): State<Arc<AppState>>, uri: axum::http::Uri) -> Response {
+    let Some(g) = glance(&state) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some(base) = g.options.supervisor.as_deref() else {
+        return err(StatusCode::NOT_FOUND, "no supervisor feed");
+    };
+    let q = uri.query().unwrap_or("");
+    if !history_query_ok(q) {
+        return err(StatusCode::BAD_REQUEST, "bad history query");
+    }
+    let url = format!("{}/api/v1/supervisor/history?{q}", supervisor_base(base));
+    let got = async {
+        let r = state
+            .http
+            .get(&url)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|e| e.without_url().to_string())?;
+        let st = r.status().as_u16();
+        let v: Value = r.json().await.map_err(|e| e.without_url().to_string())?;
+        Ok::<_, String>((st, v))
+    }
+    .await;
+    let mut r = relay(got);
+    r.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    r
+}
+
+/// The supervisor's base URL from the configured one (with or without the stream path).
+pub fn supervisor_base(u: &str) -> &str {
+    let b = u.trim_end_matches('/');
+    b.strip_suffix("/api/v1/supervisor/stream").unwrap_or(b)
+}
+
+/// `range` and `ids` only, sensor-id characters only (percent-encoded quotes and spaces too).
+pub fn history_query_ok(q: &str) -> bool {
+    q.len() <= 4096
+        && q.split('&').filter(|kv| !kv.is_empty()).all(|kv| {
+            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+            matches!(k, "range" | "ids")
+                && v.chars().all(|c| {
+                    c.is_ascii_alphanumeric()
+                        || matches!(c, '.' | '_' | '-' | '*' | ',' | '%' | '+')
+                })
+        })
 }
 
 fn acting(p: &Principal) -> orca_core::router_link::ActingUser {
@@ -145,5 +201,29 @@ fn relay(r: Result<(u16, Value), String>) -> Response {
             (code, Json(body)).into_response()
         }
         Err(e) => err(StatusCode::BAD_GATEWAY, &e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_queries_and_bases() {
+        assert!(history_query_ok(
+            "range=10m&ids=gpu.A.core,bmc.%22CPU1%20Temp%22,fan.*"
+        ));
+        assert!(history_query_ok(""));
+        assert!(!history_query_ok("ids=a&url=http://x"));
+        assert!(!history_query_ok("ids=a/../b"));
+        assert!(!history_query_ok("ids=a#b"));
+        assert_eq!(
+            supervisor_base("http://127.0.0.1:9890/"),
+            "http://127.0.0.1:9890"
+        );
+        assert_eq!(
+            supervisor_base("http://h:1/api/v1/supervisor/stream"),
+            "http://h:1"
+        );
     }
 }

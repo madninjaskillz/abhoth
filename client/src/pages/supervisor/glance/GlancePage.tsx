@@ -1,12 +1,12 @@
-import { Fragment, memo, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { GlanceStore, connectFeed, gpuSeries, llmSeries, slotSeries, type History } from "./feed";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { GlanceStore, connectFeed, gpuSeries, historyQuery, historySeries, llmSeries, slotSeries, type History } from "./feed";
 import { Spark } from "./Spark";
 import { SwitchProgress } from "@/features/router/widgets";
 import type { JobSummary } from "@/features/router/routerModel";
 import {
   fromSections,
   ago, alertLevel, appName, cpuLevel, engineLevel, espState, fanText, fmt, gib, gpuForCard, imageBackendState, instancesOf,
-  kTok, leaseText, memory, newsState, nicLevel, pills, poolFreeText, poolPct, poolsOrdered, rate, recentRequests, roleOf,
+  kTok, leaseText, memory, newsState, nicLevel, pills, pipelinesOf, poolFreeText, poolPct, poolsOrdered, rate, recentRequests, roleOf,
   rpm, serviceGroups, shortName, slotChip, tempLevel, throttles, totals, unetLabel, connLevel,
   type CardState, type GlanceState, type Gpu, type Instance, type Level,
 } from "./model";
@@ -16,6 +16,8 @@ import "./glance.css";
 export interface GlanceProps {
   /** `/api/glance/stream` (signed in) or `/public/glance/stream` (the public listener). */
   streamUrl: string;
+  /** The supervisor's sensor history (`/api/glance/history`): the charts start full. */
+  historyUrl?: string;
   /** Admins get the card controls. */
   admin?: boolean;
   /** The redacted public view: no controls at all. */
@@ -35,6 +37,19 @@ function useGlance(streamUrl: string) {
     return () => clearInterval(t);
   }, []);
   return { store, view, now };
+}
+
+/** Once per connection, when the cards are known: the last 10 minutes in front of the live samples. */
+function useHistory(store: GlanceStore, state: GlanceState | null, url: string | undefined) {
+  const asked = useRef<GlanceStore | null>(null);
+  useEffect(() => {
+    if (!url || !state || asked.current === store || !(state.gpus || []).some((g) => g.card)) return;
+    asked.current = store;
+    fetch(`${url}?${historyQuery(state)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => b && store.seedHistory(historySeries(state, b)))
+      .catch(() => undefined);
+  }, [store, state, url]);
 }
 
 /** A running switch in the control plane's shape (🟨C's widget shows it); the legacy dash's job has no steps. */
@@ -225,7 +240,7 @@ function CardsPanel({ s, admin }: { s: GlanceState; admin: boolean }) {
   };
   return (
     <section className="panel" aria-labelledby="g-cards">
-      <h2 id="g-cards">32 GB cards · online / offline</h2>
+      <h2 id="g-cards">Cards · online / offline</h2>
       {Object.values(cards).map((v: CardState) => {
         const g = gpuForCard(s, v);
         const action = v.offline ? "online" : "offline";
@@ -443,17 +458,24 @@ function Pools({ s }: { s: GlanceState }) {
 }
 
 function News({ s, nowMs }: { s: GlanceState; nowMs: number }) {
-  const n = s.news;
-  if (!n) return <section className="panel"><h2>AI News job</h2><div className="muted">No run logs found</div></section>;
-  const st = newsState(n, new Date(nowMs).toISOString().slice(0, 10));
+  const jobs = pipelinesOf(s);
+  const today = new Date(nowMs).toISOString().slice(0, 10);
   return (
     <section className="panel" aria-labelledby="g-news">
-      <h2 id="g-news">AI News job</h2>
-      <div className="row"><Dot level={st.level} /><b>{n.date}</b><span className="t2">{st.text}</span>{st.stale && <span className="muted small">(no run today yet)</span>}</div>
-      {n.title && <div className="t2 small" style={{ margin: "4px 0" }}>{n.title}</div>}
-      {n.video && <div className="small"><a href={`https://studio.youtube.com/video/${encodeURIComponent(n.video)}/edit`} target="_blank" rel="noopener noreferrer">YouTube Studio</a></div>}
-      <div className="muted small" style={{ marginTop: 4 }}>log {n.file} · updated {ago(nowMs / 1000 - (n.mtime ?? 0))} ago{n.errors ? ` · ${n.errors} error lines` : ""}</div>
-      {n.last_error && <div className="err" style={{ marginTop: 4, overflowWrap: "anywhere" }}>{n.last_error}</div>}
+      <h2 id="g-news">Video pipelines</h2>
+      {!jobs.length && <div className="muted">No run logs found</div>}
+      {jobs.map((n, i) => {
+        const st = newsState(n, today);
+        return (
+          <div key={n.name ?? i} className="job" style={{ marginTop: i ? 10 : 0 }}>
+            <div className="row"><Dot level={st.level} /><b>{n.name ?? "AI News"}</b>{n.date && <span className="num">{n.date}</span>}<span className="t2">{st.text}</span>{st.stale && <span className="muted small">(no run today yet)</span>}</div>
+            {n.title && <div className="t2 small" style={{ margin: "4px 0" }}>{n.title}</div>}
+            {n.video && <div className="small"><a href={`https://studio.youtube.com/video/${encodeURIComponent(n.video)}/edit`} target="_blank" rel="noopener noreferrer">YouTube Studio</a></div>}
+            {n.file && <div className="muted small" style={{ marginTop: 4 }}>log {n.file} · updated {ago(nowMs / 1000 - (n.mtime ?? 0))} ago{n.errors ? ` · ${n.errors} error lines` : ""}</div>}
+            {n.last_error && <div className="err small" style={{ marginTop: 4, overflowWrap: "anywhere" }}>{n.last_error}</div>}
+          </div>
+        );
+      })}
     </section>
   );
 }
@@ -621,9 +643,10 @@ function Alerts({ s, nowMs }: { s: GlanceState; nowMs: number }) {
 
 // ------------------------------------------------------------------ page
 
-export function GlancePage({ streamUrl, admin = false, publicView = false, onClose }: GlanceProps) {
+export function GlancePage({ streamUrl, historyUrl, admin = false, publicView = false, onClose }: GlanceProps) {
   const { store, view, now } = useGlance(streamUrl);
   const s = view.state;
+  useHistory(store, s, historyUrl);
   useEffect(() => {
     if (publicView) document.title = "Glance";
   }, [publicView]);

@@ -66,6 +66,16 @@ pub mod sections {
     pub const CONTAINERS: &str = "containers";
     /// `[ { … } ]`: the most recent OOM kills (newest last, at most 12).
     pub const OOMS: &str = "ooms";
+    /// `{ "<card>": [ { "pid", "process", "container", "mem_mib" } ] }`: the processes on each
+    /// GPU (host.json `gpu_procs`).
+    pub const GPU_PROCS: &str = "gpu_procs";
+    /// `[ { "name", "file", "date", "status": "done"|"running"|"stopped", "minutes", "mtime",
+    /// "errors", "last_error", "title", "video", "last_line" } ]`: the daily jobs' latest run
+    /// logs (the video pipelines).
+    pub const PIPELINES: &str = "pipelines";
+    /// `{ "<fan id>": { "card", "backend", "channel", "mode", "curve", "min_duty", "max_temp",
+    /// "feed_forward", "load_gate" } }`: each fan's configured policy (set once at start).
+    pub const FAN_POLICY: &str = "fan_policy";
     /// `{ "status", "backends": [ { "name", "enabled", "healthy", "inflight", "served",
     /// "failed", "queue_running", "queue_pending", … } ] }`: the image-generation API.
     pub const IMAGE: &str = "image";
