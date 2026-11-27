@@ -30,6 +30,7 @@ members = [
     "crates/orca-homeassistant",
     "crates/orca-supervisor",
     "crates/orca-engines",
+    "crates/orca-bridge",
 ]
 
 [workspace.package]
@@ -69,6 +70,7 @@ orca-calendar = { path = "crates/orca-calendar" }
 orca-alerts = { path = "crates/orca-alerts" }
 orca-hostd = { path = "crates/orca-hostd" }
 orca-homeassistant = { path = "crates/orca-homeassistant" }
+orca-bridge = { path = "crates/orca-bridge" }
 
 anyhow = "=1.0.105"
 async-trait = "=0.1.92"
@@ -78,6 +80,8 @@ chrono-tz = { version = "=0.10.4", default-features = false, features = ["std"] 
 crossterm = "=0.29.0"
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 base64 = "=0.23.1"
+# The bridge protocol's stream bodies (orca-bridge); already in the tree via axum and reqwest.
+bytes = "=1.12.2"
 flate2 = { version = "=1.1.11", default-features = false, features = ["zlib-rs"] }
 futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
 getrandom = "=0.4.3"

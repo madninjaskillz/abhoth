@@ -3220,6 +3220,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "orca-bridge"
+version = "0.16.19"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "bytes",
+ "futures-util",
+ "getrandom 0.4.3",
+ "indexmap",
+ "orca-engines",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "toml 1.2.3+spec-1.1.0",
+]
+
+[[package]]
 name = "orca-calendar"
 version = "0.16.20"
 dependencies = [
@@ -3245,6 +3266,7 @@ dependencies = [
  "futures-util",
  "image",
  "orca-abstractions",
+ "orca-bridge",
  "orca-core",
  "orca-engines",
  "orca-router",
@@ -3273,6 +3295,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-tungstenite",
+ "toml 1.2.3+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "tray-icon",
@@ -3428,6 +3451,7 @@ dependencies = [
  "mdns-sd",
  "mime_guess",
  "orca-alerts",
+ "orca-bridge",
  "orca-calendar",
  "orca-core",
  "orca-engines",
