@@ -356,6 +356,10 @@ pub fn overlay(c: &ControlConfig, server: &str, run: &Running, rc: &mut RouterCo
     if !run.known {
         return;
     }
+    // `/status` and the LB show the layout that runs, not the one the file was written for.
+    if run.layout.is_some() {
+        rc.layout = run.layout.clone();
+    }
     // What each card served before (the file's, or the last overlay's), to move deployments
     // that follow their cards' engine id along with it.
     let served_before: std::collections::HashMap<String, String> = rc
@@ -1320,6 +1324,11 @@ mod tests {
         assert!(!rc.upstreams["B"].online);
         assert_eq!(rc.upstreams["A"].catalog_model.as_deref(), Some("dense"));
         assert_eq!(rc.deployments[0].cards, ["A"]);
+        assert_eq!(
+            rc.layout.as_deref(),
+            Some("L"),
+            "the running layout, not the file's"
+        );
         // the engine id ("m" in the file) became the card's: the sample's served id
         assert_eq!(rc.upstreams["A"].served_id, "dense-27b");
         assert_eq!(rc.deployments[0].served_id, "dense-27b");
