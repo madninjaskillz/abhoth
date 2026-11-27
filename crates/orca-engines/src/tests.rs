@@ -10,7 +10,9 @@ use crate::host::{self, CardSel, Cpu, Gpu, HostFacts, MethodFilter};
 use crate::manifest::{GpuKind, Manifest, MethodType};
 use crate::pins;
 use crate::render::{self, RunSpec, StartPlan};
-use crate::runner::{LocalRunner, Runner, supervisor::Policy};
+#[cfg(unix)]
+use crate::runner::supervisor::Policy;
+use crate::runner::{LocalRunner, Runner};
 use crate::state::{Approvals, Handle, Phase};
 use crate::store::{self, Package};
 use crate::validate::{self, Files, Mode};
@@ -1093,6 +1095,7 @@ async fn existing_programs_are_found_and_version_checked() {
     assert!(e.0.contains("does not match"), "{e}");
 }
 
+#[cfg(unix)]
 fn sh_pkg(script: &str) -> (Package, crate::Installed) {
     let text = minimal(
         json!({"id": "fake", "methods": [{"type": "existing", "platforms": ["*"], "gpu": ["cpu", "cuda"],
@@ -1127,6 +1130,7 @@ fn sh_pkg(script: &str) -> (Package, crate::Installed) {
     (p, i)
 }
 
+#[cfg(unix)]
 fn fast_policy() -> Policy {
     Policy {
         first_backoff: Duration::from_millis(50),
