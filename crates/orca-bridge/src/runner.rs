@@ -434,6 +434,25 @@ pub struct Supervisor {
     pub poll: Duration,
 }
 
+/// A port is ready when a connection stays open: docker's port proxy accepts a connection to a
+/// published port at once and closes it while nothing listens in the container yet.
+pub async fn tcp_ready(addr: &str) -> bool {
+    use tokio::io::AsyncReadExt;
+    let Ok(Ok(mut c)) =
+        tokio::time::timeout(Duration::from_secs(3), tokio::net::TcpStream::connect(addr)).await
+    else {
+        return false;
+    };
+    let mut b = [0u8; 1];
+    match tokio::time::timeout(Duration::from_millis(500), c.read(&mut b)).await {
+        // still open and quiet: a server waiting for its client
+        Err(_) => true,
+        // it spoke first, or closed (0 bytes)
+        Ok(Ok(n)) => n > 0,
+        Ok(Err(_)) => false,
+    }
+}
+
 /// Held while a request uses an instance; dropping it starts the idle clock.
 pub struct Lease {
     sup: Arc<Supervisor>,
@@ -574,12 +593,9 @@ impl Supervisor {
     }
 
     async fn healthy(&self, spec: &RunSpec) -> bool {
-        // `health = "tcp"`: a port that accepts a connection (wyoming engines).
+        // `health = "tcp"`: a port that accepts a connection and keeps it open (wyoming engines).
         if spec.cfg.health == "tcp" {
-            let a = format!("{}:{}", Self::host_of(spec), spec.port);
-            return tokio::time::timeout(Duration::from_secs(3), tokio::net::TcpStream::connect(a))
-                .await
-                .is_ok_and(|r| r.is_ok());
+            return tcp_ready(&format!("{}:{}", Self::host_of(spec), spec.port)).await;
         }
         let url = format!(
             "http://{}:{}{}",
@@ -932,5 +948,33 @@ mod tests {
             c.contains("NVIDIA_VISIBLE_DEVICES=void") && !c.contains("--gpus"),
             "{c}"
         );
+    }
+}
+
+#[cfg(test)]
+mod tcp_tests {
+    use super::tcp_ready;
+
+    #[tokio::test]
+    async fn a_port_that_closes_at_once_is_not_ready() {
+        // like docker-proxy with nothing behind it: accept, then close
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let a = l.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            while let Ok((c, _)) = l.accept().await {
+                drop(c);
+            }
+        });
+        assert!(!tcp_ready(&a).await);
+        // a server that keeps the connection open
+        let l2 = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let a2 = l2.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            let mut keep = vec![];
+            while let Ok((c, _)) = l2.accept().await {
+                keep.push(c);
+            }
+        });
+        assert!(tcp_ready(&a2).await);
     }
 }
