@@ -78,6 +78,12 @@ impl<H: HostOps, P: Plane> Orchestrator<H, P> {
         }
     }
 
+    /// Publish the slots of what runs (at start, adopted): without it the slot registry offers
+    /// the layout file's slots until the first switch, cards that are off or held included.
+    pub fn publish_slots(&self, spec: &Spec, layout: Option<&str>) {
+        self.plane.set_slots(self.view(spec, false, layout, None));
+    }
+
     /// Is a job running now?
     pub fn busy(&self) -> bool {
         self.one.try_lock().is_err()

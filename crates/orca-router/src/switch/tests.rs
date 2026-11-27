@@ -864,6 +864,17 @@ fn a_spanning_instance_holds_its_cards() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn adopted_at_start_the_slots_are_what_runs() {
+    let r = rig(spec(ink(), ink()));
+    r.orch
+        .publish_slots(&spec(tp(), CardSpec::off()), Some("merged-dense-tp"));
+    let v = r.plane.view.lock().unwrap().clone();
+    assert_eq!(v.slots, ["A1", "A2", "A3", "A4"]);
+    assert_eq!(v.layout.as_deref(), Some("merged-dense-tp"));
+    assert!(!v.frozen);
+}
+
+#[tokio::test(start_paused = true)]
 async fn switching_to_one_server_over_both_cards() {
     let r = rig(spec(ink(), ink()));
     // B's memory takes a while to drop after its server stops

@@ -1157,6 +1157,12 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
         plane,
         jobs,
     ));
+    {
+        let r = running.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if r.known {
+            orch.publish_slots(&r.spec, r.layout.as_deref());
+        }
+    }
 
     let actions = Arc::new(OrchActions {
         c: c.clone(),
