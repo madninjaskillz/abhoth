@@ -1101,7 +1101,8 @@ credentials, so only peers in `access.anonymous_lan` (and loopback) are served.
 `memory_gib` is kept running by Sothoth on each card of its `port`, through the server's
 `docker_api` (a loopback docker socket proxy) and inside `docker_mount_roots`: started when
 missing or stopped, restarted with backoff, never stopped, every create and start audited, its
-memory taken off the card's room. ROUTER-MEDIA-PLAN.md 14 has the rules and the trade-off
+memory taken off the card's room. `package.ports` publishes a package's extra ports
+(`{ wyoming = 11203 }`) and `package.env` adds to its container's environment. ROUTER-MEDIA-PLAN.md 14 has the rules and the trade-off
 (Sothoth is root-equivalent on a server with `docker_api`). State: `GET /admin/api/standing`
 and Engine store → Installed.
 
