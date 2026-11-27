@@ -228,7 +228,8 @@ jobs:
       # registry paths in the exes: the same prefixes as clang-cl file-prefix-maps.
       - name: Build abhoth.exe and abhoth-desktop.exe (cross-compiled)
         run: |
-          CFLAGS="${RUSTFLAGS//--remap-path-prefix=//clang:-ffile-prefix-map=}"             cargo xwin build --release --locked --target "$WIN" -p orca-cli --features desktop --bins
+          export CFLAGS="${RUSTFLAGS//--remap-path-prefix=//clang:-ffile-prefix-map=}"
+          cargo xwin build --release --locked --target "$WIN" -p orca-cli --features desktop --bins
 
       - name: Build abhoth and abhoth-desktop (Linux)
         run: cargo build --release --locked -p orca-cli --features desktop --bins
