@@ -3,3 +3,6 @@
 
 # The CI runner image files are copied to deepthought and built there.
 deploy/ci-runner/* text eol=lf
+
+# Engine packages are hashed in stores/*/index.json: keep them LF everywhere.
+stores/** text eol=lf

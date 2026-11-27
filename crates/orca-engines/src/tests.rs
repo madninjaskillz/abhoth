@@ -557,8 +557,15 @@ fn a_cpu_card_hides_the_gpus() {
     else {
         panic!()
     };
-    assert_eq!(program, "/s/kokoro/venv/bin/python");
-    assert_eq!(args[0], "/s/kokoro/app/server.py");
+    // Paths are joined with the OS separator; compare them with `/`.
+    assert_eq!(
+        program.replace(char::from(92u8), "/"),
+        "/s/kokoro/venv/bin/python"
+    );
+    assert_eq!(
+        args[0].replace(char::from(92u8), "/"),
+        "/s/kokoro/app/server.py"
+    );
     assert!(
         env.contains(&("CUDA_VISIBLE_DEVICES".into(), "2".into())),
         "{env:?}"
@@ -847,7 +854,12 @@ async fn pip_install_makes_a_venv_and_pins_the_requirements() {
         .await
         .expect("install");
     let calls = exec.joined();
-    let venv = dir.path().join("engines/kokoro/0.9.4/venv");
+    let venv = dir
+        .path()
+        .join("engines")
+        .join("kokoro")
+        .join("0.9.4")
+        .join("venv");
     assert!(
         calls
             .iter()
@@ -1334,4 +1346,23 @@ fn wizard_drafts_parse_sources_and_export_zips() {
     files.insert("abhoth-engine.json".into(), "{}".into());
     let z = zip_files("srv", &files).unwrap();
     assert_eq!(&z[..2], b"PK");
+}
+
+#[test]
+fn index_hashes_ignore_crlf_line_ends() {
+    let lf = [97u8, 10, 98, 10];
+    let crlf = [97u8, 13, 10, 98, 13, 10];
+    assert_eq!(
+        crate::pins::text_sha256(&lf),
+        crate::pins::text_sha256(&crlf)
+    );
+    assert_eq!(
+        crate::pins::text_sha256(&lf),
+        crate::pins::sha256_bytes(&lf)
+    );
+    // A lone CR is content, not a line end.
+    assert_ne!(
+        crate::pins::text_sha256(&[97u8, 13, 98]),
+        crate::pins::text_sha256(&[97u8, 98])
+    );
 }

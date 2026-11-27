@@ -211,6 +211,27 @@ pub fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(hex(&h.finalize()))
 }
 
+/// The sha256 a store index lists for a package's text file: of the text with CRLF line ends
+/// made LF, so a checkout on Windows (CRLF) and on Linux (LF) hash the same.
+pub fn text_sha256(b: &[u8]) -> String {
+    const CR: u8 = 13;
+    const LF: u8 = 10;
+    if !b.windows(2).any(|w| w == [CR, LF]) {
+        return sha256_bytes(b);
+    }
+    let mut v = Vec::with_capacity(b.len());
+    let mut k = 0;
+    while k < b.len() {
+        if b[k] == CR && b.get(k + 1) == Some(&LF) {
+            k += 1;
+            continue;
+        }
+        v.push(b[k]);
+        k += 1;
+    }
+    sha256_bytes(&v)
+}
+
 pub fn sha256_bytes(b: &[u8]) -> String {
     hex(&Sha256::digest(b))
 }

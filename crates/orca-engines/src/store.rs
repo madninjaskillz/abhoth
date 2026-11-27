@@ -115,14 +115,14 @@ pub fn build_index(dir: &Path, name: &str) -> (Index, Vec<(String, Report)>) {
                 let b = std::fs::read(d.join(&f.path)).unwrap_or_default();
                 files.push(IndexFile {
                     path: f.path.clone(),
-                    sha256: pins::sha256_bytes(&b),
+                    sha256: pins::text_sha256(&b),
                 });
             }
             entries.push(IndexEntry {
                 id: m.id.clone(),
                 version: m.version.clone(),
                 path: folder.clone(),
-                sha256: pins::sha256_bytes(&text),
+                sha256: pins::text_sha256(&text),
                 name: m.name.clone(),
                 kinds: m.kinds.clone(),
                 methods: m
@@ -192,7 +192,7 @@ pub async fn fetch_package(
     let mtext = fetch
         .text(&format!("{base}/{}/{MANIFEST_FILE}", e.path))
         .await?;
-    if pins::sha256_bytes(mtext.as_bytes()) != e.sha256 {
+    if pins::text_sha256(mtext.as_bytes()) != e.sha256 {
         return Err(format!(
             "{}: the manifest does not match the index's sha256",
             e.id
@@ -204,7 +204,7 @@ pub async fn fetch_package(
             return Err(format!("{}: a bad file path", f.path));
         }
         let t = fetch.text(&format!("{base}/{}/{}", e.path, f.path)).await?;
-        if pins::sha256_bytes(t.as_bytes()) != f.sha256 {
+        if pins::text_sha256(t.as_bytes()) != f.sha256 {
             return Err(format!(
                 "{}/{}: does not match the index's sha256",
                 e.id, f.path
