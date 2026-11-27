@@ -1001,3 +1001,65 @@ unknown id becomes a new `driver = "external"` engine.
   over the bridge connection (13.1).
 - **Placement order:** enabled and online servers only; DeepThought first, the PC for overflow
   only (D153); then the server's `priority`, idle state and queue depth.
+
+## 14. Standing engines and Docker access (phase 5)
+
+### 14.1 What a standing engine is
+
+`[engines.x] lifecycle = "standing"` marks an engine package (`driver = "package"`) that Sothoth
+keeps running on each card of its `port`. The standing supervisor (`control::standing`) looks at
+each (engine, card) every 15 seconds:
+
+- **Missing:** it renders the package's container method into a `docker run`, checks it
+  against the rules in 14.3, pulls the image if it comes from a registry (an image built on the
+  host, such as `local/sa3:1`, must already be there), then creates and starts the container.
+  The container gets the `abhoth.standing=1` label.
+- **Stopped:** it starts the container again, with backoff after failures (10 s, 30 s, 2 min,
+  10 min, then every 30 min). Docker's own `on-failure` restart policy handles quick crashes
+  first.
+- **Running:** it probes the package's health check (an HTTP path, or a TCP connect) and reports
+  `starting` (within the package's `start_seconds`), `ready` or `unhealthy`.
+- **Never stopped:** the supervisor has no stop, kill or remove call. A layout switch never
+  sees a standing engine: host observation skips it, and its GPU use counts as Sothoth's own
+  rather than as a foreign holder. So no pipeline run or LLM switch can lose one.
+- **Foreign:** if a container with that name exists without the label, it is left alone and
+  reported as `foreign`.
+
+`memory_gib` is what the engine holds on its card: VRAM on a GPU card, RAM on a CPU card. It
+comes off the card's room in placement and in layout validation, and validation fails if a
+card's standing engines hold more than the card has. The state of every standing engine is at
+`GET /admin/api/standing` and in the admin page (Engine store → Installed → Standing engines).
+
+### 14.2 Docker access: a deliberate trade-off
+
+Standing engines are started through the Docker Engine API (`servers.x.docker_api`), not through
+the strict hostctl allowlist. The user chose this, knowing that whoever can create containers on
+a host is root-equivalent there. **Sothoth is therefore root-equivalent on a server with
+`docker_api` set.** The strict hostctl path is unchanged and still carries everything else
+(telemetry, LLM engines, templates); it is not widened.
+
+Mitigations, none of which undo that choice:
+
+- **A docker socket proxy** (for example `tecnativa/docker-socket-proxy`, pinned by digest),
+  listening on loopback only. Only it holds the docker socket; Sothoth's own container does not
+  mount it. It allows the containers, images, info and version endpoints, plus POST for those.
+  It denies exec, swarm, services, tasks, secrets, configs, plugins, volumes, networks, system,
+  build and commit. A proxy cannot look inside a container-create body, so the rules in 14.3
+  run in Sothoth before every create.
+- **Audit:** every pull, create and start is written to `<state_dir>/standing-audit.jsonl`
+  (time, engine, card, container, image, mounts, GPUs, result) and logged.
+
+### 14.3 The rules checked before every create
+
+A standing engine's container is refused (state `blocked`, with the reason) if it has:
+
+- `--privileged`, the host network, a shared PID namespace, or a shared IPC namespace;
+- added capabilities, or any raw `--device`;
+- a mount outside the server's `docker_mount_roots`, `model_dir`, `comfy_root` and
+  `engine_state` folders, a path with `..` in it, or the docker socket;
+- any GPU other than its card's own (`--gpus device=<the card's UUID>`), or any GPU at all on a
+  CPU card;
+- a port published on anything but loopback. Sothoth fronts standing engines: their HTTP
+  routes go through `:8010`, and Wyoming goes through `--wyoming`.
+
+Options the package renders that the supervisor does not know are refused, not dropped.

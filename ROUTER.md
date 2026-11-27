@@ -1092,6 +1092,14 @@ with `media_api = "wyoming"` that takes it: this server's own engines first, the
 takes it the client gets a Wyoming `error` event naming each reason. Wyoming has no
 credentials, so only peers in `access.anonymous_lan` (and loopback) are served.
 
+**Standing engines (phase 5, 0.16.32):** an engine package with `lifecycle = "standing"` and
+`memory_gib` is kept running by Sothoth on each card of its `port`, through the server's
+`docker_api` (a loopback docker socket proxy) and inside `docker_mount_roots`: started when
+missing or stopped, restarted with backoff, never stopped, every create and start audited, its
+memory taken off the card's room. ROUTER-MEDIA-PLAN.md 14 has the rules and the trade-off
+(Sothoth is root-equivalent on a server with `docker_api`). State: `GET /admin/api/standing`
+and Engine store → Installed.
+
 - Not yet: router-side queues
   and `/v1/jobs`, MP3 or Opus from engines that only make WAV.
 
