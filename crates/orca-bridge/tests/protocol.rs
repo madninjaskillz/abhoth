@@ -182,6 +182,22 @@ fn config(
     c
 }
 
+/// How long a test waits for something that should happen. Generous: a shared CI runner can be
+/// slow, and every wait ends as soon as its condition holds.
+const DEADLINE: Duration = Duration::from_secs(60);
+
+/// Poll `cond` until it holds or [`DEADLINE`] passes; whether it held.
+async fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
+    let deadline = tokio::time::Instant::now() + DEADLINE;
+    while !cond() {
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    true
+}
+
 fn fast() -> Timing {
     Timing {
         backoff_min: Duration::from_millis(50),
@@ -202,7 +218,7 @@ async fn hello_command_and_a_proxied_request() {
         Arc::new(|_: &str| {}),
         fast(),
     );
-    let (mux, hello) = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+    let (mux, hello) = tokio::time::timeout(DEADLINE, rx.recv())
         .await
         .expect("the bridge dials in")
         .unwrap();
@@ -219,6 +235,8 @@ async fn hello_command_and_a_proxied_request() {
     assert!(descriptor.problems().is_empty());
     assert_eq!(descriptor.cards[0].id, "CPU");
     assert_eq!(descriptor.cards[0].engines["tts"], ["echo"]);
+    // the config fixes the RAM, so the bridge did not query the host for it
+    assert_eq!(descriptor.cards[0].ram_gib, Some(4.0));
     assert_eq!(descriptor.engines[0].ports["CPU"], engine.port());
 
     // a command
@@ -253,10 +271,7 @@ async fn hello_command_and_a_proxied_request() {
         .unwrap();
     s.send(&body).await.unwrap();
     s.end();
-    let head = tokio::time::timeout(Duration::from_secs(10), head)
-        .await
-        .unwrap()
-        .unwrap();
+    let head = tokio::time::timeout(DEADLINE, head).await.unwrap().unwrap();
     assert_eq!(head.status, 200);
     assert!(
         head.headers
@@ -292,12 +307,12 @@ async fn the_bridge_redials_after_a_drop() {
         Arc::new(|_: &str| {}),
         fast(),
     );
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    while f.connects.load(Ordering::SeqCst) < 3 && std::time::Instant::now() < deadline {
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    assert!(f.connects.load(Ordering::SeqCst) >= 3, "it reconnected");
-    assert!(h.status().connects >= 2);
+    assert!(
+        wait_until(|| f.connects.load(Ordering::SeqCst) >= 3).await,
+        "it reconnected"
+    );
+    // the bridge counts a connection once it has read the welcome
+    assert!(wait_until(|| h.status().connects >= 2).await);
     h.stop();
 }
 
@@ -316,10 +331,7 @@ async fn a_refused_token_is_reported_and_not_hammered() {
         Arc::new(|_: &str| {}),
         fast(),
     );
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    while h.status().last_error.is_none() && std::time::Instant::now() < deadline {
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    wait_until(|| h.status().last_error.is_some()).await;
     let err = h.status().last_error.unwrap_or_default();
     assert!(err.contains("bad token"), "{err}");
     tokio::time::sleep(Duration::from_millis(600)).await;
@@ -336,11 +348,7 @@ async fn a_missing_token_file_is_refused_without_dialling() {
     let mut c = config(dir.path(), addr, 1, TOKEN);
     c.bridge.token_file = dir.path().join("missing").display().to_string();
     let h = client::spawn(c, "test", Arc::new(|_: &str| {}), fast());
-    // detection runs first (on Windows a PowerShell query: give it time)
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
-    while h.status().last_error.is_none() && std::time::Instant::now() < deadline {
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    wait_until(|| h.status().last_error.is_some()).await;
     assert!(
         h.status()
             .last_error
