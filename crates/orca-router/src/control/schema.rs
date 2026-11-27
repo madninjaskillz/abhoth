@@ -325,6 +325,14 @@ pub struct Server {
     /// `<comfy_root>/<role folder>/`. Unset: `<model_dir>/comfyui`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comfy_root: Option<String>,
+    /// The Docker API the router runs `standing` engines through (D153 phase 5), e.g. a
+    /// loopback docker socket proxy `http://127.0.0.1:2375`. Unset: no standing engines here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docker_api: Option<String>,
+    /// Host folders a standing engine's container may mount (each mount must be inside one),
+    /// besides `model_dir`, `comfy_root` and the `engine_state` var.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub docker_mount_roots: Vec<String>,
     /// `bridge:<id>` for a server a bridge describes (the overlay sets it; never read from or
     /// written to `router.toml`).
     #[serde(skip)]
@@ -582,6 +590,33 @@ pub enum DriverKind {
     Package,
 }
 
+/// How an engine is kept (ROUTER-MEDIA-PLAN.md 3.1).
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Lifecycle {
+    /// Kept up on its cards by the standing supervisor; never stopped by the router.
+    Standing,
+}
+
+impl Engine {
+    pub fn is_standing(&self) -> bool {
+        self.lifecycle == Some(Lifecycle::Standing)
+    }
+}
+
+impl ControlConfig {
+    /// The memory the standing engines hold on `card`, `except` one engine.
+    pub fn standing_gib(&self, card: &str, except: Option<&str>) -> f64 {
+        self.engines
+            .iter()
+            .filter(|(id, e)| {
+                e.is_standing() && e.port.get(card).is_some() && Some(id.as_str()) != except
+            })
+            .map(|(_, e)| e.memory_gib.unwrap_or(0.0))
+            .sum()
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum StartOrder {
@@ -604,6 +639,15 @@ pub struct Engine {
     /// `sa3`, `whisper` = Wyoming, `kokoro` and `chatterbox` = OpenAI speech).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_api: Option<MediaApi>,
+    /// `standing` (D153 phase 5): the router keeps it running on each card of `port` (through
+    /// the server's `docker_api`), restarts it with backoff and never stops it. Only for
+    /// `driver = "package"` engines with a container method.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle: Option<Lifecycle>,
+    /// What a standing engine holds on its card (VRAM on a GPU card, RAM on a CPU card), taken
+    /// off the card's room for everything else placed there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_gib: Option<f64>,
     #[serde(default)]
     pub driver: DriverKind,
     /// Docker image (may use `{build_image}`).

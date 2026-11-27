@@ -217,6 +217,7 @@ fn admin_only_read(sub: &str) -> bool {
         || first == "downloads"
         || first == "catalog"
         || first == "engine-store"
+        || first == "standing"
         || (first == "calendar" && sub != "calendar/now")
 }
 
@@ -454,6 +455,10 @@ pub async fn handle(
                 Some(svc) => inventory_api(&svc, m, first, rest, &qs, &body, &who).await,
                 None => err(503, "the inventory needs the router started with --control"),
             }
+        }
+        // D153 phase 5: the standing engines' state.
+        (Method::GET, ["standing"]) => {
+            (StatusCode::OK, axum::Json(crate::control::standing::view())).into_response()
         }
         // D153: the engine store and the package wizard.
         (m, ["engine-store", rest @ ..]) => {

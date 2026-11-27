@@ -266,7 +266,10 @@ pub fn place(c: &ControlConfig, model: &str, pin: &Pin) -> Vec<CardOption> {
                 why_all.push(format!("{eid} has no engine profile to run it with"));
                 continue;
             }
-            let room = cd.memory_gib().map(|v| v - cd.reserve_gib);
+            // standing engines (D153 phase 5) keep what they hold on the card
+            let room = cd
+                .memory_gib()
+                .map(|v| v - cd.reserve_gib - c.standing_gib(cid, Some(eid)));
             let mut chosen: Option<(String, f64, bool)> = None;
             for p in &profiles {
                 let need = a.vram_gib + e.profiles[p].vram_gib;

@@ -1125,6 +1125,13 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
     inv.note_started(&c);
     tokio::spawn(probe_engines(st.clone(), c.clone(), running.clone()));
     tokio::spawn(probe_media_engines(st.clone(), c.clone()));
+    // D153 phase 5: standing engines, kept up through each server's docker_api
+    // (it does nothing until router.toml has one; a reload that adds one is picked up)
+    tokio::spawn(super::standing::run(
+        st.clone(),
+        c.clone(),
+        state_dir.clone(),
+    ));
     crate::control_api::bootstrap_hint(&local_keys, &c, main);
     let cp = Arc::new(ControlPlane {
         access: Access::new(c.access.clone(), token)

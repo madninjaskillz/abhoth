@@ -106,6 +106,7 @@ pub fn validate(c: &ControlConfig) -> Vec<Issue> {
     servers(c, &mut v);
     cards(c, &mut v);
     engines(c, &mut v);
+    standing(c, &mut v);
     models(c, &mut v);
     layouts(c, &mut v);
     routes(c, &mut v);
@@ -116,6 +117,60 @@ pub fn validate(c: &ControlConfig) -> Vec<Issue> {
     access(c, &mut v);
     v.sort_by(|a, b| b.level.cmp(&a.level).then(a.path.cmp(&b.path)));
     v
+}
+
+/// D153 phase 5: standing engines are packages on servers with a Docker API, and fit.
+fn standing(c: &ControlConfig, v: &mut Vec<Issue>) {
+    for (id, e) in &c.engines {
+        if !e.is_standing() {
+            continue;
+        }
+        let p = format!("engines.{id}.lifecycle");
+        if e.driver != DriverKind::Package {
+            v.push(Issue::err(
+                &p,
+                "a standing engine is an engine package (driver = \"package\")",
+            ));
+        }
+        for card_id in e.port.cards() {
+            let Some(card) = c.cards.get(card_id) else {
+                continue;
+            };
+            if c.servers
+                .get(&card.server)
+                .is_none_or(|s| s.docker_api.is_none())
+            {
+                v.push(Issue::err(
+                    &p,
+                    format!(
+                        "server `{}` (card `{card_id}`) has no docker_api to run it with",
+                        card.server
+                    ),
+                ));
+            }
+        }
+        if e.memory_gib.is_none() {
+            v.push(Issue::warn(
+                format!("engines.{id}.memory_gib"),
+                "a standing engine without memory_gib is counted as using nothing",
+            ));
+        }
+    }
+    for (card_id, card) in &c.cards {
+        let held = c.standing_gib(&card_id, None);
+        if let Some(mem) = card.memory_gib()
+            && held > mem - card.reserve_gib + 1e-9
+        {
+            v.push(Issue::err(
+                format!("cards.{card_id}"),
+                format!(
+                    "its standing engines hold {held:.1} GiB but it has {:.1} GiB ({mem:.1} - {:.1} reserve)",
+                    mem - card.reserve_gib,
+                    card.reserve_gib
+                ),
+            ));
+        }
+    }
 }
 
 fn version(c: &ControlConfig, v: &mut Vec<Issue>) {
@@ -774,7 +829,7 @@ fn layouts(c: &ControlConfig, v: &mut Vec<Issue>) {
             // Capacity: artifact + profile <= card VRAM - reserve.
             if let (Some(vram), Some(prof), Some(a)) = (card.vram_gib, prof, art) {
                 let need = a.vram_gib + prof.vram_gib;
-                let have = vram - card.reserve_gib;
+                let have = vram - card.reserve_gib - c.standing_gib(&card_id, None);
                 if need > have + 1e-9 {
                     let msg = format!(
                         "needs {need:.1} GiB (model {:.1} + profile {:.1}) but card `{card_id}` has {have:.1} GiB ({vram:.1} - {:.1} reserve)",

@@ -328,6 +328,14 @@ impl HostOps for ExecHost {
                 if e.port.get(card).is_none() || e.driver == schema::DriverKind::External {
                     continue;
                 }
+                // D153 phase 5: a standing engine is the standing supervisor's, never a layout's
+                // (not observed as the card's spec, so no switch stops it), and its GPU use is ours
+                if e.is_standing() {
+                    if let Ok(i) = resolve::instance_ref(&c, card, engine) {
+                        ours.push(i.name);
+                    }
+                    continue;
+                }
                 let (o, name) = self.status(&c, card, engine).await?;
                 ours.push(name.clone());
                 if !o.running {
