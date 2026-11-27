@@ -30,6 +30,9 @@ USAGE:
                 [--control router.toml]   (the control plane, when its control.enabled is on)
                 [--profiles-port N]       (the profiles API shim, :8098; needs --control)
                 [--name NAME] [--key-url URL] [--mdns auto|on|off]
+                [--wyoming stt=ADDR] [--wyoming tts=ADDR]   (raw Wyoming ports for Home Assistant:
+                                          to the stt / tts engines with media_api = wyoming;
+                                          needs --control; repeatable)
                                           (how clients see it: /.well-known/abhoth-router and
                                            mDNS _abhoth-router._tcp; auto = on unless loopback)
   abhoth router observe-summary --dir DIR [--date YYYY-MM-DD]   (the decision-only shadow's day)
@@ -239,6 +242,7 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     let mut control: Option<String> = None;
     let mut discovery = crate::discovery::Discovery::default();
     let mut mdns = crate::discovery::mdns::MdnsMode::Auto;
+    let mut wyoming: Vec<(crate::control::schema::ModelKind, String)> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -254,6 +258,13 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
                     .ok_or_else(|| anyhow!("--mdns takes auto, on or off (not {v})"))?;
             }
             "--listen" => listen = Some(take(args, &mut i, "--listen")?),
+            "--wyoming" => {
+                let v = take(args, &mut i, "--wyoming")?;
+                wyoming
+                    .push(crate::media::wyoming_listen::parse_flag(&v).ok_or_else(|| {
+                        anyhow!("--wyoming takes stt=ADDR or tts=ADDR (not {v})")
+                    })?);
+            }
             "--lb-port" => {
                 lb_port = Some(
                     take(args, &mut i, "--lb-port")?
@@ -340,6 +351,18 @@ async fn serve_cmd(args: &[String]) -> Result<i32> {
     }
     if let Some(p) = slots_port {
         bind(format!("{host}:{p}"), Mode::Slots)?;
+    }
+    if !wyoming.is_empty() && control.is_none() {
+        bail!("--wyoming needs --control (its engines come from the control plane)");
+    }
+    for (kind, addr) in wyoming {
+        let std_l =
+            std::net::TcpListener::bind(&addr).with_context(|| format!("binding {addr}"))?;
+        std_l.set_nonblocking(true)?;
+        let l = tokio::net::TcpListener::from_std(std_l)?;
+        eprintln!("abhoth router: Wyoming {} on {addr}", kind.as_str());
+        // not awaited on shutdown: a held Wyoming connection would only delay it
+        tokio::spawn(crate::media::wyoming_listen::serve(l, st.clone(), kind));
     }
     if let Some(p) = profiles_port {
         let Some(shim) = shim.clone() else {

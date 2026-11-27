@@ -1240,3 +1240,90 @@ async fn when_every_engine_fails_the_answer_names_each_reason() {
     assert!(m.contains("too many at once"), "{m}");
     assert!(status == 503 || status == 429, "{status}");
 }
+
+async fn wyoming_port_for(c: ControlConfig, dir: &std::path::Path) -> SocketAddr {
+    let st = crate::state::AppState::new(
+        Snapshot::build(RouterConfig::default(), None).unwrap(),
+        None,
+    );
+    st.bridges.set(Hub::new(dir, Arc::new(c))).ok();
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = l.local_addr().unwrap();
+    tokio::spawn(super::wyoming_listen::serve(l, st, ModelKind::Stt));
+    addr
+}
+
+#[test]
+fn wyoming_flags_parse() {
+    use super::wyoming_listen::parse_flag;
+    assert_eq!(
+        parse_flag("stt=0.0.0.0:10310"),
+        Some((ModelKind::Stt, "0.0.0.0:10310".into()))
+    );
+    assert_eq!(parse_flag("tts=:10213").map(|x| x.0), Some(ModelKind::Tts));
+    assert_eq!(parse_flag("llm=:1"), None);
+    assert_eq!(parse_flag("stt="), None);
+}
+
+#[tokio::test]
+async fn the_wyoming_port_passes_through_and_fails_over() {
+    let w = super::wyoming::fake_engine("hello sir").await;
+    let pcm = vec![0u8; 32_000 * 2];
+    // DeepThought's whisper answers
+    let d = tempfile::tempdir().unwrap();
+    let port = wyoming_port_for(config(&live_like(1, w.port(), 3, 4, 5)), d.path()).await;
+    let got = super::wyoming::transcribe(
+        &port.to_string(),
+        &pcm,
+        16_000,
+        None,
+        Duration::from_secs(10),
+    )
+    .await
+    .unwrap();
+    assert_eq!(got, "hello sir 64000");
+
+    // DeepThought's whisper down: the next server's
+    let dead = dead_port();
+    let text = format!(
+        "{}
+[servers.pc]
+host = \"127.0.0.1\"
+[cards.P1]
+server = \"pc\"
+gpu_uuid = \"GPU-p\"
+engines = {{ stt = [\"whisper\"] }}
+",
+        live_like(1, dead, 3, 4, 5).replace(
+            &format!("D = {dead} }}"),
+            &format!("D = {dead}, P1 = {} }}", w.port())
+        ),
+    );
+    assert!(text.contains("P1 = "), "{text}");
+    let d1 = tempfile::tempdir().unwrap();
+    let port = wyoming_port_for(config(&text), d1.path()).await;
+    let got = super::wyoming::transcribe(
+        &port.to_string(),
+        &pcm,
+        16_000,
+        None,
+        Duration::from_secs(10),
+    )
+    .await
+    .unwrap();
+    assert_eq!(got, "hello sir 64000");
+
+    // nothing takes it: a Wyoming error naming why
+    let d2 = tempfile::tempdir().unwrap();
+    let port = wyoming_port_for(config(&live_like(2, dead_port(), 3, 4, 5)), d2.path()).await;
+    let err = super::wyoming::transcribe(
+        &port.to_string(),
+        &pcm,
+        16_000,
+        None,
+        Duration::from_secs(10),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.contains("whisper/D@deepthought"), "{err}");
+}

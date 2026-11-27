@@ -20,6 +20,7 @@ pub mod speech;
 pub mod stt;
 pub mod wav;
 pub mod wyoming;
+pub mod wyoming_listen;
 
 #[cfg(test)]
 mod tests;
