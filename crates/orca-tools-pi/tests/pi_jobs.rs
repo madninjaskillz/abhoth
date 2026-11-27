@@ -50,10 +50,28 @@ impl Drop for Fixture {
     }
 }
 
+/// The shell, started once before any test uses it. Several tests measure 1-second windows
+/// (bash's start-up wait for a job that fails at once, a 1 s timeout that must keep the output
+/// printed before it). On Windows CI the first bash starts in this binary were now and then
+/// all held up by about a second together (later starts were normal), which made the first
+/// batch of those tests fail and pass on a rerun. That one-time stall is not what they test,
+/// so it is paid here; every test waits for this one warm-up.
 fn bash() -> Option<PiShellConfig> {
-    shell::resolve(None)
-        .ok()
-        .filter(|s| !cfg!(windows) || std::path::Path::new(&s.path).is_file())
+    static SHELL: std::sync::OnceLock<Option<PiShellConfig>> = std::sync::OnceLock::new();
+    SHELL
+        .get_or_init(|| {
+            let s = shell::resolve(None)
+                .ok()
+                .filter(|s| !cfg!(windows) || std::path::Path::new(&s.path).is_file())?;
+            let _ = std::process::Command::new(&s.path)
+                .args(["-c", "true"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            Some(s)
+        })
+        .clone()
 }
 
 async fn run(tool: &dyn Tool, args: Value, ctx: &ToolContext) -> ToolResult {
