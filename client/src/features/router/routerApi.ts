@@ -10,6 +10,9 @@ import {
 } from "./routerModel";
 import type { AdminKey, ConfigData, FormEdit, GatewayCheck, GatewayDoc, NewAdminKey } from "./forms/formModel";
 import type { CardOption, CatalogKind, DetectedCpu, DetectedGpu, DirListing, DownloadJob, HfDetails, HfFile, HfRow, Inventory, PathStat } from "./forms/inventoryModel";
+import type {
+  Approvals, Draft, DraftSource, FitAnswer, InstalledPkg, PackageDetail, PackageSummary, Report, StoreInfo, StoreJob, TestRun,
+} from "./forms/engineStoreModel";
 
 /** Where the admin API is and how calls authenticate. */
 export interface RouterTransport {
@@ -110,6 +113,33 @@ export const routerApi = {
   cancelDownload: (id: string) => call<DownloadJob>("POST", `${R()}/downloads/${encodeURIComponent(id)}/cancel`),
   resumeDownload: (id: string) => call<DownloadJob>("POST", `${R()}/downloads/${encodeURIComponent(id)}/resume`),
   removeDownload: (id: string) => call<{ ok: boolean }>("DELETE", `${R()}/downloads/${encodeURIComponent(id)}`),
+};
+
+const ES = () => `${R()}/engine-store`;
+const q = encodeURIComponent;
+
+/** Engine packages: the stores, installs (jobs), My packages and the Create package wizard. */
+export const engineStoreApi = {
+  stores: () => call<{ stores: StoreInfo[] }>("GET", `${ES()}/stores`),
+  addStore: (url: string, trusted: boolean, name?: string) => call<StoreInfo>("POST", `${ES()}/stores`, name ? { url, trusted, name } : { url, trusted }),
+  removeStore: (id: string) => call<{ ok: boolean }>("DELETE", `${ES()}/stores/${q(id)}`),
+  packages: () => call<{ packages: PackageSummary[] }>("GET", `${ES()}/packages`),
+  package: (store: string, id: string) => call<PackageDetail>("GET", `${ES()}/package?store=${q(store)}&id=${q(id)}`),
+  fit: (store: string, id: string, server: string) => call<FitAnswer>("POST", `${ES()}/fit`, { store, id, server }),
+  validate: (manifest: string, files: Record<string, string>, mode: "private" | "store") => call<Report>("POST", `${ES()}/validate`, { manifest, files, mode }),
+  install: (r: { store: string; id: string; server: string; card: string; approvals: Approvals; engine?: string; params?: Record<string, unknown> }) =>
+    call<{ job: StoreJob }>("POST", `${ES()}/install`, r),
+  update: (engine: string) => call<{ job: StoreJob }>("POST", `${ES()}/update`, { engine }),
+  remove: (engine: string, uninstall: boolean) => call<{ job: StoreJob }>("POST", `${ES()}/remove`, { engine, uninstall }),
+  jobs: () => call<{ jobs: StoreJob[] }>("GET", `${ES()}/jobs`),
+  installed: () => call<{ installed: InstalledPkg[] }>("GET", `${ES()}/installed`),
+  draft: (source: DraftSource, value: string) => call<Draft>("POST", `${ES()}/wizard/draft`, { source, value }),
+  testRun: (image: string, server: string, card: string) => call<TestRun>("POST", `${ES()}/wizard/test-run`, { image, server, card, confirm: true }),
+  my: () => call<{ packages: PackageSummary[] }>("GET", `${ES()}/my`),
+  saveMy: (id: string, manifest: string, files: Record<string, string>) => call<{ report: Report }>("PUT", `${ES()}/my/${q(id)}`, { manifest, files }),
+  removeMy: (id: string) => call<{ ok: boolean }>("DELETE", `${ES()}/my/${q(id)}`),
+  /** A plain link (the session cookie authenticates it): the package as a zip. */
+  exportUrl: (id: string) => `${ES()}/my/${q(id)}/export`,
 };
 
 export interface ServiceKey {

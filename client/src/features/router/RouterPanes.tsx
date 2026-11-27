@@ -12,6 +12,7 @@ import { accessLabel, ago, coldLabel, type Job, type LayoutView, type Plan, type
 import { GatewayForms } from "./forms/GatewayForms";
 import { RouterSetupForms } from "./forms/SetupForms";
 import { InventoryForms } from "./forms/InventoryForms";
+import { EngineStore } from "./forms/EngineStore";
 import { CardTile, GuardChips, JobStateBadge, JobSteps, LayoutList, PlanView, SwitchProgress } from "./widgets";
 
 const ConfigEditor = lazy(() => import("./ConfigEditor"));
@@ -324,12 +325,14 @@ export function RouterConfigPane() {
         <div className="overflow-x-auto border-b px-4 py-2">
           <TabsList>
             <TabsTrigger value="inventory" data-testid="config-inventory">Inventory</TabsTrigger>
+            <TabsTrigger value="store" data-testid="config-store">Engine store</TabsTrigger>
             <TabsTrigger value="setup" data-testid="config-setup">Servers & layouts</TabsTrigger>
             <TabsTrigger value="gateway" data-testid="config-gateway">Model list</TabsTrigger>
             <TabsTrigger value="toml" data-testid="config-toml">Advanced: router.toml</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="inventory" className="flex min-h-0 flex-1 flex-col"><InventoryForms /></TabsContent>
+        <TabsContent value="store" className="flex min-h-0 flex-1 flex-col"><EngineStore /></TabsContent>
         <TabsContent value="setup" className="flex min-h-0 flex-1 flex-col"><RouterSetupForms /></TabsContent>
         <TabsContent value="gateway" className="flex min-h-0 flex-1 flex-col"><GatewayForms /></TabsContent>
         <TabsContent value="toml" className="flex min-h-0 flex-1 flex-col">
