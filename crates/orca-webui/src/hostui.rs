@@ -257,7 +257,7 @@ impl HostUiArgs {
             bench_power: value(args, "--hostui-bench-power"),
             glance: value(args, "--hostui-glance").filter(|v| !v.is_empty()),
             glance_supervisor: value(args, "--hostui-glance-supervisor")
-                .or_else(|| orca_core::brand::env_var("SUPERVISOR_URL"))
+                .or_else(|| orca_core::names::env_var("NODENS_URL", "SUPERVISOR_URL"))
                 .map(|v| v.trim().to_string())
                 .filter(|v| !v.is_empty()),
             glance_public: value(args, "--hostui-glance-public").filter(|v| !v.is_empty()),

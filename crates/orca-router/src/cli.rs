@@ -23,7 +23,9 @@ use crate::import::{self, ImportOptions};
 use crate::server::{self, Mode};
 use crate::state::AppState;
 
-pub const HELP: &str = "abhoth router: the OpenAI-compatible gateway (replaces LiteLLM, qfn-lb, pig-slots)
+pub const HELP: &str = "abhoth sothoth: Sothoth, the OpenAI-compatible gateway (replaces LiteLLM, qfn-lb, pig-slots)
+(`abhoth router` is the same command; `router` below reads as `sothoth` too. Config files may be
+ called sothoth.toml / sothoth.json or router.toml / router.json: either name finds the other.)
 
 USAGE:
   abhoth router --config router.json [--port P | --listen ADDR] [--host H] [--lb-port P] [--slots-port P]
@@ -74,8 +76,53 @@ fn take(args: &[String], i: &mut usize, flag: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("{flag} needs a value"))
 }
 
-/// Entry point; `args` start after the word `router`. Returns the exit code.
-pub async fn run(args: Vec<String>) -> Result<i32> {
+/// The files after `--config` / `--control` under either name (docs/NAMES.md): a missing
+/// `sothoth.toml` / `sothoth.json` reads the same folder's `router.toml` / `router.json` and the
+/// other way round. Live files keep their names.
+fn config_names(args: &mut [String]) {
+    let mut next = false;
+    for a in args.iter_mut() {
+        if next {
+            *a = orca_core::names::config_path(std::path::Path::new(a))
+                .display()
+                .to_string();
+            next = false;
+        } else if a == "--config" || a == "--control" {
+            next = true;
+        }
+    }
+}
+
+/// The standalone binary's `main` (`abhoth-sothoth`, or `abhoth-router` under its old name):
+/// `[sothoth|router] ARGS...` from the process arguments, then exit.
+pub fn standalone() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if matches!(args.first().map(String::as_str), Some("router" | "sothoth")) {
+        args.remove(0);
+    }
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    match rt.block_on(run(args)) {
+        Ok(code) => std::process::exit(code),
+        Err(e) => {
+            eprintln!("abhoth sothoth: {e:#}");
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Entry point; `args` start after the word `sothoth` / `router`. Returns the exit code.
+pub async fn run(mut args: Vec<String>) -> Result<i32> {
+    config_names(&mut args);
     match args.first().map(String::as_str) {
         Some("--help" | "-h" | "help") => {
             print!("{HELP}");

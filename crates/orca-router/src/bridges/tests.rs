@@ -381,6 +381,31 @@ async fn a_bridge_registers_answers_commands_and_carries_requests() {
     h.stop();
 }
 
+/// Migo's name for the endpoint (docs/NAMES.md): a bridge told `/migo/ws` registers as one on
+/// `/bridge/ws` does; the default stays `/bridge/ws`, which old routers know, and old bridges
+/// (which only dial `/bridge/ws`) are the test above.
+#[tokio::test]
+async fn a_bridge_on_the_migo_path_registers_too() {
+    assert!(
+        orca_bridge::config::ws_url("http://r:8010")
+            .unwrap()
+            .ends_with("/bridge/ws")
+    );
+    let rd = tempfile::tempdir().unwrap();
+    let bd = tempfile::tempdir().unwrap();
+    let hub = hub_in(rd.path());
+    let token = tokens::mint(rd.path(), "nas", false).unwrap();
+    let addr = router_with(hub.clone()).await;
+    let mut c = bridge_config(bd.path(), addr, 1, &token);
+    c.bridge.router = format!("http://{addr}/migo/ws");
+    let h = client::spawn(c, "test", Arc::new(|_: &str| {}), fast());
+    until("the bridge to register on /migo/ws", || {
+        hub.online("nas") && h.status().connected
+    })
+    .await;
+    h.stop();
+}
+
 #[tokio::test]
 async fn a_wrong_token_or_a_borrowed_one_is_refused() {
     let rd = tempfile::tempdir().unwrap();

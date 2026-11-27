@@ -1,9 +1,9 @@
 //! `abhoth router init`: set up a new standalone router in one folder (ROUTER.md 17,
 //! docs/design/ROUTER-ADMIN.md 6).
 //!
-//! It writes a minimal `router.toml` (`[control] enabled = false`, `[inventory] version = 1`,
+//! It writes a minimal `sothoth.toml` (`[control] enabled = false`, `[inventory] version = 1`,
 //! optionally this machine as the first server with its GPUs and CPU as cards), an empty
-//! `router.json`, the state folder, a first router admin key in a file only its owner can read
+//! `sothoth.json` (a folder with the old `router.*` names keeps them), the state folder, a first router admin key in a file only its owner can read
 //! (printed only with `--print-key`), and optionally a systemd unit, a compose file or a
 //! Windows hint. Then it prints the start command and the `/admin/` URL.
 //!
@@ -244,7 +244,7 @@ pub fn render_toml(
     let mut t = String::new();
     let mut cards = Vec::new();
     t.push_str(&format!(
-        "# router.toml: the router's control-plane config (ROUTER-CONFIG.md), written by\n\
+        "# Sothoth's (the router's) control-plane config (ROUTER-CONFIG.md), written by\n\
          # `abhoth router init` on {today}. Edit it here or on the admin pages (/admin/).\n\
          version = 1\n\n\
          [router]\n\
@@ -375,7 +375,7 @@ fn service_text(s: Service, opts: &InitOptions, dir: &Path, cmd: &str) -> String
              #          && sudo systemctl enable --now abhoth-router\n\
              # A user of its own is best (User= below, owning {dir}).\n\
              [Unit]\n\
-             Description=Abhoth router\n\
+             Description=Abhoth Sothoth (router)\n\
              After=network-online.target\n\
              Wants=network-online.target\n\n\
              [Service]\n\
@@ -394,14 +394,14 @@ fn service_text(s: Service, opts: &InitOptions, dir: &Path, cmd: &str) -> String
             let d = dir.display().to_string();
             let port = opts.listen.rsplit_once(':').map_or("8010", |(_, p)| p);
             format!(
-                "# The router in Docker, written by `abhoth router init`. The image is the router alone,\n\
-                 # built from the abhoth repo: docker build -f deploy/router/Dockerfile -t abhoth-router:local .\n\
-                 # The folder is mounted at the same path inside, so the paths in router.toml work there.\n\
+                "# Sothoth (the router) in Docker, written by `abhoth router init`. The image is Sothoth alone,\n\
+                 # built from the abhoth repo: docker build -f deploy/router/Dockerfile -t abhoth-sothoth:local .\n\
+                 # The folder is mounted at the same path inside, so the paths in its config work there.\n\
                  # It must be writable by uid 568 (sudo chown -R 568:568 {d}). Start:\n\
                  #   docker compose -f {file} up -d\n\
                  services:\n\
-                 \x20 router:\n\
-                 \x20   image: abhoth-router:local\n\
+                 \x20 sothoth:\n\
+                 \x20   image: abhoth-sothoth:local\n\
                  \x20   restart: unless-stopped\n\
                  \x20   user: \"568:568\"\n\
                  \x20   read_only: true\n\
@@ -416,9 +416,9 @@ fn service_text(s: Service, opts: &InitOptions, dir: &Path, cmd: &str) -> String
                  \x20     timeout: 5s\n\
                  \x20     retries: 3\n",
                 file = dir.join(s.file_name()).display(),
-                json = serde_json::to_string(&dir.join("router.json").display().to_string())
+                json = serde_json::to_string(&json_path(dir).display().to_string())
                     .unwrap_or_default(),
-                toml = serde_json::to_string(&dir.join("router.toml").display().to_string())
+                toml = serde_json::to_string(&toml_path(dir).display().to_string())
                     .unwrap_or_default(),
                 vol = serde_json::to_string(&format!("{d}:{d}")).unwrap_or_default(),
             )
@@ -440,6 +440,32 @@ fn service_text(s: Service, opts: &InitOptions, dir: &Path, cmd: &str) -> String
     }
 }
 
+/// The control-plane file init writes in `dir`: `sothoth.toml`, or `router.toml` when the
+/// folder already has the old names (docs/NAMES.md; files are never renamed).
+pub fn toml_path(dir: &Path) -> PathBuf {
+    dir.join(if old_names(dir) {
+        "router.toml"
+    } else {
+        "sothoth.toml"
+    })
+}
+
+/// The gateway file init writes in `dir`: `sothoth.json`, or `router.json` (see [`toml_path`]).
+pub fn json_path(dir: &Path) -> PathBuf {
+    dir.join(if old_names(dir) {
+        "router.json"
+    } else {
+        "sothoth.json"
+    })
+}
+
+/// Whether `dir` has a file under an old name (`router.toml` / `router.json`) and none under a
+/// new one: then init keeps to the old names, so one folder never mixes them.
+fn old_names(dir: &Path) -> bool {
+    let any = |names: [&str; 2]| names.iter().any(|n| exists(&dir.join(n)));
+    any(["router.toml", "router.json"]) && !any(["sothoth.toml", "sothoth.json"])
+}
+
 fn exists(p: &Path) -> bool {
     std::fs::symlink_metadata(p).is_ok()
 }
@@ -449,8 +475,7 @@ fn exists(p: &Path) -> bool {
 pub fn init(opts: &InitOptions, local: Option<&Detected>) -> Result<Outcome> {
     let dir = absolute(&opts.dir)?;
     let state_dir = absolute(&opts.state_dir.clone().unwrap_or_else(|| dir.join("state")))?;
-    let toml = dir.join("router.toml");
-    let json = dir.join("router.json");
+    let (toml, json) = (toml_path(&dir), json_path(&dir));
     let key_file = match &opts.key_name {
         Some(_) => {
             Some(absolute(&opts.key_file.clone().unwrap_or_else(|| {
@@ -733,7 +758,7 @@ fn this_program() -> Vec<String> {
     let path = exe
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| stem.clone());
-    if stem.starts_with("abhoth-router") {
+    if stem.starts_with("abhoth-router") || stem.starts_with("abhoth-sothoth") {
         vec![path]
     } else if stem.starts_with("abhoth") {
         vec![path, "router".into()]
@@ -841,7 +866,7 @@ pub fn run_with(
         None if ask_them => ask(
             input,
             out,
-            "Folder for router.toml, router.json and the state",
+            "Folder for sothoth.toml, sothoth.json and the state",
             &d.dir.display().to_string(),
         )?
         .into(),
@@ -908,7 +933,7 @@ pub fn run_with(
         writeln!(out)?;
         writeln!(
             out,
-            "Will write router.toml and router.json in {}{}{}.",
+            "Will write sothoth.toml and sothoth.json in {}{}{}.",
             o.dir.display(),
             if o.key_name.is_some() {
                 ", and an admin key file (owner-only)"

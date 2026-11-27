@@ -73,14 +73,14 @@ pub fn host_name_or(fallback: &str) -> String {
     }
 }
 
-/// The name a router shows: `--name`, else `ABHOTH_ROUTER_NAME`, else "Abhoth router on
-/// <Host>" (the host's short name, capitalised when it is all lower case; plain "Abhoth router"
+/// The name a router shows: `--name`, else `ABHOTH_SOTHOTH_NAME` / `ABHOTH_ROUTER_NAME`, else "Sothoth on
+/// <Host>" (the host's short name, capitalised when it is all lower case; plain "Sothoth"
 /// when the host name is a container id).
 pub fn display_name(d: Option<&Discovery>) -> String {
     if let Some(n) = d.map(|d| d.name.trim()).filter(|n| !n.is_empty()) {
         return n.to_string();
     }
-    if let Ok(n) = std::env::var("ABHOTH_ROUTER_NAME")
+    if let Some(n) = orca_core::names::env_var("SOTHOTH_NAME", "ROUTER_NAME")
         && !n.trim().is_empty()
     {
         return n.trim().to_string();
@@ -88,7 +88,7 @@ pub fn display_name(d: Option<&Discovery>) -> String {
     default_name(&host_name())
 }
 
-/// "Abhoth router on <Host>" for host name `host` (see [`display_name`]).
+/// "Sothoth on <Host>" for host name `host` (see [`display_name`]).
 pub fn default_name(host: &str) -> String {
     let short = host.trim().split('.').next().unwrap_or_default().trim();
     let container_id = matches!(short.len(), 12 | 64)
@@ -96,7 +96,7 @@ pub fn default_name(host: &str) -> String {
             .chars()
             .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
     if short.is_empty() || container_id || short.eq_ignore_ascii_case("localhost") {
-        return "Abhoth router".into();
+        return "Sothoth".into();
     }
     let pretty = if short.chars().any(|c| c.is_uppercase()) {
         short.to_string()
@@ -106,7 +106,7 @@ pub fn default_name(host: &str) -> String {
             .map(|f| f.to_uppercase().chain(c).collect())
             .unwrap_or_default()
     };
-    format!("Abhoth router on {pretty}")
+    format!("Sothoth on {pretty}")
 }
 
 fn is_claude(engine: Option<&str>) -> bool {
@@ -547,16 +547,12 @@ mod tests {
 
     #[test]
     fn default_names_read_well() {
-        assert_eq!(default_name("gpu-host"), "Abhoth router on Gpu-host");
-        assert_eq!(default_name("gpu-host.lan"), "Abhoth router on Gpu-host");
-        assert_eq!(default_name("MyServer"), "Abhoth router on MyServer");
-        assert_eq!(
-            default_name("3f2a9c1b7d4e"),
-            "Abhoth router",
-            "a container id"
-        );
-        assert_eq!(default_name(""), "Abhoth router");
-        assert_eq!(default_name("localhost"), "Abhoth router");
+        assert_eq!(default_name("gpu-host"), "Sothoth on Gpu-host");
+        assert_eq!(default_name("gpu-host.lan"), "Sothoth on Gpu-host");
+        assert_eq!(default_name("MyServer"), "Sothoth on MyServer");
+        assert_eq!(default_name("3f2a9c1b7d4e"), "Sothoth", "a container id");
+        assert_eq!(default_name(""), "Sothoth");
+        assert_eq!(default_name("localhost"), "Sothoth");
         let d = Discovery {
             name: "  Lab box ".into(),
             ..Default::default()

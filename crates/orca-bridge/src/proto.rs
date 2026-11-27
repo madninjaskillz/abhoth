@@ -12,6 +12,14 @@ use serde_json::Value;
 pub const PROTOCOL: u32 = 1;
 /// Where the router accepts bridges (on its main port).
 pub const WS_PATH: &str = "/bridge/ws";
+/// The same endpoint under Migo's name (docs/NAMES.md). Routers accept both; bridges dial
+/// [`WS_PATH`] unless their `router` URL names this one, so they reach old routers too.
+pub const MIGO_WS_PATH: &str = "/migo/ws";
+
+/// Whether `path` is the bridges' endpoint ([`WS_PATH`] or [`MIGO_WS_PATH`]).
+pub fn is_ws_path(path: &str) -> bool {
+    path == WS_PATH || path == MIGO_WS_PATH
+}
 /// Close codes.
 pub const CLOSE_BAD_VERSION: u16 = 4400;
 pub const CLOSE_BAD_TOKEN: u16 = 4401;

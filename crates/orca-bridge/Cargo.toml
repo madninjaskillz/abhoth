@@ -7,7 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# The headless bridge on its own (the abhoth-bridge image); `abhoth bridge` runs the same code.
+# Migo, the headless bridge on its own (the abhoth-migo image); `abhoth migo` runs the same
+# code. `abhoth-bridge` is the same program under its old name (docs/NAMES.md).
+[[bin]]
+name = "abhoth-migo"
+path = "src/bin/abhoth_migo.rs"
+
 [[bin]]
 name = "abhoth-bridge"
 path = "src/main.rs"

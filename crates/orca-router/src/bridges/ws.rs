@@ -181,7 +181,7 @@ async fn session(hub: Arc<Hub>, mut socket: WebSocket, bridge: Option<String>, p
     tracing::info!("bridge {id} disconnected: {why}");
 }
 
-/// Is this request the bridge endpoint?
+/// Is this request the bridge endpoint (`/bridge/ws`, or `/migo/ws` under Migo's name)?
 pub fn is_bridge_path(method: &axum::http::Method, path: &str) -> bool {
-    method == axum::http::Method::GET && path == orca_bridge::proto::WS_PATH
+    method == axum::http::Method::GET && orca_bridge::proto::is_ws_path(path)
 }

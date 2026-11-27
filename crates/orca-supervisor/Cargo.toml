@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# Nodens, the supervisor on its own (docs/NAMES.md); `abhoth-supervisor` is its old name.
+[[bin]]
+name = "abhoth-nodens"
+path = "src/bin/abhoth_nodens.rs"
+
 [[bin]]
 name = "abhoth-supervisor"
 path = "src/bin/abhoth_supervisor.rs"

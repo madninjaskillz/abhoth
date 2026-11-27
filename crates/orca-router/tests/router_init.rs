@@ -25,8 +25,8 @@ async fn a_router_from_init_starts_and_its_key_signs_in() {
     .await
     .unwrap();
     assert_eq!(code, 0);
-    let toml = dir.join("router.toml");
-    let json_path = dir.join("router.json");
+    let toml = dir.join("sothoth.toml");
+    let json_path = dir.join("sothoth.json");
     let key = std::fs::read_to_string(dir.join("secrets/router-admin-key"))
         .unwrap()
         .trim()

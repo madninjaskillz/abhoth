@@ -16,7 +16,50 @@ use crate::hostd::{self, Endpoint};
 use crate::router::{Controls, Router};
 use crate::{HubConfig, TelemetryHub};
 
-const USAGE: &str = "usage: abhoth supervisor <run|check> --config FILE\n";
+const USAGE: &str = "usage: abhoth nodens <run|check> --config FILE   (also `abhoth supervisor`; nodens.toml or supervisor.toml)\n";
+
+/// The config file to read for `path` (docs/NAMES.md): `path` when it exists, else the same
+/// folder's `supervisor.toml` for a missing `nodens.toml` and the other way round, else `path`.
+pub fn config_path(path: &str) -> String {
+    let p = std::path::Path::new(path);
+    if p.exists() {
+        return path.to_string();
+    }
+    let other = match p.file_name().and_then(|n| n.to_str()) {
+        Some("nodens.toml") => "supervisor.toml",
+        Some("supervisor.toml") => "nodens.toml",
+        _ => return path.to_string(),
+    };
+    let o = p.with_file_name(other);
+    if o.exists() {
+        o.display().to_string()
+    } else {
+        path.to_string()
+    }
+}
+
+/// The standalone binary's `main` (`abhoth-nodens`, or `abhoth-supervisor` under its old name).
+pub fn standalone() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+    {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("abhoth nodens: runtime: {e}");
+            std::process::exit(1);
+        }
+    };
+    std::process::exit(rt.block_on(main(&args)));
+}
 
 pub async fn main(args: &[String]) -> i32 {
     let mut it = args.iter();
@@ -35,13 +78,14 @@ pub async fn main(args: &[String]) -> i32 {
         eprint!("{USAGE}");
         return 2;
     };
+    let p = config_path(&p);
     let cfg = match std::fs::read_to_string(&p)
         .map_err(|e| format!("{p}: {e}"))
         .and_then(|t| Config::parse(&t))
     {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("abhoth supervisor: {e}");
+            eprintln!("abhoth nodens: {e}");
             return 1;
         }
     };
@@ -63,7 +107,7 @@ pub async fn main(args: &[String]) -> i32 {
         "run" => match run(cfg).await {
             Ok(()) => 0,
             Err(e) => {
-                eprintln!("abhoth supervisor: {e}");
+                eprintln!("abhoth nodens: {e}");
                 1
             }
         },
@@ -78,6 +122,7 @@ pub async fn main(args: &[String]) -> i32 {
 /// mode): reads and checks the config, then runs until SIGTERM. Every failure comes back as
 /// one line of text (config problems joined with "; ") instead of a printed exit code.
 pub async fn run_file(path: &str) -> Result<(), String> {
+    let path = &config_path(path);
     let cfg = std::fs::read_to_string(path)
         .map_err(|e| format!("{path}: {e}"))
         .and_then(|t| Config::parse(&t))?;
@@ -425,6 +470,25 @@ mod tests {
         assert!(v["series"].get("host.cpu").is_none());
         assert_eq!(history_json(&hub, "range=1w").0, 400);
         assert_eq!(percent_decode("a%2Cb+c%"), "a,b c%");
+    }
+
+    /// `nodens.toml` and `supervisor.toml` stand in for each other when only one is there.
+    #[test]
+    fn config_path_takes_either_name() {
+        let d = std::env::temp_dir().join(format!("sv-names-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let old = d.join("supervisor.toml");
+        let new = d.join("nodens.toml");
+        let s = |p: &std::path::Path| p.display().to_string();
+        assert_eq!(config_path(&s(&new)), s(&new));
+        std::fs::write(&old, "").unwrap();
+        assert_eq!(config_path(&s(&new)), s(&old));
+        assert_eq!(config_path(&s(&old)), s(&old));
+        std::fs::remove_file(&old).unwrap();
+        std::fs::write(&new, "").unwrap();
+        assert_eq!(config_path(&s(&old)), s(&new));
+        assert_eq!(config_path(&s(&d.join("x.toml"))), s(&d.join("x.toml")));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// `run_file` (the single container restarts the supervisor on these): every startup

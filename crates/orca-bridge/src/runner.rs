@@ -99,7 +99,8 @@ pub struct DockerRunner {
 impl Default for DockerRunner {
     fn default() -> Self {
         Self {
-            docker: std::env::var("ABHOTH_BRIDGE_DOCKER").unwrap_or_else(|_| "docker".into()),
+            docker: crate::config::env_var("ABHOTH_BRIDGE_DOCKER")
+                .unwrap_or_else(|| "docker".into()),
         }
     }
 }

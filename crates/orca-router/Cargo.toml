@@ -8,6 +8,11 @@ license.workspace = true
 publish.workspace = true
 
 # The small binary the Docker image ships; `abhoth router` (orca-cli) runs the same code.
+# Sothoth, the router on its own (docs/NAMES.md); `abhoth-router` is its old name.
+[[bin]]
+name = "abhoth-sothoth"
+path = "src/bin/abhoth_sothoth.rs"
+
 [[bin]]
 name = "abhoth-router"
 path = "src/bin/abhoth_router.rs"

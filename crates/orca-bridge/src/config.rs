@@ -271,6 +271,7 @@ pub struct ProcessRun {
 impl BridgeConfig {
     /// Read the file, then apply the environment.
     pub fn load(path: &Path) -> Result<BridgeConfig, String> {
+        let path = &config_path(path);
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let mut c: BridgeConfig =
             toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -287,7 +288,9 @@ impl BridgeConfig {
         Ok(c)
     }
 
+    /// The `ABHOTH_MIGO_*` variables, else the old `ABHOTH_BRIDGE_*` ones (docs/NAMES.md).
     pub fn apply_env(&mut self, get: impl Fn(&str) -> Option<String>) {
+        let get = |k: &str| env_alias(&get, k);
         let b = &mut self.bridge;
         for (k, slot) in [
             ("ABHOTH_BRIDGE_ID", &mut b.id),
@@ -389,6 +392,36 @@ impl BridgeConfig {
     }
 }
 
+/// `ABHOTH_MIGO_X` when set (and not empty), else `ABHOTH_BRIDGE_X`, for `k` = `ABHOTH_BRIDGE_X`.
+pub fn env_alias(get: impl Fn(&str) -> Option<String>, k: &str) -> Option<String> {
+    let new = k
+        .strip_prefix("ABHOTH_BRIDGE_")
+        .map(|r| format!("ABHOTH_MIGO_{r}"));
+    new.and_then(|n| get(&n).filter(|v| !v.trim().is_empty()))
+        .or_else(|| get(k))
+}
+
+/// [`env_alias`] on the process environment.
+pub fn env_var(k: &str) -> Option<String> {
+    env_alias(|k| std::env::var(k).ok(), k)
+}
+
+/// The config file to read for `path` (docs/NAMES.md): `path` when it exists, else the same
+/// folder's `bridge.toml` for a missing `migo.toml` and the other way round, else `path`.
+/// Files are never renamed.
+pub fn config_path(path: &Path) -> PathBuf {
+    if path.exists() {
+        return path.to_path_buf();
+    }
+    let other = match path.file_name().and_then(|n| n.to_str()) {
+        Some("migo.toml") => "bridge.toml",
+        Some("bridge.toml") => "migo.toml",
+        _ => return path.to_path_buf(),
+    };
+    let o = path.with_file_name(other);
+    if o.exists() { o } else { path.to_path_buf() }
+}
+
 /// The router's `/bridge/ws` URL from what the config says.
 pub fn ws_url(router: &str) -> Result<String, String> {
     let r = router.trim().trim_end_matches('/');
@@ -401,7 +434,7 @@ pub fn ws_url(router: &str) -> Result<String, String> {
     if rest.is_empty() {
         return Err("no host".into());
     }
-    if rest.ends_with(crate::proto::WS_PATH) {
+    if rest.ends_with(crate::proto::WS_PATH) || rest.ends_with(crate::proto::MIGO_WS_PATH) {
         Ok(format!("{scheme}://{rest}"))
     } else {
         Ok(format!("{scheme}://{rest}{}", crate::proto::WS_PATH))
@@ -417,8 +450,59 @@ mod tests {
         assert_eq!(ws_url("http://h:8010").unwrap(), "ws://h:8010/bridge/ws");
         assert_eq!(ws_url("https://h/").unwrap(), "wss://h/bridge/ws");
         assert_eq!(ws_url("ws://h:1/bridge/ws").unwrap(), "ws://h:1/bridge/ws");
+        assert_eq!(ws_url("http://h:1/migo/ws").unwrap(), "ws://h:1/migo/ws");
         assert!(ws_url("h:8010").is_err());
         assert!(ws_url("ftp://h").is_err());
+    }
+
+    #[test]
+    fn migo_variables_win_over_bridge_ones() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| {
+                pairs
+                    .iter()
+                    .find(|(n, _)| *n == k)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        let mut c = BridgeConfig::default();
+        c.apply_env(env(&[
+            ("ABHOTH_BRIDGE_ID", "old"),
+            ("ABHOTH_MIGO_ID", "new"),
+            ("ABHOTH_BRIDGE_ROUTER", "http://old:8010"),
+            ("ABHOTH_MIGO_TITLE", "Migo"),
+            ("ABHOTH_MIGO_MODEL_DIR", "/m"),
+        ]));
+        assert_eq!(c.bridge.id, "new");
+        assert_eq!(c.bridge.router, "http://old:8010");
+        assert_eq!(c.bridge.title, "Migo");
+        assert_eq!(c.bridge.model_dir.as_deref(), Some("/m"));
+        // An empty new one does not hide the old one.
+        let get = env(&[
+            ("ABHOTH_MIGO_DOCKER", " "),
+            ("ABHOTH_BRIDGE_DOCKER", "podman"),
+        ]);
+        assert_eq!(
+            env_alias(get, "ABHOTH_BRIDGE_DOCKER").as_deref(),
+            Some("podman")
+        );
+    }
+
+    #[test]
+    fn migo_toml_and_bridge_toml_stand_in_for_each_other() {
+        let d = tempfile::tempdir().unwrap();
+        let (old, new) = (d.path().join("bridge.toml"), d.path().join("migo.toml"));
+        assert_eq!(config_path(&new), new);
+        std::fs::write(&old, "").unwrap();
+        assert_eq!(config_path(&new), old);
+        assert_eq!(config_path(&old), old);
+        std::fs::remove_file(&old).unwrap();
+        std::fs::write(&new, "").unwrap();
+        assert_eq!(config_path(&old), new);
+        assert_eq!(
+            config_path(&d.path().join("x.toml")),
+            d.path().join("x.toml")
+        );
     }
 
     #[test]

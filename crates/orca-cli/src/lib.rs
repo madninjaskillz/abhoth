@@ -651,11 +651,12 @@ Usage:
                                --hostui-machine: This machine at /machine.html)
   {bin} --desktop                the web UI in its own window (desktop builds)
   {bin} admin create <user>      web UI accounts (also reset-password, reset-2fa, list)
-  {bin} router ...              the OpenAI-compatible gateway (router --help)
-  {bin} bridge ...              this host as a server the router manages (bridge --help)
-  {bin} supervisor run --config F the supervisor (telemetry hub, Home Assistant)
-  {bin} --hostui ... --with-router \"<router flags>\" --with-supervisor <config>
-                                 the web UI, router and supervisor in one process (the Docker image)
+  {bin} sothoth ...             Sothoth, the OpenAI-compatible gateway (sothoth --help)
+  {bin} migo ...                Migo: this host as a server Sothoth manages (migo --help)
+  {bin} nodens run --config F   Nodens, the supervisor (telemetry hub, Home Assistant)
+  {bin} --hostui ... --with-sothoth \"<sothoth flags>\" --with-nodens <config>
+                                 the web UI, Sothoth and Nodens in one process (the Docker image)
+  (the old names still work: router, bridge, supervisor, --with-router, --with-supervisor)
 
 Common options:
   -c, --continue                 continue the last session
@@ -678,7 +679,11 @@ Settings and sessions live in ~/.abhoth (ABHOTH_HOME; OPENORCA_HOME is read too)
 
 /// The whole program; returns the process exit code.
 pub async fn main_with_args(mut raw: Vec<String>) -> Result<i32> {
-    // `abhoth router ...`: the gateway (ROUTER.md); no config, sessions or tools.
+    // `abhoth sothoth|nodens|migo ...` are `abhoth router|supervisor|bridge ...` (docs/NAMES.md).
+    if let Some(w) = raw.first_mut() {
+        *w = orca_core::names::subcommand(w).to_string();
+    }
+    // `abhoth sothoth ...` (`router`): the gateway (ROUTER.md); no config, sessions or tools.
     #[cfg(feature = "router")]
     if raw.first().map(String::as_str) == Some("router") {
         return orca_router::cli::run(raw[1..].to_vec()).await;
@@ -687,13 +692,13 @@ pub async fn main_with_args(mut raw: Vec<String>) -> Result<i32> {
     if raw.first().map(String::as_str) == Some("engine") {
         return Ok(orca_engines::cli::main(&raw[1..]).await);
     }
-    // `abhoth bridge [--config bridge.toml]`: this host as a router-managed server
+    // `abhoth migo [--config migo.toml]` (`bridge`): this host as a router-managed server
     // (ROUTER-MEDIA-PLAN.md 11); headless, logs to stdout.
     #[cfg(feature = "bridge")]
     if raw.first().map(String::as_str) == Some("bridge") {
         return Ok(orca_bridge::cli::main(&raw[1..], env!("CARGO_PKG_VERSION")).await);
     }
-    // `abhoth supervisor run|check --config FILE` (docs/design/SUPERVISOR.md).
+    // `abhoth nodens run|check --config FILE` (`supervisor`; docs/design/SUPERVISOR.md).
     #[cfg(feature = "supervisor")]
     if raw.first().map(String::as_str) == Some("supervisor") {
         return Ok(orca_supervisor::run::main(&raw[1..]).await);

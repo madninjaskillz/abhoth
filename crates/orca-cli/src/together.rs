@@ -32,6 +32,19 @@ use orca_webui::parts::{PartState, PartStatus, now_ms};
 
 pub const ROUTER_FLAG: &str = "--with-router";
 pub const SUPERVISOR_FLAG: &str = "--with-supervisor";
+/// The same flags under the components' names (docs/NAMES.md).
+pub const SOTHOTH_FLAG: &str = "--with-sothoth";
+pub const NODENS_FLAG: &str = "--with-nodens";
+
+/// The flag a name stands for: `--with-sothoth` is `--with-router`, `--with-nodens` is
+/// `--with-supervisor`; `None` for anything else.
+fn part_flag(f: &str) -> Option<&'static str> {
+    match f {
+        ROUTER_FLAG | SOTHOTH_FLAG => Some(ROUTER_FLAG),
+        SUPERVISOR_FLAG | NODENS_FLAG => Some(SUPERVISOR_FLAG),
+        _ => None,
+    }
+}
 
 /// The extra parts asked for on the command line.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -58,8 +71,8 @@ pub fn take(raw: &mut Vec<String>) -> Result<Parts, String> {
     while i < raw.len() {
         let a = raw[i].clone();
         let (flag, inline) = match a.split_once('=') {
-            Some((f, v)) if f == ROUTER_FLAG || f == SUPERVISOR_FLAG => (f.to_string(), Some(v)),
-            _ if a == ROUTER_FLAG || a == SUPERVISOR_FLAG => (a.clone(), None),
+            Some((f, v)) if part_flag(f).is_some() => (f.to_string(), Some(v)),
+            _ if part_flag(a.as_str()).is_some() => (a.clone(), None),
             _ => {
                 i += 1;
                 continue;
@@ -82,26 +95,26 @@ pub fn take(raw: &mut Vec<String>) -> Result<Parts, String> {
         if value.is_empty() {
             return Err(format!("{flag} needs a value"));
         }
-        if flag == ROUTER_FLAG {
+        if part_flag(&flag) == Some(ROUTER_FLAG) {
             if parts.router.is_some() {
-                return Err(format!("{ROUTER_FLAG} given twice"));
+                return Err(format!("{flag} given twice"));
             }
             let words: Vec<String> = value.split_whitespace().map(str::to_string).collect();
-            // `router` itself is optional, like the image's abhoth-router.
+            // `router` / `sothoth` itself is optional, like the image's abhoth-router.
             let words = match words.first().map(String::as_str) {
-                Some("router") => words[1..].to_vec(),
+                Some("router" | "sothoth") => words[1..].to_vec(),
                 _ => words,
             };
             // Only the gateway runs alongside the web UI, not a one-shot subcommand.
             if let Some(w) = words.first().filter(|w| !w.starts_with('-')) {
                 return Err(format!(
-                    "{ROUTER_FLAG}: '{w}' is a router subcommand; give the gateway's flags (--config ...)"
+                    "{flag}: '{w}' is a router subcommand; give the gateway's flags (--config ...)"
                 ));
             }
             parts.router = Some(words);
         } else {
             if parts.supervisor.is_some() {
-                return Err(format!("{SUPERVISOR_FLAG} given twice"));
+                return Err(format!("{flag} given twice"));
             }
             parts.supervisor = Some(value);
         }
@@ -390,6 +403,28 @@ mod tests {
             ])
         );
         assert_eq!(p.supervisor.as_deref(), Some("/s/supervisor.toml"));
+    }
+
+    #[test]
+    fn new_names_are_the_same_flags() {
+        let mut raw = v(&[
+            "--with-sothoth",
+            "sothoth --config /r/sothoth.json",
+            "--with-nodens=/s/nodens.toml",
+        ]);
+        let p = take(&mut raw).unwrap();
+        assert!(raw.is_empty());
+        assert_eq!(p.router.unwrap(), v(&["--config", "/r/sothoth.json"]));
+        assert_eq!(p.supervisor.as_deref(), Some("/s/nodens.toml"));
+        // An old and a new flag for the same part is one part given twice.
+        assert!(
+            take(&mut v(&[
+                "--with-router=--config a",
+                "--with-sothoth=--config b"
+            ]))
+            .is_err()
+        );
+        assert!(take(&mut v(&["--with-supervisor=a", "--with-nodens=b"])).is_err());
     }
 
     #[test]

@@ -11,6 +11,7 @@ pub mod engines;
 pub mod hooks;
 pub mod live;
 pub mod logging;
+pub mod names;
 pub mod orchestration;
 pub mod profiles;
 pub mod progress;

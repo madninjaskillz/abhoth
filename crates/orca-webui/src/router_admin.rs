@@ -75,10 +75,13 @@ impl RouterLink {
     }
 
     /// From `ABHOTH_ROUTER_URL` and `ABHOTH_ROUTER_TOKEN_FILE` (both needed; the token file must
-    /// hold at least 32 characters).
+    /// hold at least 32 characters), or their new names `ABHOTH_SOTHOTH_URL` and
+    /// `ABHOTH_SOTHOTH_TOKEN_FILE` (docs/NAMES.md), which win when set.
     pub fn from_env() -> Result<Option<Self>, String> {
-        let url = orca_core::brand::env_var("ROUTER_URL").filter(|s| !s.trim().is_empty());
-        let file = orca_core::brand::env_var("ROUTER_TOKEN_FILE").filter(|s| !s.trim().is_empty());
+        let url =
+            orca_core::names::env_var("SOTHOTH_URL", "ROUTER_URL").filter(|s| !s.trim().is_empty());
+        let file = orca_core::names::env_var("SOTHOTH_TOKEN_FILE", "ROUTER_TOKEN_FILE")
+            .filter(|s| !s.trim().is_empty());
         match (url, file) {
             (None, None) => Ok(None),
             (Some(url), Some(file)) => Self::load(&url, FsPath::new(&file)).map(Some),

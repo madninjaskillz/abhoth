@@ -143,7 +143,7 @@ fn refuses_to_overwrite_and_force_backs_everything_up() {
         "{e}"
     );
     assert!(
-        e.contains("router.toml") && e.contains("router-admin-key"),
+        e.contains("sothoth.toml") && e.contains("router-admin-key"),
         "{e}"
     );
     assert!(
@@ -159,6 +159,17 @@ fn refuses_to_overwrite_and_force_backs_everything_up() {
     only_json.key_name = None;
     assert!(init(&only_json, None).is_err());
     assert!(!only_json.dir.join("router.toml").exists());
+    assert!(!only_json.dir.join("sothoth.toml").exists());
+    // ...and forced there, it keeps to the old names (one folder never mixes them).
+    only_json.force = true;
+    let kept = init(&only_json, None).unwrap();
+    assert!(
+        kept.toml.ends_with("router.toml"),
+        "{}",
+        kept.toml.display()
+    );
+    assert!(only_json.dir.join("router.json").exists());
+    assert!(!only_json.dir.join("sothoth.json").exists());
 
     // Forced: each file moved to backups/ first, then written anew.
     o.force = true;
@@ -171,8 +182,8 @@ fn refuses_to_overwrite_and_force_backs_everything_up() {
     assert_eq!(
         names,
         [
-            "router.toml",
-            "router.json",
+            "sothoth.toml",
+            "sothoth.json",
             "router-admin-key",
             "abhoth-router.service"
         ]
@@ -358,7 +369,7 @@ fn yes_takes_the_defaults_and_flags_without_asking() {
     assert!(dir.join("abhoth-router.service").exists());
     let key = std::fs::read_to_string(dir.join("secrets/router-admin-key")).unwrap();
     assert!(!out.contains(key.trim()), "never printed: {out}");
-    let c = crate::control::load::load(&dir.join("router.toml"))
+    let c = crate::control::load::load(&dir.join("sothoth.toml"))
         .unwrap()
         .config;
     assert_eq!(c.cards.len(), 3, "this machine by default");
@@ -401,7 +412,7 @@ fn interactive_asks_then_writes() {
     let (r, out) = cli(&[], true, &answers);
     assert_eq!(r.unwrap(), 0, "{out}");
     assert!(out.contains("This machine: First GPU (32 GiB)"), "{out}");
-    let c = crate::control::load::load(&dir.join("router.toml"))
+    let c = crate::control::load::load(&dir.join("sothoth.toml"))
         .unwrap()
         .config;
     assert!(c.servers.is_empty(), "answered no");

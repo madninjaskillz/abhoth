@@ -1,15 +1,6 @@
-//! `abhoth-bridge`: the headless bridge (the abhoth-bridge image). Same as `abhoth bridge`.
+//! `abhoth-bridge`: the headless bridge under its old name (the image keeps it). Same as
+//! `abhoth-migo` and `abhoth migo` (docs/NAMES.md).
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("abhoth-bridge {}", env!("CARGO_PKG_VERSION"));
-        return;
-    }
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("tokio runtime");
-    let code = rt.block_on(orca_bridge::cli::main(&args, env!("CARGO_PKG_VERSION")));
-    std::process::exit(code);
+    orca_bridge::cli::standalone("abhoth-bridge");
 }

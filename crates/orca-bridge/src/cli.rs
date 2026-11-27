@@ -15,24 +15,27 @@ use crate::config::BridgeConfig;
 use crate::detect;
 
 pub const HELP: &str =
-    "abhoth bridge: make this machine a server the router manages (no inbound port)
+    "abhoth migo: Migo makes this machine a server Sothoth (the router) manages (no inbound port)
+(`abhoth bridge`, `abhoth-migo` and the old `abhoth-bridge` are the same command; migo.toml and
+ bridge.toml are the same file under either name: a missing one reads the other.)
 
 USAGE:
-  abhoth bridge [--config bridge.toml]
-        Dial the router, describe this host's cards and engines, start and stop engines for it,
+  abhoth migo [--config migo.toml]
+        Dial Sothoth, describe this host's cards and engines, start and stop engines for it,
         and carry its requests to them. Logs to stdout; SIGTERM or Ctrl+C stops it (and the
-        engines it started). Without --config, the ABHOTH_BRIDGE_* variables configure it.
-  abhoth bridge check --config bridge.toml
-        Print the descriptor the bridge would send (detected cards, engines, files).
-  abhoth bridge detect
+        engines it started). Without --config, the ABHOTH_MIGO_* variables configure it.
+  abhoth migo check --config migo.toml
+        Print the descriptor Migo would send (detected cards, engines, files).
+  abhoth migo detect
         Print the GPUs (nvidia-smi) and the CPU it finds.
-  abhoth bridge init --id ID --router URL --out bridge.toml [--token-file FILE] [--token-stdin]
-        Write a starter bridge.toml for this host. --token-stdin reads the token a router admin
-        minted from stdin into FILE (mode 600; default: next to bridge.toml). It is never printed.
+  abhoth migo init --id ID --router URL --out migo.toml [--token-file FILE] [--token-stdin]
+        Write a starter migo.toml for this host. --token-stdin reads the token a Sothoth admin
+        minted from stdin into FILE (mode 600; default: next to migo.toml). It is never printed.
 
 ENVIRONMENT:
-  ABHOTH_BRIDGE_ID, ABHOTH_BRIDGE_ROUTER, ABHOTH_BRIDGE_TOKEN_FILE, ABHOTH_BRIDGE_STATE_DIR,
-  ABHOTH_BRIDGE_MODEL_DIR, ABHOTH_BRIDGE_TITLE override bridge.toml's [bridge] keys.
+  ABHOTH_MIGO_ID, ABHOTH_MIGO_ROUTER, ABHOTH_MIGO_TOKEN_FILE, ABHOTH_MIGO_STATE_DIR,
+  ABHOTH_MIGO_MODEL_DIR, ABHOTH_MIGO_TITLE (or the old ABHOTH_BRIDGE_* names; the new ones win)
+  override the config's [bridge] keys. ABHOTH_MIGO_DOCKER (ABHOTH_BRIDGE_DOCKER): the docker CLI.
 ";
 
 fn val(args: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
@@ -42,12 +45,28 @@ fn val(args: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
         .ok_or_else(|| format!("{flag} needs a value"))
 }
 
-/// Entry point; `args` start after the word `bridge`. Returns the exit code.
+/// The standalone binary's `main` (`abhoth-migo`, or `abhoth-bridge` under its old name):
+/// the process arguments, then exit.
+pub fn standalone(name: &str) {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("{name} {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let code = rt.block_on(main(&args, env!("CARGO_PKG_VERSION")));
+    std::process::exit(code);
+}
+
+/// Entry point; `args` start after the word `migo` / `bridge`. Returns the exit code.
 pub async fn main(args: &[String], version: &str) -> i32 {
     match run(args, version).await {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("abhoth bridge: {e}");
+            eprintln!("abhoth migo: {e}");
             2
         }
     }
@@ -125,7 +144,7 @@ async fn run(args: &[String], version: &str) -> Result<i32, String> {
         Some("init") => {
             let id = id.ok_or("init needs --id")?;
             let router = router.ok_or("init needs --router")?;
-            let out = out.ok_or("init needs --out bridge.toml")?;
+            let out = out.ok_or("init needs --out migo.toml")?;
             init(&id, &router, &out, token_file, token_stdin).await
         }
         _ => {
