@@ -759,6 +759,19 @@ struct OrchEnsure {
 #[async_trait::async_trait]
 impl super::reconcile::Ensure for OrchEnsure {
     async fn ensure(&self, server: &str, layout: &str) -> Result<(), String> {
+        // The reconcile looked at the cards a while ago: a switch that ran (or runs) since is
+        // what the admin asked for, so it is never undone from that stale look.
+        if self.orch.busy() {
+            return Err("skipped: a switch is running".into());
+        }
+        if let Some(now) = self.store.active_layout(server).ok().flatten()
+            && now.layout != layout
+        {
+            return Err(format!(
+                "skipped: the active layout is {} now (switched meanwhile)",
+                now.layout
+            ));
+        }
         let offline = self.store.offline_cards().unwrap_or_default();
         let target = wiring::target_spec(&self.c, server, layout, &offline)
             .ok_or_else(|| format!("no layout {layout}"))?;
