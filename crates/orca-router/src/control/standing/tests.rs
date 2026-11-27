@@ -28,7 +28,7 @@ fn config(docker: &str, whisper_port: u16) -> ControlConfig {
         gpu_uuid = "GPU-11111111-2222-3333-4444-555555555555"
         vram_gib = 8.0
         managed = false
-        engines = {{ llm = [], stt = ["whisper-fw"], tts = ["cb"] }}
+        engines = {{ llm = [], stt = ["whisper-fw"], tts = ["cb"], image = ["cf"] }}
         [cards.CPU]
         server = "dt"
         device = "cpu"
@@ -55,6 +55,13 @@ fn config(docker: &str, whisper_port: u16) -> ControlConfig {
         model_dir = "/srv/hf"
         port = {{ X1 = 11204 }}
         package = {{ id = "chatterbox", version = "0.1.7", params = {{ voices_dir = "/srv/sa3/voices", voice = "v1" }}, ports = {{ wyoming = 11203 }}, env = {{ CBS_PREFIX = "Sir,", CBS_VOICE = "v2" }} }}
+        [engines.cf]
+        driver = "package"
+        lifecycle = "standing"
+        memory_gib = 2.0
+        model_dir = "/srv/hf/comfy/models"
+        port = {{ X1 = 18188 }}
+        package = {{ id = "comfyui-slim", version = "1", params = {{ data_dir = "/srv/hf/comfy/data", scripts_dir = "/srv/hf/comfy/scripts", output_dir = "/srv/hf/comfy/output" }} }}
         "#
     ))
     .expect("config")
@@ -390,4 +397,55 @@ fn a_gpu_package_gets_its_card_extra_ports_and_env() {
         "{:?}",
         p.run.binds
     );
+}
+
+#[test]
+fn an_existing_comfyui_install_runs_from_its_own_folders() {
+    let c = config("http://127.0.0.1:1", 10301);
+    let d = tempfile::tempdir().unwrap();
+    let p = plan(&c, "cf", "X1", d.path()).unwrap();
+    assert!(
+        p.run
+            .image
+            .starts_with("docker.io/library/python:3.12-slim@sha256:")
+    );
+    assert_eq!(p.run.cmd, w(&["sh", "/scripts/comfyui-start.sh"]));
+    assert!(
+        p.run
+            .ports
+            .contains(&("127.0.0.1".into(), 18188, 8188, "tcp".into())),
+        "{:?}",
+        p.run.ports
+    );
+    let has = |s: &str, t: &str, ro: bool| {
+        p.run
+            .binds
+            .iter()
+            .any(|b| b.0 == s && b.1 == t && b.2 == ro)
+    };
+    assert!(
+        has("/srv/hf/comfy/data", "/data", false),
+        "{:?}",
+        p.run.binds
+    );
+    assert!(
+        has("/srv/hf/comfy/scripts", "/scripts", true),
+        "{:?}",
+        p.run.binds
+    );
+    assert!(
+        has("/srv/hf/comfy/output", "/output", false),
+        "{:?}",
+        p.run.binds
+    );
+    assert!(
+        p.run
+            .binds
+            .iter()
+            .any(|b| b.0 == "/srv/hf/comfy/models" && b.1 == "/models"),
+        "{:?}",
+        p.run.binds
+    );
+    assert_eq!(p.run.shm_size, Some(8 << 30));
+    assert_eq!(p.health_http.as_deref(), Some("/system_stats"));
 }
