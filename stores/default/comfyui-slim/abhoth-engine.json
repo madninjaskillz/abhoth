@@ -1,0 +1,54 @@
+{
+  "$schema": "../../schema/abhoth-engine.schema.json",
+  "schema": 1,
+  "id": "comfyui-slim",
+  "name": "ComfyUI (python slim image, persistent data folder)",
+  "version": "1",
+  "description": "ComfyUI as a hand-built install that lives in a data folder: the stock python:3.12-slim image runs a start script that keeps ComfyUI, its custom nodes and a venv under /data, so an existing install is reused as it is (nothing is reinstalled when it is already there).\nThe start script, the data folder, the output folder and the model folder are the host's own; the package only runs them.",
+  "kinds": ["image", "video"],
+  "caps": { "inherits": "comfyui" },
+  "hardware": { "gpu": ["cuda"], "min_vram_gib": 6, "cpu_ok": false },
+  "params": {
+    "data_dir": { "type": "path", "required": true, "description": "The data folder (ComfyUI checkout, custom nodes, venv, extra_model_paths.yaml); mounted read-write at /data." },
+    "scripts_dir": { "type": "path", "required": true, "description": "The folder holding the start script; mounted read-only at /scripts." },
+    "output_dir": { "type": "path", "required": true, "description": "The output folder; mounted read-write at /output." },
+    "start_script": { "type": "string", "default": "/scripts/comfyui-start.sh", "description": "The start script inside the container. It must start ComfyUI listening on 0.0.0.0:8188." }
+  },
+  "api": "comfyui",
+  "probe": "comfyui",
+  "endpoints": { "stats": "/system_stats", "nodes": "/object_info", "models": "/models" },
+  "models": {
+    "mount": "/models",
+    "layout": "comfyui",
+    "folders": ["checkpoints", "diffusion_models", "unet", "clip", "text_encoders", "vae", "loras", "controlnet", "ipadapter", "clip_vision", "upscale_models", "embeddings"],
+    "read_only": false
+  },
+  "security": {
+    "host_mounts": [
+      { "source": "{{param.data_dir}}", "target": "/data", "why": "the ComfyUI install, custom nodes and venv" },
+      { "source": "{{param.scripts_dir}}", "target": "/scripts", "read_only": true, "why": "the start script" },
+      { "source": "{{param.output_dir}}", "target": "/output", "why": "generated images" }
+    ]
+  },
+  "methods": [
+    {
+      "type": "docker",
+      "label": "docker (python:3.12-slim + start script)",
+      "platforms": ["linux/amd64"],
+      "gpu": ["cuda"],
+      "image": "docker.io/library/python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159",
+      "run": ["sh", "{{param.start_script}}"],
+      "env": { "NVIDIA_DRIVER_CAPABILITIES": "compute,utility" },
+      "ports": [ { "id": "http", "container": 8188 } ],
+      "docker_args": ["--shm-size=8g"],
+      "health": { "http": "/system_stats", "start_seconds": 1800 }
+    }
+  ],
+  "licence": "GPL-3.0",
+  "source": "https://github.com/comfyanonymous/ComfyUI",
+  "homepage": "https://www.comfy.org",
+  "notes": [
+    "The start script installs packages (apt, pip) on each start when they are missing, so the first start needs the network and can take a long time.",
+    "The model folder is mounted read-write so ComfyUI-Manager can download models into it."
+  ]
+}

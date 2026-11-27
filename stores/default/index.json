@@ -42,6 +42,22 @@
       "files": []
     },
     {
+      "id": "comfyui-slim",
+      "version": "1",
+      "path": "comfyui-slim",
+      "sha256": "b6bd644f0d85a3d06a738980d918a4cb115383cd459ff9b3284ef0fc925594be",
+      "name": "ComfyUI (python slim image, persistent data folder)",
+      "kinds": [
+        "image",
+        "video"
+      ],
+      "methods": [
+        "docker"
+      ],
+      "summary": "ComfyUI as a hand-built install that lives in a data folder: the stock python:3.12-slim image runs a start script that keeps ComfyUI, its custom nodes and a venv under /data, so an existing install is reused as it is (nothing is reinstalled when it is already there).",
+      "files": []
+    },
+    {
       "id": "kokoro",
       "version": "0.9.4",
       "path": "kokoro",
