@@ -924,8 +924,8 @@ impl Machine {
         } else {
             self.last_error.lock().unwrap().clear();
         }
-        let sig =
-            serde_json::to_string(&(&bc.cards, &bc.engines, &bc.bridge.model_dir)).unwrap_or_default();
+        let sig = serde_json::to_string(&(&bc.cards, &bc.engines, &bc.bridge.model_dir))
+            .unwrap_or_default();
         let old = {
             let mut g = self.running.lock().unwrap();
             if g.as_ref().is_some_and(|r| r.sig == sig) {
