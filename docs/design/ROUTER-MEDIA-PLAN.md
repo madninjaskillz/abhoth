@@ -693,3 +693,127 @@ and sha256, git commit), fetched by the router or bridge at install time and che
 pin. The validator refuses a store package that embeds or vendors binaries or is over about
 1 MB. A private package (My packages, a wizard export) may reference a local path or URL with no
 upstream; such a package cannot be published to a store.
+
+## 12. Owners and status
+
+| Area | Owner | Status |
+|---|---|---|
+| Core: CPU cards, media and video kinds, roles and components, media routes on `:8010` (`/v1/images`, `/v1/audio/*`, music, `/comfyui/` with WebSocket and streaming), placement and failover for media, model sync, the DeepThought migration, retiring the TrueNAS apps, closing `:8188`, moving the pipelines | 🟩B | Phase 1 shipped in 0.16.17 (`local/abhoth:16`, live): inventory only |
+| Headless bridge: `abhoth bridge`, the protocol (13.1), the descriptor (13.2), its Docker image, PC bridge mode in the desktop app, the truenas.local deploy, supervising engines on the bridge's host | 🟧E | Not started |
+| Engine packages: the manifest schema and methods, `abhoth engine validate`, the shared runner (13.3), the metadata-only `stores/`, the Engine store tab and the wizard, manual engines first-class, packages for ComfyUI, Chatterbox, whisper, Kokoro, sa3 and llama.cpp | 🟥F | Not started |
+
+Rules: section 13 is the source of truth for the seams between the three. Change it in small
+commits on main, before the code that depends on the change. Take the next free D-number and
+version from main at release time.
+
+## 13. Interfaces
+
+### 13.1 Bridge protocol (v1)
+
+- **Transport:** the bridge dials `GET /bridge/ws` on the router's `:8010` (wss behind TLS) with
+  `Authorization: Bearer <bridge token>`. No port opens on the bridge's host.
+- **Tokens:** a router admin mints one per bridge (`abb_` prefix, shown once). The router keeps
+  only its SHA-256 in `<state_dir>/secrets/bridges/<bridge-id>.sha256`. The bridge reads its token
+  from `token_file` (mode 600). Neither side logs or prints it.
+- **Frames:** JSON text frames for control messages; binary frames for stream data. Every control
+  message is `{"t": "<type>", ...}`.
+- **Keepalive and reconnect:** a ping every 20 s; the router marks the server offline after 45 s
+  of silence. The bridge reconnects with backoff from 1 s to 60 s, with jitter.
+- **Versions:** `v` is the protocol major. The router closes with code `4400` on a major it does
+  not speak, and `4401` on a bad token.
+
+| Direction | `t` | Fields | Meaning |
+|---|---|---|---|
+| bridge → router | `hello` | `v`, `bridge` (id), `version` (abhoth version), `descriptor` (13.2) | The first frame on every connection. |
+| router → bridge | `welcome` | `v`, `server` (the id the router gives it), `settings` (`enabled`, `priority`) | The connection is accepted. |
+| bridge → router | `descriptor` | `descriptor` | The full descriptor again after a local change; it replaces the old one. |
+| router → bridge | `cmd` | `id`, `op`, `args` | `op`: `start`, `stop`, `status`, `logs`, `probe`, `detect`, `files`, `download`, `sync-receive`, `install`, `uninstall`. |
+| bridge → router | `result` | `id`, `ok`, `data` or `error` | The answer to a `cmd`. |
+| bridge → router | `event` | `kind` (`engine-state`, `download`, `sync`, `log`), `data` | Unprompted state changes. |
+| router → bridge | `open` | `sid`, `engine`, `card`, `method`, `path`, `headers`, `ws` (bool) | Open a proxied HTTP request or WebSocket to a local engine. |
+| bridge → router | `head` | `sid`, `status`, `headers` | The engine's response head (or the WebSocket upgrade result). |
+| either | binary frame | 4-byte big-endian `sid`, then the payload | Body bytes, or one WebSocket message. |
+| either | `credit` | `sid`, `bytes` | Flow control: each side may send at most 1 MiB of unacknowledged body bytes per stream. |
+| either | `end` / `reset` | `sid` (`reset` adds `error`) | A clean end, or an abort. |
+
+### 13.2 Bridge descriptor (v1)
+
+```json
+{ "v": 1,
+  "server": { "id": "truenas", "title": "truenas.local", "os": "linux", "arch": "amd64",
+              "model_dir": "/models", "comfy_root": "/models/comfyui" },
+  "cards": [
+    { "id": "GPU0", "device": "gpu", "gpu_uuid": "GPU-...", "label": "Quadro M4000", "vram_gib": 8.0,
+      "engines": { "tts": ["chatterbox", "kokoro"], "stt": ["whisper"] }, "shared": true },
+    { "id": "CPU", "device": "cpu", "cores": 4, "ram_gib": 6.0, "simd": ["avx2"],
+      "engines": { "tts": ["kokoro"] } } ],
+  "engines": [
+    { "id": "chatterbox", "package": "chatterbox@1.0.0", "method": "docker", "kinds": ["tts"],
+      "caps": { "inherits": "chatterbox" }, "api": "openai-speech", "probe": "none",
+      "ports": { "GPU0": 10204 }, "lifecycle": "on_demand", "idle_stop_seconds": 600 } ],
+  "files": { "comfyui/diffusion_models": ["..."], "hf": ["owner/name"] },
+  "limits": { "max_concurrent": 2 } }
+```
+
+- `cards[].engines` uses the same shape as `cards.x.engines` in `router.toml`. `shared: true`
+  means something outside the bridge also uses the card (Frigate on truenas.local), so the router
+  never assumes it holds all of the VRAM.
+- `engines[].package` is null for a manual engine. Placement never reads it.
+- The router gives bridge cards global ids `<SERVER>-<card>` (for example `TRUENAS-GPU0`). An id
+  that clashes with `router.toml` is refused, with the reason sent back in `result`.
+
+### 13.3 Engine manifest and runner (🟥F, used by 🟩B and 🟧E)
+
+- **Manifest:** section 10, `schema: 1`, at `stores/schema/abhoth-engine.schema.json`.
+- **Shared crate:** `orca-engines`, used by the router and the bridge:
+
+```rust
+pub struct Manifest { /* serde of abhoth-engine.json */ }
+pub fn validate(path: &Path) -> Result<Report, Error>;        // `abhoth engine validate`
+pub struct HostFacts { os, arch, docker: bool, gpus: Vec<Gpu>, cpu: Cpu }  // from detect + cpu-info
+pub fn choose_method<'a>(m: &'a Manifest, h: &HostFacts) -> Result<&'a Method, Vec<String>>;
+pub struct RunSpec { engine: String, card: String, port: u16, model: Option<ModelRef>,
+                     params: BTreeMap<String, Value>, gpu: Option<GpuSel>, limits: Limits }
+pub trait Runner {                                            // async
+    fn install(&self, m: &Manifest, method: &Method, ok: &Approvals) -> Result<Installed>;
+    fn start(&self, i: &Installed, s: &RunSpec) -> Result<Handle>;
+    fn stop(&self, h: &Handle, grace: Duration) -> Result<()>;
+    fn status(&self, h: &Handle) -> Result<State>;            // running, healthy, restarts, since
+    fn logs(&self, h: &Handle, lines: u32) -> Result<String>; // secrets scrubbed
+    fn uninstall(&self, i: &Installed) -> Result<()>;
+}
+```
+
+- **`Handle`** serialises into the state dir, so a restarted router or bridge adopts what is
+  already running: the container name, or the PID plus its start time (which guards against PID
+  reuse).
+- **In the router:** `driver = "package"` with `package = "<id>@<version>"` is a new driver kind
+  beside docker, compose, systemd, process, template and external. On DeepThought it renders the
+  `docker` and `compose` methods into the same hostctl commands the existing drivers use. Host
+  process methods (`pip`, `binary`, `git`) run only where the runner is local: on a bridge, or a
+  router with `exec = "local"`.
+
+### 13.4 Inventory hooks (🟩B, used by 🟧E)
+
+- **Bridge-owned servers are an overlay** on the `router.toml` config: `servers`, `cards` and
+  `engines` with `origin = bridge:<id>`. They are never written to `router.toml`. The same
+  validation rules apply, and id clashes are refused.
+- **Admin settings** for each bridge (`enabled`, `priority`) live in `<state_dir>/bridges.json`.
+  The admin shows a bridge server read-only ("managed by bridge X"), with those two controls.
+- **Calls:**
+  - `control::bridges::upsert(bridge, Descriptor) -> Result<(), Vec<Issue>>`;
+  - `control::bridges::offline(bridge)`;
+  - `control::bridges::remove(bridge)`.
+
+  Each one rebuilds the effective config that placement and the admin read. An offline bridge's
+  cards stay listed but are never placed on.
+- **Execution:** `ExecKind::Bridge` (set by the overlay, never in `router.toml`). `exec_for(c,
+  server)` returns an executor that sends `cmd` frames and waits for the matching `result`.
+- **Files and probes:** the descriptor's `files`, and later `probe` results, feed
+  `caps::record_media_probe(engine, server, Probe)`. Presence and "needs met" then work for
+  bridge servers unchanged.
+- **Routing:** the proxy asks `upstream_for(server, engine, card)`. That gives `Http(url)` for
+  servers the router reaches directly, or `Bridge { bridge, engine, card }`, which opens a stream
+  over the bridge connection (13.1).
+- **Placement order:** enabled and online servers only; DeepThought first, the PC for overflow
+  only (D153); then the server's `priority`, idle state and queue depth.
