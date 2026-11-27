@@ -47,9 +47,11 @@ pub struct SshExecutor {
     /// Router-owned directory: `known_hosts-<server>`, control sockets.
     pub state_dir: PathBuf,
     pub scrubber: Scrubber,
-    /// `ssh` binary (tests point it at a fake).
-    pub ssh_bin: String,
-    pub keyscan_bin: String,
+    /// The `ssh` program and any leading arguments (tests run a fake script as
+    /// `["/bin/sh", script]`, never exec'ing a file they just wrote: "Text file busy").
+    pub ssh_bin: Vec<String>,
+    /// The `ssh-keyscan` program and any leading arguments (as `ssh_bin`).
+    pub keyscan_bin: Vec<String>,
     known: Mutex<bool>,
 }
 
@@ -59,8 +61,8 @@ impl SshExecutor {
             target,
             state_dir,
             scrubber,
-            ssh_bin: "ssh".into(),
-            keyscan_bin: "ssh-keyscan".into(),
+            ssh_bin: vec!["ssh".into()],
+            keyscan_bin: vec!["ssh-keyscan".into()],
             known: Mutex::new(false),
         }
     }
@@ -105,7 +107,7 @@ impl SshExecutor {
                 if attempt > 0 {
                     tokio::time::sleep(KEYSCAN_RETRY).await;
                 }
-                let out = tokio::process::Command::new(&self.keyscan_bin)
+                let out = program(&self.keyscan_bin)
                     .args([
                         "-T",
                         &self.target.connect_timeout.to_string(),
@@ -191,7 +193,7 @@ impl Executor for SshExecutor {
         }
         self.ensure_known_host().await?;
         let t0 = Instant::now();
-        let mut child = tokio::process::Command::new(&self.ssh_bin)
+        let mut child = program(&self.ssh_bin)
             .args(self.args())
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -259,7 +261,13 @@ impl Executor for SshExecutor {
     }
 }
 
-/// `SHA256:` fingerprint (unpadded base64 of the SHA-256 of the key blob) of a base64 key.
+/// A command from a program and its leading arguments (`["ssh"]`, or `["/bin/sh", script]`).
+fn program(cmd: &[String]) -> tokio::process::Command {
+    let mut c = tokio::process::Command::new(cmd.first().map(String::as_str).unwrap_or("false"));
+    c.args(cmd.iter().skip(1));
+    c
+}
+
 /// How long to wait before the one retry of an `ssh-keyscan` that found no matching key.
 const KEYSCAN_RETRY: Duration = Duration::from_millis(500);
 
@@ -282,6 +290,7 @@ fn pinned_line(text: &str, host: Option<&str>, want: &str, pattern: &str) -> Opt
     })
 }
 
+/// `SHA256:` fingerprint (unpadded base64 of the SHA-256 of the key blob) of a base64 key.
 pub fn fingerprint(blob_b64: &str) -> Option<String> {
     let blob = b64_decode(blob_b64)?;
     Some(
@@ -436,7 +445,6 @@ h ssh-ed25519 aGVsbG8=
     #[cfg(unix)]
     #[tokio::test]
     async fn keyscan_is_retried_once_and_its_answer_reused() {
-        use std::os::unix::fs::PermissionsExt;
         let d = std::env::temp_dir().join(format!("abhoth-keyscan-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         // a keyscan that answers nothing the first time, then the key
@@ -452,7 +460,6 @@ if [ -f {f} ]; then echo 'h ssh-ed25519 aGVsbG8='; else touch {f}; fi
             ),
         )
         .unwrap();
-        std::fs::set_permissions(&scan, std::fs::Permissions::from_mode(0o755)).unwrap();
         let target = SshTarget {
             server: "gpu".into(),
             host: "h".into(),
@@ -464,7 +471,7 @@ if [ -f {f} ]; then echo 'h ssh-ed25519 aGVsbG8='; else touch {f}; fi
             keepalive: 15,
         };
         let mut ex = SshExecutor::new(target.clone(), d.clone(), Scrubber::default());
-        ex.keyscan_bin = scan.to_string_lossy().into_owned();
+        ex.keyscan_bin = vec!["/bin/sh".into(), scan.to_string_lossy().into_owned()];
         ex.ensure_known_host().await.unwrap();
         assert_eq!(
             std::fs::read_to_string(d.join("known_hosts-gpu")).unwrap(),
@@ -473,7 +480,7 @@ if [ -f {f} ]; then echo 'h ssh-ed25519 aGVsbG8='; else touch {f}; fi
         );
         // a new executor reuses the checked line: its keyscan never runs
         let mut ex2 = SshExecutor::new(target, d.clone(), Scrubber::default());
-        ex2.keyscan_bin = "/nonexistent/ssh-keyscan".into();
+        ex2.keyscan_bin = vec!["/nonexistent/ssh-keyscan".into()];
         ex2.ensure_known_host().await.unwrap();
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -524,8 +531,6 @@ if [ -f {f} ]; then echo 'h ssh-ed25519 aGVsbG8='; else touch {f}; fi
             format!("#!/bin/sh\ncat >/dev/null\necho '{reply}'\n"),
         )
         .unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
         let mut ex = SshExecutor::new(
             SshTarget {
                 server: "gpu".into(),
@@ -540,7 +545,9 @@ if [ -f {f} ]; then echo 'h ssh-ed25519 aGVsbG8='; else touch {f}; fi
             d.clone(),
             Scrubber::new(["secret-value-123".to_string()]),
         );
-        ex.ssh_bin = fake.to_string_lossy().into_owned();
+        // run through sh: exec'ing a script just written races with other tests' forks,
+        // which can briefly hold its write descriptor ("Text file busy")
+        ex.ssh_bin = vec!["/bin/sh".into(), fake.to_string_lossy().into_owned()];
         let o = ex
             .run(
                 ExecRequest::command("gpu", "x", "echo", Duration::from_secs(5)),
