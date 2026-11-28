@@ -52,12 +52,18 @@ type JobStates = Arc<Mutex<HashMap<String, (String, Option<String>)>>>;
 /// Builds a card spec for an on-demand pick (engine, engine profile, model).
 pub type PickSpec = Arc<dyn Fn(&OnDemandModel) -> Option<CardSpec> + Send + Sync>;
 
+/// What runs now (layout name, spec), read fresh for each ask.
+pub type RunningNow = Arc<dyn Fn() -> (Option<String>, Spec) + Send + Sync>;
+
 /// The orchestrator as the on-demand switcher.
 pub struct InProcess<H: HostOps + 'static, P: Plane + 'static> {
     orch: Arc<Orchestrator<H, P>>,
     pick: PickSpec,
     /// What runs now and its layout name (updated when a job ends).
     current: Arc<Mutex<(Option<String>, Spec)>>,
+    /// When set, what runs is read from here (admin switches and reconciles included) instead
+    /// of `current`, which only this switcher's own jobs update.
+    source: Option<RunningNow>,
     jobs: JobStates,
     n: AtomicU64,
 }
@@ -73,9 +79,16 @@ impl<H: HostOps + 'static, P: Plane + 'static> InProcess<H, P> {
             orch,
             pick,
             current: Arc::new(Mutex::new((active, running))),
+            source: None,
             jobs: Arc::default(),
             n: AtomicU64::new(0),
         }
+    }
+
+    /// Read what runs from `source` on each ask.
+    pub fn with_source(mut self, source: RunningNow) -> Self {
+        self.source = Some(source);
+        self
     }
 }
 
@@ -96,10 +109,16 @@ impl<H: HostOps + 'static, P: Plane + 'static> OnDemandSwitcher for InProcess<H,
                     pick.engine, pick.engine_profile, pick.model
                 ));
             };
-            let (active, now) = self.current.lock().unwrap().clone();
+            let (active, now) = match &self.source {
+                Some(f) => f(),
+                None => self.current.lock().unwrap().clone(),
+            };
             let mut to = now.clone();
-            // An instance that spans this card (tensor parallel) has to go for it.
+            // An instance that spans this card (tensor parallel) has to go for it: the cards it
+            // spans move together, which counts as one move below.
+            let mut replaced: Vec<String> = Vec::new();
             while let Some(h) = holder_of(&to, card) {
+                replaced.extend(to[&h].cards_on(&h));
                 to.insert(h, CardSpec::off());
             }
             to.insert(card.to_string(), want);
@@ -108,7 +127,9 @@ impl<H: HostOps + 'static, P: Plane + 'static> OnDemandSwitcher for InProcess<H,
                 return Ask::Already(format!("{target} already runs on card {card}"));
             }
             let moving = restart_set(&self.orch.cfg, &now, &to);
-            if moving.len() > 1 && !allow_both_cards {
+            let one_instance =
+                !replaced.is_empty() && moving.iter().all(|c| c == card || replaced.contains(c));
+            if moving.len() > 1 && !allow_both_cards && !one_instance {
                 return Ask::Refused(format!(
                     "bringing up {target} restarts cards {}: switch by hand",
                     moving.join(", ")
@@ -135,6 +156,7 @@ impl<H: HostOps + 'static, P: Plane + 'static> OnDemandSwitcher for InProcess<H,
                 ),
                 caller,
                 action: Action::OnDemand,
+                allow_empty: false,
             };
             let estimate = Some(super::estimate(&self.orch.cfg, &to, &moving) as f64);
             let (orch, jobs, current, jid, lay) = (

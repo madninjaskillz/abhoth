@@ -383,6 +383,7 @@ fn expand_refuses_bad_configs() {
             key_file: None,
             online: true,
             catalog_model: None,
+            held: false,
         },
     );
     assert!(
@@ -408,6 +409,7 @@ fn expand_refuses_bad_configs() {
             key_file: None,
             online: true,
             catalog_model: None,
+            held: false,
         },
     );
     assert!(crate::config::validate(&c).is_err());

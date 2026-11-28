@@ -130,6 +130,7 @@ pub fn from_litellm(
                     key_file: opts.key_file.clone(),
                     online: true,
                     catalog_model: None,
+                    held: false,
                 },
             );
         }

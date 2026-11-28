@@ -45,6 +45,9 @@ pub struct AppState {
     /// The control plane's changes to every loaded `router.json` (on-demand settings, what
     /// the cards run now); unset = the file as it is.
     pub overlay: std::sync::OnceLock<ConfigOverlay>,
+    /// The loaded file's config before the overlay: each overlay starts from it, so what one
+    /// overlay narrowed (a deployment's cards while a card was starting) comes back.
+    base: RwLock<crate::config::RouterConfig>,
     /// How the router names itself to clients (`/.well-known/abhoth-router`, mDNS; D149);
     /// unset = the defaults.
     pub discovery: std::sync::OnceLock<crate::discovery::Discovery>,
@@ -69,6 +72,7 @@ impl AppState {
         let log = RequestLog::open(snap.config.settings.request_log.as_deref());
         let ext = crate::Extensions::new(&snap);
         Arc::new(Self {
+            base: RwLock::new(snap.config.clone()),
             snap: RwLock::new(Arc::new(snap)),
             config_path,
             config_error: Mutex::new(None),
@@ -101,6 +105,7 @@ impl AppState {
 
     /// Swap in a new snapshot; requests in flight keep theirs.
     pub fn swap(&self, mut snap: Snapshot) {
+        *self.base.write().unwrap() = snap.config.clone();
         if let Some(f) = self.overlay.get() {
             f(&mut snap.config);
         }
@@ -115,7 +120,7 @@ impl AppState {
             return;
         };
         let mut g = self.snap.write().unwrap();
-        let mut config = g.config.clone();
+        let mut config = self.base.read().unwrap().clone();
         f(&mut config);
         if let Ok(mut s) = g.with_config(config) {
             s.sig = g.sig;

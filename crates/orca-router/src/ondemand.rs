@@ -209,7 +209,9 @@ pub fn decide(
         .filter(|(_, v)| v.offline)
         .map(|(c, _)| c.clone())
         .collect();
-    let stale = guards.is_none_or(|g| now - g.at > 45.0);
+    // With the control plane (the gate) the layouts runner and its guards file are gone: the
+    // switch itself re-reads the guard board (Action::OnDemand), so no file is not "stale".
+    let stale = !cfg.control_gate && guards.is_none_or(|g| now - g.at > 45.0);
     let b = blockers(guards.unwrap_or(&Guards::default()), quiet, hold, &offline);
     if !b.is_empty() {
         return Decision::Block {
@@ -414,6 +416,22 @@ pub struct Coordinator {
 }
 
 impl Coordinator {
+    /// A card's engine as last polled: (processing now, when last seen processing).
+    pub fn polled(&self, card: &str) -> (Option<bool>, Option<f64>) {
+        self.inner
+            .lock()
+            .unwrap()
+            .load
+            .get(card)
+            .copied()
+            .unwrap_or((None, None))
+    }
+
+    /// Log an on-demand event (the router log and `/ondemand` recent).
+    pub fn event(&self, rec: Value) {
+        self.log(rec);
+    }
+
     fn note(&self, target: &str, d: &Decision, who: &str, dry: bool) {
         let mut g = self.inner.lock().unwrap();
         let reason = d.reason();
@@ -530,7 +548,7 @@ async fn inputs(st: &AppState, snap: &Snapshot, now: f64) -> Inputs {
             c.clone(),
             CardIn {
                 model: u.catalog_model.clone(),
-                offline: !u.online,
+                offline: !u.online && !u.held,
                 busy,
                 last_busy,
                 last_change: changes.get(c).copied().filter(|t| *t > 0.0),

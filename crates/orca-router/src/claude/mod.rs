@@ -162,6 +162,7 @@ pub fn expand(c: &mut RouterConfig) -> Result<(), String> {
             key_file: None,
             online: true,
             catalog_model: None,
+            held: false,
         },
     );
     for (name, model) in &cc.routes {

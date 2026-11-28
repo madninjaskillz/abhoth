@@ -27,6 +27,8 @@ pub struct SwitchRequest {
     pub caller: Caller,
     /// `Switch` for admin switches, `OnDemand` for on-demand ones (guards re-read here).
     pub action: Action,
+    /// The layout may leave no card serving (its `allow_empty`; admin switches only).
+    pub allow_empty: bool,
 }
 
 enum Fail {
@@ -76,6 +78,12 @@ impl<H: HostOps, P: Plane> Orchestrator<H, P> {
             jobs,
             one: tokio::sync::Mutex::new(()),
         }
+    }
+
+    /// Publish the slots of what runs (at start, adopted): without it the slot registry offers
+    /// the layout file's slots until the first switch, cards that are off or held included.
+    pub fn publish_slots(&self, spec: &Spec, layout: Option<&str>) {
+        self.plane.set_slots(self.view(spec, false, layout, None));
     }
 
     /// Is a job running now?
@@ -176,7 +184,8 @@ impl<H: HostOps, P: Plane> Orchestrator<H, P> {
             .preconditions(&req.target)
             .await
             .map_err(Fail::Refused)?;
-        if self.serving(&req.target).is_empty() && !self.serving(&prev).is_empty() {
+        let empty_ok = req.allow_empty && req.action == Action::Switch;
+        if !empty_ok && self.serving(&req.target).is_empty() && !self.serving(&prev).is_empty() {
             return Err(Fail::Refused(format!(
                 "{} would leave no card serving",
                 req.layout

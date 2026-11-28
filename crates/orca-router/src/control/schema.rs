@@ -1506,6 +1506,10 @@ pub struct Layout {
     pub force: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// May leave no card serving (`cards-free`: A and B emptied for GPU work outside the
+    /// router). Only an admin switch honours it; on-demand and reconcile never empty the cards.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_empty: bool,
     /// Anything else the catalog carried (summaries are generated; kept for the shim).
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub extra: IndexMap<String, Value>,
@@ -1920,6 +1924,12 @@ pub struct OnDemandSection {
     pub max_switches_per_principal_per_hour: u32,
     pub allow_both_cards: bool,
     pub stream_note: String,
+    /// After an on-demand switch: the layout to go back to once the cards it runs have been
+    /// idle `return_idle_seconds` and the minimum stay is over (e.g. merged-dense-tp). Unset:
+    /// stay. Never after an admin switch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_layout: Option<String>,
+    pub return_idle_seconds: u64,
 }
 
 impl Default for OnDemandSection {
@@ -1934,6 +1944,8 @@ impl Default for OnDemandSection {
             max_switches_per_principal_per_hour: 2,
             allow_both_cards: false,
             stream_note: "reasoning".into(),
+            return_layout: None,
+            return_idle_seconds: 600,
         }
     }
 }
