@@ -402,6 +402,18 @@ fn stale_guards_wait() {
         },
     );
     assert_eq!(d.action(), "wait");
+    // the control plane: no guards file (the switch checks the guard board itself)
+    let mut cfg = cfg();
+    cfg.control_gate = true;
+    let d = run(
+        TARGET,
+        Call {
+            guards: None,
+            cfg,
+            ..Call::default()
+        },
+    );
+    assert_ne!(d.action(), "wait", "{d:?}");
 }
 
 fn utc(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> chrono::DateTime<Utc> {

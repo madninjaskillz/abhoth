@@ -209,7 +209,9 @@ pub fn decide(
         .filter(|(_, v)| v.offline)
         .map(|(c, _)| c.clone())
         .collect();
-    let stale = guards.is_none_or(|g| now - g.at > 45.0);
+    // With the control plane (the gate) the layouts runner and its guards file are gone: the
+    // switch itself re-reads the guard board (Action::OnDemand), so no file is not "stale".
+    let stale = !cfg.control_gate && guards.is_none_or(|g| now - g.at > 45.0);
     let b = blockers(guards.unwrap_or(&Guards::default()), quiet, hold, &offline);
     if !b.is_empty() {
         return Decision::Block {
