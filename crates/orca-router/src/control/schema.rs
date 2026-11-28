@@ -1506,6 +1506,10 @@ pub struct Layout {
     pub force: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// May leave no card serving (`cards-free`: A and B emptied for GPU work outside the
+    /// router). Only an admin switch honours it; on-demand and reconcile never empty the cards.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_empty: bool,
     /// Anything else the catalog carried (summaries are generated; kept for the shim).
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub extra: IndexMap<String, Value>,

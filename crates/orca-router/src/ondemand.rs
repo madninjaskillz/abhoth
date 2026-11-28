@@ -530,7 +530,7 @@ async fn inputs(st: &AppState, snap: &Snapshot, now: f64) -> Inputs {
             c.clone(),
             CardIn {
                 model: u.catalog_model.clone(),
-                offline: !u.online,
+                offline: !u.online && !u.held,
                 busy,
                 last_busy,
                 last_change: changes.get(c).copied().filter(|t| *t > 0.0),

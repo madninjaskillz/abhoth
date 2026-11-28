@@ -81,6 +81,7 @@ fn req(layout: &str, target: Spec) -> SwitchRequest {
         reason: "test".into(),
         caller: Caller::default(),
         action: Action::Switch,
+        allow_empty: false,
     }
 }
 
@@ -969,4 +970,28 @@ async fn a_failed_spanning_start_rolls_back_to_two_servers() {
     drop(st);
     let v = r.plane.view.lock().unwrap().clone();
     assert_eq!(v.slots, ["A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_empty_layout_needs_allow_empty_and_an_admin_switch() {
+    let off = || spec(CardSpec::off(), CardSpec::off());
+    let r = rig(spec(tp(), CardSpec::off()));
+    let j = r.orch.switch(req("cards-free", off())).await;
+    assert_eq!(j.state, "refused", "{}", steps(&j));
+    assert!(steps(&j).contains("would leave no card serving"));
+    let mut od = req("cards-free", off());
+    od.allow_empty = true;
+    od.action = Action::OnDemand;
+    let j = r.orch.switch(od).await;
+    assert_eq!(
+        j.state,
+        "refused",
+        "on demand never empties the cards: {}",
+        steps(&j)
+    );
+    let mut ok = req("cards-free", off());
+    ok.allow_empty = true;
+    let j = r.orch.switch(ok).await;
+    assert_eq!(j.state, "done", "{}", steps(&j));
+    assert_eq!(r.host.calls_like("stop"), ["stop A"]);
 }

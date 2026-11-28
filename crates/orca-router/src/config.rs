@@ -141,6 +141,10 @@ pub struct Upstream {
     /// The catalog model the card runs (on-demand decisions).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog_model: Option<String>,
+    /// Held by another card's instance (a tensor-parallel layout's second card): runs nothing
+    /// of its own and is not `online`, but it is not down either (on-demand may switch it).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub held: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

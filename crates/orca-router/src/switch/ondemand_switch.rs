@@ -135,6 +135,7 @@ impl<H: HostOps + 'static, P: Plane + 'static> OnDemandSwitcher for InProcess<H,
                 ),
                 caller,
                 action: Action::OnDemand,
+                allow_empty: false,
             };
             let estimate = Some(super::estimate(&self.orch.cfg, &to, &moving) as f64);
             let (orch, jobs, current, jid, lay) = (

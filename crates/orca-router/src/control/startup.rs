@@ -367,6 +367,16 @@ pub fn overlay(c: &ControlConfig, server: &str, run: &Running, rc: &mut RouterCo
         .iter()
         .map(|(k, u)| (k.clone(), u.served_id.clone()))
         .collect();
+    // The cards an instance spans besides its own (tensor-parallel): held, not down.
+    let held: Vec<String> = run
+        .spec
+        .iter()
+        .filter(|(_, s)| !s.is_off())
+        .flat_map(|(own, s)| s.cards_on(own).into_iter().filter(move |c| c != own))
+        .collect();
+    for (card, up) in rc.upstreams.iter_mut() {
+        up.held = held.contains(card);
+    }
     for (card, s) in &run.spec {
         let Some(up) = rc.upstreams.get_mut(card) else {
             continue;
@@ -601,6 +611,7 @@ impl live::Actions for OrchActions {
                 grants: Vec::new(),
             },
             action: Action::Switch,
+            allow_empty: self.c.layouts.get(layout).is_some_and(|l| l.allow_empty),
         };
         let orch = self.orch.clone();
         tokio::spawn(async move {
@@ -728,6 +739,7 @@ impl live::Actions for OrchActions {
             reason: format!("card {card} {state} by {who}"),
             caller,
             action,
+            allow_empty: false,
         };
         let orch = self.orch.clone();
         tokio::spawn(async move {
@@ -785,6 +797,7 @@ impl super::reconcile::Ensure for OrchEnsure {
                 reason: "reconcile: an engine of the active layout is missing".into(),
                 caller: Caller::default(),
                 action: Action::Ensure,
+                allow_empty: false,
             })
             .await;
         if r.state == "done" {
@@ -1389,6 +1402,17 @@ mod tests {
         };
         overlay(&c, &server, &run, &mut rc);
         assert!(!rc.upstreams["B"].online);
+        assert!(
+            !rc.upstreams["B"].held,
+            "off, not held: A's instance does not span it"
+        );
+        // tensor-parallel: A's instance spans B, which is held (not down: on-demand may switch it)
+        let mut tp = run.clone();
+        tp.spec.get_mut("A").unwrap().devices = vec!["A".into(), "B".into()];
+        let mut rc2 = rc.clone();
+        overlay(&c, &server, &tp, &mut rc2);
+        assert!(rc2.upstreams["B"].held && !rc2.upstreams["B"].online);
+        assert!(!rc2.upstreams["A"].held);
         assert_eq!(rc.upstreams["A"].catalog_model.as_deref(), Some("dense"));
         assert_eq!(rc.deployments[0].cards, ["A"]);
         assert_eq!(

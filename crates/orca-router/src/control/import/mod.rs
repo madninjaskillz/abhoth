@@ -1069,6 +1069,7 @@ pub fn import(src: &Sources, opt: &Options) -> Result<Imported, String> {
                 source: source.map(String::from),
                 force: pv["force"].as_bool().unwrap_or(false),
                 hidden: source == Some("composed"),
+                allow_empty: false,
                 extra,
             },
         );
