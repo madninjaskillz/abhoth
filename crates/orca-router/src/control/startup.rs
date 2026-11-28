@@ -762,6 +762,140 @@ impl live::Actions for OrchActions {
 }
 
 /// Reconcile's `ensure`: one switch to the active layout through the orchestrator.
+/// Whether an on-demand layout should go back to `home` now (`Ok(idle seconds)`), or why not.
+/// Only a layout an on-demand switch set (`on-demand:...`) goes back: never an admin switch's.
+#[allow(clippy::too_many_arguments)]
+pub fn return_due(
+    layout: Option<&str>,
+    home: &str,
+    switched_at: f64,
+    last_active: Option<f64>,
+    busy: bool,
+    now: f64,
+    idle_seconds: u64,
+    min_stay_seconds: u64,
+) -> Result<f64, String> {
+    let Some(l) = layout else {
+        return Err("the running layout is not known".into());
+    };
+    if l == home {
+        return Err(format!("{home} runs"));
+    }
+    if !l.starts_with("on-demand:") {
+        return Err(format!("{l} was not set by an on-demand switch"));
+    }
+    let stay = now - switched_at;
+    if stay < min_stay_seconds as f64 {
+        return Err(format!(
+            "switched {} s ago (minimum stay {min_stay_seconds} s)",
+            stay as i64
+        ));
+    }
+    if busy {
+        return Err("busy".into());
+    }
+    let idle = now - last_active.unwrap_or(switched_at).max(switched_at);
+    if idle < idle_seconds as f64 {
+        return Err(format!("idle {} s of {idle_seconds}", idle as i64));
+    }
+    Ok(idle)
+}
+
+/// After an on-demand switch, back to `on_demand.return_layout` once the cards have been idle
+/// `return_idle_seconds` (checked every 15 s; not in the 06:45-07:30 UK quiet time). An admin
+/// switch in the meantime names its own layout, so nothing goes back after it.
+fn spawn_return(
+    c: Arc<ControlConfig>,
+    server: String,
+    orch: Arc<Orch>,
+    store: Arc<Store>,
+    running: Arc<Mutex<Running>>,
+    st: Arc<AppState>,
+) {
+    let Some(home) = c.on_demand.return_layout.clone() else {
+        return;
+    };
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(15)).await;
+            if orch.busy() {
+                continue;
+            }
+            let r = running.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if !r.known {
+                continue;
+            }
+            let now = now_ms() as f64 / 1000.0;
+            if crate::ondemand::quiet(now).is_some() {
+                continue;
+            }
+            let switched = store
+                .active_layout(&server)
+                .ok()
+                .flatten()
+                .filter(|a| Some(&a.layout) == r.layout.as_ref())
+                .map_or(now, |a| a.since as f64 / 1000.0);
+            let mut busy = false;
+            let mut last: Option<f64> = None;
+            for (card, s) in &r.spec {
+                if s.is_off() {
+                    continue;
+                }
+                let rt = st.card(card);
+                busy |= rt.inflight > 0;
+                let own = rt.last_busy.map(|t| now - t.elapsed().as_secs_f64());
+                let (polled_busy, polled_last) = st.ext.ondemand.polled(card);
+                busy |= polled_busy == Some(true);
+                for t in [own, polled_last].into_iter().flatten() {
+                    last = Some(last.map_or(t, |x: f64| x.max(t)));
+                }
+            }
+            let min_stay = st.snapshot().config.on_demand.min_stay_seconds;
+            let Ok(idle) = return_due(
+                r.layout.as_deref(),
+                &home,
+                switched,
+                last,
+                busy,
+                now,
+                c.on_demand.return_idle_seconds,
+                min_stay,
+            ) else {
+                continue;
+            };
+            let offline = store.offline_cards().unwrap_or_default();
+            let Some(target) = wiring::target_spec(&c, &server, &home, &offline) else {
+                tracing::warn!("on-demand return: no layout {home}");
+                return;
+            };
+            st.ext
+                .ondemand
+                .event(serde_json::json!({"event": "return-started",
+                "layout": home, "from": r.layout, "idleSeconds": idle as i64}));
+            let j = orch
+                .switch(SwitchRequest {
+                    layout: home.clone(),
+                    target,
+                    active: r.layout.clone(),
+                    requested_by: "router-ondemand:return".into(),
+                    reason: format!("on demand: back to {home} after {} s idle", idle as i64),
+                    caller: Caller::default(),
+                    action: Action::OnDemand,
+                    allow_empty: false,
+                })
+                .await;
+            st.ext
+                .ondemand
+                .event(serde_json::json!({"event": "return-ended",
+                "layout": home, "job": j.id, "state": j.state, "error": j.error}));
+            if j.state != "done" {
+                // refused (a guard, a lease) or failed: try again later, not every 15 s
+                tokio::time::sleep(Duration::from_secs(120)).await;
+            }
+        }
+    });
+}
+
 struct OrchEnsure {
     c: Arc<ControlConfig>,
     orch: Arc<Orch>,
@@ -1237,8 +1371,24 @@ pub async fn start(st: &Arc<AppState>, main: &Path) -> Result<Started, String> {
         let r = running.lock().unwrap_or_else(|e| e.into_inner());
         (r.layout.clone(), r.spec.clone())
     };
-    let switcher = Arc::new(InProcess::new(orch.clone(), pick, now_layout, now_spec));
+    let source: crate::switch::ondemand_switch::RunningNow = {
+        let running = running.clone();
+        Arc::new(move || {
+            let r = running.lock().unwrap_or_else(|e| e.into_inner());
+            (r.layout.clone(), r.spec.clone())
+        })
+    };
+    let switcher =
+        Arc::new(InProcess::new(orch.clone(), pick, now_layout, now_spec).with_source(source));
     st.ext.ondemand.switcher.set(switcher).ok();
+    spawn_return(
+        c.clone(),
+        server.clone(),
+        orch.clone(),
+        store.clone(),
+        running.clone(),
+        st.clone(),
+    );
 
     // Reconcile: wait for the host, then every interval (adopt; ensure only in act mode).
     {
@@ -1314,6 +1464,35 @@ mod tests {
         assert_eq!(with_port("http://h:8094/v1", 9), "http://h:9/v1");
         assert_eq!(with_port("http://h", 80), "http://h:80");
         assert_eq!(with_port("http://h:1", 0), "http://h:1");
+    }
+
+    #[test]
+    fn on_demand_layouts_go_back_home_when_idle() {
+        let due = |l: Option<&str>, last: Option<f64>, busy: bool, now: f64| {
+            return_due(l, "merged-dense-tp", 1000.0, last, busy, now, 600, 300)
+        };
+        let od = Some("on-demand:B=inkling2-mini");
+        // idle 10 minutes after the switch (never busy): back
+        assert!(due(od, None, false, 1600.0).is_ok());
+        assert!(
+            due(od, None, false, 1599.0)
+                .unwrap_err()
+                .contains("idle 599")
+        );
+        // the last request counts from when it ended
+        assert!(due(od, Some(1500.0), false, 2099.0).is_err());
+        assert!(due(od, Some(1500.0), false, 2100.0).is_ok());
+        // busy now, or still in the minimum stay
+        assert_eq!(due(od, None, true, 5000.0).unwrap_err(), "busy");
+        assert!(
+            return_due(od, "merged-dense-tp", 1000.0, None, false, 1200.0, 60, 300)
+                .unwrap_err()
+                .contains("minimum stay")
+        );
+        // never after an admin switch, nor at home, nor without a known layout
+        assert!(due(Some("merged-x2"), None, false, 9999.0).is_err());
+        assert!(due(Some("merged-dense-tp"), None, false, 9999.0).is_err());
+        assert!(due(None, None, false, 9999.0).is_err());
     }
 
     #[test]

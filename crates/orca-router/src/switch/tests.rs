@@ -995,3 +995,41 @@ async fn an_empty_layout_needs_allow_empty_and_an_admin_switch() {
     assert_eq!(j.state, "done", "{}", steps(&j));
     assert_eq!(r.host.calls_like("stop"), ["stop A"]);
 }
+
+#[tokio::test(start_paused = true)]
+async fn on_demand_from_tp_replaces_the_spanning_instance() {
+    use super::ondemand_switch::{Ask, InProcess, OnDemandSwitcher};
+    let running = spec(tp(), CardSpec::off());
+    let r = rig(running.clone());
+    let host = r.host;
+    // the switcher was built on another layout: it reads what runs from the source
+    let now = running.clone();
+    let sw = InProcess::new(
+        Arc::new(r.orch),
+        Arc::new(pick),
+        Some("merged-inkling-x2".into()),
+        spec(ink(), ink()),
+    )
+    .with_source(Arc::new(move || {
+        (Some("merged-dense-tp".into()), now.clone())
+    }));
+    let want = od_model("ninfer", "merged-4lane", "dense-stock");
+    // B is held by A's instance: both cards move, but as one instance (no allow_both_cards)
+    let a = sw
+        .ask("ink", "B", &want, "jarvis", Caller::default(), false)
+        .await;
+    let Ask::Started { job, .. } = a else {
+        panic!("{a:?}")
+    };
+    let mut state = String::new();
+    for _ in 0..2000 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        state = sw.job(&job).unwrap().0;
+        if state != "running" {
+            break;
+        }
+    }
+    assert_eq!(state, "done");
+    assert_eq!(host.calls_like("stop"), ["stop A"], "{:?}", host.calls());
+    assert!(!host.calls_like("start B").is_empty(), "{:?}", host.calls());
+}

@@ -109,6 +109,14 @@ pub fn validate(c: &ControlConfig) -> Vec<Issue> {
     standing(c, &mut v);
     models(c, &mut v);
     layouts(c, &mut v);
+    if let Some(l) = &c.on_demand.return_layout
+        && !c.layouts.contains_key(l)
+    {
+        v.push(Issue::err(
+            "on_demand.return_layout",
+            format!("no layout {l}"),
+        ));
+    }
     routes(c, &mut v);
     upstreams(c, &mut v);
     guards(c, &mut v);

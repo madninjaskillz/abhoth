@@ -414,6 +414,22 @@ pub struct Coordinator {
 }
 
 impl Coordinator {
+    /// A card's engine as last polled: (processing now, when last seen processing).
+    pub fn polled(&self, card: &str) -> (Option<bool>, Option<f64>) {
+        self.inner
+            .lock()
+            .unwrap()
+            .load
+            .get(card)
+            .copied()
+            .unwrap_or((None, None))
+    }
+
+    /// Log an on-demand event (the router log and `/ondemand` recent).
+    pub fn event(&self, rec: Value) {
+        self.log(rec);
+    }
+
     fn note(&self, target: &str, d: &Decision, who: &str, dry: bool) {
         let mut g = self.inner.lock().unwrap();
         let reason = d.reason();

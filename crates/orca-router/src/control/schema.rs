@@ -1924,6 +1924,12 @@ pub struct OnDemandSection {
     pub max_switches_per_principal_per_hour: u32,
     pub allow_both_cards: bool,
     pub stream_note: String,
+    /// After an on-demand switch: the layout to go back to once the cards it runs have been
+    /// idle `return_idle_seconds` and the minimum stay is over (e.g. merged-dense-tp). Unset:
+    /// stay. Never after an admin switch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_layout: Option<String>,
+    pub return_idle_seconds: u64,
 }
 
 impl Default for OnDemandSection {
@@ -1938,6 +1944,8 @@ impl Default for OnDemandSection {
             max_switches_per_principal_per_hour: 2,
             allow_both_cards: false,
             stream_note: "reasoning".into(),
+            return_layout: None,
+            return_idle_seconds: 600,
         }
     }
 }
