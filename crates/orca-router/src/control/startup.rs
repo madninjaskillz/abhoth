@@ -1304,6 +1304,54 @@ mod tests {
     }
 
     #[test]
+    fn a_card_that_comes_up_later_gets_its_aliases_back() {
+        // A switch to two cards: the overlay runs when A is ready (B still starting) and again
+        // when B is: B must be back in every alias, not left out from the first look.
+        let c = crate::control::validate::tests::sample();
+        let server = c.servers.keys().next().unwrap().clone();
+        let mut rc = RouterConfig::default();
+        for (card, port) in [("A", 8094), ("B", 8096)] {
+            rc.upstreams.insert(
+                card.into(),
+                serde_json::from_value(serde_json::json!({
+                    "url": format!("http://h:{port}"), "engine": "ninfer", "lanes": 4,
+                    "servedId": "m"
+                }))
+                .unwrap(),
+            );
+        }
+        rc.deployments.push(Deployment {
+            name: "main".into(),
+            served_id: "m".into(),
+            cards: vec!["A".into(), "B".into()],
+            ..Deployment::default()
+        });
+        let st =
+            crate::state::AppState::new(crate::config::Snapshot::build(rc, None).unwrap(), None);
+        let mut spec = Spec::new();
+        spec.insert("A".into(), CardSpec::new("ninfer", "4lane", "dense", 4));
+        spec.insert("B".into(), CardSpec::new("ninfer", "4lane", "dense", 4));
+        let running = Arc::new(Mutex::new(Running {
+            layout: Some("L".into()),
+            spec,
+            ready: vec!["A".into()],
+            known: true,
+        }));
+        let (c2, srv, r2) = (Arc::new(c), server.clone(), running.clone());
+        st.overlay
+            .set(Arc::new(move |rc: &mut RouterConfig| {
+                let r = r2.lock().unwrap().clone();
+                overlay(&c2, &srv, &r, rc);
+            }))
+            .ok();
+        st.reapply_overlay();
+        assert_eq!(st.snapshot().config.deployments[0].cards, ["A"]);
+        running.lock().unwrap().ready = vec!["A".into(), "B".into()];
+        st.reapply_overlay();
+        assert_eq!(st.snapshot().config.deployments[0].cards, ["A", "B"]);
+    }
+
+    #[test]
     fn running_cards_drive_upstreams_and_aliases() {
         let c = crate::control::validate::tests::sample();
         let server = c.servers.keys().next().unwrap().clone();
